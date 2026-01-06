@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Genesis - System Creator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a25;
+            --accent-cyan: #00d4ff;
+            --accent-purple: #a855f7;
+            --accent-green: #22c55e;
+            --accent-yellow: #eab308;
+            --accent-pink: #ec4899;
+            --text-primary: #ffffff;
+            --text-secondary: #94a3b8;
+            --border: #2a2a3a;
+        }
+
+        body {
+            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated background */
+        .bg-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background:
+                radial-gradient(circle at 20% 80%, rgba(0, 212, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(168, 85, 247, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 50% 50%, rgba(34, 197, 94, 0.05) 0%, transparent 70%);
+        }
+
+        /* Header */
+        header {
+            padding: 2rem 4rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo-icon {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+
+        .logo h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo span {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .mcp-count {
+            background: var(--bg-card);
+            padding: 0.5rem 1.5rem;
+            border-radius: 50px;
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .mcp-count .dot {
+            width: 8px;
+            height: 8px;
+            background: var(--accent-green);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Main content */
+        main {
+            padding: 3rem 4rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* MCP Grid */
+        .mcp-section {
+            margin-bottom: 3rem;
+        }
+
+        .section-title {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .mcp-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .mcp-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .mcp-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--accent-cyan);
+            box-shadow: 0 10px 40px rgba(0, 212, 255, 0.1);
+        }
+
+        .mcp-card.knowledge { --card-accent: #3b82f6; }
+        .mcp-card.research { --card-accent: #eab308; }
+        .mcp-card.creation { --card-accent: #22c55e; }
+        .mcp-card.visual { --card-accent: #ec4899; }
+        .mcp-card.storage { --card-accent: #00d4ff; }
+
+        .mcp-card .icon {
+            width: 40px;
+            height: 40px;
+            background: var(--card-accent);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1rem;
+            font-size: 20px;
+        }
+
+        .mcp-card h3 {
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .mcp-card p {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .mcp-card .status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            font-size: 0.75rem;
+            color: var(--accent-green);
+        }
+
+        .mcp-card .status::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            background: var(--accent-green);
+            border-radius: 50%;
+        }
+
+        /* Creator Section */
+        .creator-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 2.5rem;
+            margin-top: 2rem;
+        }
+
+        .creator-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .creator-header h2 {
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .type-selector {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .type-btn {
+            padding: 0.6rem 1.2rem;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+
+        .type-btn:hover, .type-btn.active {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            background: rgba(0, 212, 255, 0.1);
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .input-group input, .input-group textarea {
+            width: 100%;
+            padding: 1rem 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .input-group input:focus, .input-group textarea:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.1);
+        }
+
+        .input-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .features-input {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .feature-tag {
+            padding: 0.4rem 1rem;
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid var(--accent-cyan);
+            border-radius: 50px;
+            font-size: 0.85rem;
+            color: var(--accent-cyan);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .feature-tag .remove {
+            cursor: pointer;
+            opacity: 0.7;
+        }
+
+        .feature-tag .remove:hover {
+            opacity: 1;
+        }
+
+        .create-btn {
+            width: 100%;
+            padding: 1.2rem;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+        }
+
+        .create-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 40px rgba(0, 212, 255, 0.3);
+        }
+
+        /* Pipeline visualization */
+        .pipeline {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border-radius: 16px;
+        }
+
+        .pipeline-step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            flex: 1;
+            position: relative;
+        }
+
+        .pipeline-step:not(:last-child)::after {
+            content: '→';
+            position: absolute;
+            right: -10px;
+            top: 15px;
+            color: var(--text-secondary);
+        }
+
+        .pipeline-step .step-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        .pipeline-step:nth-child(1) .step-icon { background: rgba(59, 130, 246, 0.2); }
+        .pipeline-step:nth-child(2) .step-icon { background: rgba(168, 85, 247, 0.2); }
+        .pipeline-step:nth-child(3) .step-icon { background: rgba(34, 197, 94, 0.2); }
+        .pipeline-step:nth-child(4) .step-icon { background: rgba(236, 72, 153, 0.2); }
+        .pipeline-step:nth-child(5) .step-icon { background: rgba(0, 212, 255, 0.2); }
+        .pipeline-step:nth-child(6) .step-icon { background: rgba(234, 179, 8, 0.2); }
+
+        .pipeline-step span {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        /* Output section */
+        .output-section {
+            margin-top: 2rem;
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            display: none;
+        }
+
+        .output-section.active {
+            display: block;
+        }
+
+        .output-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .output-content {
+            background: var(--bg-primary);
+            border-radius: 12px;
+            padding: 1.5rem;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 0.9rem;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .output-content pre {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            header, main {
+                padding: 1.5rem;
+            }
+
+            .mcp-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .pipeline {
+                flex-wrap: wrap;
+                gap: 1rem;
+            }
+
+            .pipeline-step::after {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-animation"></div>
+
+    <header>
+        <div class="logo">
+            <div class="logo-icon">⚡</div>
+            <div>
+                <h1>GENESIS</h1>
+                <span>System Creator</span>
+            </div>
+        </div>
+        <div class="mcp-count">
+            <span class="dot"></span>
+            <span>13 MCP Servers Active</span>
+        </div>
+    </header>
+
+    <main>
+        <!-- MCP Servers Grid -->
+        <section class="mcp-section">
+            <h2 class="section-title">MCP Servers</h2>
+            <div class="mcp-grid">
+                <div class="mcp-card knowledge">
+                    <div class="icon">📚</div>
+                    <h3>arXiv</h3>
+                    <p>Academic papers</p>
+                    <div class="status">Connected</div>
+                </div>
+                <div class="mcp-card knowledge">
+                    <div class="icon">🎓</div>
+                    <h3>Semantic Scholar</h3>
+                    <p>Citations & refs</p>
+                    <div class="status">Connected</div>
+                </div>
+                <div class="mcp-card knowledge">
+                    <div class="icon">📖</div>
+                    <h3>Context7</h3>
+                    <p>Library docs</p>
+                    <div class="status">Connected</div>
+                </div>
+                <div class="mcp-card knowledge">
+                    <div class="icon">🔬</div>
+                    <h3>Wolfram</h3>
+                    <p>Math & science</p>
+                    <div class="status">Connected</div>
+                </div>
+                <div class="mcp-card research">
+                    <div class="icon">🔍</div>
+                    <h3>Gemini</h3>
+                    <p>AI web search</p>
+                    <div class="status">Connected</div>
+                </div>
+                <div class="mcp-card research">
+                    <div class="icon">🦁</div>
+                    <h3>Brave Search</h3>
+                    <p>Web & news</p>
+                    <div class="status">Connected</div>
+                </div>
+                <div class="mcp-card research">
+                    <div class="icon">💻</div>
+                    <h3>Exa</h3>
+                    <p>Code search</p>
+                    <div class="status">Connected</div>
+                </div>
+                <div class="mcp-card research">
+                    <div class="icon">🔥</div>
+                    <h3>Firecrawl</h3>
+                    <p>Web scraping</p>
+                    <div class="status">Connected</div>
+                </div>
+                <div class="mcp-card creation">
+                    <div class="icon">🤖</div>
+                    <h3>OpenAI</h3>
+                    <p>GPT-4o / o1</p>
+                    <div class="status">Connected</div>
+                </div>
+                <div class="mcp-card creation">
+                    <div class="icon">🐙</div>
+                    <h3>GitHub</h3>
+                    <p>Repo management</p>
+                    <div class="status">Connected</div>
+                </div>
+                <div class="mcp-card visual">
+                    <div class="icon">🎨</div>
+                    <h3>Stability AI</h3>
+                    <p>Image generation</p>
+                    <div class="status">Connected</div>
+                </div>
+                <div class="mcp-card storage">
+                    <div class="icon">🧠</div>
+                    <h3>Memory</h3>
+                    <p>Knowledge graph</p>
+                    <div class="status">Connected</div>
+                </div>
+                <div class="mcp-card storage">
+                    <div class="icon">📁</div>
+                    <h3>Filesystem</h3>
+                    <p>Local files</p>
+                    <div class="status">Connected</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- System Creator -->
+        <section class="creator-section">
+            <div class="creator-header">
+                <h2>✨ Create New System</h2>
+                <div class="type-selector">
+                    <button class="type-btn active" data-type="autopoietic">Autopoietic</button>
+                    <button class="type-btn" data-type="agent">Agent</button>
+                    <button class="type-btn" data-type="multi-agent">Multi-Agent</button>
+                    <button class="type-btn" data-type="service">Service</button>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label>System Name</label>
+                <input type="text" id="systemName" placeholder="my-awesome-system">
+            </div>
+
+            <div class="input-group">
+                <label>Description</label>
+                <textarea id="systemDesc" placeholder="Describe what your system should do..."></textarea>
+            </div>
+
+            <div class="input-group">
+                <label>Features (press Enter to add)</label>
+                <input type="text" id="featureInput" placeholder="state-machine, events, persistence...">
+                <div class="features-input" id="featuresContainer">
+                    <span class="feature-tag">state-machine <span class="remove" onclick="removeFeature(this)">×</span></span>
+                    <span class="feature-tag">events <span class="remove" onclick="removeFeature(this)">×</span></span>
+                </div>
+            </div>
+
+            <button class="create-btn" onclick="createSystem()">
+                <span>🚀</span> Create System with 13 MCPs
+            </button>
+
+            <!-- Pipeline -->
+            <div class="pipeline">
+                <div class="pipeline-step">
+                    <div class="step-icon">🔍</div>
+                    <span>Research</span>
+                </div>
+                <div class="pipeline-step">
+                    <div class="step-icon">📐</div>
+                    <span>Design</span>
+                </div>
+                <div class="pipeline-step">
+                    <div class="step-icon">⚡</div>
+                    <span>Generate</span>
+                </div>
+                <div class="pipeline-step">
+                    <div class="step-icon">🎨</div>
+                    <span>Visualize</span>
+                </div>
+                <div class="pipeline-step">
+                    <div class="step-icon">💾</div>
+                    <span>Persist</span>
+                </div>
+                <div class="pipeline-step">
+                    <div class="step-icon">🚀</div>
+                    <span>Publish</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Output -->
+        <section class="output-section" id="outputSection">
+            <div class="output-header">
+                <h3>📋 Output</h3>
+                <button onclick="copyOutput()" style="background: var(--bg-card); border: 1px solid var(--border); padding: 0.5rem 1rem; border-radius: 8px; color: var(--text-secondary); cursor: pointer;">Copy</button>
+            </div>
+            <div class="output-content">
+                <pre id="outputContent"></pre>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        let selectedType = 'autopoietic';
+        let features = ['state-machine', 'events'];
+
+        // Type selector
+        document.querySelectorAll('.type-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                selectedType = btn.dataset.type;
+            });
+        });
+
+        // Feature input
+        document.getElementById('featureInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const value = e.target.value.trim();
+                if (value && !features.includes(value)) {
+                    features.push(value);
+                    renderFeatures();
+                }
+                e.target.value = '';
+            }
+        });
+
+        function renderFeatures() {
+            const container = document.getElementById('featuresContainer');
+            container.innerHTML = features.map(f =>
+                `<span class="feature-tag">${f} <span class="remove" onclick="removeFeature(this, '${f}')">×</span></span>`
+            ).join('');
+        }
+
+        function removeFeature(el, feature) {
+            features = features.filter(f => f !== feature);
+            renderFeatures();
+        }
+
+        function createSystem() {
+            const name = document.getElementById('systemName').value || 'my-system';
+            const desc = document.getElementById('systemDesc').value || 'A new system';
+
+            const spec = {
+                name,
+                description: desc,
+                type: selectedType,
+                features: features
+            };
+
+            const command = `genesis create "${name}" --type ${selectedType} --description "${desc}" --features "${features.join(',')}"`;
+
+            const output = `
+╔═══════════════════════════════════════════════════════════════╗
+║  GENESIS - Creating: ${name.padEnd(40)}║
+╚═══════════════════════════════════════════════════════════════╝
+
+📋 Specification:
+   Name: ${name}
+   Type: ${selectedType}
+   Description: ${desc}
+   Features: ${features.join(', ')}
+
+🔄 Pipeline stages:
+   ○ research    → arxiv, semantic-scholar, context7, gemini, brave, exa, firecrawl
+   ○ design      → openai (GPT-4o/o1), wolfram
+   ○ generate    → openai, context7, filesystem
+   ○ visualize   → stability-ai
+   ○ persist     → memory, filesystem
+   ○ publish     → github
+
+💻 Command:
+   ${command}
+
+📁 Spec file: ${name}.genesis.json
+
+${JSON.stringify(spec, null, 2)}
+
+───────────────────────────────────────────────────────────────
+✨ Copy the command above and run in terminal, or ask Claude Code:
+   "Execute genesis pipeline for ${name}"
+───────────────────────────────────────────────────────────────
+`;
+
+            document.getElementById('outputContent').textContent = output;
+            document.getElementById('outputSection').classList.add('active');
+
+            // Save spec to localStorage
+            localStorage.setItem('genesis-spec', JSON.stringify(spec));
+        }
+
+        function copyOutput() {
+            const text = document.getElementById('outputContent').textContent;
+            navigator.clipboard.writeText(text);
+        }
+    </script>
+</body>
+</html>

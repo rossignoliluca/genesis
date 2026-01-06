@@ -1,0 +1,4 @@
+node_modules/
+dist/
+*.genesis.json
+.DS_Store

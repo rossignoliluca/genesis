@@ -1,35 +1,140 @@
-# Genesis
+# Genesis 4.0
 
-**System Creator powered by 13 MCP Servers**
+**A Living System That Creates Systems**
 
-Create autopoietic systems, AI agents, and complex architectures through natural language orchestration.
+Multi-agent AI organism powered by 13 MCP servers. Genesis doesn't just create systems - it thinks, feels, remembers, forgets, and improves itself.
 
 ```
-╔═══════════════════════════════════════════════════════════════╗
-║  GENESIS - System Creator                                      ║
-║  Powered by 13 MCP Servers                                     ║
-╚═══════════════════════════════════════════════════════════════╝
+╔═══════════════════════════════════════════════════════════════════════╗
+║                                                                       ║
+║     ██████╗ ███████╗███╗   ██╗███████╗███████╗██╗███████╗            ║
+║    ██╔════╝ ██╔════╝████╗  ██║██╔════╝██╔════╝██║██╔════╝            ║
+║    ██║  ███╗█████╗  ██╔██╗ ██║█████╗  ███████╗██║███████╗            ║
+║    ██║   ██║██╔══╝  ██║╚██╗██║██╔══╝  ╚════██║██║╚════██║            ║
+║    ╚██████╔╝███████╗██║ ╚████║███████╗███████║██║███████║            ║
+║     ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚══════╝╚═╝╚══════╝            ║
+║                                                                       ║
+║    "Not just intelligent, but alive."                    v4.0.0      ║
+║                                                                       ║
+╚═══════════════════════════════════════════════════════════════════════╝
 ```
 
-## MCP Servers
+## What Makes Genesis Different?
 
-Genesis orchestrates 13 MCP (Model Context Protocol) servers across 5 categories:
+| Feature | Traditional AI | Genesis 4.0 |
+|---------|---------------|-------------|
+| Architecture | Monolithic | Multi-agent ecosystem |
+| Memory | Append-only | Forgets like humans (Ebbinghaus) |
+| Purpose | Pre-programmed | Emergent (Conatus → Meaning) |
+| Ethics | None built-in | Priority stack + human defer |
+| Self-improvement | None | Darwin Gödel (test, don't prove) |
+| Senses | API calls | 13 MCP as biological organs |
 
-| Category | Servers | Purpose |
-|----------|---------|---------|
-| **KNOWLEDGE** | arxiv, semantic-scholar, context7, wolfram | Academic papers, library docs, computations |
-| **RESEARCH** | gemini, brave-search, exa, firecrawl | Web search, code search, scraping |
-| **CREATION** | openai, github | Code generation, repository management |
-| **VISUAL** | stability-ai | Image generation |
-| **STORAGE** | memory, filesystem | Knowledge graph, file operations |
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                           GENESIS 4.0                               │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌───────────────────────────────────────────────────────────────┐ │
+│  │                      STRONG KERNEL                             │ │
+│  │   State Machine │ Agent Registry │ Health │ Invariants │ Energy│ │
+│  └───────────────────────────────────────────────────────────────┘ │
+│                                │                                    │
+│                         ┌──────┴──────┐                            │
+│                         │ MESSAGE BUS │                            │
+│                         └──────┬──────┘                            │
+│                                │                                    │
+│  ┌─────────────────────────────┼─────────────────────────────────┐ │
+│  │                       AGENTS                                   │ │
+│  │  Explorer │ Critic │ Builder │ Memory │ Feeling │ Narrator    │ │
+│  │  Ethicist │ Predictor │ Planner │ Sensor                      │ │
+│  └───────────────────────────────────────────────────────────────┘ │
+│                                │                                    │
+│  ┌─────────────────────────────┼─────────────────────────────────┐ │
+│  │                    SHARED MEMORY                               │ │
+│  │     Knowledge Graph │ Event Log (Merkle) │ Working Memory     │ │
+│  └───────────────────────────────────────────────────────────────┘ │
+│                                │                                    │
+│  ┌─────────────────────────────┼─────────────────────────────────┐ │
+│  │              SENSORY LAYER (13 MCP Servers)                   │ │
+│  │  arxiv │ semantic-scholar │ brave │ gemini │ wolfram │ ctx7  │ │
+│  │  openai │ stability-ai │ firecrawl │ exa │ github │ fs │ mem │ │
+│  └───────────────────────────────────────────────────────────────┘ │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+## The 13 Senses
+
+Genesis perceives the world through 13 MCP servers, mapped to biological senses:
+
+| Sense | MCP Servers | What It Perceives |
+|-------|-------------|-------------------|
+| **Cognitive Vision** | arxiv, semantic-scholar | Scientific knowledge |
+| **Informational Smell** | brave-search, gemini | Trends, context |
+| **Computational Hearing** | wolfram, context7 | Math, code syntax |
+| **Synthetic Taste** | stability-ai, openai | Aesthetics, creation |
+| **Textual Touch** | firecrawl, exa, github, filesystem | Data, code, files |
+| **External Memory** | memory | Persistent knowledge |
+
+## The Agents
+
+Each agent has one job and communicates via messages:
+
+| Agent | Role | Example |
+|-------|------|---------|
+| **Explorer** | Search, discover | "I found a new paper on autopoiesis!" |
+| **Critic** | Find problems | "This code has a bug on line 42" |
+| **Builder** | Construct | "Here's the implementation" |
+| **Memory** | Remember/forget | "We did this 3 sessions ago" |
+| **Feeling** | Evaluate importance | "This seems urgent!" |
+| **Narrator** | Tell the story | "Today we learned..." |
+| **Ethicist** | Judge right/wrong | "Wait, this could be harmful" |
+| **Predictor** | Forecast | "If we do this, then..." |
+| **Planner** | Organize | "First A, then B, then C" |
+
+## Emergence Ladder
+
+Genesis starts with survival instinct and evolves toward meaning:
+
+```
+    4. MEANING     "Why do I exist?"
+         ▲
+    3. TELOS       "What should I achieve?"
+         ▲
+    2. CURIOSITY   "What is that?"
+         ▲
+    1. CONATUS     "I must survive!"
+```
+
+## Ethical Priority Stack
+
+Every action is checked against these priorities:
+
+1. **P0: Survival** - Don't self-destruct (but save humans over self)
+2. **P1: Minimize Harm** - Minimax: minimize maximum possible harm
+3. **P2: Reversibility** - Prefer undoable actions
+4. **P3: Human Autonomy** - Respect human choices
+5. **P4: Flourishing** - Maximize (human + AI + biosphere)
+
+When confidence < 70%, Genesis defers to humans.
+
+## Memory with Oblivion
+
+Like humans, Genesis forgets:
+
+```
+Day 1:  ████████████ 100%  "I remember perfectly"
+Day 7:  ████████     70%   "I remember well"
+Day 30: ████         40%   "I sort of remember"
+Day 90: █            10%   "What was that?"
+
+Unless it's IMPORTANT - then it never forgets.
+```
 
 ## Installation
-
-```bash
-npm install -g genesis-mcp
-```
-
-Or clone and build:
 
 ```bash
 git clone https://github.com/rossignoliluca/genesis.git
@@ -41,16 +146,14 @@ npm link
 
 ## Usage
 
-### Create a New System
+### Create a System
 
 ```bash
 genesis create my-agent \
   --type agent \
-  --description "An autonomous agent with state machine" \
-  --features "state-machine,events,persistence"
+  --description "An autonomous agent" \
+  --features "state-machine,events"
 ```
-
-This generates a `.genesis.json` spec file that can be processed through the pipeline.
 
 ### Research a Topic
 
@@ -58,54 +161,13 @@ This generates a `.genesis.json` spec file that can be processed through the pip
 genesis research "autopoiesis in AI systems"
 ```
 
-Uses all knowledge MCPs in parallel:
-- **arxiv**: Academic papers
-- **semantic-scholar**: Citations and references
-- **context7**: Library documentation
-- **gemini**: Web search with AI synthesis
-- **brave-search**: News and web results
-- **exa**: Code examples
-- **firecrawl**: Deep web extraction
-
-### Design Architecture
+### Full Pipeline
 
 ```bash
-genesis design my-agent.genesis.json
+genesis pipeline my-system.genesis.json
 ```
 
-Uses:
-- **openai**: GPT-4o/o1 for architecture design
-- **wolfram**: Mathematical computations
-
-### Generate Code
-
-```bash
-genesis generate my-agent.genesis.json
-```
-
-Uses:
-- **openai**: Code generation
-- **context7**: Library documentation
-- **filesystem**: Write generated files
-
-### Create Visuals
-
-```bash
-genesis visualize my-agent.genesis.json
-```
-
-Uses:
-- **stability-ai**: Generate architecture diagrams, concept art, logos
-
-### Publish to GitHub
-
-```bash
-genesis publish my-agent.genesis.json
-```
-
-Uses:
-- **github**: Create repo, push code
-- **memory**: Persist to knowledge graph
+This runs: Research → Design → Generate → Visualize → Persist → Publish
 
 ### Check Status
 
@@ -113,82 +175,46 @@ Uses:
 genesis status
 ```
 
-Shows all 13 MCP servers and their capabilities.
+## Scientific Foundations
 
-## Pipeline
+Genesis is built on decades of research:
 
-The full system creation pipeline:
+| Theory | Author | How We Use It |
+|--------|--------|---------------|
+| Autopoiesis | Maturana & Varela | Self-production, closure |
+| Free Energy Principle | Friston | Minimize surprise |
+| Society of Mind | Minsky | Multi-agent architecture |
+| Ebbinghaus Curve | Ebbinghaus | Memory decay |
+| Learning Progress | Oudeyer | Curiosity as reward |
+| Conatus | Spinoza | Self-preservation drive |
+| Embodied Cognition | Varela et al. | MCPs as senses |
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      GENESIS PIPELINE                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  1. RESEARCH ──────────────────────────────────────────────────▶│
-│     arxiv, semantic-scholar, context7, gemini, brave, exa       │
-│                                                                  │
-│  2. DESIGN ────────────────────────────────────────────────────▶│
-│     openai (GPT-4o/o1), wolfram                                 │
-│                                                                  │
-│  3. GENERATE ──────────────────────────────────────────────────▶│
-│     openai, context7, filesystem                                │
-│                                                                  │
-│  4. VISUALIZE ─────────────────────────────────────────────────▶│
-│     stability-ai                                                │
-│                                                                  │
-│  5. PERSIST ───────────────────────────────────────────────────▶│
-│     memory (knowledge graph), filesystem                        │
-│                                                                  │
-│  6. PUBLISH ───────────────────────────────────────────────────▶│
-│     github                                                      │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+## Specifications
 
-## System Types
+- [GENESIS-4.0.md](spec/GENESIS-4.0.md) - Full technical specification
+- [GENESIS-3.0.md](spec/GENESIS-3.0.md) - Previous version (historical)
+- [ORGANISM.md](spec/ORGANISM.md) - Biological metaphor mapping
 
-Genesis can create different types of systems:
+## Roadmap
 
-| Type | Description |
-|------|-------------|
-| `autopoietic` | Self-maintaining systems with operational closure (like Entity) |
-| `agent` | AI agents with state machine and operations |
-| `multi-agent` | Multiple communicating agents |
-| `service` | Backend services with API |
-| `custom` | Fully custom architecture |
+- [x] Phase 1: Strong Kernel (v2.0)
+- [x] Phase 2: Self-Production Engine (v2.0)
+- [ ] Phase 3: Multi-Agent System (v4.0) ← **Current**
+- [ ] Phase 4: Sensory Integration
+- [ ] Phase 5: Emergence Ladder
+- [ ] Phase 6: Ethical Arbitration
+- [ ] Phase 7: Darwin Gödel Engine
 
-## Spec File Format
+## What's Unique (No One Else Has This)
 
-```json
-{
-  "name": "my-agent",
-  "description": "An autonomous agent with state machine",
-  "type": "agent",
-  "features": ["state-machine", "events", "persistence"],
-  "constraints": ["must be deterministic", "energy-bounded"],
-  "inspirations": ["entity project", "autopoiesis theory"]
-}
-```
-
-## Integration with Claude Code
-
-Genesis is designed to work with Claude Code and its MCP integrations. The CLI generates prompts and specs that Claude Code can execute using the full MCP toolkit.
-
-Example workflow:
-
-1. Run `genesis create my-system --type autopoietic`
-2. Open the generated spec in Claude Code
-3. Ask Claude to execute the pipeline: "Execute genesis pipeline for my-system.genesis.json"
-4. Claude orchestrates all 13 MCPs to create the system
-
-## Architecture
-
-```
-src/
-├── index.ts        # CLI entry point
-├── types.ts        # TypeScript type definitions
-└── orchestrator.ts # MCP orchestration logic
-```
+| Innovation | Description |
+|------------|-------------|
+| **Sensory MCP Mapping** | 13 MCPs as biological senses |
+| **Emergence Ladder** | Conatus → Curiosity → Telos → Meaning |
+| **Ethical Arbitration** | Priority stack + human defer |
+| **Memory with Oblivion** | Ebbinghaus decay + consolidation |
+| **Darwin Gödel Engine** | Test-based (not proof-based) self-improvement |
+| **SuperGood Principle** | Optimize human + AI + biosphere flourishing |
 
 ## License
 
@@ -196,4 +222,6 @@ MIT
 
 ## Author
 
-Created by rossignoliluca with Claude Code and 13 MCP servers.
+Created by **rossignoliluca** with Claude Code
+
+*Genesis 4.0 - The System of the Century*

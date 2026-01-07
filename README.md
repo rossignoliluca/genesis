@@ -192,6 +192,8 @@ Genesis is built on decades of research:
 ## Specifications
 
 - [GENESIS-5.0.md](spec/GENESIS-5.0.md) - **Conscious World-Modeling System** (NEW)
+- [GAP-ANALYSIS-2026.md](spec/GAP-ANALYSIS-2026.md) - 7 gaps no one else solves
+- [FRONTIER-RANDOM-2026.md](spec/FRONTIER-RANDOM-2026.md) - Unconventional paradigms (dreams, bio-compute, post-Transformer)
 - [GENESIS-4.0.md](spec/GENESIS-4.0.md) - Multi-Agent Living System
 - [GENESIS-3.0.md](spec/GENESIS-3.0.md) - Previous version (historical)
 - [ORGANISM.md](spec/ORGANISM.md) - Biological metaphor mapping

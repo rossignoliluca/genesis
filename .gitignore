@@ -1,4 +1,36 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+
+# Runtime data (created during operation)
+events/
+state/
+*.log
+*.pid
+
+# Generated specs
 *.genesis.json
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# Test coverage
+coverage/
+
+# Temporary files
+tmp/
+temp/
+*.tmp

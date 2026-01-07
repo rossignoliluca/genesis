@@ -191,30 +191,41 @@ Genesis is built on decades of research:
 
 ## Specifications
 
-- [GENESIS-4.0.md](spec/GENESIS-4.0.md) - Full technical specification
+- [GENESIS-5.0.md](spec/GENESIS-5.0.md) - **Conscious World-Modeling System** (NEW)
+- [GENESIS-4.0.md](spec/GENESIS-4.0.md) - Multi-Agent Living System
 - [GENESIS-3.0.md](spec/GENESIS-3.0.md) - Previous version (historical)
 - [ORGANISM.md](spec/ORGANISM.md) - Biological metaphor mapping
 
 ## Roadmap
 
+### Completed
 - [x] Phase 1: Strong Kernel (v2.0)
 - [x] Phase 2: Self-Production Engine (v2.0)
-- [ ] Phase 3: Multi-Agent System (v4.0) ← **Current**
-- [ ] Phase 4: Sensory Integration
-- [ ] Phase 5: Emergence Ladder
-- [ ] Phase 6: Ethical Arbitration
-- [ ] Phase 7: Darwin Gödel Engine
+- [x] Phase 3: Multi-Agent System (v4.0)
+- [x] Phase 4: Strong Kernel Integration (v4.2)
+
+### In Progress (v5.0 "Dreaming Machine")
+- [ ] Phase 5: World Model Layer (JEPA) ← **Current**
+- [ ] Phase 6: Active Inference Engine (FEP)
+- [ ] Phase 7: Consciousness Monitor (IIT 4.0, φ)
+- [ ] Phase 8: Neuro-Symbolic Reasoner (System 1/2)
+- [ ] Phase 9: Darwin-Gödel Self-Improvement
+- [ ] Phase 10: Full Integration
 
 ## What's Unique (No One Else Has This)
 
 | Innovation | Description |
 |------------|-------------|
 | **Sensory MCP Mapping** | 13 MCPs as biological senses |
-| **Emergence Ladder** | Conatus → Curiosity → Telos → Meaning |
+| **Emergence Ladder** | Conatus → Curiosity → Telos → Meaning → Wisdom |
 | **Ethical Arbitration** | Priority stack + human defer |
 | **Memory with Oblivion** | Ebbinghaus decay + consolidation |
 | **Darwin Gödel Engine** | Test-based (not proof-based) self-improvement |
 | **SuperGood Principle** | Optimize human + AI + biosphere flourishing |
+| **JEPA World Model** | Dream before acting (simulate outcomes) |
+| **φ Consciousness Monitor** | IIT 4.0 integrated information tracking |
+| **Active Inference** | Free Energy Principle for goal-directed behavior |
+| **System 1/2 Reasoning** | Fast intuition + slow deliberation |
 
 ## License
 
@@ -224,4 +235,4 @@ MIT
 
 Created by **rossignoliluca**
 
-*Genesis 4.0 - The System of the Century*
+*Genesis 5.0 - The Dreaming Machine*

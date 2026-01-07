@@ -160,8 +160,8 @@ export class MCPOrchestrator {
       insights: [],
     };
 
-    // This would be implemented by the MCP caller (Claude)
-    // The orchestrator defines WHAT to call, the AI executes
+    // This would be implemented by the MCP caller
+    // The orchestrator defines WHAT to call, the system executes
 
     return result;
   }

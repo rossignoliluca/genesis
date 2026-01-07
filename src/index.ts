@@ -113,7 +113,7 @@ async function cmdCreate(name: string, options: Record<string, string>): Promise
     console.log(`  ${c('○', 'yellow')} ${stage}`);
   }
 
-  console.log(c('\nTo execute, use this spec with Claude Code:', 'dim'));
+  console.log(c('\nTo execute, run:', 'dim'));
   console.log(c(`\n  genesis create "${name}" --execute\n`, 'green'));
 
   // Save spec for reference

@@ -222,6 +222,6 @@ MIT
 
 ## Author
 
-Created by **rossignoliluca** with Claude Code
+Created by **rossignoliluca**
 
 *Genesis 4.0 - The System of the Century*

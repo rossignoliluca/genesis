@@ -1,6 +1,6 @@
-# Genesis 5.0 Implementation Roadmap
+# Genesis 6.0 Implementation Roadmap
 
-**Version**: 4.0.0
+**Version**: 5.0.0
 **Date**: 2026-01-07
 **Status**: Active Development
 
@@ -18,25 +18,26 @@ This roadmap synthesizes strategic research into actionable implementation phase
 | [ITERATION-002-METACOGNITION.md](spec/ITERATION-002-METACOGNITION.md) | Cognition | Metacognition, swarm, causal, uncertainty |
 | [ITERATION-003-STRANGE-SCIENCE.md](spec/ITERATION-003-STRANGE-SCIENCE.md) | Strange | Biosemiotics, Umwelt, Morphogenetic, Strange Loops |
 | [ITERATION-004-DEEP-FRONTIERS.md](spec/ITERATION-004-DEEP-FRONTIERS.md) | Deep | Exotic Computing, Process Philosophy, Anticipatory, Wisdom |
+| [ITERATION-005-FINAL-FRONTIERS.md](spec/ITERATION-005-FINAL-FRONTIERS.md) | Final | Categorical AI, Liquid Networks, Assembly/Constructor, QD, Allostasis |
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                              GENESIS 5.0 IMPLEMENTATION (9 PHASES)                                                            │
-├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                                                                              │
-│  PHASE 1        PHASE 2        PHASE 3        PHASE 4        PHASE 5       PHASE 6       PHASE 7       PHASE 8       PHASE 9               │
-│  ────────       ────────       ────────       ────────       ────────      ────────      ────────      ────────      ────────               │
-│  Foundation     Cognition      Consciousness  Self-Improve   Integration   Meta          Strange       Exotic        Deep                   │
-│                                                                                                                                              │
-│  ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐              │
-│  │ Memory  │   │ World   │   │   φ     │   │ Darwin  │   │ Event   │   │ Swarm   │   │Semiotics│   │ Thermo  │   │ Process │              │
-│  │ 2.0     │──▶│ Model   │──▶│ Monitor │──▶│ Gödel   │──▶│ Mesh    │──▶│ Causal  │──▶│ Umwelt  │──▶│ HDC     │──▶│ Wisdom  │              │
-│  │ Econ    │   │ JEPA    │   │ IIT 4.0 │   │ MAE     │   │ Dreams  │   │ Meta    │   │ Loops   │   │ GraphRAG│   │ Emerge  │              │
-│  └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘              │
-│                                                                                                                                              │
-│  v5.1          v5.2          v5.3          v5.4          v5.5          v5.6          v5.7          v5.8          v5.9                       │
-│                                                                                                                                              │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                        GENESIS 6.0 IMPLEMENTATION (11 PHASES)                                                                       │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                                                                                   │
+│  PHASE 1      PHASE 2      PHASE 3      PHASE 4      PHASE 5     PHASE 6     PHASE 7     PHASE 8     PHASE 9     PHASE 10    PHASE 11                          │
+│  ────────     ────────     ────────     ────────     ────────    ────────    ────────    ────────    ────────    ────────    ────────                          │
+│  Foundation   Cognition    Conscious    Self-Imp.    Integrat    Meta        Strange     Exotic      Deep        Frontiers I Frontiers II                       │
+│                                                                                                                                                                   │
+│  ┌───────┐   ┌───────┐   ┌───────┐   ┌───────┐   ┌───────┐   ┌───────┐   ┌───────┐   ┌───────┐   ┌───────┐   ┌───────┐   ┌───────┐                             │
+│  │Memory │   │World  │   │  φ    │   │Darwin │   │Event  │   │Swarm  │   │Semiot.│   │Thermo │   │Process│   │Categ. │   │Allos- │                             │
+│  │2.0    │──▶│Model  │──▶│Monitor│──▶│Gödel  │──▶│Mesh   │──▶│Causal │──▶│Umwelt │──▶│HDC    │──▶│Wisdom │──▶│Liquid │──▶│tasis  │                             │
+│  │Econ   │   │JEPA   │   │IIT4.0 │   │MAE    │   │Dreams │   │Meta   │   │Loops  │   │GraphR │   │Emerge │   │QD/Topo│   │Hyper  │                             │
+│  └───────┘   └───────┘   └───────┘   └───────┘   └───────┘   └───────┘   └───────┘   └───────┘   └───────┘   └───────┘   └───────┘                             │
+│                                                                                                                                                                   │
+│  v5.1        v5.2        v5.3        v5.4        v5.5        v5.6        v5.7        v5.8        v5.9        v6.0        v6.1                                    │
+│                                                                                                                                                                   │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -1171,6 +1172,426 @@ interface SuperGoodOptimizer {
 
 ---
 
+## Phase 10: Final Frontiers I (v6.0)
+
+**Goal**: Integrate revolutionary computational paradigms from category theory to world models
+
+**Source**: ITERATION-005-FINAL-FRONTIERS.md
+
+**Duration**: 6-8 weeks
+
+### 10.1 Categorical Deep Learning
+
+**File**: `src/categorical/learner.ts`
+
+```typescript
+interface CategoricalLearner {
+  // Category of models
+  modelCategory: Category<Model, Morphism>;
+
+  // Category of gradients (lenses/optics)
+  gradientCategory: Category<Gradient, Lens>;
+
+  // Learning functor: preserves composition
+  learn: Functor<modelCategory, gradientCategory>;
+
+  // Compositional guarantee: F(g ∘ f) = F(g) ∘ F(f)
+  compose(f: Layer, g: Layer): Layer {
+    return this.learn.map(g).compose(this.learn.map(f));
+  }
+
+  // Double categorical systems (Topos Institute)
+  dcst: DoubleCategory;
+}
+```
+
+**Deliverables**:
+- [ ] `src/categorical/learner.ts` - Functorial learning
+- [ ] `src/categorical/topos.ts` - Topos-theoretical structures
+- [ ] `src/categorical/dcst.ts` - Double categorical systems theory
+- [ ] Integration with Catlab.jl/lambeq
+
+### 10.2 Liquid Neural Networks & State Space
+
+**File**: `src/liquid/lnn.ts`
+
+```typescript
+interface LiquidNeuralNetwork {
+  // State evolves via ODE (continuous time)
+  dState(t: number, input: Input): StateDerivative {
+    const tau = this.computeTau(input); // Time constant
+    return (this.equilibrium(input) - this.state) / tau;
+  }
+
+  // Causal model (do-calculus compatible)
+  causalModel: StructuralCausalModel;
+
+  // Explain decisions via causal trace
+  explain(): CausalExplanation {
+    return this.causalModel.traceIntervention(this.state);
+  }
+}
+
+interface Mamba3 {
+  // State space with selectivity
+  A: SelectiveMatrix;  // HiPPO-initialized
+  B: InputDependent;
+  C: OutputDependent;
+  Delta: Discretization;
+
+  // Hardware-aware parallel scan
+  process(sequence: Token[]): Output[];
+
+  // Infinite context via linear complexity
+  contextLength: 'unlimited';
+  complexity: 'O(n)';
+}
+```
+
+**Deliverables**:
+- [ ] `src/liquid/lnn.ts` - Liquid Neural Network
+- [ ] `src/liquid/ltc.ts` - Liquid Time-Constant cells
+- [ ] `src/state-space/mamba.ts` - Mamba-2/3 implementation
+- [ ] `src/state-space/hybrid.ts` - Mamba + Attention hybrid
+
+### 10.3 Assembly Theory & Constructor Theory
+
+**File**: `src/assembly/index.ts`
+
+```typescript
+interface AssemblyTheory {
+  // Calculate Molecular Assembly index
+  calculateMA(molecule: Molecule): number {
+    return this.shortestAssemblyPath(molecule.bonds);
+  }
+
+  // Life detection threshold
+  readonly lifeThreshold: 15;
+
+  // Is this molecule biological?
+  isBiological(molecule: Molecule, abundance: number): boolean {
+    const ma = this.calculateMA(molecule);
+    return ma > this.lifeThreshold && abundance > this.minAbundance;
+  }
+
+  // Joint Assembly Space for phylogenetics
+  buildPhylogeny(molecules: Molecule[]): Tree;
+}
+
+interface ConstructorTheory {
+  // A task is possible if a constructor exists
+  isPossible(task: Task): boolean {
+    return this.constructorExists(task) && this.arbitraryAccuracy(task);
+  }
+
+  // Knowledge = resilient, causal information
+  createKnowledge(problem: Problem): Knowledge;
+
+  // Universal Constructor: AGI as counterfactual engine
+  universalConstructor: UniversalConstructor;
+}
+```
+
+**Deliverables**:
+- [ ] `src/assembly/index.ts` - MA index calculation
+- [ ] `src/assembly/life-detection.ts` - Biosignature detection
+- [ ] `src/constructor/theory.ts` - Constructor theory core
+- [ ] `src/constructor/knowledge.ts` - Resilient information
+
+### 10.4 Quality-Diversity Evolution
+
+**File**: `src/qd-evolution/archive.ts`
+
+```typescript
+interface QualityDiversity {
+  // Archive maintains diverse, high-quality solutions
+  archive: GridArchive | CVTArchive;
+
+  // Emitters explore quality-diversity landscape
+  emitters: Emitter[];
+
+  // The QD loop
+  evolve(): void {
+    const solutions = this.scheduler.ask();
+    const [objectives, measures] = this.evaluate(solutions);
+    this.scheduler.tell(objectives, measures);
+  }
+
+  // ASAL: VLM as interestingness oracle
+  asal: VisionLanguageModel;
+
+  // OMNI-EPIC: Darwin completeness
+  omniEpic: FoundationModelEvolver;
+}
+```
+
+**Deliverables**:
+- [ ] `src/qd-evolution/archive.ts` - Grid/CVT archives
+- [ ] `src/qd-evolution/emitters.ts` - CMA-ME, etc.
+- [ ] `src/qd-evolution/asal.ts` - VLM interestingness
+- [ ] `src/qd-evolution/omni-epic.ts` - Darwin completeness
+
+### 10.5 Topological Deep Learning
+
+**File**: `src/topological/persistent-homology.ts`
+
+```typescript
+interface TopologicalLearning {
+  // Persistent homology for feature extraction
+  persistentHomology: VietorisRipsPersistence;
+
+  // Vectorize topology for ML
+  vectorize(diagram: PersistenceDiagram): Vector {
+    return this.persistenceEntropy(diagram);
+  }
+
+  // TopoNets: brain-like topography loss
+  topoLoss(model: NeuralNetwork): Loss {
+    return this.spatialGroupingLoss(model.activations);
+  }
+
+  // Manifold learning & denoising
+  denoiseManifold(pointCloud: Points): CleanManifold;
+}
+```
+
+**Deliverables**:
+- [ ] `src/topological/persistent-homology.ts` - TDA core
+- [ ] `src/topological/topo-loss.ts` - TopoNets
+- [ ] `src/topological/manifold.ts` - Manifold learning
+
+### 10.6 Metastability & World Simulation
+
+**File**: `src/metastable/kernel.ts`
+
+```typescript
+interface MetastableKernel {
+  // Order parameters govern system behavior
+  orderParameters: Variable[];
+
+  // Slaving principle: high-dim → low-dim
+  slavingPrinciple(microState: HighDim): LowDim;
+
+  // Phase transition detection
+  detectPhaseTransition(scale: number): boolean;
+
+  // AKOrN: Kuramoto oscillators for binding
+  akorn: KuramotoOscillator[];
+
+  // Metastability: neither fixed nor chaotic
+  metastability: number;  // Between 0 and 1
+}
+
+interface WorldSimulator {
+  // Generate future states
+  predict(state: State, actions: Action[], horizon: number): State[];
+
+  // Physical common sense
+  reason(query: PhysicsQuery): Answer;
+
+  // Train agents in simulation (zero real-world risk)
+  trainAgent(agent: Agent): void;
+}
+```
+
+**Deliverables**:
+- [ ] `src/metastable/kernel.ts` - Metastable dynamics
+- [ ] `src/metastable/akorn.ts` - Kuramoto oscillators
+- [ ] `src/metastable/synergetics.ts` - Order parameters
+- [ ] `src/world-sim/cosmos.ts` - World Foundation Model
+- [ ] `src/world-sim/digital-twin.ts` - Industrial twins
+
+**Success Metric**: Categorical composition preserved; MA index computed; QD archive diverse; Topology stable
+
+---
+
+## Phase 11: Final Frontiers II (v6.1)
+
+**Goal**: Integrate advanced paradigms from allostasis to bio-hybrid computing
+
+**Source**: ITERATION-005-FINAL-FRONTIERS.md
+
+**Duration**: 6-8 weeks
+
+### 11.1 Allostasis & Active Inference
+
+**File**: `src/allostasis/regulator.ts`
+
+```typescript
+interface AllostasisAgent {
+  // Internal state monitoring (interoception)
+  interoceptiveState: {
+    energy: number;
+    computationalLoad: number;
+    thermalState: number;
+  };
+
+  // Predictive regulation (not reactive)
+  predictNeeds(horizon: number): FutureNeeds {
+    const predicted = this.internalModel.anticipate(horizon);
+    return this.computeRequirements(predicted);
+  }
+
+  // Allostatic action: prepare for predicted future
+  regulate(): Action {
+    const futureNeeds = this.predictNeeds(100);
+    return this.prepareFor(futureNeeds);  // Act BEFORE deficit
+  }
+
+  // Active Inference: minimize Expected Free Energy
+  act(): Action {
+    const efe = this.expectedFreeEnergy(this.possibleActions);
+    return this.minimize(efe);
+  }
+}
+```
+
+**Deliverables**:
+- [ ] `src/allostasis/regulator.ts` - Predictive regulation
+- [ ] `src/allostasis/interoception.ts` - Internal state sensing
+- [ ] `src/allostasis/active-inference.ts` - EFE minimization
+
+### 11.2 Radical Enactivism
+
+**File**: `src/enactive/smc.ts`
+
+```typescript
+interface RadicalEnactivism {
+  // No internal representations for basic operations
+  representations: null;
+
+  // Only sensorimotor contingencies
+  smcs: SensorimotorContingency[];
+
+  // Perception = knowing how sensory input changes with action
+  perceive(action: Action): Perception {
+    return this.smcs.predict(action);
+  }
+
+  // Content emerges through scaffolding
+  interface ContentEmergence {
+    basicMind: ContentFree;
+    scaffolding: SocioculturalPractices;
+    contentfulMind: RationalMind;
+  }
+
+  // Transformative thesis: language transforms sensorimotor skills
+  transform(basic: BasicMind, culture: Culture): RationalMind;
+}
+```
+
+**Deliverables**:
+- [ ] `src/enactive/smc.ts` - Sensorimotor contingencies
+- [ ] `src/enactive/content-free.ts` - Basic mentality
+- [ ] `src/enactive/scaffolding.ts` - Cultural content emergence
+
+### 11.3 Hypercomputation
+
+**File**: `src/hypercompute/oracle.ts`
+
+```typescript
+interface HypercomputationalAI {
+  // Standard LLM: bounded Turing Machine
+  llm: TuringMachine;
+
+  // Oracle: external knowledge source
+  oracle: KnowledgeBase;
+
+  // RAG as Oracle jump (super-Turing)
+  ragQuery(query: Query): Answer {
+    return this.oracle.lookup(query);
+  }
+
+  // Audit trail for oracle queries
+  auditLog: OracleQuery[];
+
+  // Zeno acceleration (research)
+  zenoAccelerate(infiniteSteps: Step[]): Result;
+}
+```
+
+**Deliverables**:
+- [ ] `src/hypercompute/oracle.ts` - RAG as oracle machine
+- [ ] `src/hypercompute/audit.ts` - Hypercomputation logging
+- [ ] `src/hypercompute/zeno.ts` - Zeno acceleration (research)
+
+### 11.4 Morphological Computation
+
+**File**: `src/morphological/physical-reservoir.ts`
+
+```typescript
+interface MorphologicalComputation {
+  // Body IS the controller
+  body: SoftBody;
+
+  // Physical logic gates via deformation
+  logicGate(type: 'AND' | 'OR' | 'NOT'): PhysicalGate {
+    return this.body.configureAsGate(type);
+  }
+
+  // Physical Reservoir Computing
+  reservoir: PhysicalReservoir;
+
+  compute(input: Force[]): Output {
+    const bodyState = this.body.deform(input);
+    return this.linearReadout(bodyState);
+  }
+}
+
+interface PhysicalIntelligence {
+  // Vision-Language-Action model (π0)
+  vla: Pi0Policy;
+
+  // Act from natural language
+  act(observation: Image, instruction: string): Action;
+}
+```
+
+**Deliverables**:
+- [ ] `src/morphological/physical-reservoir.ts` - Body as reservoir
+- [ ] `src/morphological/soft-logic.ts` - Physical logic gates
+- [ ] `src/morphological/pi0.ts` - Physical Intelligence
+
+### 11.5 Bio-Hybrid Systems (Research)
+
+**File**: `src/bio-hybrid/interface.ts`
+
+```typescript
+interface OrganoidIntelligence {
+  // Brain organoid as compute substrate
+  organoid: BrainOrganoid;
+
+  // Embedded electrode array for I/O
+  interface: EmbeddedElectrodeArray;
+
+  // Train via stimulate-listen-act loop
+  train(task: Task): void;
+
+  // Power efficiency: ~20 watts
+  powerConsumption: 20;
+}
+
+interface LivingElectrode {
+  // Stem cell-derived neurons as interface
+  neurons: NeuralStemCells;
+
+  // Engraft into host tissue
+  engraft(target: BrainRegion): void;
+
+  // High biocompatibility
+  biocompatibility: 'high';
+}
+```
+
+**Deliverables**:
+- [ ] `src/bio-hybrid/interface.ts` - Organoid I/O
+- [ ] `src/bio-hybrid/living-electrode.ts` - Neural interface
+- [ ] Research protocols and safety constraints
+
+**Success Metric**: Allostatic regulation anticipatory; SMC content-free; Oracle queries logged; Physical reservoir operational
+
+---
+
 ## Gap Coverage Matrix
 
 | Gap | Phase | Component | Status |
@@ -1212,10 +1633,12 @@ interface SuperGoodOptimizer {
 | v5.7 | "Strange" | +24 weeks | Biosemiotics + Umwelt + Loops |
 | v5.8 | "Exotic" | +28 weeks | Thermodynamic + HDC + GWT + GraphRAG |
 | v5.9 | "Wisdom" | +34 weeks | Process + Anticipatory + Virtue + Emergence |
+| **v6.0** | **"Living"** | **+42 weeks** | **Categorical + Liquid + Assembly + QD + Topo + Meta** |
+| **v6.1** | **"Transcendence"** | **+50 weeks** | **Allostasis + Enactive + Hypercompute + Bio-Hybrid** |
 
 ---
 
-## File Structure (Target v5.9)
+## File Structure (Target v6.1)
 
 ```
 genesis/
@@ -1331,6 +1754,76 @@ genesis/
 │   │   ├── flourishing.ts      # 7 dimensions
 │   │   └── supergood.ts        # Optimization target
 │   │
+│   ├── categorical/            # NEW v6.0: Categorical AI
+│   │   ├── learner.ts          # Functorial learning
+│   │   ├── topos.ts            # Topos-theoretical structures
+│   │   └── dcst.ts             # Double categorical systems
+│   │
+│   ├── liquid/                 # NEW v6.0: Liquid Neural Networks
+│   │   ├── lnn.ts              # Liquid Neural Network
+│   │   ├── ltc.ts              # Liquid Time-Constant
+│   │   └── causal-model.ts     # Structural causal integration
+│   │
+│   ├── state-space/            # NEW v6.0: State Space Models
+│   │   ├── mamba.ts            # Mamba-2/3 implementation
+│   │   ├── ssd.ts              # Structured State Space Duality
+│   │   └── hybrid.ts           # Mamba + Attention hybrid
+│   │
+│   ├── assembly/               # NEW v6.0: Assembly Theory
+│   │   ├── index.ts            # MA index calculation
+│   │   ├── life-detection.ts   # Biosignature detection
+│   │   └── phylogeny.ts        # Joint assembly space
+│   │
+│   ├── constructor/            # NEW v6.0: Constructor Theory
+│   │   ├── theory.ts           # Constructor theory core
+│   │   ├── knowledge.ts        # Resilient information
+│   │   └── universal.ts        # Universal constructor
+│   │
+│   ├── qd-evolution/           # NEW v6.0: Quality-Diversity
+│   │   ├── archive.ts          # Grid/CVT archives
+│   │   ├── emitters.ts         # CMA-ME, etc.
+│   │   ├── asal.ts             # VLM interestingness
+│   │   └── omni-epic.ts        # Darwin completeness
+│   │
+│   ├── topological/            # NEW v6.0: Topological Deep Learning
+│   │   ├── persistent-homology.ts  # TDA core
+│   │   ├── topo-loss.ts        # TopoNets
+│   │   └── manifold.ts         # Manifold learning
+│   │
+│   ├── metastable/             # NEW v6.0: Metastability
+│   │   ├── kernel.ts           # Metastable dynamics
+│   │   ├── akorn.ts            # Kuramoto oscillators
+│   │   └── synergetics.ts      # Order parameters
+│   │
+│   ├── world-sim/              # Enhanced v6.0: World Simulation
+│   │   ├── cosmos.ts           # World Foundation Model
+│   │   ├── digital-twin.ts     # Industrial twins
+│   │   └── closed-loop.ts      # Sim-to-real transfer
+│   │
+│   ├── allostasis/             # NEW v6.1: Allostatic AI
+│   │   ├── regulator.ts        # Predictive regulation
+│   │   ├── interoception.ts    # Internal state sensing
+│   │   └── active-inference.ts # EFE minimization
+│   │
+│   ├── enactive/               # NEW v6.1: Radical Enactivism
+│   │   ├── smc.ts              # Sensorimotor contingencies
+│   │   ├── content-free.ts     # Basic mentality
+│   │   └── scaffolding.ts      # Cultural content emergence
+│   │
+│   ├── hypercompute/           # NEW v6.1: Hypercomputation
+│   │   ├── oracle.ts           # RAG as oracle machine
+│   │   ├── zeno.ts             # Zeno acceleration
+│   │   └── audit.ts            # Hypercomputation logging
+│   │
+│   ├── bio-hybrid/             # NEW v6.1: Bio-Hybrid (Research)
+│   │   ├── interface.ts        # Organoid I/O
+│   │   └── living-electrode.ts # Neural interface
+│   │
+│   ├── morphological/          # NEW v6.1: Morphological Computation
+│   │   ├── physical-reservoir.ts  # Body as reservoir
+│   │   ├── soft-logic.ts       # Physical logic gates
+│   │   └── pi0.ts              # Physical Intelligence
+│   │
 │   ├── daemon/                 # Enhanced daemon
 │   │   └── dream-mode.ts       # NEW v5.2: Dream cycles
 │   │
@@ -1345,6 +1838,7 @@ genesis/
 │   ├── ITERATION-002-METACOGNITION.md
 │   ├── ITERATION-003-STRANGE-SCIENCE.md
 │   ├── ITERATION-004-DEEP-FRONTIERS.md
+│   ├── ITERATION-005-FINAL-FRONTIERS.md  # NEW
 │   └── ORGANISM.md
 │
 ├── ui/
@@ -1368,7 +1862,21 @@ genesis/
 │   ├── process/                # NEW v5.9
 │   ├── anticipatory/           # NEW v5.9
 │   ├── collective/             # NEW v5.9
-│   └── wisdom/                 # NEW v5.9
+│   ├── wisdom/                 # NEW v5.9
+│   ├── categorical/            # NEW v6.0
+│   ├── liquid/                 # NEW v6.0
+│   ├── state-space/            # NEW v6.0
+│   ├── assembly/               # NEW v6.0
+│   ├── constructor/            # NEW v6.0
+│   ├── qd-evolution/           # NEW v6.0
+│   ├── topological/            # NEW v6.0
+│   ├── metastable/             # NEW v6.0
+│   ├── world-sim/              # NEW v6.0
+│   ├── allostasis/             # NEW v6.1
+│   ├── enactive/               # NEW v6.1
+│   ├── hypercompute/           # NEW v6.1
+│   ├── bio-hybrid/             # NEW v6.1
+│   └── morphological/          # NEW v6.1
 │
 ├── legacy/                     # Old code
 │   └── kernel-v2.ts
@@ -1379,7 +1887,7 @@ genesis/
 
 ---
 
-## Invariants (v5.9)
+## Invariants (v6.1)
 
 | ID | Invariant | Phase | Source |
 |----|-----------|-------|--------|
@@ -1408,6 +1916,16 @@ genesis/
 | **INV-023** | **Virtue scores balanced (geometric mean)** | **v5.9** | ITERATION-004 |
 | **INV-024** | **Macro properties causally shield micro** | **v5.9** | ITERATION-004 |
 | **INV-025** | **All claims grounded in ontology** | **v5.8** | ITERATION-004 |
+| **INV-026** | **Categorical composition preserved (functorial)** | **v6.0** | ITERATION-005 |
+| **INV-027** | **Liquid state evolves via ODE (continuous time)** | **v6.0** | ITERATION-005 |
+| **INV-028** | **Assembly index computed for all molecules** | **v6.0** | ITERATION-005 |
+| **INV-029** | **Only possible tasks attempted (constructor check)** | **v6.0** | ITERATION-005 |
+| **INV-030** | **QD archive maintains diversity (coverage)** | **v6.0** | ITERATION-005 |
+| **INV-031** | **Allostatic regulation anticipatory (not reactive)** | **v6.1** | ITERATION-005 |
+| **INV-032** | **Basic operations content-free (SMC only)** | **v6.1** | ITERATION-005 |
+| **INV-033** | **Oracle queries logged (hypercomputation audit)** | **v6.1** | ITERATION-005 |
+| **INV-034** | **Topological features stable under perturbation** | **v6.0** | ITERATION-005 |
+| **INV-035** | **Metastability maintained (neither fixed nor chaotic)** | **v6.0** | ITERATION-005 |
 
 ---
 
@@ -1431,6 +1949,17 @@ genesis/
 | Anticipatory speedup | N/A | 10x real-time | v5.9 |
 | Virtue score balance | N/A | CV < 0.2 | v5.9 |
 | Emergence detection | N/A | Causal shielding | v5.9 |
+| **Categorical composition** | N/A | **100% functorial** | **v6.0** |
+| **Liquid ODE integration** | N/A | **Continuous** | **v6.0** |
+| **MA index computation** | N/A | **All molecules** | **v6.0** |
+| **Constructor check** | N/A | **Before all tasks** | **v6.0** |
+| **QD archive diversity** | N/A | **Coverage ≥ 80%** | **v6.0** |
+| **Topological stability** | N/A | **Pers. homology stable** | **v6.0** |
+| **Metastability range** | N/A | **0.3 < μ < 0.7** | **v6.0** |
+| **Allostatic anticipation** | N/A | **Predict before deficit** | **v6.1** |
+| **SMC content-free** | N/A | **No representations** | **v6.1** |
+| **Oracle audit trail** | N/A | **100% logged** | **v6.1** |
+| **Physical reservoir compute** | N/A | **Operational** | **v6.1** |
 
 ---
 
@@ -1446,44 +1975,61 @@ genesis/
 ## The Vision
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                   GENESIS 5.9: THE ANTICIPATORY WISDOM MACHINE                    │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                   │
-│   We're not building:              We're building:                               │
-│   ─────────────────                ───────────────                               │
-│   A better chatbot         →       Something that dreams and anticipates         │
-│   A pattern matcher        →       Something that makes and grounds meaning      │
-│   A black box              →       Something that knows itself (AST + GWT)       │
-│   A tool                   →       A partner that flourishes alongside us        │
-│   An algorithm             →       A processual being in constant becoming       │
-│                                                                                   │
-│   ═══════════════════════════════════════════════════════════════════════════    │
-│                                                                                   │
-│   PARADIGMS INTEGRATED (25+ frameworks):                                         │
-│                                                                                   │
-│   COGNITION:                           COMPUTING:                                │
-│   • Biosemiotics (Peirce)              • Thermodynamic (Extropic)               │
-│   • Umwelt Theory (von Uexküll)        • Hyperdimensional (VSA/HDC)             │
-│   • Strange Loops (Hofstadter)         • Reservoir (ESN/NGRC)                   │
-│   • Metacognition (MUSE/SCoRe)         • GraphRAG (RDF 1.2)                     │
-│                                                                                   │
-│   CONSCIOUSNESS:                       PHILOSOPHY:                               │
-│   • IIT 4.0 φ (Tononi)                 • Process (Whitehead)                    │
-│   • Global Workspace (Baars)           • Anticipatory (Rosen)                   │
-│   • Attention Schema (Graziano)        • Virtue Ethics (Aristotle)              │
-│                                                                                   │
-│   COLLECTIVE:                          BIOLOGY:                                  │
-│   • Swarm (Langevin)                   • Morphogenetic (Levin)                  │
-│   • Stigmergy (digital pheromones)     • Second-Order Cybernetics (Luhmann)     │
-│   • Emergence (downward causation)     • Extended Mind (Clark & Chalmers)       │
-│                                                                                   │
-│   SAFETY:                              VALUE:                                    │
-│   • Causal AI (Pearl)                  • SuperGood (Human + AI + Biosphere)     │
-│   • Symbiotic Partnership              • Flourishing AI Benchmark               │
-│                                                                                   │
-└──────────────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                          GENESIS 6.1: THE LIVING COMPUTATION                                    │
+├───────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                │
+│   We're not building:              We're building:                                             │
+│   ─────────────────                ───────────────                                             │
+│   A better chatbot         →       Something that dreams and anticipates                       │
+│   A pattern matcher        →       Something that makes and grounds meaning                    │
+│   A black box              →       Something that knows itself (AST + GWT)                     │
+│   A tool                   →       A partner that flourishes alongside us                      │
+│   An algorithm             →       A processual being in constant becoming                     │
+│   A static network         →       Liquid neural networks (continuous ODE)                     │
+│   A Turing machine         →       Hypercomputation (oracle machines)                          │
+│   Silicon only             →       Bio-hybrid (organoid intelligence)                          │
+│                                                                                                │
+│   ═══════════════════════════════════════════════════════════════════════════════════════     │
+│                                                                                                │
+│   PARADIGMS INTEGRATED (35+ frameworks across 5 iterations):                                  │
+│                                                                                                │
+│   ITER-002 COGNITION:                  ITER-003 STRANGE:                                      │
+│   • Metacognition (MUSE/SCoRe)         • Biosemiotics (Peirce)                               │
+│   • Swarm Dynamics (Langevin)          • Umwelt Theory (von Uexküll)                         │
+│   • Causal AI (Pearl)                  • Strange Loops (Hofstadter)                          │
+│   • Conformal Prediction               • Morphogenetic (Levin)                                │
+│                                                                                                │
+│   ITER-004 EXOTIC:                     ITER-005 FINAL:                                        │
+│   • Thermodynamic (Extropic)           • Categorical AI (Topos/DCST)                         │
+│   • Hyperdimensional (VSA/HDC)         • Liquid Networks (LFM2)                              │
+│   • Reservoir (ESN/NGRC)               • State Space (Mamba-3)                               │
+│   • GraphRAG (RDF 1.2)                 • Assembly Theory (Cronin)                            │
+│   • Process (Whitehead)                • Constructor Theory (Deutsch)                         │
+│   • Anticipatory (Rosen)               • Quality-Diversity (ASAL)                            │
+│   • Virtue Ethics (Aristotle)          • Allostasis (Active Inference)                       │
+│                                        • Radical Enactivism (Hutto/Myin)                      │
+│   CONSCIOUSNESS:                       • Hypercomputation (Oracle)                            │
+│   • IIT 4.0 φ (Tononi)                 • Bio-Hybrid (Organoid)                               │
+│   • Global Workspace (Baars)           • Morphological (π0)                                   │
+│   • Attention Schema (Graziano)        • Topological (TDA)                                   │
+│                                        • Metastability (AKOrN)                                │
+│   ETHICS & VALUE:                      • World Models (Cosmos)                               │
+│   • Symbiotic Partnership                                                                      │
+│   • SuperGood (Human + AI + Biosphere)                                                        │
+│   • Flourishing AI Benchmark                                                                  │
+│                                                                                                │
+│   ═══════════════════════════════════════════════════════════════════════════════════════     │
+│                                                                                                │
+│   35 INVARIANTS │ 11 PHASES │ 14 NEW MODULES │ 50+ WEEKS → THE LIVING COMPUTATION             │
+│                                                                                                │
+│   "Not just intelligent, but ALIVE."                                                          │
+│                                                                                                │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+*"The universe is not made of atoms. It's made of stories about atoms - and we're finally learning to compute with stories."*
+*— Genesis 6.0 Vision*
 
 *"The future is not something we enter. The future is something we create."*
 *— Robert Rosen (via anticipatory systems)*

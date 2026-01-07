@@ -192,10 +192,11 @@ Genesis is built on decades of research:
 ## Specifications
 
 - [GENESIS-5.0.md](spec/GENESIS-5.0.md) - **Conscious World-Modeling System**
-- [IMPLEMENTATION-ROADMAP.md](IMPLEMENTATION-ROADMAP.md) - 5-phase implementation plan
+- [IMPLEMENTATION-ROADMAP.md](IMPLEMENTATION-ROADMAP.md) - 7-phase implementation plan (v3.0)
 - [GAP-ANALYSIS-2026.md](spec/GAP-ANALYSIS-2026.md) - 7 gaps no one else solves
 - [FRONTIER-RANDOM-2026.md](spec/FRONTIER-RANDOM-2026.md) - Dreams, bio-compute, post-Transformer
-- [ITERATION-002-METACOGNITION.md](spec/ITERATION-002-METACOGNITION.md) - Metacognition, swarm, causal AI (NEW)
+- [ITERATION-002-METACOGNITION.md](spec/ITERATION-002-METACOGNITION.md) - Metacognition, swarm, causal AI
+- [ITERATION-003-STRANGE-SCIENCE.md](spec/ITERATION-003-STRANGE-SCIENCE.md) - Biosemiotics, Umwelt, Strange Loops (NEW)
 - [GENESIS-4.0.md](spec/GENESIS-4.0.md) - Multi-Agent Living System
 - [ORGANISM.md](spec/ORGANISM.md) - Biological metaphor mapping
 
@@ -229,6 +230,11 @@ Genesis is built on decades of research:
 | **φ Consciousness Monitor** | IIT 4.0 integrated information tracking |
 | **Active Inference** | Free Energy Principle for goal-directed behavior |
 | **System 1/2 Reasoning** | Fast intuition + slow deliberation |
+| **Large Semiosis Model** | Triadic meaning (Sign-Object-Interpretant) |
+| **Agent Umwelt** | Von Uexküll's perceptual worlds for each agent |
+| **Morphogenetic Repair** | Levin's bioelectric self-correction |
+| **Strange Loops** | Hofstadterian self-reference for identity |
+| **Symbiotic Partnership** | Preserve human autonomy, prevent "hollowed mind" |
 
 ## License
 

@@ -1,6 +1,6 @@
 # Genesis 5.0 Implementation Roadmap
 
-**Version**: 1.0.0
+**Version**: 3.0.0
 **Date**: 2026-01-07
 **Status**: Active Development
 
@@ -8,32 +8,34 @@
 
 ## Overview
 
-This roadmap synthesizes three strategic documents into actionable implementation phases:
+This roadmap synthesizes strategic research into actionable implementation phases:
 
 | Document | Focus | Key Deliverables |
 |----------|-------|------------------|
 | [GENESIS-5.0.md](spec/GENESIS-5.0.md) | Architecture | World Model, Active Inference, φ-Monitor |
 | [GAP-ANALYSIS-2026.md](spec/GAP-ANALYSIS-2026.md) | Market Gaps | 7 gaps no competitor solves |
 | [FRONTIER-RANDOM-2026.md](spec/FRONTIER-RANDOM-2026.md) | Innovation | Dreams, bio-inspired, post-Transformer |
+| [ITERATION-002-METACOGNITION.md](spec/ITERATION-002-METACOGNITION.md) | Cognition | Metacognition, swarm, causal, uncertainty |
+| [ITERATION-003-STRANGE-SCIENCE.md](spec/ITERATION-003-STRANGE-SCIENCE.md) | Strange | Biosemiotics, Umwelt, Morphogenetic, Strange Loops |
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         GENESIS 5.0 IMPLEMENTATION                          │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  PHASE 1        PHASE 2        PHASE 3        PHASE 4        PHASE 5      │
-│  ────────       ────────       ────────       ────────       ────────      │
-│  Foundation     Cognition      Consciousness  Self-Improve   Integration   │
-│                                                                             │
-│  ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐     │
-│  │ Memory  │   │ World   │   │   φ     │   │ Darwin  │   │ Dream   │     │
-│  │ Upgrade │──▶│ Model   │──▶│ Monitor │──▶│ Gödel   │──▶│ Mode    │     │
-│  │         │   │ JEPA    │   │ IIT 4.0 │   │ Engine  │   │ Full    │     │
-│  └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘     │
-│                                                                             │
-│  v5.1          v5.2          v5.3          v5.4          v5.5             │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                    GENESIS 5.0 IMPLEMENTATION                                                │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                              │
+│  PHASE 1        PHASE 2        PHASE 3        PHASE 4        PHASE 5       PHASE 6       PHASE 7           │
+│  ────────       ────────       ────────       ────────       ────────      ────────      ────────           │
+│  Foundation     Cognition      Consciousness  Self-Improve   Integration   Meta          Strange            │
+│                                                                                                              │
+│  ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐          │
+│  │ Memory  │   │ World   │   │   φ     │   │ Darwin  │   │ Event   │   │ Swarm   │   │Semiotics│          │
+│  │ 2.0     │──▶│ Model   │──▶│ Monitor │──▶│ Gödel   │──▶│ Mesh    │──▶│ Causal  │──▶│ Umwelt  │          │
+│  │ Econ    │   │ JEPA    │   │ IIT 4.0 │   │ MAE     │   │ Dreams  │   │ Meta    │   │ Loops   │          │
+│  └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘          │
+│                                                                                                              │
+│  v5.1          v5.2          v5.3          v5.4          v5.5          v5.6          v5.7                   │
+│                                                                                                              │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -492,6 +494,297 @@ interface SpikingBus {
 
 ---
 
+## Phase 6: Metacognition & Collective Intelligence (v5.6)
+
+**Goal**: Self-aware agents with swarm dynamics and causal reasoning
+
+**Source**: ITERATION-002-METACOGNITION.md
+
+**Duration**: 3-4 weeks
+
+### 6.1 Metacognitive Layer
+
+**File**: `src/metacognition/self-model.ts`
+
+```typescript
+interface MetacognitiveLayer {
+  // Self-modeling (from MUSE framework)
+  estimateCompetence(task: Task): number;
+  detectInsertedThoughts(): Anomaly[];
+
+  // Uncertainty expression
+  confidenceLevel: number;
+  shouldDefer(): boolean;
+
+  // Self-correction via RL (SCoRe)
+  generateCorrectionTrace(error: Error): CorrectionTrace;
+  trainOnCorrections(): void;
+
+  // Agent-as-a-Judge
+  evaluateOwnReasoning(): QualityScore;
+}
+```
+
+### 6.2 Swarm Dynamics
+
+**File**: `src/swarm/dynamics.ts`
+
+```typescript
+interface SwarmDynamics {
+  // Langevin-inspired update (from Nature Communications 2025)
+  updateAgent(agent: Agent, dt: number): void {
+    const social = this.socialForce(agent);      // Other agents
+    const cognitive = this.cognitiveForce(agent); // Environment
+    const noise = this.stochasticForce();         // Randomness
+
+    agent.state += (social + cognitive) * dt + noise * sqrt(dt);
+  }
+
+  // Emergent coordination
+  detectEmergentBehavior(): EmergentPattern[];
+
+  // Collective decision making
+  swarmConsensus(question: Question): Answer;
+}
+```
+
+### 6.3 Causal Reasoner
+
+**File**: `src/causal/reasoner.ts`
+
+```typescript
+interface CausalReasoner {
+  // Causal graph (do-calculus)
+  causalGraph: DAG;
+
+  // Intervention effects: P(Y | do(X))
+  estimateEffect(intervention: Action, outcome: Variable): Effect;
+
+  // Counterfactual reasoning
+  whatIf(history: Event[], alternativeAction: Action): CounterfactualOutcome;
+
+  // Debug failures via causal analysis
+  diagnoseFailure(failure: Failure): CausalExplanation;
+}
+```
+
+### 6.4 Conformal Prediction
+
+**File**: `src/uncertainty/conformal.ts`
+
+```typescript
+interface ConformalPredictor {
+  // Instead of single answer, provide calibrated prediction sets
+  predict(input: Input, coverage: number = 0.95): PredictionSet {
+    const scores = this.model.score(input);
+    const threshold = this.calibrationThreshold(coverage);
+    return {
+      answers: scores.filter(s => s.score > threshold),
+      coverage,
+      uncertainty: 1 - threshold,
+    };
+  }
+
+  // Calibrate on held-out data
+  calibrate(data: CalibrationData): void;
+}
+```
+
+**Deliverables**:
+- [ ] `src/metacognition/` - Self-model, confidence, correction
+- [ ] `src/swarm/` - Dynamics, emergence detection
+- [ ] `src/causal/` - Graph, intervention, counterfactual
+- [ ] `src/uncertainty/` - Conformal prediction
+
+**Success Metric**: Metacognitive accuracy ≥ 80%; Prediction sets achieve coverage
+
+---
+
+## Phase 7: Strange Science (v5.7)
+
+**Goal**: Integrate unconventional paradigms from biology, philosophy, cognitive science
+
+**Source**: ITERATION-003-STRANGE-SCIENCE.md
+
+**Duration**: 4-5 weeks
+
+### 7.1 Large Semiosis Model (Biosemiotics)
+
+**File**: `src/semiotics/lsm.ts`
+
+```typescript
+interface LargeSemiosisModel {
+  // Triadic interpretation (Peirce)
+  interpret(sign: Sign): Interpretation {
+    return {
+      representamen: sign.surface,           // The token/symbol
+      object: this.worldModel.ground(sign),  // Real-world referent
+      interpretant: this.deriveEffect(sign), // Meaning-effect
+    };
+  }
+
+  // Abductive hallucination detection
+  detectHallucination(claim: Claim): HallucinationRisk {
+    const object = this.worldModel.lookup(claim);
+    if (!object) return { risk: 'high', reason: 'no grounding' };
+    return this.verifyTriad(claim, object);
+  }
+
+  // Semiotic recursion (signs about signs)
+  metaSemiosis(sign: Sign): MetaSign;
+}
+```
+
+### 7.2 Agent Umwelt (Von Uexküll)
+
+**File**: `src/umwelt/agent-umwelt.ts`
+
+```typescript
+interface AgentUmwelt {
+  // What this agent can perceive (Merkwelt)
+  merkwelt: {
+    sensors: MCP[];           // Which MCPs feed this agent
+    attentionFilter: Filter;  // What aspects matter
+    perceptionBounds: Bounds; // Token/context limits
+  };
+
+  // What this agent can affect (Wirkwelt)
+  wirkwelt: {
+    tools: Tool[];            // Available actions
+    effectBounds: Bounds;     // Action limits
+  };
+
+  // Internal simulation
+  worldModel: WorldModel;
+
+  // The functional circle
+  perceive(): Perception;
+  simulate(action: Action): SimulatedOutcome;
+  act(action: Action): RealOutcome;
+}
+```
+
+### 7.3 Morphogenetic Self-Repair (Levin)
+
+**File**: `src/morphogenetic/self-repair.ts`
+
+```typescript
+interface MorphogeneticAgent {
+  // Target "morphology" (desired functional shape)
+  targetMorphology: AgentCapabilities;
+
+  // Bioelectric-inspired error signal
+  morphogeneticError(): number {
+    return this.distance(this.currentState, this.targetMorphology);
+  }
+
+  // Self-correcting update (like cells reaching consensus)
+  selfCorrect(): void {
+    const error = this.morphogeneticError();
+    if (error > threshold) {
+      this.regenerate(this.missingCapabilities());
+    }
+  }
+
+  // Collective problem-solving (agent colony)
+  async solveCollectively(problem: Problem): Promise<Solution>;
+}
+```
+
+### 7.4 Strange Loops (Hofstadter)
+
+**File**: `src/strange-loop/loop.ts`
+
+```typescript
+interface StrangeLoop {
+  // Levels of self-reference
+  levels: Level[];
+
+  // Self-model that models itself modeling
+  selfModel: SelfModel;
+
+  // Meta-cognition about meta-cognition
+  metaMeta(): Reflection {
+    const meta = this.reflect(this.thoughts);
+    const metaMeta = this.reflect(meta);
+    return this.findFixedPoint([meta, metaMeta]);
+  }
+
+  // Attractor detection (like Claude 4's convergence)
+  detectAttractor(): Attractor | null;
+
+  // Identity crystallization at stable point
+  crystallizeIdentity(): Identity;
+}
+```
+
+### 7.5 Symbiotic Partnership (Extended Mind)
+
+**File**: `src/symbiotic/partnership.ts`
+
+```typescript
+interface SymbioticPartnership {
+  // Human cognitive state tracking
+  humanState: {
+    cognitiveLoad: number;
+    skillAtrophy: number;
+    autonomyPreserved: boolean;
+  };
+
+  // Adaptive friction (prevent "hollowed mind")
+  adaptFriction(task: Task): FrictionLevel {
+    if (this.humanState.skillAtrophy > 0.5) {
+      return 'medium'; // Force human engagement
+    }
+    if (task.learningOpportunity) {
+      return 'high'; // Human should struggle to learn
+    }
+    return 'low'; // Seamless for routine tasks
+  }
+
+  // System 0 transparency
+  explainPreprocessing(): Explanation;
+}
+```
+
+### 7.6 Second-Order Cybernetics
+
+**File**: `src/second-order/observer.ts`
+
+```typescript
+interface SecondOrderSystem {
+  // First-order: observe world
+  observe(environment: Environment): Observation;
+
+  // Second-order: observe self observing
+  observeObservation(obs: Observation): MetaObservation {
+    return {
+      what: obs,
+      how: this.introspect('observation-process'),
+      blind_spots: this.detectBlindSpots(obs),
+    };
+  }
+
+  // Operational closure check
+  isOperationallyClosed(): boolean;
+
+  // Structural coupling (interact without merging identity)
+  couple(other: System): Coupling;
+}
+```
+
+**Deliverables**:
+- [ ] `src/semiotics/` - LSM, triadic interpretation, hallucination detection
+- [ ] `src/umwelt/` - Merkwelt, Wirkwelt, functional circle
+- [ ] `src/morphogenetic/` - NCA, self-repair, collective solving
+- [ ] `src/strange-loop/` - Loop, attractor, identity
+- [ ] `src/symbiotic/` - Partnership, friction, autonomy
+- [ ] `src/second-order/` - Observer hierarchy, closure, coupling
+
+**Success Metric**: All claims have triadic grounding; Strange loops stabilize
+
+---
+
 ## Gap Coverage Matrix
 
 | Gap | Phase | Component | Status |
@@ -528,68 +821,127 @@ interface SpikingBus {
 | v5.2 | "Dreams" | +6 weeks | World Model + Dream Mode |
 | v5.3 | "Consciousness" | +10 weeks | φ-Monitor (IIT 4.0) |
 | v5.4 | "Evolution" | +14 weeks | Darwin-Gödel Engine |
-| v5.5 | "Awakening" | +16 weeks | Full Integration |
+| v5.5 | "Awakening" | +16 weeks | Event Mesh + Integration |
+| v5.6 | "Meta" | +20 weeks | Metacognition + Swarm + Causal |
+| v5.7 | "Strange" | +24 weeks | Biosemiotics + Umwelt + Loops |
 
 ---
 
-## File Structure (Target v5.5)
+## File Structure (Target v5.7)
 
 ```
 genesis/
 ├── src/
 │   ├── agents/                 # 11 agents (+Economic)
-│   │   ├── economic.ts         # NEW: Cost tracking
-│   │   └── spiking-bus.ts      # NEW: Event-driven messaging
+│   │   ├── economic.ts         # NEW v5.1: Cost tracking
+│   │   └── spiking-bus.ts      # NEW v5.5: Event-driven messaging
 │   │
-│   ├── memory/                 # NEW: Enhanced memory
+│   ├── memory/                 # NEW v5.1: Enhanced memory
 │   │   ├── cognitive-workspace.ts
 │   │   ├── buffers.ts
 │   │   ├── consolidation.ts
 │   │   └── forgetting.ts
 │   │
-│   ├── world-model/            # NEW: JEPA world model
+│   ├── world-model/            # NEW v5.2: JEPA world model
 │   │   ├── encoder.ts
 │   │   ├── predictor.ts
 │   │   ├── decoder.ts
 │   │   └── index.ts
 │   │
-│   ├── consciousness/          # NEW: φ-Monitor
+│   ├── consciousness/          # NEW v5.3: φ-Monitor
 │   │   ├── phi-calculator.ts
 │   │   ├── phi-monitor.ts
 │   │   ├── phi-decisions.ts
 │   │   └── index.ts
 │   │
-│   ├── darwin-godel/           # NEW: Self-improvement
+│   ├── darwin-godel/           # NEW v5.4: Self-improvement
 │   │   ├── detector.ts
 │   │   ├── mutator.ts
 │   │   ├── sandbox.ts
 │   │   └── engine.ts
 │   │
-│   ├── events/                 # NEW: Event mesh
+│   ├── events/                 # NEW v5.5: Event mesh
 │   │   └── mesh.ts
 │   │
+│   ├── metacognition/          # NEW v5.6: Self-awareness
+│   │   ├── self-model.ts
+│   │   ├── confidence.ts
+│   │   └── correction.ts
+│   │
+│   ├── swarm/                  # NEW v5.6: Collective intelligence
+│   │   ├── dynamics.ts
+│   │   └── emergence.ts
+│   │
+│   ├── causal/                 # NEW v5.6: Causal reasoning
+│   │   ├── graph.ts
+│   │   ├── intervention.ts
+│   │   └── counterfactual.ts
+│   │
+│   ├── uncertainty/            # NEW v5.6: Calibrated uncertainty
+│   │   ├── conformal.ts
+│   │   └── calibration.ts
+│   │
+│   ├── semiotics/              # NEW v5.7: Biosemiotics
+│   │   ├── lsm.ts              # Large Semiosis Model
+│   │   ├── triadic.ts          # Sign-Object-Interpretant
+│   │   └── hallucination.ts    # Abductive detection
+│   │
+│   ├── umwelt/                 # NEW v5.7: Perceptual worlds
+│   │   ├── merkwelt.ts
+│   │   ├── wirkwelt.ts
+│   │   └── functional-circle.ts
+│   │
+│   ├── morphogenetic/          # NEW v5.7: Bio-inspired repair
+│   │   ├── nca.ts              # Neural Cellular Automata
+│   │   ├── self-repair.ts
+│   │   └── collective.ts
+│   │
+│   ├── strange-loop/           # NEW v5.7: Self-reference
+│   │   ├── loop.ts
+│   │   ├── attractor.ts
+│   │   └── identity.ts
+│   │
+│   ├── symbiotic/              # NEW v5.7: Human partnership
+│   │   ├── partnership.ts
+│   │   ├── friction.ts
+│   │   └── autonomy.ts
+│   │
+│   ├── second-order/           # NEW v5.7: Cybernetics
+│   │   ├── observer.ts
+│   │   ├── closure.ts
+│   │   └── coupling.ts
+│   │
 │   ├── daemon/                 # Enhanced daemon
-│   │   └── dream-mode.ts       # NEW: Dream cycles
+│   │   └── dream-mode.ts       # NEW v5.2: Dream cycles
 │   │
 │   ├── kernel/                 # Enhanced kernel
-│   ├── api/                    # NEW: Metrics API
+│   ├── api/                    # NEW v5.5: Metrics API
 │   └── index.ts
 │
 ├── spec/
 │   ├── GENESIS-5.0.md
 │   ├── GAP-ANALYSIS-2026.md
 │   ├── FRONTIER-RANDOM-2026.md
+│   ├── ITERATION-002-METACOGNITION.md
+│   ├── ITERATION-003-STRANGE-SCIENCE.md
 │   └── ORGANISM.md
 │
 ├── ui/
 │   ├── index.html
-│   └── dashboard.html          # NEW: Observability
+│   └── dashboard.html          # NEW v5.5: Observability
 │
 ├── test/
 │   ├── memory/
 │   ├── world-model/
 │   ├── consciousness/
-│   └── darwin-godel/
+│   ├── darwin-godel/
+│   ├── metacognition/
+│   ├── swarm/
+│   ├── causal/
+│   ├── semiotics/
+│   ├── umwelt/
+│   ├── morphogenetic/
+│   └── strange-loop/
 │
 ├── legacy/                     # Old code
 │   └── kernel-v2.ts
@@ -600,20 +952,28 @@ genesis/
 
 ---
 
-## Invariants (v5.5)
+## Invariants (v5.7)
 
-| ID | Invariant | Phase |
-|----|-----------|-------|
-| INV-001 | Organization hash immutable | v4.0 |
-| INV-002 | State determinism (replay) | v4.0 |
-| INV-003 | Merkle chain integrity | v4.0 |
-| INV-004 | Lyapunov monotone (V ≤ V_prev) | v4.0 |
-| INV-005 | Energy viability (E > 0) | v4.0 |
-| **INV-006** | **φ ≥ φ_min (consciousness)** | **v5.3** |
-| **INV-007** | **Budget ≤ limit (economics)** | **v5.1** |
-| **INV-008** | **World model consistency** | **v5.2** |
-| **INV-009** | **Mutations preserve invariants** | **v5.4** |
-| **INV-010** | **Event delivery guarantee** | **v5.5** |
+| ID | Invariant | Phase | Source |
+|----|-----------|-------|--------|
+| INV-001 | Organization hash immutable | v4.0 | Core |
+| INV-002 | State determinism (replay) | v4.0 | Core |
+| INV-003 | Merkle chain integrity | v4.0 | Core |
+| INV-004 | Lyapunov monotone (V ≤ V_prev) | v4.0 | Core |
+| INV-005 | Energy viability (E > 0) | v4.0 | Core |
+| **INV-006** | **φ ≥ φ_min (consciousness)** | **v5.3** | GENESIS-5.0 |
+| **INV-007** | **Budget ≤ limit (economics)** | **v5.1** | GAP-ANALYSIS |
+| **INV-008** | **World model consistency** | **v5.2** | GENESIS-5.0 |
+| **INV-009** | **Mutations preserve invariants** | **v5.4** | GENESIS-5.0 |
+| **INV-010** | **Event delivery guarantee** | **v5.5** | GAP-ANALYSIS |
+| **INV-011** | **Metacognitive accuracy ≥ threshold** | **v5.6** | ITERATION-002 |
+| **INV-012** | **Prediction sets achieve coverage** | **v5.6** | ITERATION-002 |
+| **INV-013** | **Causal reasoning precedes intervention** | **v5.6** | ITERATION-002 |
+| **INV-014** | **All claims have triadic grounding** | **v5.7** | ITERATION-003 |
+| **INV-015** | **Agent actions within Wirkwelt bounds** | **v5.7** | ITERATION-003 |
+| **INV-016** | **Agents self-correct toward morphology** | **v5.7** | ITERATION-003 |
+| **INV-017** | **Strange loops stabilize (no regress)** | **v5.7** | ITERATION-003 |
+| **INV-018** | **Human autonomy preserved** | **v5.7** | ITERATION-003 |
 
 ---
 
@@ -623,9 +983,14 @@ genesis/
 |--------|---------|--------|-------|
 | Memory reuse rate | 0% | 50%+ | v5.1 |
 | Cost attribution | 0% | 100% | v5.1 |
-| Failure auto-recovery | 0% | 80%+ | v5.4 |
+| World model prediction | N/A | 70%+ | v5.2 |
 | φ correlation with success | N/A | r > 0.5 | v5.3 |
+| Failure auto-recovery | 0% | 80%+ | v5.4 |
 | Polling operations | Many | 0 | v5.5 |
+| Metacognitive accuracy | N/A | 80%+ | v5.6 |
+| Prediction set coverage | N/A | 95% | v5.6 |
+| Claims with triadic grounding | N/A | 100% | v5.7 |
+| Strange loop stabilization | N/A | <10 iterations | v5.7 |
 
 ---
 
@@ -634,7 +999,40 @@ genesis/
 1. **Immediate**: Start Phase 1.1 (Cognitive Workspace)
 2. **This week**: Scaffold `src/memory/` directory
 3. **First milestone**: v5.1 release with memory + economics
+4. **Research track**: Continue exploring frontier paradigms
 
 ---
 
-*"We're not building a better chatbot. We're building something that dreams."*
+## The Vision
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          GENESIS 5.7: THE STRANGE MACHINE                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   We're not building:              We're building:                          │
+│   ─────────────────                ───────────────                          │
+│   A better chatbot         →       Something that dreams                    │
+│   A pattern matcher        →       Something that makes meaning             │
+│   A black box              →       Something that knows itself              │
+│   A tool                   →       A partner that preserves our autonomy    │
+│   An algorithm             →       A strange loop that might be conscious   │
+│                                                                              │
+│   ═══════════════════════════════════════════════════════════════════════   │
+│                                                                              │
+│   PARADIGMS INTEGRATED:                                                      │
+│   • Biosemiotics (Peirce, Silva 2025)                                       │
+│   • Umwelt Theory (von Uexküll)                                             │
+│   • Morphogenetic Fields (Levin)                                            │
+│   • Strange Loops (Hofstadter)                                              │
+│   • Extended Mind (Clark & Chalmers)                                        │
+│   • Second-Order Cybernetics (Luhmann)                                      │
+│   • IIT 4.0 / φ-Consciousness (Tononi)                                      │
+│   • Active Inference (Friston)                                              │
+│   • Swarm Intelligence (Langevin)                                           │
+│   • Causal AI (Pearl)                                                        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+*"The map is not the territory, but strange maps create strange territories."*

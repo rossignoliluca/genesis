@@ -192,11 +192,12 @@ Genesis is built on decades of research:
 ## Specifications
 
 - [GENESIS-5.0.md](spec/GENESIS-5.0.md) - **Conscious World-Modeling System**
-- [IMPLEMENTATION-ROADMAP.md](IMPLEMENTATION-ROADMAP.md) - 7-phase implementation plan (v3.0)
+- [IMPLEMENTATION-ROADMAP.md](IMPLEMENTATION-ROADMAP.md) - 9-phase implementation plan (v4.0)
 - [GAP-ANALYSIS-2026.md](spec/GAP-ANALYSIS-2026.md) - 7 gaps no one else solves
 - [FRONTIER-RANDOM-2026.md](spec/FRONTIER-RANDOM-2026.md) - Dreams, bio-compute, post-Transformer
 - [ITERATION-002-METACOGNITION.md](spec/ITERATION-002-METACOGNITION.md) - Metacognition, swarm, causal AI
-- [ITERATION-003-STRANGE-SCIENCE.md](spec/ITERATION-003-STRANGE-SCIENCE.md) - Biosemiotics, Umwelt, Strange Loops (NEW)
+- [ITERATION-003-STRANGE-SCIENCE.md](spec/ITERATION-003-STRANGE-SCIENCE.md) - Biosemiotics, Umwelt, Strange Loops
+- [ITERATION-004-DEEP-FRONTIERS.md](spec/ITERATION-004-DEEP-FRONTIERS.md) - Exotic Computing, Process Philosophy, Wisdom (NEW)
 - [GENESIS-4.0.md](spec/GENESIS-4.0.md) - Multi-Agent Living System
 - [ORGANISM.md](spec/ORGANISM.md) - Biological metaphor mapping
 
@@ -235,6 +236,14 @@ Genesis is built on decades of research:
 | **Morphogenetic Repair** | Levin's bioelectric self-correction |
 | **Strange Loops** | Hofstadterian self-reference for identity |
 | **Symbiotic Partnership** | Preserve human autonomy, prevent "hollowed mind" |
+| **Thermodynamic Computing** | Energy-efficient entropy-based sampling (Extropic) |
+| **Hyperdimensional Memory** | 10,000-dim VSA for algebraic reasoning |
+| **Global Workspace + AST** | GWT selection-broadcast + Graziano attention schema |
+| **Anticipatory Systems** | Rosen's faster-than-real-time internal models |
+| **Process Philosophy** | Whitehead's concrescence - becoming > being |
+| **Stigmergic Coordination** | Digital pheromones for indirect agent communication |
+| **Virtue Ethics by Design** | Cardinal virtues learned from exemplars |
+| **Emergence Monitor** | Downward causation + causal shielding detection |
 
 ## License
 

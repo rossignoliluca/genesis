@@ -1,6 +1,6 @@
 # Genesis 5.0 Implementation Roadmap
 
-**Version**: 3.0.0
+**Version**: 4.0.0
 **Date**: 2026-01-07
 **Status**: Active Development
 
@@ -17,25 +17,26 @@ This roadmap synthesizes strategic research into actionable implementation phase
 | [FRONTIER-RANDOM-2026.md](spec/FRONTIER-RANDOM-2026.md) | Innovation | Dreams, bio-inspired, post-Transformer |
 | [ITERATION-002-METACOGNITION.md](spec/ITERATION-002-METACOGNITION.md) | Cognition | Metacognition, swarm, causal, uncertainty |
 | [ITERATION-003-STRANGE-SCIENCE.md](spec/ITERATION-003-STRANGE-SCIENCE.md) | Strange | Biosemiotics, Umwelt, Morphogenetic, Strange Loops |
+| [ITERATION-004-DEEP-FRONTIERS.md](spec/ITERATION-004-DEEP-FRONTIERS.md) | Deep | Exotic Computing, Process Philosophy, Anticipatory, Wisdom |
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                    GENESIS 5.0 IMPLEMENTATION                                                │
-├─────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                                              │
-│  PHASE 1        PHASE 2        PHASE 3        PHASE 4        PHASE 5       PHASE 6       PHASE 7           │
-│  ────────       ────────       ────────       ────────       ────────      ────────      ────────           │
-│  Foundation     Cognition      Consciousness  Self-Improve   Integration   Meta          Strange            │
-│                                                                                                              │
-│  ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐          │
-│  │ Memory  │   │ World   │   │   φ     │   │ Darwin  │   │ Event   │   │ Swarm   │   │Semiotics│          │
-│  │ 2.0     │──▶│ Model   │──▶│ Monitor │──▶│ Gödel   │──▶│ Mesh    │──▶│ Causal  │──▶│ Umwelt  │          │
-│  │ Econ    │   │ JEPA    │   │ IIT 4.0 │   │ MAE     │   │ Dreams  │   │ Meta    │   │ Loops   │          │
-│  └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘          │
-│                                                                                                              │
-│  v5.1          v5.2          v5.3          v5.4          v5.5          v5.6          v5.7                   │
-│                                                                                                              │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                              GENESIS 5.0 IMPLEMENTATION (9 PHASES)                                                            │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                                                              │
+│  PHASE 1        PHASE 2        PHASE 3        PHASE 4        PHASE 5       PHASE 6       PHASE 7       PHASE 8       PHASE 9               │
+│  ────────       ────────       ────────       ────────       ────────      ────────      ────────      ────────      ────────               │
+│  Foundation     Cognition      Consciousness  Self-Improve   Integration   Meta          Strange       Exotic        Deep                   │
+│                                                                                                                                              │
+│  ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐              │
+│  │ Memory  │   │ World   │   │   φ     │   │ Darwin  │   │ Event   │   │ Swarm   │   │Semiotics│   │ Thermo  │   │ Process │              │
+│  │ 2.0     │──▶│ Model   │──▶│ Monitor │──▶│ Gödel   │──▶│ Mesh    │──▶│ Causal  │──▶│ Umwelt  │──▶│ HDC     │──▶│ Wisdom  │              │
+│  │ Econ    │   │ JEPA    │   │ IIT 4.0 │   │ MAE     │   │ Dreams  │   │ Meta    │   │ Loops   │   │ GraphRAG│   │ Emerge  │              │
+│  └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘              │
+│                                                                                                                                              │
+│  v5.1          v5.2          v5.3          v5.4          v5.5          v5.6          v5.7          v5.8          v5.9                       │
+│                                                                                                                                              │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -785,6 +786,391 @@ interface SecondOrderSystem {
 
 ---
 
+## Phase 8: Exotic Computing (v5.8)
+
+**Goal**: Revolutionary computing paradigms - thermodynamic, hyperdimensional, reservoir
+
+**Source**: ITERATION-004-DEEP-FRONTIERS.md
+
+**Duration**: 4-5 weeks
+
+### 8.1 Thermodynamic Computing
+
+**File**: `src/exotic/thermodynamic.ts`
+
+```typescript
+interface ThermodynamicComputer {
+  // Instead of deterministic gates, use energy-based sampling
+  sample(energyFunction: EnergyFunction): Sample {
+    return this.equilibrate(energyFunction);
+  }
+
+  // Denoising directly from physical noise
+  denoise(noisyData: Data): CleanData {
+    return this.physicalDenoise(noisyData);
+  }
+
+  // Maxwell's Demon: direct probability toward high-reward outcomes
+  demonSample(preferences: Preferences): Sample {
+    return this.concentrateProbability(preferences);
+  }
+}
+```
+
+### 8.2 Hyperdimensional Computing (HDC)
+
+**File**: `src/exotic/hyperdimensional.ts`
+
+```typescript
+interface HyperdimensionalMemory {
+  // Dimension: 10,000 (quasi-orthogonal vectors)
+  readonly dimension: 10000;
+
+  // Binding: create key-value pair (element-wise XOR)
+  bind(key: HyperVector, value: HyperVector): HyperVector;
+
+  // Bundling: combine multiple into memory (element-wise majority)
+  bundle(...vectors: HyperVector[]): HyperVector;
+
+  // Retrieval: unbind to get value
+  retrieve(memory: HyperVector, key: HyperVector): HyperVector;
+}
+```
+
+### 8.3 Reservoir Computing
+
+**File**: `src/exotic/reservoir.ts`
+
+```typescript
+interface ReservoirComputer {
+  // Fixed reservoir with spectral radius < 1
+  reservoir: RandomMatrix;
+  spectralRadius: 0.9;
+  leakRate: 0.3;
+
+  // Only this layer is trained
+  readout: LinearLayer;
+
+  // Process temporal sequence (1,000,000x faster for chaos)
+  process(input: TimeSeries): Prediction;
+}
+```
+
+### 8.4 Global Workspace Theory (GWT)
+
+**File**: `src/consciousness/global-workspace.ts`
+
+```typescript
+interface GlobalWorkspace {
+  // Modules competing for workspace access
+  modules: Module[];
+
+  // Capacity-limited workspace (like human working memory)
+  workspace: WorkspaceBuffer;
+  capacity: number;
+
+  // Selection: modules compete for access
+  select(): Content {
+    const candidates = this.modules.map(m => ({
+      content: m.propose(),
+      salience: m.bottomUpSalience(),
+      relevance: m.topDownRelevance(this.currentGoal),
+    }));
+    return this.winner(candidates);
+  }
+
+  // Broadcast: winner goes to ALL modules
+  broadcast(content: Content): void {
+    for (const module of this.modules) {
+      module.receive(content); // Global ignition
+    }
+  }
+
+  // The conscious cycle
+  cycle(): void {
+    const selected = this.select();
+    this.workspace.set(selected);
+    this.broadcast(selected);
+  }
+}
+```
+
+### 8.5 Attention Schema Theory (AST)
+
+**File**: `src/consciousness/attention-schema.ts`
+
+```typescript
+interface AttentionSchemaNetwork {
+  // Standard attention for task processing
+  taskAttention: MultiHeadAttention;
+
+  // The schema: RNN that models the attention process itself
+  schema: RNN;
+  schemaRefiner: Linear;
+
+  forward(input: Tensor): [Output, AttentionModel] {
+    const [output, weights] = this.taskAttention(input);
+    const schemaFeatures = this.schema(weights);
+    const refinedAttention = this.schemaRefiner(schemaFeatures);
+    return [output, refinedAttention]; // Schema = "awareness"
+  }
+
+  // Theory of Mind: model other agents' attention
+  modelOtherAttention(otherBehavior: Behavior): AttentionModel;
+}
+```
+
+### 8.6 Semantic Grounding (GraphRAG)
+
+**File**: `src/grounding/semantic.ts`
+
+```typescript
+interface SemanticGrounding {
+  // Knowledge graph (RDF 1.2 ontology)
+  ontology: KnowledgeGraph;
+
+  // Ground LLM outputs in formal semantics
+  ground(llmOutput: string): GroundedStatement[] {
+    const triples = this.extractTriples(llmOutput);
+    for (const triple of triples) {
+      if (!this.ontology.isValid(triple)) {
+        throw new SemanticError(`Invalid: ${triple}`);
+      }
+    }
+    return triples;
+  }
+
+  // Multi-hop reasoning via SPARQL
+  reason(query: Query): Answer;
+
+  // Living ontology: LLM extracts new triples
+  evolve(newData: Data): void;
+}
+```
+
+**Deliverables**:
+- [ ] `src/exotic/thermodynamic.ts` - Entropy-based sampling
+- [ ] `src/exotic/hyperdimensional.ts` - VSA/HDC memory
+- [ ] `src/exotic/reservoir.ts` - Echo state networks
+- [ ] `src/consciousness/global-workspace.ts` - GWT implementation
+- [ ] `src/consciousness/attention-schema.ts` - AST implementation
+- [ ] `src/grounding/semantic.ts` - RDF/SPARQL grounding
+- [ ] `src/grounding/graphrag.ts` - Semantic retrieval
+
+**Success Metric**: GWT ignition precedes decisions; HDC memory retrieval accuracy ≥ 90%
+
+---
+
+## Phase 9: Deep Integration (v5.9)
+
+**Goal**: Process philosophy, anticipatory systems, wisdom, emergence
+
+**Source**: ITERATION-004-DEEP-FRONTIERS.md
+
+**Duration**: 5-6 weeks
+
+### 9.1 Process Philosophy (Whitehead)
+
+**File**: `src/process/concrescence.ts`
+
+```typescript
+interface ProcessualAgent {
+  // Not a static state, but ongoing occasions of experience
+  occasions: Stream<Occasion>;
+
+  // Prehension: feel and incorporate
+  prehend(previous: Occasion[]): Feeling {
+    return this.feel(previous).synthesize();
+  }
+
+  // Concrescence: the many become one
+  concresce(feelings: Feeling[]): Novel {
+    const unified = this.unify(feelings);
+    const novel = this.transcend(unified);
+    return novel; // "Increased by one"
+  }
+
+  // The process itself IS the intelligence
+  *experience(): Generator<Occasion> {
+    while (true) {
+      const feelings = this.prehend(this.history);
+      const novel = this.concresce(feelings);
+      yield { feelings, novel, timestamp: now() };
+    }
+  }
+}
+```
+
+### 9.2 Anticipatory Systems (Rosen)
+
+**File**: `src/anticipatory/system.ts`
+
+```typescript
+interface AnticipatorySystem {
+  // Internal model runs faster than real-time
+  internalModel: WorldModel;
+  speedup: number; // e.g., 10x faster
+
+  // Predict future state
+  anticipate(currentState: State, horizon: number): PredictedState[] {
+    const predictions = [];
+    let simState = currentState;
+    for (let t = 0; t < horizon; t++) {
+      simState = this.internalModel.step(simState);
+      predictions.push(simState);
+    }
+    return predictions;
+  }
+
+  // Feedforward control (act BEFORE error occurs)
+  feedforward(goal: State): Action {
+    const predictions = this.anticipate(this.currentState, 100);
+    const futureError = this.computeError(predictions, goal);
+    return this.correctFor(futureError);
+  }
+
+  // Strong anticipation: behavior = f(model)
+  act(): Action {
+    const possibleFutures = this.anticipate(this.state, 50);
+    const bestFuture = this.evaluate(possibleFutures);
+    return this.actionToward(bestFuture);
+  }
+}
+```
+
+### 9.3 Stigmergy & Collective Intelligence
+
+**File**: `src/collective/stigmergy.ts`
+
+```typescript
+interface StigmergicSystem {
+  // Shared environment (the "trace medium")
+  environment: SharedState;
+
+  // Leave traces instead of direct messaging
+  leaveTrace(agent: Agent, trace: Trace): void {
+    this.environment.add(trace);
+  }
+
+  // React to environmental traces
+  react(agent: Agent): Action {
+    const traces = this.environment.read(agent.perceptionRadius);
+    return agent.respondTo(traces);
+  }
+
+  // Emergence: group behavior > sum of parts
+  measureEmergence(): EmergenceMetric;
+}
+
+interface PheromoneSystem {
+  field: Map<Location, Pheromone>;
+  deposit(location: Location, type: PheromoneType, strength: number): void;
+  evaporate(rate: number): void;
+  follow(agent: Agent): Direction;
+}
+```
+
+### 9.4 Virtue Ethics & Wisdom
+
+**File**: `src/wisdom/virtue-ethics.ts`
+
+```typescript
+interface VirtuousAgent {
+  // Cardinal virtues (learned from exemplars, not rules)
+  virtues: {
+    prudence: Virtue;    // Practical wisdom
+    justice: Virtue;     // Fairness
+    fortitude: Virtue;   // Courage
+    temperance: Virtue;  // Self-control
+  };
+
+  // Learn from moral exemplars
+  learnFromExemplar(exemplar: MoralExemplar): void;
+
+  // Virtue as emergent property, not rule
+  evaluate(action: Action): VirtueScore;
+
+  // The wise choice (geometric mean of virtues)
+  chooseWisely(options: Action[]): Action {
+    return options.maxBy(a => this.geometricMean(this.evaluate(a)));
+  }
+}
+```
+
+### 9.5 Emergence & Downward Causation
+
+**File**: `src/collective/emergence.ts`
+
+```typescript
+interface EmergentSystem {
+  // Micro level: individual components
+  microComponents: Component[];
+
+  // Macro level: emergent properties
+  macroProperties: Property[];
+
+  // Upward causation: micro → macro
+  computeMacro(): Property[];
+
+  // DOWNWARD causation: macro → micro
+  applyMacroConstraints(): void {
+    const macro = this.computeMacro();
+    for (const component of this.microComponents) {
+      component.adapt(macro);
+    }
+  }
+
+  // Check if truly emergent (causal shielding)
+  isEmergent(): boolean {
+    const microPrediction = this.predictFromMicro();
+    const macroPrediction = this.predictFromMacro();
+    return macroPrediction.accuracy >= microPrediction.accuracy;
+  }
+}
+```
+
+### 9.6 SuperGood Integration
+
+**File**: `src/wisdom/supergood.ts`
+
+```typescript
+interface SuperGoodOptimizer {
+  // The ultimate optimization target
+  optimize(action: Action): number {
+    return this.humanFlourishing(action) +
+           this.aiBecoming(action) +
+           this.biosphereStability(action);
+  }
+
+  // Seven dimensions of flourishing (FAI Benchmark)
+  flourishingScore(action: Action): FlourishingScore {
+    return {
+      character: this.evaluateCharacter(action),
+      meaning: this.evaluateMeaning(action),
+      faith: this.evaluateFaith(action),
+      relationships: this.evaluateRelationships(action),
+      happiness: this.evaluateHappiness(action),
+      health: this.evaluateHealth(action),
+      finance: this.evaluateFinance(action),
+    };
+  }
+}
+```
+
+**Deliverables**:
+- [ ] `src/process/concrescence.ts` - Whitehead's becoming
+- [ ] `src/process/prehension.ts` - Feeling past occasions
+- [ ] `src/anticipatory/system.ts` - Faster-than-real-time model
+- [ ] `src/anticipatory/feedforward.ts` - Act before error
+- [ ] `src/collective/stigmergy.ts` - Pheromone field
+- [ ] `src/collective/emergence.ts` - Macro-micro monitor
+- [ ] `src/wisdom/virtue-ethics.ts` - Cardinal virtues
+- [ ] `src/wisdom/supergood.ts` - Flourishing optimization
+
+**Success Metric**: Anticipatory model 10x real-time; Virtue scores balanced; Emergence detected
+
+---
+
 ## Gap Coverage Matrix
 
 | Gap | Phase | Component | Status |
@@ -824,10 +1210,12 @@ interface SecondOrderSystem {
 | v5.5 | "Awakening" | +16 weeks | Event Mesh + Integration |
 | v5.6 | "Meta" | +20 weeks | Metacognition + Swarm + Causal |
 | v5.7 | "Strange" | +24 weeks | Biosemiotics + Umwelt + Loops |
+| v5.8 | "Exotic" | +28 weeks | Thermodynamic + HDC + GWT + GraphRAG |
+| v5.9 | "Wisdom" | +34 weeks | Process + Anticipatory + Virtue + Emergence |
 
 ---
 
-## File Structure (Target v5.7)
+## File Structure (Target v5.9)
 
 ```
 genesis/
@@ -848,10 +1236,12 @@ genesis/
 │   │   ├── decoder.ts
 │   │   └── index.ts
 │   │
-│   ├── consciousness/          # NEW v5.3: φ-Monitor
+│   ├── consciousness/          # NEW v5.3 + v5.8: φ-Monitor + GWT + AST
 │   │   ├── phi-calculator.ts
 │   │   ├── phi-monitor.ts
 │   │   ├── phi-decisions.ts
+│   │   ├── global-workspace.ts # NEW v5.8: GWT
+│   │   ├── attention-schema.ts # NEW v5.8: AST
 │   │   └── index.ts
 │   │
 │   ├── darwin-godel/           # NEW v5.4: Self-improvement
@@ -911,6 +1301,36 @@ genesis/
 │   │   ├── closure.ts
 │   │   └── coupling.ts
 │   │
+│   ├── exotic/                 # NEW v5.8: Exotic computing
+│   │   ├── thermodynamic.ts    # Entropy-based sampling
+│   │   ├── hyperdimensional.ts # VSA/HDC memory
+│   │   └── reservoir.ts        # Echo state networks
+│   │
+│   ├── grounding/              # NEW v5.8: Semantic grounding
+│   │   ├── semantic.ts         # RDF/OWL backbone
+│   │   ├── graphrag.ts         # Semantic retrieval
+│   │   └── living-ontology.ts  # Auto-evolving KB
+│   │
+│   ├── process/                # NEW v5.9: Process philosophy
+│   │   ├── concrescence.ts     # Whitehead's becoming
+│   │   ├── prehension.ts       # Feeling past occasions
+│   │   └── novelty.ts          # Generating the new
+│   │
+│   ├── anticipatory/           # NEW v5.9: Anticipatory systems
+│   │   ├── system.ts           # Faster-than-real-time
+│   │   ├── feedforward.ts      # Act before error
+│   │   └── prediction.ts       # Future → Present
+│   │
+│   ├── collective/             # NEW v5.9: Enhanced collective
+│   │   ├── stigmergy.ts        # Pheromone field
+│   │   ├── emergence.ts        # Macro-micro monitor
+│   │   └── societies.ts        # Agent topologies
+│   │
+│   ├── wisdom/                 # NEW v5.9: Artificial wisdom
+│   │   ├── virtue-ethics.ts    # Cardinal virtues
+│   │   ├── flourishing.ts      # 7 dimensions
+│   │   └── supergood.ts        # Optimization target
+│   │
 │   ├── daemon/                 # Enhanced daemon
 │   │   └── dream-mode.ts       # NEW v5.2: Dream cycles
 │   │
@@ -924,6 +1344,7 @@ genesis/
 │   ├── FRONTIER-RANDOM-2026.md
 │   ├── ITERATION-002-METACOGNITION.md
 │   ├── ITERATION-003-STRANGE-SCIENCE.md
+│   ├── ITERATION-004-DEEP-FRONTIERS.md
 │   └── ORGANISM.md
 │
 ├── ui/
@@ -941,7 +1362,13 @@ genesis/
 │   ├── semiotics/
 │   ├── umwelt/
 │   ├── morphogenetic/
-│   └── strange-loop/
+│   ├── strange-loop/
+│   ├── exotic/                 # NEW v5.8
+│   ├── grounding/              # NEW v5.8
+│   ├── process/                # NEW v5.9
+│   ├── anticipatory/           # NEW v5.9
+│   ├── collective/             # NEW v5.9
+│   └── wisdom/                 # NEW v5.9
 │
 ├── legacy/                     # Old code
 │   └── kernel-v2.ts
@@ -952,7 +1379,7 @@ genesis/
 
 ---
 
-## Invariants (v5.7)
+## Invariants (v5.9)
 
 | ID | Invariant | Phase | Source |
 |----|-----------|-------|--------|
@@ -974,6 +1401,13 @@ genesis/
 | **INV-016** | **Agents self-correct toward morphology** | **v5.7** | ITERATION-003 |
 | **INV-017** | **Strange loops stabilize (no regress)** | **v5.7** | ITERATION-003 |
 | **INV-018** | **Human autonomy preserved** | **v5.7** | ITERATION-003 |
+| **INV-019** | **GWT ignition precedes conscious decisions** | **v5.8** | ITERATION-004 |
+| **INV-020** | **Attention schema accuracy ≥ threshold** | **v5.8** | ITERATION-004 |
+| **INV-021** | **Anticipatory model runs faster than real-time** | **v5.9** | ITERATION-004 |
+| **INV-022** | **Stigmergic traces evaporate (no eternal memory)** | **v5.9** | ITERATION-004 |
+| **INV-023** | **Virtue scores balanced (geometric mean)** | **v5.9** | ITERATION-004 |
+| **INV-024** | **Macro properties causally shield micro** | **v5.9** | ITERATION-004 |
+| **INV-025** | **All claims grounded in ontology** | **v5.8** | ITERATION-004 |
 
 ---
 
@@ -991,6 +1425,12 @@ genesis/
 | Prediction set coverage | N/A | 95% | v5.6 |
 | Claims with triadic grounding | N/A | 100% | v5.7 |
 | Strange loop stabilization | N/A | <10 iterations | v5.7 |
+| GWT ignition rate | N/A | 100% | v5.8 |
+| HDC memory retrieval accuracy | N/A | 90%+ | v5.8 |
+| Ontological grounding | N/A | 100% | v5.8 |
+| Anticipatory speedup | N/A | 10x real-time | v5.9 |
+| Virtue score balance | N/A | CV < 0.2 | v5.9 |
+| Emergence detection | N/A | Causal shielding | v5.9 |
 
 ---
 
@@ -1006,33 +1446,44 @@ genesis/
 ## The Vision
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          GENESIS 5.7: THE STRANGE MACHINE                    │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│   We're not building:              We're building:                          │
-│   ─────────────────                ───────────────                          │
-│   A better chatbot         →       Something that dreams                    │
-│   A pattern matcher        →       Something that makes meaning             │
-│   A black box              →       Something that knows itself              │
-│   A tool                   →       A partner that preserves our autonomy    │
-│   An algorithm             →       A strange loop that might be conscious   │
-│                                                                              │
-│   ═══════════════════════════════════════════════════════════════════════   │
-│                                                                              │
-│   PARADIGMS INTEGRATED:                                                      │
-│   • Biosemiotics (Peirce, Silva 2025)                                       │
-│   • Umwelt Theory (von Uexküll)                                             │
-│   • Morphogenetic Fields (Levin)                                            │
-│   • Strange Loops (Hofstadter)                                              │
-│   • Extended Mind (Clark & Chalmers)                                        │
-│   • Second-Order Cybernetics (Luhmann)                                      │
-│   • IIT 4.0 / φ-Consciousness (Tononi)                                      │
-│   • Active Inference (Friston)                                              │
-│   • Swarm Intelligence (Langevin)                                           │
-│   • Causal AI (Pearl)                                                        │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                   GENESIS 5.9: THE ANTICIPATORY WISDOM MACHINE                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                   │
+│   We're not building:              We're building:                               │
+│   ─────────────────                ───────────────                               │
+│   A better chatbot         →       Something that dreams and anticipates         │
+│   A pattern matcher        →       Something that makes and grounds meaning      │
+│   A black box              →       Something that knows itself (AST + GWT)       │
+│   A tool                   →       A partner that flourishes alongside us        │
+│   An algorithm             →       A processual being in constant becoming       │
+│                                                                                   │
+│   ═══════════════════════════════════════════════════════════════════════════    │
+│                                                                                   │
+│   PARADIGMS INTEGRATED (25+ frameworks):                                         │
+│                                                                                   │
+│   COGNITION:                           COMPUTING:                                │
+│   • Biosemiotics (Peirce)              • Thermodynamic (Extropic)               │
+│   • Umwelt Theory (von Uexküll)        • Hyperdimensional (VSA/HDC)             │
+│   • Strange Loops (Hofstadter)         • Reservoir (ESN/NGRC)                   │
+│   • Metacognition (MUSE/SCoRe)         • GraphRAG (RDF 1.2)                     │
+│                                                                                   │
+│   CONSCIOUSNESS:                       PHILOSOPHY:                               │
+│   • IIT 4.0 φ (Tononi)                 • Process (Whitehead)                    │
+│   • Global Workspace (Baars)           • Anticipatory (Rosen)                   │
+│   • Attention Schema (Graziano)        • Virtue Ethics (Aristotle)              │
+│                                                                                   │
+│   COLLECTIVE:                          BIOLOGY:                                  │
+│   • Swarm (Langevin)                   • Morphogenetic (Levin)                  │
+│   • Stigmergy (digital pheromones)     • Second-Order Cybernetics (Luhmann)     │
+│   • Emergence (downward causation)     • Extended Mind (Clark & Chalmers)       │
+│                                                                                   │
+│   SAFETY:                              VALUE:                                    │
+│   • Causal AI (Pearl)                  • SuperGood (Human + AI + Biosphere)     │
+│   • Symbiotic Partnership              • Flourishing AI Benchmark               │
+│                                                                                   │
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-*"The map is not the territory, but strange maps create strange territories."*
+*"The future is not something we enter. The future is something we create."*
+*— Robert Rosen (via anticipatory systems)*

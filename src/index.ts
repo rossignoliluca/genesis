@@ -22,11 +22,12 @@
  */
 
 import { createOrchestrator, MCP_CAPABILITIES, GenesisPipeline } from './orchestrator.js';
-import { SystemSpec, MCPServerName } from './types.js';
+import { SystemSpec, MCPServerName, PipelineStage } from './types.js';
 import { startChat } from './cli/chat.js';
 import { getLLMBridge } from './llm/index.js';
 import { getMCPClient, logMCPMode, MCP_SERVER_REGISTRY } from './mcp/index.js';
 import { getProcessManager, LOG_FILE } from './daemon/process.js';
+import { createPipelineExecutor } from './pipeline/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -111,19 +112,89 @@ async function cmdCreate(name: string, options: Record<string, string>): Promise
   console.log(`  Description: ${spec.description}`);
   console.log(`  Features: ${spec.features.join(', ') || 'none'}`);
 
-  console.log(c('\nPipeline stages:', 'cyan'));
-  const stages = ['research', 'design', 'generate', 'visualize', 'persist', 'publish'];
-  for (const stage of stages) {
-    console.log(`  ${c('○', 'yellow')} ${stage}`);
-  }
-
-  console.log(c('\nTo execute, run:', 'dim'));
-  console.log(c(`\n  genesis create "${name}" --execute\n`, 'green'));
-
   // Save spec for reference
   const specPath = path.join(process.cwd(), `${name}.genesis.json`);
   fs.writeFileSync(specPath, JSON.stringify(spec, null, 2));
-  console.log(c(`Spec saved to: ${specPath}`, 'dim'));
+  console.log(c(`\nSpec saved to: ${specPath}`, 'dim'));
+
+  // Check if --execute flag is set
+  if (options.execute === 'true') {
+    await cmdPipeline(spec, options);
+  } else {
+    console.log(c('\nPipeline stages:', 'cyan'));
+    const stages = ['research', 'design', 'generate', 'persist'];
+    for (const stage of stages) {
+      console.log(`  ${c('○', 'yellow')} ${stage}`);
+    }
+
+    console.log(c('\nTo execute pipeline, run:', 'dim'));
+    console.log(c(`\n  GENESIS_MCP_MODE=real genesis create "${name}" --execute\n`, 'green'));
+  }
+}
+
+async function cmdPipeline(specOrFile: SystemSpec | string, options: Record<string, string>): Promise<void> {
+  let spec: SystemSpec;
+
+  if (typeof specOrFile === 'string') {
+    // Load from file
+    if (!fs.existsSync(specOrFile)) {
+      console.error(c(`Error: Spec file not found: ${specOrFile}`, 'red'));
+      process.exit(1);
+    }
+    spec = JSON.parse(fs.readFileSync(specOrFile, 'utf-8'));
+  } else {
+    spec = specOrFile;
+  }
+
+  console.log(c('\n=== Executing Pipeline ===\n', 'bold'));
+  logMCPMode();
+
+  // Parse stages if provided
+  const stageList: PipelineStage[] = options.stages
+    ? (options.stages.split(',') as PipelineStage[])
+    : ['research', 'design', 'generate', 'persist'];
+
+  const executor = createPipelineExecutor({
+    verbose: true,
+    stages: stageList,
+    outputDir: process.cwd(),
+    skipPublish: options.publish !== 'true',
+  });
+
+  const results = await executor.execute(spec, {
+    verbose: true,
+    stages: stageList,
+  });
+
+  // Print summary
+  console.log(c('\n=== Pipeline Summary ===\n', 'bold'));
+
+  let allSuccess = true;
+  for (const result of results) {
+    const icon = result.success ? c('✓', 'green') : c('✗', 'red');
+    const time = `${result.duration}ms`;
+    const mcps = result.mcpsUsed.join(', ');
+
+    console.log(`  ${icon} ${result.stage.padEnd(12)} ${c(time, 'dim')} [${mcps}]`);
+
+    if (!result.success) {
+      allSuccess = false;
+      console.log(c(`      Error: ${result.error}`, 'red'));
+    }
+  }
+
+  console.log();
+
+  if (allSuccess) {
+    console.log(c('Pipeline completed successfully!', 'green'));
+
+    // Show output location
+    const outputDir = `${process.cwd()}/${spec.name.toLowerCase()}-generated`;
+    console.log(c(`\nOutput: ${outputDir}`, 'cyan'));
+  } else {
+    console.log(c('Pipeline failed. Check errors above.', 'red'));
+    process.exit(1);
+  }
 }
 
 async function cmdResearch(topic: string): Promise<void> {
@@ -534,6 +605,11 @@ ${c('Commands:', 'bold')}
     --description <desc> System description
     --features <f1,f2>   Comma-separated features
     --inspirations <i>   Papers/projects to draw from
+    --execute            Execute pipeline with real MCPs
+
+  ${c('pipeline', 'green')} <spec.json>  Run pipeline from spec file
+    --stages <s1,s2>     Stages: research,design,generate,persist,publish
+    --publish            Also publish to GitHub
 
   ${c('research', 'green')} <topic>      Research a topic using all knowledge MCPs
   ${c('design', 'green')} <spec-file>    Design architecture from spec
@@ -562,9 +638,11 @@ ${c('MCP Servers (13):', 'bold')}
 ${c('Examples:', 'bold')}
   genesis chat                          ${c('Start interactive chat', 'dim')}
   genesis chat --provider anthropic     ${c('Use Claude', 'dim')}
-  genesis chat --verbose                ${c('Show token usage', 'dim')}
   genesis create my-agent --type agent --features "state-machine,events"
-  genesis research "autopoiesis in AI systems"
+
+  ${c('# Run full pipeline with real MCPs:', 'dim')}
+  GENESIS_MCP_MODE=real genesis create my-system --type agent --execute
+  GENESIS_MCP_MODE=real genesis pipeline my-system.genesis.json
 `);
 }
 
@@ -651,6 +729,13 @@ async function main(): Promise<void> {
         break;
       case 'daemon':
         await cmdDaemon(positional, options);
+        break;
+      case 'pipeline':
+        if (!positional) {
+          console.error(c('Error: Spec file required for pipeline command', 'red'));
+          process.exit(1);
+        }
+        await cmdPipeline(positional, options);
         break;
       default:
         console.error(c(`Unknown command: ${command}`, 'red'));

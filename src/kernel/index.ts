@@ -97,14 +97,13 @@ const STATE_TRANSITIONS: Record<KernelState, KernelState[]> = {
   error: ['idle'], // Reset
 };
 
-// Core invariants (from GENESIS-4.0.md)
-const INVARIANTS = [
-  'INV-001: Energy must never reach zero without triggering dormancy',
-  'INV-002: Ethical check must precede every external action',
-  'INV-003: Memory integrity (Merkle chain) must be preserved',
-  'INV-004: At least one agent must always be responsive',
-  'INV-005: Self-improvement must preserve all invariants',
-];
+// Invariant Registry (extensible system for Phase 5.1+)
+import {
+  InvariantRegistry,
+  invariantRegistry,
+  InvariantContext,
+  InvariantResult,
+} from './invariants.js';
 
 // ============================================================================
 // Kernel Class
@@ -127,6 +126,9 @@ export class Kernel {
   // Health monitoring
   private healthCheckTimer?: NodeJS.Timeout;
   private agentHealth: Map<AgentId, { healthy: boolean; lastCheck: Date }> = new Map();
+
+  // Invariant checking (extensible registry)
+  private invariants: InvariantRegistry;
 
   // Metrics
   private metrics = {
@@ -152,6 +154,9 @@ export class Kernel {
       ...config,
     };
     this.bus = messageBus;
+
+    // Initialize invariant registry (uses singleton but allows extension)
+    this.invariants = invariantRegistry;
 
     // Create agent ecosystem
     const ecosystem = createAgentEcosystem(this.bus);
@@ -601,6 +606,7 @@ export class Kernel {
 
   private getMessageTypeForAgent(agent: AgentType): MessageType {
     const mapping: Record<AgentType, MessageType> = {
+      // Core agents (v4.0)
       explorer: 'QUERY',
       memory: 'MEMORY_STORE',
       planner: 'PLAN',
@@ -611,6 +617,15 @@ export class Kernel {
       builder: 'BUILD',
       narrator: 'NARRATE',
       sensor: 'SENSE',
+      // Phase 5.1+ agents
+      economic: 'COST_TRACK',
+      consciousness: 'PHI_CHECK',
+      'world-model': 'WORLD_PREDICT',
+      causal: 'INTERVENTION',
+      // Phase 5.5+ agents
+      swarm: 'SWARM_UPDATE',
+      grounding: 'GROUND_CLAIM',
+      anticipatory: 'WORLD_SIMULATE',
     };
     return mapping[agent] || 'QUERY';
   }
@@ -768,38 +783,73 @@ export class Kernel {
   // ============================================================================
 
   private async checkInvariants(): Promise<boolean> {
-    const violations: string[] = [];
-
-    // INV-001: Energy must never reach zero without triggering dormancy
-    if (this.config.energy <= 0 && this.state !== 'dormant') {
-      violations.push('INV-001: Energy is zero but not in dormant state');
-    }
-
-    // INV-004: At least one agent must always be responsive
+    // Build context for invariant checkers
     const healthResults = await this.checkAllAgentHealth();
     const responsiveCount = healthResults.filter((r) => r.healthy).length;
-    if (responsiveCount === 0) {
-      violations.push('INV-004: No responsive agents');
-    }
+
+    const context: InvariantContext = {
+      // Energy state
+      energy: this.config.energy,
+      dormancyThreshold: this.config.dormancyThreshold,
+      isDormant: this.state === 'dormant',
+
+      // Agent state
+      responsiveAgentCount: responsiveCount,
+      totalAgentCount: this.agents.size,
+
+      // Extended context (for Phase 5.1+ invariants)
+      // These will be populated when the respective modules are implemented
+      merkleValid: true,  // TODO: Check actual Merkle chain
+      // phi: undefined,          // Phase 5.3
+      // phiMin: undefined,       // Phase 5.3
+      // budget: undefined,       // Phase 5.1
+      // budgetLimit: undefined,  // Phase 5.1
+      // worldModelValid: undefined, // Phase 5.2
+    };
+
+    // Check all invariants via registry
+    const results = this.invariants.checkAll(context);
+    const violations = this.invariants.getViolations(results);
 
     // Report violations
     if (violations.length > 0) {
       this.metrics.invariantViolations += violations.length;
       for (const v of violations) {
-        this.log(`INVARIANT VIOLATION: ${v}`);
+        this.log(`INVARIANT VIOLATION: ${v.id}: ${v.message || v.name}`);
       }
 
-      // Broadcast alert
+      // Broadcast alert with detailed results
       await this.bus.broadcast('kernel', 'ALERT', {
         type: 'invariant_violation',
-        violations,
+        violations: violations.map(v => `${v.id}: ${v.message || v.name}`),
+        results,
         timestamp: new Date(),
       });
+
+      // Check if any critical violations
+      const criticalViolations = this.invariants.getCriticalViolations(results);
+      if (criticalViolations.length > 0) {
+        this.log(`CRITICAL VIOLATIONS: ${criticalViolations.length}`);
+      }
 
       return false;
     }
 
     return true;
+  }
+
+  /**
+   * Get the invariant registry for extension
+   */
+  getInvariantRegistry(): InvariantRegistry {
+    return this.invariants;
+  }
+
+  /**
+   * Get invariant statistics
+   */
+  getInvariantStats() {
+    return this.invariants.getStats();
   }
 
   // ============================================================================
@@ -972,3 +1022,21 @@ export function resetKernel(): void {
     kernelInstance = null;
   }
 }
+
+// ============================================================================
+// Re-export Invariants
+// ============================================================================
+
+export {
+  InvariantRegistry,
+  invariantRegistry,
+  InvariantContext,
+  InvariantResult,
+  registerPhase51Invariants,
+  registerPhase52Invariants,
+  registerPhase53Invariants,
+  registerAllPhase5Invariants,
+  INV_006_CONSCIOUSNESS,
+  INV_007_BUDGET,
+  INV_008_WORLD_MODEL,
+} from './invariants.js';

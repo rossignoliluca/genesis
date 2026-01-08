@@ -17,16 +17,22 @@ import {
   Message,
   MessageType,
 } from './types.js';
-import { randomUUID } from 'crypto';
+import { getMCPClient, MCPCallResult, isSimulatedResult, MCPMode } from '../mcp/index.js';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type MCPCategory = 'knowledge' | 'research' | 'creation' | 'storage';
+import { MCPServerName } from '../types.js';
 
-interface MCPServer {
-  name: string;
+export type MCPCategory = 'knowledge' | 'research' | 'creation' | 'storage';
+
+/**
+ * Runtime state of an MCP server.
+ * Renamed from MCPServer to avoid conflict with MCPServerName type.
+ */
+export interface MCPServerState {
+  name: MCPServerName;
   category: MCPCategory;
   capabilities: string[];
   available: boolean;
@@ -49,6 +55,7 @@ interface SenseResult {
   data?: any;
   error?: string;
   latency: number;
+  mode: 'real' | 'simulated';
 }
 
 // ============================================================================
@@ -57,7 +64,7 @@ interface SenseResult {
 
 export class SensorAgent extends BaseAgent {
   // Registry of MCP servers
-  private mcpServers: Map<string, MCPServer> = new Map();
+  private mcpServers: Map<MCPServerName, MCPServerState> = new Map();
 
   // Request history for analytics
   private requestHistory: {
@@ -121,7 +128,7 @@ export class SensorAgent extends BaseAgent {
     ]);
   }
 
-  private registerMCP(name: string, category: MCPCategory, capabilities: string[]): void {
+  private registerMCP(name: MCPServerName, category: MCPCategory, capabilities: string[]): void {
     this.mcpServers.set(name, {
       name,
       category,
@@ -182,41 +189,35 @@ export class SensorAgent extends BaseAgent {
         success: false,
         error: `No server found for capability: ${request.capability}`,
         latency: Date.now() - startTime,
+        mode: 'simulated',
       };
     }
 
     this.log(`Sensing via ${server.name}: ${request.capability}`);
 
-    try {
-      // Simulate MCP call (in production, would use actual MCP protocol)
-      const data = await this.callMCP(server.name, request.capability, request.params);
+    // Use the MCP client module (supports real/simulated/hybrid modes)
+    const mcpClient = getMCPClient();
+    const result = await mcpClient.call(server.name, request.capability, request.params, {
+      timeout: request.timeout,
+    });
 
-      const latency = Date.now() - startTime;
-      this.recordRequest(server.name, true, latency);
+    // Record the request for tracking
+    this.recordRequest(server.name, result.success, result.latency);
 
-      return {
-        server: server.name,
-        success: true,
-        data,
-        latency,
-      };
-    } catch (error) {
-      const latency = Date.now() - startTime;
-      this.recordRequest(server.name, false, latency);
-
-      return {
-        server: server.name,
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-        latency,
-      };
-    }
+    return {
+      server: server.name,
+      success: result.success,
+      data: result.data,
+      error: result.error,
+      latency: result.latency,
+      mode: result.mode,
+    };
   }
 
-  private findServer(request: SenseRequest): MCPServer | null {
+  private findServer(request: SenseRequest): MCPServerState | null {
     // Specific server requested
     if (request.server) {
-      return this.mcpServers.get(request.server) || null;
+      return this.mcpServers.get(request.server as MCPServerName) || null;
     }
 
     // Find by category
@@ -250,108 +251,10 @@ export class SensorAgent extends BaseAgent {
   }
 
   // ============================================================================
-  // MCP Protocol (Simulated)
-  // ============================================================================
-
-  private async callMCP(
-    serverName: string,
-    capability: string,
-    params: Record<string, any>
-  ): Promise<any> {
-    // This is a simulation layer. In production, this would:
-    // 1. Serialize the request using MCP protocol
-    // 2. Send to the appropriate MCP server via stdio/socket
-    // 3. Parse and return the response
-
-    // For now, return simulated responses based on server type
-    const server = this.mcpServers.get(serverName);
-    if (!server) throw new Error(`Server not found: ${serverName}`);
-
-    // Simulate network latency
-    await this.simulateLatency(50, 200);
-
-    // Generate simulated response based on capability
-    return this.generateSimulatedResponse(serverName, capability, params);
-  }
-
-  private async simulateLatency(min: number, max: number): Promise<void> {
-    const delay = min + Math.random() * (max - min);
-    await new Promise((resolve) => setTimeout(resolve, delay));
-  }
-
-  private generateSimulatedResponse(
-    server: string,
-    capability: string,
-    params: Record<string, any>
-  ): any {
-    // Return placeholder responses for simulation
-    switch (server) {
-      case 'arxiv':
-        return {
-          papers: [{
-            id: 'arxiv:' + randomUUID().slice(0, 8),
-            title: `Paper about ${params.query || 'AI'}`,
-            authors: ['Author A', 'Author B'],
-            abstract: 'This is a simulated paper abstract.',
-          }],
-        };
-
-      case 'brave-search':
-      case 'gemini':
-      case 'exa':
-        return {
-          results: [{
-            title: `Search result for ${params.query || 'query'}`,
-            url: 'https://example.com',
-            snippet: 'This is a simulated search result.',
-          }],
-        };
-
-      case 'openai':
-        return {
-          response: `Generated response for: ${params.prompt || params.messages?.[0]?.content || 'request'}`,
-          model: 'gpt-4o',
-        };
-
-      case 'stability-ai':
-        return {
-          image: 'data:image/png;base64,simulated_image_data',
-          prompt: params.prompt,
-        };
-
-      case 'github':
-        return {
-          success: true,
-          url: 'https://github.com/simulated/repo',
-        };
-
-      case 'memory':
-        return {
-          entities: [],
-          relations: [],
-        };
-
-      case 'filesystem':
-        return {
-          success: true,
-          path: params.path,
-        };
-
-      default:
-        return {
-          success: true,
-          server,
-          capability,
-          params,
-        };
-    }
-  }
-
-  // ============================================================================
   // Request Tracking
   // ============================================================================
 
-  private recordRequest(server: string, success: boolean, latency: number): void {
+  private recordRequest(server: MCPServerName, success: boolean, latency: number): void {
     // Update server stats
     const mcpServer = this.mcpServers.get(server);
     if (mcpServer) {
@@ -502,14 +405,10 @@ export class SensorAgent extends BaseAgent {
   }
 
   private async checkAllServers(): Promise<void> {
+    const mcpClient = getMCPClient();
     for (const server of this.mcpServers.values()) {
-      try {
-        // Simple health check
-        await this.callMCP(server.name, 'health', {});
-        server.available = true;
-      } catch {
-        server.available = false;
-      }
+      // Check availability via MCP client
+      server.available = await mcpClient.isAvailable(server.name);
       server.lastChecked = new Date();
     }
   }
@@ -549,16 +448,30 @@ export class SensorAgent extends BaseAgent {
   // Public API
   // ============================================================================
 
-  getAvailableServers(): MCPServer[] {
+  getAvailableServers(): MCPServerState[] {
     return Array.from(this.mcpServers.values()).filter((s) => s.available);
   }
 
-  getServersByCategory(category: MCPCategory): MCPServer[] {
+  getServersByCategory(category: MCPCategory): MCPServerState[] {
     return Array.from(this.mcpServers.values()).filter((s) => s.category === category);
   }
 
   hasCapability(capability: string): boolean {
     return this.findServer({ capability, params: {} }) !== null;
+  }
+
+  /**
+   * Get the current MCP mode (real/simulated/hybrid)
+   */
+  getMCPMode(): MCPMode {
+    return getMCPClient().getMode();
+  }
+
+  /**
+   * Check if running in simulated mode
+   */
+  isSimulated(): boolean {
+    return this.getMCPMode() === 'simulated';
   }
 }
 

@@ -8,7 +8,11 @@
 // MCP Server Types
 // ============================================================================
 
-export type MCPServer =
+/**
+ * Names of all 13 MCP servers available to Genesis.
+ * Renamed from MCPServer to avoid conflict with MCPServerState interface.
+ */
+export type MCPServerName =
   | 'filesystem'
   | 'github'
   | 'openai'
@@ -23,8 +27,11 @@ export type MCPServer =
   | 'brave-search'
   | 'stability-ai';
 
+/** @deprecated Use MCPServerName instead */
+export type MCPServer = MCPServerName;
+
 export interface MCPCapability {
-  server: MCPServer;
+  server: MCPServerName;
   category: 'knowledge' | 'creation' | 'research' | 'visual' | 'storage';
   tools: string[];
   description: string;
@@ -202,7 +209,7 @@ export interface PipelineResult<T> {
   data?: T;
   error?: string;
   duration: number;
-  mcpsUsed: MCPServer[];
+  mcpsUsed: MCPServerName[];
 }
 
 export interface PipelineConfig {

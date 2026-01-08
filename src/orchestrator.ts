@@ -12,7 +12,7 @@
  */
 
 import {
-  MCPServer,
+  MCPServerName,
   MCPCapability,
   SystemSpec,
   ResearchResult,
@@ -30,7 +30,7 @@ import {
 // MCP Capability Map
 // ============================================================================
 
-export const MCP_CAPABILITIES: Record<MCPServer, MCPCapability> = {
+export const MCP_CAPABILITIES: Record<MCPServerName, MCPCapability> = {
   // Knowledge MCPs
   'arxiv': {
     server: 'arxiv',
@@ -140,10 +140,10 @@ export class MCPOrchestrator {
   /**
    * Get all MCPs for a category
    */
-  getMCPsByCategory(category: MCPCapability['category']): MCPServer[] {
+  getMCPsByCategory(category: MCPCapability['category']): MCPServerName[] {
     return Object.entries(MCP_CAPABILITIES)
       .filter(([_, cap]) => cap.category === category)
-      .map(([server]) => server as MCPServer);
+      .map(([server]) => server as MCPServerName);
   }
 
   /**
@@ -238,7 +238,7 @@ export class MCPOrchestrator {
   // Prompt Builders
   // ============================================================================
 
-  buildResearchPrompt(topic: string, sources: MCPServer[]): string {
+  buildResearchPrompt(topic: string, sources: MCPServerName[]): string {
     return `
 Research the topic: "${topic}"
 
@@ -358,8 +358,8 @@ export class GenesisPipeline {
     return results;
   }
 
-  private getMCPsForStage(stage: PipelineStage): MCPServer[] {
-    const stageToMCPs: Record<PipelineStage, MCPServer[]> = {
+  private getMCPsForStage(stage: PipelineStage): MCPServerName[] {
+    const stageToMCPs: Record<PipelineStage, MCPServerName[]> = {
       research: ['arxiv', 'semantic-scholar', 'context7', 'gemini', 'brave-search', 'exa', 'firecrawl'],
       design: ['openai', 'wolfram'],
       generate: ['openai', 'context7'],

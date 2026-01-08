@@ -9,16 +9,26 @@
 // ============================================================================
 
 export type AgentType =
-  | 'explorer'    // Search, discover, research
-  | 'critic'      // Find problems, critique
-  | 'builder'     // Construct, implement
-  | 'memory'      // Store, retrieve, consolidate
-  | 'feeling'     // Evaluate importance, valence
-  | 'narrator'    // Create coherent story
-  | 'ethicist'    // Judge right/wrong
-  | 'predictor'   // Forecast consequences
-  | 'planner'     // Decompose goals
-  | 'sensor';     // Interface with MCP
+  // Core agents (v4.0)
+  | 'explorer'      // Search, discover, research
+  | 'critic'        // Find problems, critique
+  | 'builder'       // Construct, implement
+  | 'memory'        // Store, retrieve, consolidate
+  | 'feeling'       // Evaluate importance, valence
+  | 'narrator'      // Create coherent story
+  | 'ethicist'      // Judge right/wrong
+  | 'predictor'     // Forecast consequences
+  | 'planner'       // Decompose goals
+  | 'sensor'        // Interface with MCP
+  // Phase 5.1+ agents
+  | 'economic'      // Cost tracking, budget management
+  | 'consciousness' // φ-Monitor, GWT, AST
+  | 'world-model'   // JEPA encoder/predictor/simulator
+  | 'causal'        // Causal reasoning, interventions
+  // Phase 5.5+ agents
+  | 'swarm'         // Collective intelligence
+  | 'grounding'     // Semantic grounding, ontology
+  | 'anticipatory'; // Predictive regulation
 
 export type AgentState =
   | 'idle'        // Waiting for messages
@@ -34,6 +44,7 @@ export type AgentId = string;
 // ============================================================================
 
 export type MessageType =
+  // Core messages (v4.0)
   | 'QUERY'           // Request information
   | 'RESPONSE'        // Response to query
   | 'BROADCAST'       // Announce to all
@@ -59,7 +70,31 @@ export type MessageType =
   | 'HEALTH'          // Health check
   | 'WAKE'            // Wake up agent
   | 'SLEEP'           // Put agent to sleep
-  | 'SHUTDOWN';       // Shutdown signal
+  | 'SHUTDOWN'        // Shutdown signal
+  // Phase 5.1+ messages (Memory 2.0, Economics)
+  | 'CONSOLIDATE'     // Memory consolidation request
+  | 'DREAM'           // Enter dream mode
+  | 'COST_TRACK'      // Track operation cost
+  | 'BUDGET_CHECK'    // Check budget availability
+  // Phase 5.2+ messages (World Model)
+  | 'WORLD_PREDICT'   // World model prediction
+  | 'WORLD_SIMULATE'  // Rollout simulation
+  | 'WORLD_ENCODE'    // Encode state to latent
+  // Phase 5.3+ messages (Consciousness)
+  | 'PHI_CHECK'       // Consciousness level check
+  | 'PHI_REPORT'      // φ value report
+  | 'GWT_BROADCAST'   // Global workspace broadcast
+  | 'ATTENTION'       // Attention schema update
+  // Phase 5.4+ messages (Darwin-Gödel)
+  | 'MUTATION'        // Self-improvement mutation
+  | 'SANDBOX_TEST'    // Test mutation in sandbox
+  // Phase 5.5+ messages (Collective)
+  | 'SWARM_UPDATE'    // Swarm dynamics update
+  | 'EMERGENCE'       // Emergent pattern detected
+  // Phase 5.6+ messages (Grounding, Causal)
+  | 'GROUND_CLAIM'    // Ground a claim in ontology
+  | 'INTERVENTION'    // Causal intervention
+  | 'COUNTERFACTUAL'; // Counterfactual query
 
 export type MessagePriority = 'critical' | 'high' | 'normal' | 'low';
 

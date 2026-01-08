@@ -26,6 +26,7 @@ import { SystemSpec, MCPServerName } from './types.js';
 import { startChat } from './cli/chat.js';
 import { getLLMBridge } from './llm/index.js';
 import { getMCPClient, logMCPMode, MCP_SERVER_REGISTRY } from './mcp/index.js';
+import { getProcessManager, LOG_FILE } from './daemon/process.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -326,6 +327,197 @@ async function cmdMCP(subcommand: string | undefined, options: Record<string, st
   console.log(c('Unknown MCP subcommand. Use: status, test, list', 'red'));
 }
 
+// ============================================================================
+// Daemon Command
+// ============================================================================
+
+async function cmdDaemon(subcommand: string | undefined, options: Record<string, string>): Promise<void> {
+  const pm = getProcessManager();
+
+  // Special case: 'run' is called by spawned background process
+  if (subcommand === 'run') {
+    pm.startDaemon();
+    // Keep process alive
+    setInterval(() => {}, 1000 * 60 * 60);
+    return;
+  }
+
+  printBanner();
+
+  if (!subcommand || subcommand === 'status') {
+    // Show daemon status
+    const info = pm.getInfo();
+
+    console.log(c('\n=== Daemon Status ===\n', 'bold'));
+
+    if (info.running) {
+      console.log(`  ${c('Status:', 'cyan')}  ${c('Running', 'green')}`);
+      console.log(`  ${c('PID:', 'cyan')}     ${info.pid}`);
+      console.log(`  ${c('Socket:', 'cyan')}  ${info.socketPath}`);
+
+      // Get detailed status via IPC
+      try {
+        const response = await pm.ipcCall('status');
+        if (response.success && response.data) {
+          const status = response.data;
+          console.log(`  ${c('State:', 'cyan')}   ${status.state}`);
+          console.log(`  ${c('Uptime:', 'cyan')}  ${Math.floor(status.uptime / 1000)}s`);
+          console.log(`  ${c('Tasks:', 'cyan')}   ${status.completedTasks} completed, ${status.failedTasks} failed`);
+          console.log(`  ${c('Dreams:', 'cyan')}  ${status.dreamCycles} cycles`);
+        }
+      } catch {
+        // IPC may fail
+      }
+    } else {
+      console.log(`  ${c('Status:', 'cyan')}  ${c('Stopped', 'yellow')}`);
+      console.log(`  ${c('Hint:', 'dim')}    Use 'genesis daemon start' to start`);
+    }
+    console.log();
+    return;
+  }
+
+  if (subcommand === 'start') {
+    const info = pm.getInfo();
+    if (info.running) {
+      console.log(c(`\nDaemon already running (PID: ${info.pid})`, 'yellow'));
+      return;
+    }
+
+    console.log(c('\nStarting daemon in background...', 'cyan'));
+    const result = await pm.spawn();
+
+    if (result.success) {
+      console.log(c(`Daemon started (PID: ${result.pid})`, 'green'));
+      console.log(c(`Log file: ${LOG_FILE}`, 'dim'));
+    } else {
+      console.log(c(`Failed to start daemon: ${result.error}`, 'red'));
+    }
+    return;
+  }
+
+  if (subcommand === 'stop') {
+    const info = pm.getInfo();
+    if (!info.running) {
+      console.log(c('\nDaemon is not running', 'yellow'));
+      return;
+    }
+
+    console.log(c('\nStopping daemon...', 'cyan'));
+    const result = await pm.kill();
+
+    if (result.success) {
+      console.log(c('Daemon stopped', 'green'));
+    } else {
+      console.log(c(`Failed to stop daemon: ${result.error}`, 'red'));
+    }
+    return;
+  }
+
+  if (subcommand === 'restart') {
+    const info = pm.getInfo();
+    if (info.running) {
+      console.log(c('\nStopping daemon...', 'cyan'));
+      await pm.kill();
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+
+    console.log(c('Starting daemon...', 'cyan'));
+    const result = await pm.spawn();
+
+    if (result.success) {
+      console.log(c(`Daemon restarted (PID: ${result.pid})`, 'green'));
+    } else {
+      console.log(c(`Failed to restart daemon: ${result.error}`, 'red'));
+    }
+    return;
+  }
+
+  if (subcommand === 'logs') {
+    // Show recent logs
+    const lines = parseInt(options.lines || '50', 10);
+
+    if (!fs.existsSync(LOG_FILE)) {
+      console.log(c('\nNo log file found', 'yellow'));
+      return;
+    }
+
+    const content = fs.readFileSync(LOG_FILE, 'utf-8');
+    const allLines = content.split('\n');
+    const recentLines = allLines.slice(-lines);
+
+    console.log(c(`\n=== Daemon Logs (last ${lines} lines) ===\n`, 'bold'));
+    for (const line of recentLines) {
+      if (line.includes('ERROR')) {
+        console.log(c(line, 'red'));
+      } else if (line.includes('WARN')) {
+        console.log(c(line, 'yellow'));
+      } else {
+        console.log(line);
+      }
+    }
+    console.log();
+    return;
+  }
+
+  if (subcommand === 'tasks') {
+    const info = pm.getInfo();
+    if (!info.running) {
+      console.log(c('\nDaemon is not running', 'yellow'));
+      return;
+    }
+
+    console.log(c('\n=== Scheduled Tasks ===\n', 'bold'));
+
+    try {
+      const response = await pm.ipcCall('tasks');
+      if (response.success && response.data?.tasks) {
+        for (const task of response.data.tasks) {
+          const statusColor = task.state === 'running' ? 'green' : task.state === 'failed' ? 'red' : 'dim';
+          console.log(`  ${c('●', statusColor)} ${task.name}`);
+          console.log(`      Schedule: ${JSON.stringify(task.schedule)}`);
+          if (task.lastRun) {
+            console.log(`      Last run: ${new Date(task.lastRun).toLocaleString()}`);
+          }
+          if (task.nextRun) {
+            console.log(`      Next run: ${new Date(task.nextRun).toLocaleString()}`);
+          }
+        }
+      } else {
+        console.log(c(`Error: ${response.error}`, 'red'));
+      }
+    } catch (err) {
+      console.log(c(`IPC error: ${err}`, 'red'));
+    }
+    console.log();
+    return;
+  }
+
+  if (subcommand === 'dream') {
+    const info = pm.getInfo();
+    if (!info.running) {
+      console.log(c('\nDaemon is not running', 'yellow'));
+      return;
+    }
+
+    console.log(c('\nTriggering dream cycle...', 'cyan'));
+
+    try {
+      const response = await pm.ipcCall('dream');
+      if (response.success) {
+        console.log(c('Dream cycle completed', 'green'));
+        console.log(`Results: ${JSON.stringify(response.data, null, 2)}`);
+      } else {
+        console.log(c(`Error: ${response.error}`, 'red'));
+      }
+    } catch (err) {
+      console.log(c(`IPC error: ${err}`, 'red'));
+    }
+    return;
+  }
+
+  console.log(c('Unknown daemon subcommand. Use: start, stop, restart, status, logs, tasks, dream', 'red'));
+}
+
 function cmdHelp(): void {
   printBanner();
   console.log(`${c('Usage:', 'bold')}
@@ -456,6 +648,9 @@ async function main(): Promise<void> {
         break;
       case 'mcp':
         await cmdMCP(positional, options);
+        break;
+      case 'daemon':
+        await cmdDaemon(positional, options);
         break;
       default:
         console.error(c(`Unknown command: ${command}`, 'red'));

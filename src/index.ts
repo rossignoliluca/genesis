@@ -22,7 +22,9 @@
  */
 
 import { createOrchestrator, MCP_CAPABILITIES, GenesisPipeline } from './orchestrator.js';
-import { SystemSpec, MCPServer } from './types.js';
+import { SystemSpec, MCPServerName } from './types.js';
+import { startChat } from './cli/chat.js';
+import { getLLMBridge } from './llm/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -245,12 +247,25 @@ async function cmdPublish(specFile: string): Promise<void> {
   console.log('  STORAGE: memory (knowledge persistence)');
 }
 
+async function cmdChat(options: Record<string, string>): Promise<void> {
+  const provider = options.provider as 'openai' | 'anthropic' | undefined;
+  const model = options.model;
+  const verbose = options.verbose === 'true';
+
+  await startChat({ provider, model, verbose });
+}
+
 function cmdHelp(): void {
   printBanner();
   console.log(`${c('Usage:', 'bold')}
   genesis <command> [options]
 
 ${c('Commands:', 'bold')}
+  ${c('chat', 'green')}                  ${c('Interactive chat with Genesis', 'bold')}
+    --provider <p>       LLM provider: openai, anthropic
+    --model <m>          Model name (e.g., gpt-4o, claude-sonnet-4-20250514)
+    --verbose            Show latency and token usage
+
   ${c('create', 'green')} <name>         Create a new system
     --type <type>        System type: autopoietic, agent, multi-agent, service
     --description <desc> System description
@@ -274,12 +289,11 @@ ${c('MCP Servers (13):', 'bold')}
   ${c('STORAGE:', 'cyan')}    memory, filesystem
 
 ${c('Examples:', 'bold')}
+  genesis chat                          ${c('Start interactive chat', 'dim')}
+  genesis chat --provider anthropic     ${c('Use Claude', 'dim')}
+  genesis chat --verbose                ${c('Show token usage', 'dim')}
   genesis create my-agent --type agent --features "state-machine,events"
   genesis research "autopoiesis in AI systems"
-  genesis design my-agent.genesis.json
-  genesis generate my-agent.genesis.json
-  genesis visualize my-agent.genesis.json
-  genesis publish my-agent.genesis.json
 `);
 }
 
@@ -313,6 +327,9 @@ async function main(): Promise<void> {
 
   try {
     switch (command) {
+      case 'chat':
+        await cmdChat(options);
+        break;
       case 'status':
         await cmdStatus();
         break;

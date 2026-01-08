@@ -74,9 +74,8 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
   },
   'semantic-scholar': {
     command: 'npx',
-    args: ['-y', 'semantic-scholar-mcp'],
-    envVars: { SEMANTIC_SCHOLAR_API_KEY: process.env.SEMANTIC_SCHOLAR_API_KEY || '' },
-    tools: ['search_papers', 'get_paper', 'get_citations'],
+    args: ['-y', 'paper-search-mcp-nodejs'],
+    tools: ['search_papers', 'get_paper_details', 'download_paper'],
   },
   'context7': {
     command: 'npx',

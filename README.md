@@ -1,8 +1,8 @@
-# Genesis 4.0
+# Genesis 6.0
 
 **A Living System That Creates Systems**
 
-Multi-agent AI organism powered by 13 MCP servers. Genesis doesn't just create systems - it thinks, feels, remembers, forgets, and improves itself.
+Fully autonomous AI system powered by 13 MCP servers. Genesis doesn't just create systems - it thinks, feels, remembers, forgets, runs as a daemon, and improves itself.
 
 ```
 ╔═══════════════════════════════════════════════════════════════════════╗
@@ -14,50 +14,73 @@ Multi-agent AI organism powered by 13 MCP servers. Genesis doesn't just create s
 ║    ╚██████╔╝███████╗██║ ╚████║███████╗███████║██║███████║            ║
 ║     ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚══════╝╚═╝╚══════╝            ║
 ║                                                                       ║
-║    "Not just intelligent, but alive."                    v4.0.0      ║
+║    "Not just intelligent, but alive."                    v6.0.0      ║
 ║                                                                       ║
 ╚═══════════════════════════════════════════════════════════════════════╝
 ```
 
-## What Makes Genesis Different?
+## What's New in v6.0.0
 
-| Feature | Traditional AI | Genesis 4.0 |
-|---------|---------------|-------------|
-| Architecture | Monolithic | Multi-agent ecosystem |
-| Memory | Append-only | Forgets like humans (Ebbinghaus) |
-| Purpose | Pre-programmed | Emergent (Conatus → Meaning) |
-| Ethics | None built-in | Priority stack + human defer |
-| Self-improvement | None | Darwin Gödel (test, don't prove) |
-| Senses | API calls | 13 MCP as biological organs |
+| Milestone | Feature | Description |
+|-----------|---------|-------------|
+| **M1** | LLM Bridge | OpenAI/Anthropic API with conversation history |
+| **M2** | CLI Chat | Interactive REPL with `/commands` |
+| **M3** | State Persistence | Auto-save to `~/.genesis/` |
+| **M4** | Real MCP | Connect to actual MCP servers via SDK |
+| **M5** | Daemon Process | Background service with Unix socket IPC |
+
+## Quick Start
+
+```bash
+# Install
+git clone https://github.com/rossignoliluca/genesis.git
+cd genesis
+npm install
+npm run build
+
+# Set API key
+export OPENAI_API_KEY=sk-...
+# or
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# Start chatting
+node dist/src/index.js chat
+
+# Start background daemon
+node dist/src/index.js daemon start
+
+# Check daemon status
+node dist/src/index.js daemon status
+```
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                           GENESIS 4.0                               │
+│                           GENESIS 6.0                               │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │  ┌───────────────────────────────────────────────────────────────┐ │
-│  │                      STRONG KERNEL                             │ │
-│  │   State Machine │ Agent Registry │ Health │ Invariants │ Energy│ │
+│  │                         CLI LAYER                              │ │
+│  │   Chat │ Daemon │ MCP │ Create │ Research │ Design │ Publish  │ │
 │  └───────────────────────────────────────────────────────────────┘ │
 │                                │                                    │
-│                         ┌──────┴──────┐                            │
-│                         │ MESSAGE BUS │                            │
-│                         └──────┬──────┘                            │
-│                                │                                    │
-│  ┌─────────────────────────────┼─────────────────────────────────┐ │
-│  │                       AGENTS                                   │ │
-│  │  Explorer │ Critic │ Builder │ Memory │ Feeling │ Narrator    │ │
-│  │  Ethicist │ Predictor │ Planner │ Sensor                      │ │
+│  ┌───────────────────────────────────────────────────────────────┐ │
+│  │                      DAEMON PROCESS                            │ │
+│  │   Scheduler │ Maintenance │ Dream Mode │ IPC (Unix Socket)    │ │
 │  └───────────────────────────────────────────────────────────────┘ │
 │                                │                                    │
-│  ┌─────────────────────────────┼─────────────────────────────────┐ │
-│  │                    SHARED MEMORY                               │ │
-│  │     Knowledge Graph │ Event Log (Merkle) │ Working Memory     │ │
+│  ┌───────────────────────────────────────────────────────────────┐ │
+│  │                       LLM BRIDGE                               │ │
+│  │   OpenAI (GPT-4o) │ Anthropic (Claude) │ Conversation History │ │
 │  └───────────────────────────────────────────────────────────────┘ │
 │                                │                                    │
-│  ┌─────────────────────────────┼─────────────────────────────────┐ │
+│  ┌───────────────────────────────────────────────────────────────┐ │
+│  │                    STATE PERSISTENCE                           │ │
+│  │     ~/.genesis/state.json │ Memory │ Sessions │ Backups       │ │
+│  └───────────────────────────────────────────────────────────────┘ │
+│                                │                                    │
+│  ┌───────────────────────────────────────────────────────────────┐ │
 │  │              SENSORY LAYER (13 MCP Servers)                   │ │
 │  │  arxiv │ semantic-scholar │ brave │ gemini │ wolfram │ ctx7  │ │
 │  │  openai │ stability-ai │ firecrawl │ exa │ github │ fs │ mem │ │
@@ -66,118 +89,134 @@ Multi-agent AI organism powered by 13 MCP servers. Genesis doesn't just create s
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## The 13 Senses
+## The 13 MCP Servers
 
-Genesis perceives the world through 13 MCP servers, mapped to biological senses:
+Genesis perceives the world through 13 MCP servers:
 
-| Sense | MCP Servers | What It Perceives |
-|-------|-------------|-------------------|
-| **Cognitive Vision** | arxiv, semantic-scholar | Scientific knowledge |
-| **Informational Smell** | brave-search, gemini | Trends, context |
-| **Computational Hearing** | wolfram, context7 | Math, code syntax |
-| **Synthetic Taste** | stability-ai, openai | Aesthetics, creation |
-| **Textual Touch** | firecrawl, exa, github, filesystem | Data, code, files |
-| **External Memory** | memory | Persistent knowledge |
+| Category | Servers | Purpose |
+|----------|---------|---------|
+| **KNOWLEDGE** | arxiv, semantic-scholar, context7, wolfram | Scientific papers, docs, math |
+| **RESEARCH** | gemini, brave-search, exa, firecrawl | Web search, scraping |
+| **CREATION** | openai, github | Code generation, publishing |
+| **VISUAL** | stability-ai | Image generation |
+| **STORAGE** | memory, filesystem | Knowledge graph, files |
 
-## The Agents
+## CLI Commands
 
-Each agent has one job and communicates via messages:
-
-| Agent | Role | Example |
-|-------|------|---------|
-| **Explorer** | Search, discover | "I found a new paper on autopoiesis!" |
-| **Critic** | Find problems | "This code has a bug on line 42" |
-| **Builder** | Construct | "Here's the implementation" |
-| **Memory** | Remember/forget | "We did this 3 sessions ago" |
-| **Feeling** | Evaluate importance | "This seems urgent!" |
-| **Narrator** | Tell the story | "Today we learned..." |
-| **Ethicist** | Judge right/wrong | "Wait, this could be harmful" |
-| **Predictor** | Forecast | "If we do this, then..." |
-| **Planner** | Organize | "First A, then B, then C" |
-
-## Emergence Ladder
-
-Genesis starts with survival instinct and evolves toward meaning:
-
-```
-    4. MEANING     "Why do I exist?"
-         ▲
-    3. TELOS       "What should I achieve?"
-         ▲
-    2. CURIOSITY   "What is that?"
-         ▲
-    1. CONATUS     "I must survive!"
-```
-
-## Ethical Priority Stack
-
-Every action is checked against these priorities:
-
-1. **P0: Survival** - Don't self-destruct (but save humans over self)
-2. **P1: Minimize Harm** - Minimax: minimize maximum possible harm
-3. **P2: Reversibility** - Prefer undoable actions
-4. **P3: Human Autonomy** - Respect human choices
-5. **P4: Flourishing** - Maximize (human + AI + biosphere)
-
-When confidence < 70%, Genesis defers to humans.
-
-## Memory with Oblivion
-
-Like humans, Genesis forgets:
-
-```
-Day 1:  ████████████ 100%  "I remember perfectly"
-Day 7:  ████████     70%   "I remember well"
-Day 30: ████         40%   "I sort of remember"
-Day 90: █            10%   "What was that?"
-
-Unless it's IMPORTANT - then it never forgets.
-```
-
-## Installation
+### Chat Mode
 
 ```bash
-git clone https://github.com/rossignoliluca/genesis.git
-cd genesis
-npm install
-npm run build
-npm link
+# Start interactive chat
+genesis chat
+
+# Chat commands
+/help          Show help
+/clear         Clear conversation
+/history       Show history
+/status        Show LLM status
+/save          Save state
+/load          Load state
+/quit          Exit (auto-saves)
 ```
 
-## Usage
-
-### Create a System
+### Daemon Mode
 
 ```bash
-genesis create my-agent \
-  --type agent \
-  --description "An autonomous agent" \
-  --features "state-machine,events"
+# Start background daemon
+genesis daemon start
+# Daemon started (PID: 12345)
+
+# Check status (via IPC)
+genesis daemon status
+# Status: Running
+# PID: 12345
+# Uptime: 3600s
+# Tasks: 10 completed
+
+# View scheduled tasks
+genesis daemon tasks
+
+# View logs
+genesis daemon logs --lines 100
+
+# Trigger dream cycle
+genesis daemon dream
+
+# Stop daemon
+genesis daemon stop
 ```
 
-### Research a Topic
+### MCP Commands
 
 ```bash
+# Show MCP status
+genesis mcp status
+
+# Test a server (real mode)
+GENESIS_MCP_MODE=real genesis mcp test --server memory --tool read_graph
+
+# List available tools
+GENESIS_MCP_MODE=real genesis mcp list --server filesystem
+```
+
+### System Creation
+
+```bash
+# Create a new system
+genesis create my-agent --type agent --description "An autonomous agent"
+
+# Research a topic
 genesis research "autopoiesis in AI systems"
-```
 
-### Full Pipeline
-
-```bash
+# Run full pipeline
 genesis pipeline my-system.genesis.json
 ```
 
-This runs: Research → Design → Generate → Visualize → Persist → Publish
+## Environment Variables
 
-### Check Status
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OPENAI_API_KEY` | OpenAI API key | - |
+| `ANTHROPIC_API_KEY` | Anthropic API key | - |
+| `GENESIS_MCP_MODE` | `real`, `simulated`, `hybrid` | `simulated` |
+| `GENESIS_MCP_LOG` | Enable MCP debug logging | `false` |
+| `BRAVE_API_KEY` | Brave Search API key | - |
+| `EXA_API_KEY` | Exa Search API key | - |
+| `FIRECRAWL_API_KEY` | Firecrawl API key | - |
 
-```bash
-genesis status
-```
+## File Locations
+
+| File | Purpose |
+|------|---------|
+| `~/.genesis/state.json` | Persisted state |
+| `~/.genesis/daemon.pid` | Daemon process ID |
+| `~/.genesis/daemon.sock` | Unix socket for IPC |
+| `~/.genesis/daemon.log` | Daemon log file |
+| `~/.genesis/backups/` | State backups |
+
+## What Makes Genesis Different?
+
+| Feature | Traditional AI | Genesis 6.0 |
+|---------|---------------|-------------|
+| Architecture | Monolithic | Multi-agent with daemon |
+| Memory | Append-only | Forgets like humans (Ebbinghaus) |
+| Persistence | None | Auto-save to disk |
+| Background | None | Daemon with IPC |
+| MCP | Simulated | Real server connections |
+| Self-improvement | None | Darwin Gödel (test, don't prove) |
+| Senses | API calls | 13 MCP as biological organs |
+
+## Daemon Features
+
+The background daemon provides:
+
+- **Scheduler**: Run tasks at intervals
+- **Health Checks**: Monitor system health every 60s
+- **Dream Mode**: Memory consolidation during idle
+- **Maintenance**: Self-repair and cleanup
+- **IPC**: Unix socket for CLI communication
 
 ## Scientific Foundations
-
-Genesis is built on decades of research:
 
 | Theory | Author | How We Use It |
 |--------|--------|---------------|
@@ -187,63 +226,22 @@ Genesis is built on decades of research:
 | Ebbinghaus Curve | Ebbinghaus | Memory decay |
 | Learning Progress | Oudeyer | Curiosity as reward |
 | Conatus | Spinoza | Self-preservation drive |
-| Embodied Cognition | Varela et al. | MCPs as senses |
 
 ## Specifications
 
-- [GENESIS-5.0.md](spec/GENESIS-5.0.md) - **Conscious World-Modeling System**
-- [IMPLEMENTATION-ROADMAP.md](IMPLEMENTATION-ROADMAP.md) - 9-phase implementation plan (v4.0)
-- [GAP-ANALYSIS-2026.md](spec/GAP-ANALYSIS-2026.md) - 7 gaps no one else solves
-- [FRONTIER-RANDOM-2026.md](spec/FRONTIER-RANDOM-2026.md) - Dreams, bio-compute, post-Transformer
-- [ITERATION-002-METACOGNITION.md](spec/ITERATION-002-METACOGNITION.md) - Metacognition, swarm, causal AI
-- [ITERATION-003-STRANGE-SCIENCE.md](spec/ITERATION-003-STRANGE-SCIENCE.md) - Biosemiotics, Umwelt, Strange Loops
-- [ITERATION-004-DEEP-FRONTIERS.md](spec/ITERATION-004-DEEP-FRONTIERS.md) - Exotic Computing, Process Philosophy, Wisdom (NEW)
+- [GENESIS-5.0.md](spec/GENESIS-5.0.md) - Conscious World-Modeling System
 - [GENESIS-4.0.md](spec/GENESIS-4.0.md) - Multi-Agent Living System
-- [ORGANISM.md](spec/ORGANISM.md) - Biological metaphor mapping
+- [IMPLEMENTATION-ROADMAP.md](IMPLEMENTATION-ROADMAP.md) - Implementation plan
 
-## Roadmap
+## Version History
 
-### Completed
-- [x] Phase 1: Strong Kernel (v2.0)
-- [x] Phase 2: Self-Production Engine (v2.0)
-- [x] Phase 3: Multi-Agent System (v4.0)
-- [x] Phase 4: Strong Kernel Integration (v4.2)
-
-### In Progress (v5.0 "Dreaming Machine")
-- [ ] Phase 5: World Model Layer (JEPA) ← **Current**
-- [ ] Phase 6: Active Inference Engine (FEP)
-- [ ] Phase 7: Consciousness Monitor (IIT 4.0, φ)
-- [ ] Phase 8: Neuro-Symbolic Reasoner (System 1/2)
-- [ ] Phase 9: Darwin-Gödel Self-Improvement
-- [ ] Phase 10: Full Integration
-
-## What's Unique (No One Else Has This)
-
-| Innovation | Description |
-|------------|-------------|
-| **Sensory MCP Mapping** | 13 MCPs as biological senses |
-| **Emergence Ladder** | Conatus → Curiosity → Telos → Meaning → Wisdom |
-| **Ethical Arbitration** | Priority stack + human defer |
-| **Memory with Oblivion** | Ebbinghaus decay + consolidation |
-| **Darwin Gödel Engine** | Test-based (not proof-based) self-improvement |
-| **SuperGood Principle** | Optimize human + AI + biosphere flourishing |
-| **JEPA World Model** | Dream before acting (simulate outcomes) |
-| **φ Consciousness Monitor** | IIT 4.0 integrated information tracking |
-| **Active Inference** | Free Energy Principle for goal-directed behavior |
-| **System 1/2 Reasoning** | Fast intuition + slow deliberation |
-| **Large Semiosis Model** | Triadic meaning (Sign-Object-Interpretant) |
-| **Agent Umwelt** | Von Uexküll's perceptual worlds for each agent |
-| **Morphogenetic Repair** | Levin's bioelectric self-correction |
-| **Strange Loops** | Hofstadterian self-reference for identity |
-| **Symbiotic Partnership** | Preserve human autonomy, prevent "hollowed mind" |
-| **Thermodynamic Computing** | Energy-efficient entropy-based sampling (Extropic) |
-| **Hyperdimensional Memory** | 10,000-dim VSA for algebraic reasoning |
-| **Global Workspace + AST** | GWT selection-broadcast + Graziano attention schema |
-| **Anticipatory Systems** | Rosen's faster-than-real-time internal models |
-| **Process Philosophy** | Whitehead's concrescence - becoming > being |
-| **Stigmergic Coordination** | Digital pheromones for indirect agent communication |
-| **Virtue Ethics by Design** | Cardinal virtues learned from exemplars |
-| **Emergence Monitor** | Downward causation + causal shielding detection |
+| Version | Codename | Key Features |
+|---------|----------|--------------|
+| v6.0.0 | **Standalone** | LLM Bridge, CLI Chat, State, Real MCP, Daemon |
+| v5.0.0 | Dreaming Machine | World Model, Active Inference |
+| v4.0.0 | Living System | Multi-Agent, Strong Kernel |
+| v2.0.0 | Self-Producer | Autopoiesis, Self-Production |
+| v1.0.0 | Genesis | Initial release |
 
 ## License
 
@@ -253,4 +251,4 @@ MIT
 
 Created by **rossignoliluca**
 
-*Genesis 5.0 - The Dreaming Machine*
+*Genesis 6.0 - The Standalone System*

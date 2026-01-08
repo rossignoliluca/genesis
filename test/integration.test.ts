@@ -60,7 +60,7 @@ describe('Memory Module', () => {
       properties: { version: '6.0' },
       category: 'software',
       confidence: 0.95,
-      source: 'specification',
+      sources: ['specification'],
     });
 
     assert.ok(fact.id, 'Should return fact with ID');
@@ -81,8 +81,8 @@ describe('Memory Module', () => {
       name: 'test-procedure',
       description: 'A test procedure',
       steps: [
-        { order: 1, action: 'step1' },
-        { order: 2, action: 'step2' },
+        { action: 'step1' },
+        { action: 'step2' },
       ],
     });
 

@@ -25,6 +25,7 @@ import { createOrchestrator, MCP_CAPABILITIES, GenesisPipeline } from './orchest
 import { SystemSpec, MCPServerName } from './types.js';
 import { startChat } from './cli/chat.js';
 import { getLLMBridge } from './llm/index.js';
+import { getMCPClient, logMCPMode, MCP_SERVER_REGISTRY } from './mcp/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -255,6 +256,76 @@ async function cmdChat(options: Record<string, string>): Promise<void> {
   await startChat({ provider, model, verbose });
 }
 
+async function cmdMCP(subcommand: string | undefined, options: Record<string, string>): Promise<void> {
+  const client = getMCPClient({ logCalls: true });
+  logMCPMode();
+
+  if (!subcommand || subcommand === 'status') {
+    // Show MCP mode and registered servers
+    console.log(c('\n=== MCP Client Status ===\n', 'bold'));
+    console.log(`Mode: ${client.getMode()}`);
+    console.log(`\nRegistered servers:`);
+    for (const [name, info] of Object.entries(MCP_SERVER_REGISTRY)) {
+      console.log(`  ${c('●', 'green')} ${name.padEnd(18)} ${c(info.tools.join(', '), 'dim')}`);
+    }
+    return;
+  }
+
+  if (subcommand === 'test') {
+    // Test a specific server
+    // Usage: genesis mcp test --server memory --tool read_graph --args '{}'
+    const server = (options.server || 'memory') as MCPServerName;
+    const tool = options.tool || 'read_graph';
+
+    // Parse args - can be JSON or simple key=value
+    let args: Record<string, any> = {};
+    if (options.args) {
+      try {
+        args = JSON.parse(options.args);
+      } catch {
+        // Try key=value format
+        args = { query: options.args };
+      }
+    }
+
+    console.log(c(`\n=== Testing MCP: ${server}.${tool} ===\n`, 'bold'));
+    if (Object.keys(args).length > 0) {
+      console.log(`Args: ${JSON.stringify(args)}\n`);
+    }
+
+    const result = await client.call(server, tool, args);
+
+    if (result.success) {
+      console.log(c('✓ Success', 'green'));
+      console.log(`  Mode: ${result.mode}`);
+      console.log(`  Latency: ${result.latency}ms`);
+      console.log(`  Data:`, JSON.stringify(result.data, null, 2).slice(0, 500));
+    } else {
+      console.log(c('✗ Failed', 'red'));
+      console.log(`  Error: ${result.error}`);
+    }
+    return;
+  }
+
+  if (subcommand === 'list') {
+    // List tools for a server
+    const server = (options.server || 'memory') as MCPServerName;
+    console.log(c(`\n=== Tools for ${server} ===\n`, 'bold'));
+
+    try {
+      const tools = await client.listTools(server);
+      for (const tool of tools) {
+        console.log(`  ${c('●', 'cyan')} ${tool}`);
+      }
+    } catch (error) {
+      console.log(c(`Error: ${error}`, 'red'));
+    }
+    return;
+  }
+
+  console.log(c('Unknown MCP subcommand. Use: status, test, list', 'red'));
+}
+
 function cmdHelp(): void {
   printBanner();
   console.log(`${c('Usage:', 'bold')}
@@ -277,6 +348,14 @@ ${c('Commands:', 'bold')}
   ${c('generate', 'green')} <spec-file>  Generate code from spec
   ${c('visualize', 'green')} <spec-file> Create visual assets
   ${c('publish', 'green')} <spec-file>   Publish to GitHub
+
+  ${c('mcp', 'green')} [subcommand]      MCP client control
+    status               Show MCP mode and servers
+    test                 Test MCP server call
+      --server <s>       Server name (default: arxiv)
+      --tool <t>         Tool name (default: search_arxiv)
+      --query <q>        Query string
+    list --server <s>    List tools for a server
 
   ${c('status', 'green')}                Show MCP servers status
   ${c('help', 'green')}                  Show this help
@@ -374,6 +453,9 @@ async function main(): Promise<void> {
           process.exit(1);
         }
         await cmdPublish(positional);
+        break;
+      case 'mcp':
+        await cmdMCP(positional, options);
         break;
       default:
         console.error(c(`Unknown command: ${command}`, 'red'));

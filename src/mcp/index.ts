@@ -1,22 +1,17 @@
 /**
- * Genesis 6.0 - MCP Client Module
+ * Genesis 6.0 - Real MCP Client Module
  *
- * Provides unified interface for calling MCP servers.
- * Supports both real and simulated modes.
+ * Connects to actual MCP servers using @modelcontextprotocol/sdk.
+ * Spawns servers on demand and manages connections.
  *
  * Environment Variables:
  * - GENESIS_MCP_MODE: 'real' | 'simulated' | 'hybrid' (default: 'simulated')
  * - GENESIS_MCP_TIMEOUT: Timeout in ms (default: 30000)
  * - GENESIS_MCP_LOG: Enable MCP call logging (default: false)
- *
- * Usage:
- * ```typescript
- * import { mcpClient } from './mcp/index.js';
- *
- * const result = await mcpClient.call('arxiv', 'search_arxiv', { query: 'AI' });
- * ```
  */
 
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { MCPServerName } from '../types.js';
 import { randomUUID } from 'crypto';
 
@@ -37,7 +32,7 @@ export interface MCPCallResult<T = any> {
   data?: T;
   error?: string;
   server: MCPServerName;
-  capability: string;
+  tool: string;
   mode: 'real' | 'simulated';
   latency: number;
   timestamp: Date;
@@ -47,8 +42,295 @@ export interface MCPClientConfig {
   mode: MCPMode;
   timeout: number;
   logCalls: boolean;
-  onCall?: (server: MCPServerName, capability: string, params: any) => void;
+  onCall?: (server: MCPServerName, tool: string, params: any) => void;
   onResult?: (result: MCPCallResult) => void;
+}
+
+// ============================================================================
+// MCP Server Registry
+// ============================================================================
+
+interface MCPServerInfo {
+  command: string;
+  args: string[];
+  envVars?: Record<string, string>;
+  tools: string[];
+}
+
+/**
+ * Registry of MCP servers and how to spawn them.
+ * These are the 13 MCP servers Genesis uses.
+ *
+ * Package sources (verified on npm):
+ * - Official: @modelcontextprotocol/server-*
+ * - Third-party: arxiv-mcp-server, @brave/brave-search-mcp-server, etc.
+ */
+const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
+  // KNOWLEDGE
+  'arxiv': {
+    command: 'npx',
+    args: ['-y', 'arxiv-mcp-server'],
+    tools: ['search_papers', 'get_paper', 'download_pdf'],
+  },
+  'semantic-scholar': {
+    command: 'npx',
+    args: ['-y', 'semantic-scholar-mcp'],
+    envVars: { SEMANTIC_SCHOLAR_API_KEY: process.env.SEMANTIC_SCHOLAR_API_KEY || '' },
+    tools: ['search_papers', 'get_paper', 'get_citations'],
+  },
+  'context7': {
+    command: 'npx',
+    args: ['-y', '@upstash/context7-mcp'],
+    tools: ['resolve-library-id', 'query-docs'],
+  },
+  'wolfram': {
+    command: 'npx',
+    args: ['-y', 'wolfram-mcp'],
+    envVars: { WOLFRAM_APP_ID: process.env.WOLFRAM_APP_ID || '' },
+    tools: ['query'],
+  },
+
+  // RESEARCH
+  'gemini': {
+    command: 'npx',
+    args: ['-y', 'gemini-mcp'],
+    envVars: { GEMINI_API_KEY: process.env.GEMINI_API_KEY || '' },
+    tools: ['generate', 'chat'],
+  },
+  'brave-search': {
+    command: 'npx',
+    args: ['-y', '@brave/brave-search-mcp-server'],
+    envVars: { BRAVE_API_KEY: process.env.BRAVE_API_KEY || '' },
+    tools: ['brave_web_search', 'brave_local_search', 'brave_news_search', 'brave_image_search', 'brave_video_search'],
+  },
+  'exa': {
+    command: 'npx',
+    args: ['-y', 'exa-mcp-server'],
+    envVars: { EXA_API_KEY: process.env.EXA_API_KEY || '' },
+    tools: ['web_search_exa', 'get_code_context_exa'],
+  },
+  'firecrawl': {
+    command: 'npx',
+    args: ['-y', 'firecrawl-mcp'],
+    envVars: { FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY || '' },
+    tools: ['firecrawl_scrape', 'firecrawl_search', 'firecrawl_map', 'firecrawl_crawl'],
+  },
+
+  // CREATION
+  'openai': {
+    command: 'npx',
+    args: ['-y', '@robinson_ai_systems/openai-mcp'],
+    envVars: { OPENAI_API_KEY: process.env.OPENAI_API_KEY || '' },
+    tools: ['chat', 'complete', 'embedding'],
+  },
+  'github': {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-github'],
+    envVars: { GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_TOKEN || '' },
+    tools: ['create_repository', 'search_repositories', 'create_issue', 'create_pull_request', 'get_file_contents'],
+  },
+
+  // VISUAL
+  'stability-ai': {
+    command: 'npx',
+    args: ['-y', 'stability-ai-mcp'],
+    envVars: { STABILITY_API_KEY: process.env.STABILITY_API_KEY || '' },
+    tools: ['generate_image', 'upscale', 'edit_image'],
+  },
+
+  // STORAGE
+  'memory': {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-memory'],
+    tools: ['create_entities', 'create_relations', 'search_nodes', 'read_graph', 'add_observations'],
+  },
+  'filesystem': {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', process.env.HOME || '/tmp'],
+    tools: ['read_file', 'read_text_file', 'write_file', 'list_directory', 'search_files', 'create_directory'],
+  },
+};
+
+// ============================================================================
+// MCP Connection Manager
+// ============================================================================
+
+interface MCPConnection {
+  client: Client;
+  transport: StdioClientTransport;
+  connected: boolean;
+  lastUsed: Date;
+}
+
+class MCPConnectionManager {
+  private connections: Map<MCPServerName, MCPConnection> = new Map();
+  private connecting: Map<MCPServerName, Promise<MCPConnection>> = new Map();
+  private timeout: number;
+  private logCalls: boolean;
+
+  constructor(timeout = 30000, logCalls = false) {
+    this.timeout = timeout;
+    this.logCalls = logCalls;
+  }
+
+  /**
+   * Get or create connection to MCP server
+   */
+  async getConnection(server: MCPServerName): Promise<MCPConnection> {
+    // Return existing connection if available
+    const existing = this.connections.get(server);
+    if (existing?.connected) {
+      existing.lastUsed = new Date();
+      return existing;
+    }
+
+    // Check if already connecting
+    const pending = this.connecting.get(server);
+    if (pending) {
+      return pending;
+    }
+
+    // Create new connection
+    const connectPromise = this.createConnection(server);
+    this.connecting.set(server, connectPromise);
+
+    try {
+      const connection = await connectPromise;
+      this.connections.set(server, connection);
+      return connection;
+    } finally {
+      this.connecting.delete(server);
+    }
+  }
+
+  /**
+   * Create new connection to MCP server
+   */
+  private async createConnection(server: MCPServerName): Promise<MCPConnection> {
+    const serverInfo = MCP_SERVER_REGISTRY[server];
+    if (!serverInfo) {
+      throw new Error(`Unknown MCP server: ${server}`);
+    }
+
+    if (this.logCalls) {
+      console.log(`[MCP] Spawning ${server}: ${serverInfo.command} ${serverInfo.args.join(' ')}`);
+    }
+
+    const client = new Client({
+      name: `genesis-${server}`,
+      version: '6.0.0',
+    });
+
+    // Build environment, filtering out undefined values
+    const env: Record<string, string> = {};
+    for (const [key, value] of Object.entries(process.env)) {
+      if (value !== undefined) {
+        env[key] = value;
+      }
+    }
+    if (serverInfo.envVars) {
+      Object.assign(env, serverInfo.envVars);
+    }
+
+    const transport = new StdioClientTransport({
+      command: serverInfo.command,
+      args: serverInfo.args,
+      env,
+    });
+
+    await client.connect(transport);
+
+    if (this.logCalls) {
+      console.log(`[MCP] Connected to ${server}`);
+    }
+
+    return {
+      client,
+      transport,
+      connected: true,
+      lastUsed: new Date(),
+    };
+  }
+
+  /**
+   * Call a tool on an MCP server
+   */
+  async callTool<T = any>(
+    server: MCPServerName,
+    tool: string,
+    args: Record<string, any>
+  ): Promise<T> {
+    const connection = await this.getConnection(server);
+
+    if (this.logCalls) {
+      console.log(`[MCP] ${server}.${tool}(${JSON.stringify(args).slice(0, 100)}...)`);
+    }
+
+    const result = await connection.client.callTool({
+      name: tool,
+      arguments: args,
+    });
+
+    // Parse result content
+    const content = result.content as Array<{ type: string; text?: string }>;
+    if (content && content.length > 0) {
+      const first = content[0];
+      if (first.type === 'text' && typeof first.text === 'string') {
+        try {
+          return JSON.parse(first.text) as T;
+        } catch {
+          return first.text as unknown as T;
+        }
+      }
+    }
+
+    return result as unknown as T;
+  }
+
+  /**
+   * List available tools on an MCP server
+   */
+  async listTools(server: MCPServerName): Promise<string[]> {
+    const connection = await this.getConnection(server);
+    const result = await connection.client.listTools();
+    return result.tools.map((t) => t.name);
+  }
+
+  /**
+   * Check if a server is available (can connect)
+   */
+  async isAvailable(server: MCPServerName): Promise<boolean> {
+    try {
+      await this.getConnection(server);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Close connection to a server
+   */
+  async closeConnection(server: MCPServerName): Promise<void> {
+    const connection = this.connections.get(server);
+    if (connection) {
+      try {
+        await connection.client.close();
+      } catch {
+        // Ignore close errors
+      }
+      connection.connected = false;
+      this.connections.delete(server);
+    }
+  }
+
+  /**
+   * Close all connections
+   */
+  async closeAll(): Promise<void> {
+    const servers = Array.from(this.connections.keys());
+    await Promise.all(servers.map((s) => this.closeConnection(s)));
+  }
 }
 
 // ============================================================================
@@ -58,18 +340,110 @@ export interface MCPClientConfig {
 export interface IMCPClient {
   call<T = any>(
     server: MCPServerName,
-    capability: string,
+    tool: string,
     params: Record<string, any>,
     options?: MCPCallOptions
   ): Promise<MCPCallResult<T>>;
 
+  listTools(server: MCPServerName): Promise<string[]>;
   isAvailable(server: MCPServerName): Promise<boolean>;
   getMode(): MCPMode;
   setMode(mode: MCPMode): void;
+  close(): Promise<void>;
 }
 
 // ============================================================================
-// Simulated MCP Client
+// Real MCP Client
+// ============================================================================
+
+class RealMCPClient implements IMCPClient {
+  private manager: MCPConnectionManager;
+  private mode: MCPMode = 'real';
+  private config: MCPClientConfig;
+
+  constructor(config: Partial<MCPClientConfig> = {}) {
+    this.config = {
+      mode: 'real',
+      timeout: 30000,
+      logCalls: false,
+      ...config,
+    };
+    this.mode = this.config.mode;
+    this.manager = new MCPConnectionManager(this.config.timeout, this.config.logCalls);
+  }
+
+  async call<T = any>(
+    server: MCPServerName,
+    tool: string,
+    params: Record<string, any>,
+    options: MCPCallOptions = {}
+  ): Promise<MCPCallResult<T>> {
+    const startTime = Date.now();
+
+    if (this.config.onCall) {
+      this.config.onCall(server, tool, params);
+    }
+
+    try {
+      const data = await this.manager.callTool<T>(server, tool, params);
+
+      const result: MCPCallResult<T> = {
+        success: true,
+        data,
+        server,
+        tool,
+        mode: 'real',
+        latency: Date.now() - startTime,
+        timestamp: new Date(),
+      };
+
+      if (this.config.onResult) {
+        this.config.onResult(result);
+      }
+
+      return result;
+    } catch (error) {
+      const result: MCPCallResult<T> = {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        server,
+        tool,
+        mode: 'real',
+        latency: Date.now() - startTime,
+        timestamp: new Date(),
+      };
+
+      if (this.config.onResult) {
+        this.config.onResult(result);
+      }
+
+      return result;
+    }
+  }
+
+  async listTools(server: MCPServerName): Promise<string[]> {
+    return this.manager.listTools(server);
+  }
+
+  async isAvailable(server: MCPServerName): Promise<boolean> {
+    return this.manager.isAvailable(server);
+  }
+
+  getMode(): MCPMode {
+    return this.mode;
+  }
+
+  setMode(mode: MCPMode): void {
+    this.mode = mode;
+  }
+
+  async close(): Promise<void> {
+    await this.manager.closeAll();
+  }
+}
+
+// ============================================================================
+// Simulated MCP Client (for testing without real servers)
 // ============================================================================
 
 class SimulatedMCPClient implements IMCPClient {
@@ -88,63 +462,48 @@ class SimulatedMCPClient implements IMCPClient {
 
   async call<T = any>(
     server: MCPServerName,
-    capability: string,
+    tool: string,
     params: Record<string, any>,
     options: MCPCallOptions = {}
   ): Promise<MCPCallResult<T>> {
     const startTime = Date.now();
 
     if (this.config.onCall) {
-      this.config.onCall(server, capability, params);
+      this.config.onCall(server, tool, params);
     }
 
     if (this.config.logCalls) {
-      console.log(`[MCP] ${server}.${capability}(${JSON.stringify(params).slice(0, 100)}...)`);
+      console.log(`[MCP:SIM] ${server}.${tool}(${JSON.stringify(params).slice(0, 100)}...)`);
     }
 
-    try {
-      // Simulate network latency (50-200ms)
-      await this.simulateLatency(50, 200);
+    // Simulate latency
+    await new Promise((r) => setTimeout(r, 50 + Math.random() * 150));
 
-      const data = this.generateSimulatedResponse(server, capability, params) as T;
+    const data = this.generateSimulatedResponse(server, tool, params) as T;
 
-      const result: MCPCallResult<T> = {
-        success: true,
-        data,
-        server,
-        capability,
-        mode: 'simulated',
-        latency: Date.now() - startTime,
-        timestamp: new Date(),
-      };
+    const result: MCPCallResult<T> = {
+      success: true,
+      data,
+      server,
+      tool,
+      mode: 'simulated',
+      latency: Date.now() - startTime,
+      timestamp: new Date(),
+    };
 
-      if (this.config.onResult) {
-        this.config.onResult(result);
-      }
-
-      return result;
-    } catch (error) {
-      const result: MCPCallResult<T> = {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-        server,
-        capability,
-        mode: 'simulated',
-        latency: Date.now() - startTime,
-        timestamp: new Date(),
-      };
-
-      if (this.config.onResult) {
-        this.config.onResult(result);
-      }
-
-      return result;
+    if (this.config.onResult) {
+      this.config.onResult(result);
     }
+
+    return result;
+  }
+
+  async listTools(server: MCPServerName): Promise<string[]> {
+    return MCP_SERVER_REGISTRY[server]?.tools || [];
   }
 
   async isAvailable(server: MCPServerName): Promise<boolean> {
-    // In simulated mode, all servers are always available
-    return true;
+    return true; // Always available in simulated mode
   }
 
   getMode(): MCPMode {
@@ -155,398 +514,67 @@ class SimulatedMCPClient implements IMCPClient {
     this.mode = mode;
   }
 
-  private async simulateLatency(min: number, max: number): Promise<void> {
-    const delay = min + Math.random() * (max - min);
-    await new Promise((resolve) => setTimeout(resolve, delay));
+  async close(): Promise<void> {
+    // No-op for simulated
   }
 
   private generateSimulatedResponse(
     server: MCPServerName,
-    capability: string,
+    tool: string,
     params: Record<string, any>
   ): any {
-    // Simulated responses for each MCP server
+    const query = params.query || params.q || params.input || 'query';
+
     switch (server) {
-      // ========== KNOWLEDGE MCPs ==========
       case 'arxiv':
-        if (capability === 'search_arxiv' || capability === 'search_papers') {
-          return {
-            papers: [{
-              id: 'arxiv:' + randomUUID().slice(0, 8),
-              title: `[SIMULATED] Research on ${params.query || 'AI'}`,
-              authors: ['Simulated Author A', 'Simulated Author B'],
-              abstract: `This is a simulated paper abstract about ${params.query || 'artificial intelligence'}.`,
-              published: new Date().toISOString(),
-              url: `https://arxiv.org/abs/${randomUUID().slice(0, 8)}`,
-            }],
-            _simulated: true,
-          };
-        }
-        if (capability === 'get_recent_ai_papers') {
-          return {
-            papers: [{
-              id: 'arxiv:' + randomUUID().slice(0, 8),
-              title: '[SIMULATED] Latest Advances in Neural Networks',
-              authors: ['AI Researcher'],
-              abstract: 'Simulated recent AI paper.',
-            }],
-            _simulated: true,
-          };
-        }
-        break;
+        return {
+          papers: [{
+            id: 'arxiv:' + randomUUID().slice(0, 8),
+            title: `[SIM] Research on ${query}`,
+            authors: ['Author A', 'Author B'],
+            abstract: `Simulated paper about ${query}.`,
+            url: `https://arxiv.org/abs/${randomUUID().slice(0, 8)}`,
+          }],
+          _simulated: true,
+        };
 
       case 'semantic-scholar':
         return {
           papers: [{
             paperId: randomUUID().slice(0, 8),
-            title: `[SIMULATED] ${params.query || 'Research'} Study`,
-            authors: [{ name: 'Simulated Researcher' }],
+            title: `[SIM] ${query} Study`,
             citationCount: Math.floor(Math.random() * 100),
-            year: 2024,
-          }],
-          _simulated: true,
-        };
-
-      case 'context7':
-        if (capability === 'resolve-library-id' || capability === 'resolve_library') {
-          return {
-            libraryId: `/simulated/${params.libraryName || 'library'}`,
-            name: params.libraryName || 'library',
-            _simulated: true,
-          };
-        }
-        if (capability === 'query-docs' || capability === 'query_docs') {
-          return {
-            content: `[SIMULATED] Documentation for ${params.query || 'query'}:\n\nThis is simulated documentation content.`,
-            _simulated: true,
-          };
-        }
-        break;
-
-      case 'wolfram':
-        return {
-          result: `[SIMULATED] Wolfram result for: ${params.query}`,
-          pods: [{
-            title: 'Result',
-            subpods: [{ plaintext: 'Simulated calculation result' }],
-          }],
-          _simulated: true,
-        };
-
-      // ========== RESEARCH MCPs ==========
-      case 'gemini':
-        return {
-          results: [{
-            title: `[SIMULATED] ${params.q || params.query || 'Search'} Result`,
-            url: 'https://example.com/simulated',
-            snippet: 'This is a simulated Gemini search result.',
           }],
           _simulated: true,
         };
 
       case 'brave-search':
-        return {
-          web: {
-            results: [{
-              title: `[SIMULATED] ${params.query} - Brave Search`,
-              url: 'https://example.com/brave-simulated',
-              description: 'Simulated Brave search result.',
-            }],
-          },
-          _simulated: true,
-        };
-
+      case 'gemini':
       case 'exa':
         return {
           results: [{
-            title: `[SIMULATED] ${params.query} - Exa`,
-            url: 'https://example.com/exa-simulated',
-            text: 'Simulated Exa search result content.',
+            title: `[SIM] ${query} Result`,
+            url: 'https://example.com/sim',
+            description: `Simulated result for ${query}`,
           }],
           _simulated: true,
         };
 
       case 'firecrawl':
-        if (capability === 'firecrawl_scrape' || capability === 'scrape') {
-          return {
-            content: `[SIMULATED] Scraped content from ${params.url}`,
-            markdown: '# Simulated Page\n\nThis is simulated scraped content.',
-            _simulated: true,
-          };
-        }
-        if (capability === 'firecrawl_search' || capability === 'search') {
-          return {
-            results: [{
-              url: 'https://example.com/firecrawl-simulated',
-              title: `[SIMULATED] ${params.query}`,
-              content: 'Simulated Firecrawl search result.',
-            }],
-            _simulated: true,
-          };
-        }
-        break;
-
-      // ========== CREATION MCPs ==========
-      case 'openai':
         return {
-          choices: [{
-            message: {
-              role: 'assistant',
-              content: `[SIMULATED] Response for: ${params.messages?.[0]?.content || params.prompt || 'request'}`,
-            },
-          }],
-          model: params.model || 'gpt-4o',
+          content: `[SIM] Scraped content for ${params.url || query}`,
           _simulated: true,
         };
 
-      case 'github':
-        if (capability.includes('create_repo') || capability.includes('repository')) {
-          return {
-            success: true,
-            url: `https://github.com/simulated/${params.name || 'repo'}`,
-            _simulated: true,
-          };
-        }
-        if (capability.includes('search')) {
-          return {
-            items: [{
-              name: 'simulated-repo',
-              full_name: 'user/simulated-repo',
-              html_url: 'https://github.com/user/simulated-repo',
-            }],
-            _simulated: true,
-          };
-        }
-        return { success: true, _simulated: true };
-
-      case 'stability-ai':
-        return {
-          images: [{
-            base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-            seed: Math.floor(Math.random() * 1000000),
-          }],
-          prompt: params.prompt,
-          _simulated: true,
-        };
-
-      // ========== STORAGE MCPs ==========
       case 'memory':
-        if (capability.includes('create')) {
-          return { success: true, created: params.entities?.length || 1, _simulated: true };
-        }
-        if (capability.includes('search') || capability.includes('read')) {
-          return {
-            entities: [],
-            relations: [],
-            _simulated: true,
-          };
-        }
-        return { success: true, _simulated: true };
+        return { entities: [], relations: [], _simulated: true };
 
       case 'filesystem':
-        if (capability.includes('read')) {
-          return {
-            content: `[SIMULATED] Content of ${params.path}`,
-            _simulated: true,
-          };
-        }
-        if (capability.includes('write')) {
-          return { success: true, path: params.path, _simulated: true };
-        }
-        if (capability.includes('list')) {
-          return {
-            entries: [
-              { name: 'simulated-file.txt', type: 'file' },
-              { name: 'simulated-dir', type: 'directory' },
-            ],
-            _simulated: true,
-          };
-        }
-        return { success: true, _simulated: true };
+        return { content: `[SIM] File content`, _simulated: true };
 
       default:
-        return {
-          success: true,
-          server,
-          capability,
-          params,
-          _simulated: true,
-        };
+        return { success: true, _simulated: true };
     }
-
-    // Default fallback
-    return {
-      success: true,
-      server,
-      capability,
-      _simulated: true,
-    };
-  }
-}
-
-// ============================================================================
-// Real MCP Client (Stub - requires MCP server connections)
-// ============================================================================
-
-/**
- * Real MCP Client that connects to actual MCP servers.
- *
- * IMPORTANT: This requires MCP servers to be running and accessible.
- * In Claude Code context, MCP servers are managed by the host application.
- *
- * For standalone usage, you need to:
- * 1. Spawn MCP server processes
- * 2. Communicate via stdio/socket
- * 3. Handle the MCP protocol (JSON-RPC 2.0)
- *
- * See: https://modelcontextprotocol.io/docs
- */
-class RealMCPClient implements IMCPClient {
-  private mode: MCPMode = 'real';
-  private config: MCPClientConfig;
-  private simulatedFallback: SimulatedMCPClient;
-
-  constructor(config: Partial<MCPClientConfig> = {}) {
-    this.config = {
-      mode: 'real',
-      timeout: 30000,
-      logCalls: false,
-      ...config,
-    };
-    this.mode = this.config.mode;
-    this.simulatedFallback = new SimulatedMCPClient(config);
-  }
-
-  async call<T = any>(
-    server: MCPServerName,
-    capability: string,
-    params: Record<string, any>,
-    options: MCPCallOptions = {}
-  ): Promise<MCPCallResult<T>> {
-    const startTime = Date.now();
-    const fallbackToSimulated = options.fallbackToSimulated ?? (this.mode === 'hybrid');
-
-    if (this.config.onCall) {
-      this.config.onCall(server, capability, params);
-    }
-
-    if (this.config.logCalls) {
-      console.log(`[MCP:REAL] ${server}.${capability}(${JSON.stringify(params).slice(0, 100)}...)`);
-    }
-
-    try {
-      // Attempt real MCP call
-      const data = await this.executeRealMCPCall<T>(server, capability, params, options);
-
-      const result: MCPCallResult<T> = {
-        success: true,
-        data,
-        server,
-        capability,
-        mode: 'real',
-        latency: Date.now() - startTime,
-        timestamp: new Date(),
-      };
-
-      if (this.config.onResult) {
-        this.config.onResult(result);
-      }
-
-      return result;
-    } catch (error) {
-      // If fallback enabled, try simulated
-      if (fallbackToSimulated) {
-        console.warn(`[MCP] Real call to ${server}.${capability} failed, falling back to simulated`);
-        return this.simulatedFallback.call<T>(server, capability, params, options);
-      }
-
-      const result: MCPCallResult<T> = {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-        server,
-        capability,
-        mode: 'real',
-        latency: Date.now() - startTime,
-        timestamp: new Date(),
-      };
-
-      if (this.config.onResult) {
-        this.config.onResult(result);
-      }
-
-      return result;
-    }
-  }
-
-  private async executeRealMCPCall<T>(
-    server: MCPServerName,
-    capability: string,
-    params: Record<string, any>,
-    options: MCPCallOptions
-  ): Promise<T> {
-    // Map capability to actual MCP tool name
-    const toolName = this.mapCapabilityToTool(server, capability);
-
-    /**
-     * REAL MCP IMPLEMENTATION NOTES:
-     *
-     * To implement real MCP calls, you need to:
-     *
-     * 1. For Claude Code integration:
-     *    - Genesis runs within Claude Code context
-     *    - MCP servers are already available via Claude's tool system
-     *    - Use the mcp__<server>__<tool> naming convention
-     *
-     * 2. For standalone execution:
-     *    - Spawn MCP server processes using their package commands
-     *    - Communicate via stdio using JSON-RPC 2.0
-     *    - Example for arxiv: npx -y @anthropic/mcp-arxiv
-     *
-     * 3. Protocol format:
-     *    Request: { jsonrpc: "2.0", method: "tools/call", params: { name, arguments }, id }
-     *    Response: { jsonrpc: "2.0", result: { content: [...] }, id }
-     */
-
-    // For now, throw to indicate real MCP not configured
-    throw new Error(
-      `Real MCP not configured for ${server}.${capability}. ` +
-      `Set GENESIS_MCP_MODE=simulated or implement MCP server connection.`
-    );
-  }
-
-  private mapCapabilityToTool(server: MCPServerName, capability: string): string {
-    // Map internal capability names to actual MCP tool names
-    const mappings: Record<string, Record<string, string>> = {
-      'arxiv': {
-        'search_papers': 'search_arxiv',
-        'search_arxiv': 'search_arxiv',
-        'get_recent_ai': 'get_recent_ai_papers',
-      },
-      'brave-search': {
-        'web_search': 'brave_web_search',
-        'news_search': 'brave_news_search',
-      },
-      'gemini': {
-        'web_search': 'web_search',
-      },
-      // Add more mappings as needed
-    };
-
-    return mappings[server]?.[capability] || capability;
-  }
-
-  async isAvailable(server: MCPServerName): Promise<boolean> {
-    // In real mode, check if MCP server is actually reachable
-    // For now, return false as real MCP is not implemented
-    return false;
-  }
-
-  getMode(): MCPMode {
-    return this.mode;
-  }
-
-  setMode(mode: MCPMode): void {
-    this.mode = mode;
   }
 }
 
@@ -554,35 +582,54 @@ class RealMCPClient implements IMCPClient {
 // Hybrid MCP Client
 // ============================================================================
 
-/**
- * Hybrid client that tries real MCP first, falls back to simulated.
- */
 class HybridMCPClient implements IMCPClient {
   private realClient: RealMCPClient;
-  private simulatedClient: SimulatedMCPClient;
+  private simClient: SimulatedMCPClient;
   private mode: MCPMode = 'hybrid';
+  private config: MCPClientConfig;
 
   constructor(config: Partial<MCPClientConfig> = {}) {
-    this.realClient = new RealMCPClient({ ...config, mode: 'real' });
-    this.simulatedClient = new SimulatedMCPClient({ ...config, mode: 'simulated' });
+    this.config = {
+      mode: 'hybrid',
+      timeout: 30000,
+      logCalls: false,
+      ...config,
+    };
+    this.realClient = new RealMCPClient(config);
+    this.simClient = new SimulatedMCPClient(config);
   }
 
   async call<T = any>(
     server: MCPServerName,
-    capability: string,
+    tool: string,
     params: Record<string, any>,
     options: MCPCallOptions = {}
   ): Promise<MCPCallResult<T>> {
-    // Try real first with fallback enabled
-    return this.realClient.call<T>(server, capability, params, {
-      ...options,
-      fallbackToSimulated: true,
-    });
+    // Try real first
+    const result = await this.realClient.call<T>(server, tool, params, options);
+
+    // Fallback to simulated if real fails
+    if (!result.success && (options.fallbackToSimulated ?? true)) {
+      if (this.config.logCalls) {
+        console.log(`[MCP] Real call failed, falling back to simulated: ${result.error}`);
+      }
+      return this.simClient.call<T>(server, tool, params, options);
+    }
+
+    return result;
+  }
+
+  async listTools(server: MCPServerName): Promise<string[]> {
+    try {
+      return await this.realClient.listTools(server);
+    } catch {
+      return this.simClient.listTools(server);
+    }
   }
 
   async isAvailable(server: MCPServerName): Promise<boolean> {
-    const realAvailable = await this.realClient.isAvailable(server);
-    return realAvailable || await this.simulatedClient.isAvailable(server);
+    return (await this.realClient.isAvailable(server)) ||
+           (await this.simClient.isAvailable(server));
   }
 
   getMode(): MCPMode {
@@ -591,6 +638,10 @@ class HybridMCPClient implements IMCPClient {
 
   setMode(mode: MCPMode): void {
     this.mode = mode;
+  }
+
+  async close(): Promise<void> {
+    await this.realClient.close();
   }
 }
 
@@ -621,7 +672,6 @@ function createMCPClient(config: Partial<MCPClientConfig> = {}): IMCPClient {
   }
 }
 
-// Singleton instance
 let mcpClientInstance: IMCPClient | null = null;
 
 export function getMCPClient(config?: Partial<MCPClientConfig>): IMCPClient {
@@ -632,39 +682,30 @@ export function getMCPClient(config?: Partial<MCPClientConfig>): IMCPClient {
 }
 
 export function resetMCPClient(): void {
+  if (mcpClientInstance) {
+    mcpClientInstance.close().catch(() => {});
+  }
   mcpClientInstance = null;
 }
 
-// Default export
 export const mcpClient = getMCPClient();
 
 // ============================================================================
-// Utility Functions
+// Utilities
 // ============================================================================
 
-/**
- * Check if running in simulated mode
- */
 export function isSimulatedMode(): boolean {
   return mcpClient.getMode() === 'simulated';
 }
 
-/**
- * Check if a result was simulated
- */
 export function isSimulatedResult(result: MCPCallResult): boolean {
   return result.mode === 'simulated' || (result.data as any)?._simulated === true;
 }
 
-/**
- * Log MCP mode on startup
- */
 export function logMCPMode(): void {
   const mode = mcpClient.getMode();
-  const modeEmoji = mode === 'real' ? '🔌' : mode === 'hybrid' ? '🔀' : '🎭';
-  console.log(`[Genesis] MCP Mode: ${modeEmoji} ${mode.toUpperCase()}`);
-
-  if (mode === 'simulated') {
-    console.log('[Genesis] Set GENESIS_MCP_MODE=real for production');
-  }
+  const emoji = mode === 'real' ? '🔌' : mode === 'hybrid' ? '🔀' : '🎭';
+  console.log(`[Genesis] MCP Mode: ${emoji} ${mode.toUpperCase()}`);
 }
+
+export { MCP_SERVER_REGISTRY };

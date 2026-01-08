@@ -7,6 +7,7 @@
 
 import * as readline from 'readline';
 import { getLLMBridge, GENESIS_SYSTEM_PROMPT, LLMBridge } from '../llm/index.js';
+import { getStateStore, StateStore } from '../persistence/index.js';
 
 // ============================================================================
 // Colors
@@ -40,6 +41,7 @@ export interface ChatOptions {
 
 export class ChatSession {
   private llm: LLMBridge;
+  private store: StateStore;
   private rl: readline.Interface | null = null;
   private running = false;
   private verbose: boolean;
@@ -50,7 +52,16 @@ export class ChatSession {
       provider: options.provider,
       model: options.model,
     });
+    this.store = getStateStore({ autoSave: true, autoSaveIntervalMs: 60000 });
     this.verbose = options.verbose ?? false;
+
+    // Restore conversation history from persisted state
+    const state = this.store.getState();
+    if (state.conversation.history.length > 0) {
+      for (const msg of state.conversation.history) {
+        this.llm.getHistory().push(msg);
+      }
+    }
   }
 
   /**
@@ -140,6 +151,10 @@ export class ChatSession {
         console.log(c(`  [${response.latency}ms, ${response.usage?.outputTokens || '?'} tokens]`, 'dim'));
       }
 
+      // Persist conversation to state
+      this.store.updateConversation(this.llm.getHistory(), response.usage?.outputTokens);
+      this.store.recordInteraction();
+
       console.log();
     } catch (error) {
       process.stdout.write('\x1b[1A\x1b[2K'); // Clear "thinking..." line
@@ -202,6 +217,45 @@ export class ChatSession {
         console.log();
         break;
 
+      case 'save':
+        await this.store.save();
+        console.log(c('State saved.', 'green'));
+        console.log();
+        break;
+
+      case 'load':
+        await this.store.load();
+        // Restore conversation history
+        this.llm.clearHistory();
+        const state = this.store.getState();
+        for (const msg of state.conversation.history) {
+          this.llm.getHistory().push(msg);
+        }
+        console.log(c(`State loaded. ${state.conversation.history.length} messages restored.`, 'green'));
+        console.log();
+        break;
+
+      case 'export':
+        if (args.length > 0) {
+          await this.store.export(args[0]);
+          console.log(c(`State exported to: ${args[0]}`, 'green'));
+        } else {
+          console.log(c('Usage: /export <filename>', 'yellow'));
+        }
+        console.log();
+        break;
+
+      case 'reset':
+        this.store.reset();
+        this.llm.clearHistory();
+        console.log(c('State reset to empty.', 'yellow'));
+        console.log();
+        break;
+
+      case 'state':
+        this.printStateInfo();
+        break;
+
       default:
         console.log(c(`Unknown command: /${cmd}`, 'red'));
         console.log('Type /help for available commands.');
@@ -232,7 +286,15 @@ ${c('╚════════════════════════
     console.log('  /status, /s    Show LLM status');
     console.log('  /verbose, /v   Toggle verbose mode');
     console.log('  /system        Show system prompt');
-    console.log('  /quit, /q      Exit chat');
+    console.log();
+    console.log(c('State:', 'bold'));
+    console.log('  /save          Save state to disk');
+    console.log('  /load          Load state from disk');
+    console.log('  /export <f>    Export state to file');
+    console.log('  /reset         Reset state to empty');
+    console.log('  /state         Show state info');
+    console.log();
+    console.log('  /quit, /q      Exit chat (auto-saves)');
     console.log();
   }
 
@@ -273,11 +335,44 @@ ${c('╚════════════════════════
   }
 
   /**
+   * Print state info
+   */
+  private printStateInfo(): void {
+    const stats = this.store.stats();
+    const state = this.store.getState();
+
+    console.log(c('State Info:', 'bold'));
+    console.log(`  Data dir:       ${stats.dataDir}`);
+    console.log(`  State exists:   ${stats.stateExists ? c('Yes', 'green') : c('No', 'yellow')}`);
+    console.log(`  State size:     ${stats.stateSize} bytes`);
+    console.log(`  Backups:        ${stats.backupCount}`);
+    console.log(`  Dirty:          ${stats.isDirty ? c('Yes', 'yellow') : 'No'}`);
+    console.log(`  Last modified:  ${stats.lastModified}`);
+    console.log();
+    console.log(c('Memory:', 'cyan'));
+    console.log(`  Episodes:       ${state.memory.stats.totalEpisodes}`);
+    console.log(`  Facts:          ${state.memory.stats.totalFacts}`);
+    console.log(`  Skills:         ${state.memory.stats.totalSkills}`);
+    console.log();
+    console.log(c('Session:', 'cyan'));
+    console.log(`  ID:             ${state.session.id.substring(0, 8)}...`);
+    console.log(`  Interactions:   ${state.session.interactions}`);
+    console.log(`  Started:        ${state.session.startTime}`);
+    console.log();
+  }
+
+  /**
    * Stop chat session
    */
   stop(): void {
     this.running = false;
-    console.log(c('\nGoodbye! Genesis signing off.\n', 'cyan'));
+
+    // Save state before exit
+    console.log(c('\nSaving state...', 'dim'));
+    this.store.updateConversation(this.llm.getHistory());
+    this.store.close();
+
+    console.log(c('Goodbye! Genesis signing off.\n', 'cyan'));
     this.rl?.close();
     process.exit(0);
   }

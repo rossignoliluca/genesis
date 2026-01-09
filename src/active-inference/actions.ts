@@ -32,6 +32,9 @@ export interface ActionContext {
   goal?: string;
   taskId?: string;
   parameters?: Record<string, any>;
+  // Value integration (Genesis 6.2)
+  valueEngine?: unknown;  // ValueAugmentedEngine from value-integration.ts
+  useValueAugmentation?: boolean;
 }
 
 export type ActionExecutor = (context: ActionContext) => Promise<ActionResult>;

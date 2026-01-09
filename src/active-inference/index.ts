@@ -50,6 +50,18 @@ export {
   type IntegratedSystem,
 } from './integration.js';
 
+// Export Value-Guided JEPA integration (Genesis 6.2)
+export {
+  ValueAugmentedEngine,
+  createValueAugmentedEngine,
+  createFullyIntegratedEngine,
+  createValueIntegratedLoop,
+  type ValueIntegrationConfig,
+  type ValueIntegrationEvent,
+  type ValueIntegratedLoopConfig,
+  DEFAULT_VALUE_INTEGRATION_CONFIG,
+} from './value-integration.js';
+
 import { ActiveInferenceEngine, createActiveInferenceEngine } from './core.js';
 import { ObservationGatherer, createObservationGatherer } from './observations.js';
 import { ActionExecutorManager, createActionExecutorManager } from './actions.js';

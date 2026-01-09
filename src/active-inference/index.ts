@@ -123,6 +123,9 @@ export class AutonomousLoop {
   private onCycleHandlers: ((cycle: number, action: ActionType, beliefs: Beliefs) => void)[] = [];
   private onStopHandlers: ((reason: string, stats: LoopStats) => void)[] = [];
 
+  // Custom step function (for value integration)
+  private customStepFn: ((obs: Observation) => Promise<{ action: ActionType; beliefs: Beliefs }>) | null = null;
+
   constructor(config: Partial<AutonomousLoopConfig> = {}) {
     this.config = { ...DEFAULT_LOOP_CONFIG, ...config };
 
@@ -210,11 +213,23 @@ export class AutonomousLoop {
     }
 
     // 2. Run inference (beliefs + policy + action)
-    const action = this.engine.step(obs);
+    let action: ActionType;
+    let beliefs: Beliefs;
+
+    if (this.customStepFn) {
+      // Use custom step function (e.g., value-augmented inference)
+      const result = await this.customStepFn(obs);
+      action = result.action;
+      beliefs = result.beliefs;
+    } else {
+      // Use default Active Inference engine
+      action = this.engine.step(obs);
+      beliefs = this.engine.getBeliefs();
+    }
 
     if (this.config.verbose) {
-      const beliefs = this.engine.getMostLikelyState();
-      console.log(`[AI Loop] Cycle ${this.cycleCount} - Beliefs:`, beliefs);
+      const state = this.engine.getMostLikelyState();
+      console.log(`[AI Loop] Cycle ${this.cycleCount} - Beliefs:`, state);
       console.log(`[AI Loop] Cycle ${this.cycleCount} - Action: ${action}`);
     }
 
@@ -229,7 +244,6 @@ export class AutonomousLoop {
     this.checkStoppingConditions(obs, action);
 
     // 5. Notify cycle handlers
-    const beliefs = this.engine.getBeliefs();
     for (const handler of this.onCycleHandlers) {
       handler(this.cycleCount, action, beliefs);
     }
@@ -356,6 +370,18 @@ export class AutonomousLoop {
    */
   setActionContext(context: Parameters<ActionExecutorManager['setContext']>[0]): void {
     this.actions.setContext(context);
+  }
+
+  /**
+   * Set custom step function for value-augmented inference
+   *
+   * This allows replacing the default Active Inference engine step
+   * with a custom function (e.g., ValueAugmentedEngine.step)
+   */
+  setCustomStepFunction(
+    stepFn: ((obs: Observation) => Promise<{ action: ActionType; beliefs: Beliefs }>) | null
+  ): void {
+    this.customStepFn = stepFn;
   }
 
   /**

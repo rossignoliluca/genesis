@@ -648,11 +648,13 @@ export function createValueIntegratedLoop(
   // Create autonomous loop
   const loop = createAutonomousLoop(loopConfig);
 
-  // Replace the engine's step function to use value-augmented inference
-  // This is done by configuring the loop's action context
-  loop.setActionContext({
-    valueEngine,
-    useValueAugmentation: true,
+  // Hook value engine into the loop's inference step
+  loop.setCustomStepFunction(async (obs: Observation) => {
+    const result = await valueEngine.step(obs);
+    return {
+      action: result.action,
+      beliefs: result.beliefs,
+    };
   });
 
   return { loop, valueEngine };

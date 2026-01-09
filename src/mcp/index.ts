@@ -52,8 +52,8 @@ export interface MCPClientConfig {
 
 interface MCPServerInfo {
   command: string;
-  args: string[];
-  envVars?: Record<string, string>;
+  args: string[] | (() => string[]);
+  envVars?: Record<string, string> | (() => Record<string, string>);
   tools: string[];
 }
 
@@ -66,75 +66,75 @@ interface MCPServerInfo {
  * - Third-party: arxiv-mcp-server, @brave/brave-search-mcp-server, etc.
  */
 const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
-  // KNOWLEDGE
+  // KNOWLEDGE (from Claude Code config)
   'arxiv': {
     command: 'npx',
-    args: ['-y', 'arxiv-mcp-server'],
-    tools: ['search_papers', 'get_paper', 'download_pdf'],
+    args: ['-y', '@iflow-mcp/arxiv-paper-mcp'],
+    tools: ['search_arxiv', 'parse_paper_content', 'get_recent_ai_papers', 'get_arxiv_pdf_url'],
   },
   'semantic-scholar': {
     command: 'npx',
-    args: ['-y', 'paper-search-mcp-nodejs'],
-    tools: ['search_papers', 'get_paper_details', 'download_paper'],
+    args: ['-y', 'researchmcp', 'semantic'],
+    tools: ['search_semantic_scholar', 'get_semantic_scholar_paper', 'get_paper_citations', 'semantic_scholar_to_bibtex'],
   },
   'context7': {
     command: 'npx',
-    args: ['-y', '@upstash/context7-mcp'],
+    args: ['-y', '@upstash/context7-mcp@latest'],
     tools: ['resolve-library-id', 'query-docs'],
   },
   'wolfram': {
     command: 'npx',
-    args: ['-y', 'wolfram-mcp'],
-    envVars: { WOLFRAM_APP_ID: process.env.WOLFRAM_APP_ID || '' },
-    tools: ['query'],
+    args: ['-y', '@anthropic-ai/mcp-server-wolfram'],
+    envVars: () => ({ WOLFRAM_APP_ID: process.env.WOLFRAM_APP_ID || '' }),
+    tools: ['wolfram_query'],
   },
 
-  // RESEARCH
+  // RESEARCH (from Claude Code config)
   'gemini': {
     command: 'npx',
-    args: ['-y', 'gemini-mcp'],
-    envVars: { GEMINI_API_KEY: process.env.GEMINI_API_KEY || '' },
-    tools: ['generate', 'chat'],
+    args: ['-y', 'mcp-gemini-web'],
+    envVars: () => ({ GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || '' }),
+    tools: ['web_search', 'web_search_batch', 'health_check'],
   },
   'brave-search': {
     command: 'npx',
     args: ['-y', '@brave/brave-search-mcp-server'],
-    envVars: { BRAVE_API_KEY: process.env.BRAVE_API_KEY || '' },
+    envVars: () => ({ BRAVE_API_KEY: process.env.BRAVE_API_KEY || '' }),
     tools: ['brave_web_search', 'brave_local_search', 'brave_news_search', 'brave_image_search', 'brave_video_search'],
   },
   'exa': {
     command: 'npx',
     args: ['-y', 'exa-mcp-server'],
-    envVars: { EXA_API_KEY: process.env.EXA_API_KEY || '' },
+    envVars: () => ({ EXA_API_KEY: process.env.EXA_API_KEY || '' }),
     tools: ['web_search_exa', 'get_code_context_exa'],
   },
   'firecrawl': {
     command: 'npx',
     args: ['-y', 'firecrawl-mcp'],
-    envVars: { FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY || '' },
-    tools: ['firecrawl_scrape', 'firecrawl_search', 'firecrawl_map', 'firecrawl_crawl'],
+    envVars: () => ({ FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY || '' }),
+    tools: ['firecrawl_scrape', 'firecrawl_search', 'firecrawl_map', 'firecrawl_crawl', 'firecrawl_extract'],
   },
 
-  // CREATION
+  // CREATION (from Claude Code config)
   'openai': {
     command: 'npx',
-    args: ['-y', '@robinson_ai_systems/openai-mcp'],
-    envVars: { OPENAI_API_KEY: process.env.OPENAI_API_KEY || '' },
-    tools: ['chat', 'complete', 'embedding'],
+    args: ['-y', '@mzxrai/mcp-openai'],
+    envVars: () => ({ OPENAI_API_KEY: process.env.OPENAI_API_KEY || '' }),
+    tools: ['openai_chat'],
   },
   'github': {
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-github'],
-    envVars: { GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_TOKEN || '' },
+    envVars: () => ({ GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_TOKEN || '' }),
     tools: ['create_repository', 'search_repositories', 'create_issue', 'create_pull_request', 'get_file_contents'],
   },
 
-  // VISUAL
+  // VISUAL (from Claude Code config)
   'stability-ai': {
     command: 'npx',
-    args: ['-y', 'stability-ai-mcp'],
-    envVars: { STABILITY_API_KEY: process.env.STABILITY_API_KEY || '' },
-    tools: ['generate_image', 'upscale', 'edit_image'],
+    args: ['-y', '@anthropic-ai/mcp-server-stability-ai'],
+    envVars: () => ({ STABILITY_AI_API_KEY: process.env.STABILITY_AI_API_KEY || '' }),
+    tools: ['stability-ai-generate-image', 'stability-ai-generate-image-sd35'],
   },
 
   // STORAGE
@@ -145,7 +145,7 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
   },
   'filesystem': {
     command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-filesystem', process.env.HOME || '/tmp'],
+    args: () => ['-y', '@modelcontextprotocol/server-filesystem', process.env.HOME || '/tmp'],
     tools: ['read_file', 'read_text_file', 'write_file', 'list_directory', 'search_files', 'create_directory'],
   },
 };
@@ -211,8 +211,12 @@ class MCPConnectionManager {
       throw new Error(`Unknown MCP server: ${server}`);
     }
 
+    // Resolve args and envVars at connection time (supports functions for dynamic values)
+    const args = typeof serverInfo.args === 'function' ? serverInfo.args() : serverInfo.args;
+    const envVars = typeof serverInfo.envVars === 'function' ? serverInfo.envVars() : serverInfo.envVars;
+
     if (this.logCalls) {
-      console.log(`[MCP] Spawning ${server}: ${serverInfo.command} ${serverInfo.args.join(' ')}`);
+      console.log(`[MCP] Spawning ${server}: ${serverInfo.command} ${args.join(' ')}`);
     }
 
     const client = new Client({
@@ -227,13 +231,13 @@ class MCPConnectionManager {
         env[key] = value;
       }
     }
-    if (serverInfo.envVars) {
-      Object.assign(env, serverInfo.envVars);
+    if (envVars) {
+      Object.assign(env, envVars);
     }
 
     const transport = new StdioClientTransport({
       command: serverInfo.command,
-      args: serverInfo.args,
+      args,
       env,
     });
 

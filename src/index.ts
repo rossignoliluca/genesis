@@ -28,6 +28,7 @@ import { getLLMBridge } from './llm/index.js';
 import { getMCPClient, logMCPMode, MCP_SERVER_REGISTRY } from './mcp/index.js';
 import { getProcessManager, LOG_FILE } from './daemon/process.js';
 import { createPipelineExecutor } from './pipeline/index.js';
+import { createAutonomousLoop, ACTIONS, integrateActiveInference, createIntegratedSystem } from './active-inference/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -589,6 +590,202 @@ async function cmdDaemon(subcommand: string | undefined, options: Record<string,
   console.log(c('Unknown daemon subcommand. Use: start, stop, restart, status, logs, tasks, dream', 'red'));
 }
 
+// ============================================================================
+// Infer Command (Active Inference / Autonomous Mode)
+// ============================================================================
+
+async function cmdInfer(subcommand: string | undefined, options: Record<string, string>): Promise<void> {
+  if (subcommand === 'help' || options.help === 'true') {
+    console.log(`
+${c('Active Inference - Autonomous Decision Making', 'bold')}
+
+${c('Usage:', 'cyan')}
+  genesis infer [subcommand] [options]
+
+${c('Subcommands:', 'cyan')}
+  run         Run autonomous inference cycles (default)
+  integrated  Run with Kernel & Daemon integration
+  beliefs     Show current beliefs
+  step        Run a single inference cycle
+  stats       Show inference statistics
+
+${c('Options:', 'cyan')}
+  --cycles <n>      Number of cycles to run (default: 10)
+  --interval <ms>   Interval between cycles in ms (default: 1000)
+  --verbose         Show detailed output
+  --interactive     Pause after each cycle
+  --integrated      Connect to Kernel & Daemon (real system state)
+
+${c('Examples:', 'cyan')}
+  genesis infer                    Run 10 inference cycles
+  genesis infer --cycles 100       Run 100 cycles
+  genesis infer beliefs            Show current beliefs
+  genesis infer step               Run single cycle
+  genesis infer --verbose          Verbose output
+  genesis infer integrated         Run with full system integration
+`);
+    return;
+  }
+
+  const cycles = parseInt(options.cycles || '10', 10);
+  const interval = parseInt(options.interval || '1000', 10);
+  const verbose = options.verbose === 'true';
+  const interactive = options.interactive === 'true';
+  const integrated = options.integrated === 'true' || subcommand === 'integrated';
+
+  // Integrated mode: connect to real Kernel & Daemon
+  if (integrated) {
+    console.log(c('\n=== Integrated Active Inference Mode ===\n', 'bold'));
+    console.log(`  ${c('Status:', 'cyan')} Starting Kernel and Daemon...`);
+
+    try {
+      const system = await createIntegratedSystem({
+        cycleInterval: interval,
+        maxCycles: cycles,
+        verbose,
+        enableDaemonTask: false, // We'll run manually
+      });
+
+      // Start the system
+      await system.start();
+      console.log(`  ${c('Kernel:', 'green')} Started`);
+      console.log(`  ${c('Daemon:', 'green')} Started`);
+
+      const kernelStatus = system.status().kernel;
+      console.log(`  ${c('Agents:', 'cyan')} ${kernelStatus.agents.total} (${kernelStatus.agents.healthy} healthy)`);
+      console.log(`  ${c('Energy:', 'cyan')} ${(kernelStatus.energy * 100).toFixed(0)}%`);
+      console.log();
+
+      // Subscribe to cycle events
+      system.loop.onCycle((cycle, action, beliefs) => {
+        const status = system.status();
+        const line = `[${cycle.toString().padStart(4)}] ${action.padEnd(15)} | ` +
+          `E:${(status.kernel.energy * 100).toFixed(0)}% ` +
+          `K:${status.kernel.state.padEnd(10)} ` +
+          `A:${status.kernel.agents.healthy}/${status.kernel.agents.total}`;
+        console.log(line);
+      });
+
+      // Subscribe to stop event
+      system.loop.onStop((reason, stats) => {
+        console.log(c(`\n=== Stopped: ${reason} ===\n`, 'bold'));
+        console.log(`  Cycles: ${stats.cycles}`);
+        console.log(`  Avg Surprise: ${stats.avgSurprise.toFixed(3)}`);
+        console.log(`  Final Energy: ${(system.status().kernel.energy * 100).toFixed(0)}%`);
+        console.log(`  Actions taken:`);
+        for (const [action, count] of Object.entries(stats.actions)) {
+          const pct = ((count as number) / stats.cycles * 100).toFixed(1);
+          console.log(`    ${action}: ${count} (${pct}%)`);
+        }
+        console.log();
+      });
+
+      // Run the integrated loop
+      console.log(c(`Running ${cycles} integrated cycles...\n`, 'dim'));
+      await system.loop.run(cycles);
+
+      // Stop the system
+      await system.stop();
+      console.log(c('System stopped.\n', 'dim'));
+
+    } catch (error) {
+      console.error(c(`Error: ${error}`, 'red'));
+    }
+
+    return;
+  }
+
+  // Standard mode (no Kernel/Daemon integration)
+  const loop = createAutonomousLoop({
+    cycleInterval: interval,
+    maxCycles: 0,
+    verbose,
+    stopOnGoalAchieved: true,
+    stopOnEnergyCritical: true,
+  });
+
+  // Handle subcommands
+  if (subcommand === 'beliefs') {
+    const state = loop.getMostLikelyState();
+    console.log(c('\n=== Current Beliefs ===\n', 'bold'));
+    console.log(`  ${c('Viability:', 'cyan')}    ${state.viability}`);
+    console.log(`  ${c('World State:', 'cyan')}  ${state.worldState}`);
+    console.log(`  ${c('Coupling:', 'cyan')}     ${state.coupling}`);
+    console.log(`  ${c('Goal Progress:', 'cyan')} ${state.goalProgress}`);
+    console.log();
+    return;
+  }
+
+  if (subcommand === 'stats') {
+    const stats = loop.getStats();
+    console.log(c('\n=== Inference Statistics ===\n', 'bold'));
+    console.log(`  ${c('Cycles:', 'cyan')}         ${stats.cycles}`);
+    console.log(`  ${c('Avg Surprise:', 'cyan')}   ${stats.avgSurprise.toFixed(3)}`);
+    console.log(`  ${c('Actions:', 'cyan')}`);
+    for (const [action, count] of Object.entries(stats.actions)) {
+      console.log(`    ${action}: ${count}`);
+    }
+    console.log();
+    return;
+  }
+
+  if (subcommand === 'step') {
+    console.log(c('\n=== Single Inference Cycle ===\n', 'bold'));
+
+    const action = await loop.cycle();
+
+    const state = loop.getMostLikelyState();
+    console.log(`  ${c('Action:', 'green')} ${action}`);
+    console.log(`  ${c('Beliefs:', 'cyan')}`);
+    console.log(`    Viability: ${state.viability}`);
+    console.log(`    World: ${state.worldState}`);
+    console.log(`    Coupling: ${state.coupling}`);
+    console.log(`    Goal: ${state.goalProgress}`);
+    console.log();
+    return;
+  }
+
+  // Default: run cycles
+  console.log(c(`\n=== Active Inference - Running ${cycles} cycles ===\n`, 'bold'));
+  console.log(`  Interval: ${interval}ms`);
+  console.log(`  Verbose: ${verbose}`);
+  console.log();
+
+  // Subscribe to cycle events
+  loop.onCycle((cycle, action, beliefs) => {
+    if (!verbose) {
+      // Compact output
+      const state = loop.getMostLikelyState();
+      const line = `[${cycle.toString().padStart(4)}] ${action.padEnd(15)} | ` +
+        `V:${state.viability.padEnd(8)} W:${state.worldState.padEnd(8)} ` +
+        `C:${state.coupling.padEnd(8)} G:${state.goalProgress}`;
+      console.log(line);
+    }
+
+    if (interactive) {
+      // In interactive mode, we'd pause here
+      // For now, just show the action more prominently
+      console.log(c(`  → Action: ${action}`, 'yellow'));
+    }
+  });
+
+  // Subscribe to stop event
+  loop.onStop((reason, stats) => {
+    console.log(c(`\n=== Stopped: ${reason} ===\n`, 'bold'));
+    console.log(`  Cycles: ${stats.cycles}`);
+    console.log(`  Avg Surprise: ${stats.avgSurprise.toFixed(3)}`);
+    console.log(`  Actions taken:`);
+    for (const [action, count] of Object.entries(stats.actions)) {
+      const pct = ((count as number) / stats.cycles * 100).toFixed(1);
+      console.log(`    ${action}: ${count} (${pct}%)`);
+    }
+    console.log();
+  });
+
+  // Run the loop
+  await loop.run(cycles);
+}
+
 function cmdHelp(): void {
   printBanner();
   console.log(`${c('Usage:', 'bold')}
@@ -624,6 +821,11 @@ ${c('Commands:', 'bold')}
       --tool <t>         Tool name (default: search_arxiv)
       --query <q>        Query string
     list --server <s>    List tools for a server
+
+  ${c('infer', 'green')} [cycles]          Run autonomous inference loop
+    --cycles <n>         Number of cycles (default: 10, 0=unlimited)
+    --interval <ms>      Interval between cycles (default: 1000)
+    --verbose            Show detailed output
 
   ${c('status', 'green')}                Show MCP servers status
   ${c('help', 'green')}                  Show this help
@@ -736,6 +938,9 @@ async function main(): Promise<void> {
           process.exit(1);
         }
         await cmdPipeline(positional, options);
+        break;
+      case 'infer':
+        await cmdInfer(positional, options);
         break;
       default:
         console.error(c(`Unknown command: ${command}`, 'red'));

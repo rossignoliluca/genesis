@@ -73,3 +73,12 @@ export {
   type ValueIntegratedLoopConfig,
   DEFAULT_VALUE_INTEGRATION_CONFIG,
 } from './value-integration.js';
+
+// Export Memory 2.0 integration (Genesis 6.3)
+export {
+  integrateMemory,
+  getMemoryMetrics,
+  getWorkspaceState,
+  type MemoryIntegrationConfig,
+  DEFAULT_MEMORY_INTEGRATION_CONFIG,
+} from './memory-integration.js';

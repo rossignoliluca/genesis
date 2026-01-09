@@ -57,10 +57,31 @@ export { SemanticStore, createSemanticStore, type CreateSemanticOptions } from '
 export { ProceduralStore, createProceduralStore, type CreateProceduralOptions } from './procedural.js';
 export { ConsolidationService, createConsolidationService } from './consolidation.js';
 
+// Re-export Memory 2.0 - Cognitive Workspace
+export {
+  CognitiveWorkspace,
+  createCognitiveWorkspace,
+  getCognitiveWorkspace,
+  resetCognitiveWorkspace,
+  type WorkingMemoryItem,
+  type AnticipationContext,
+  type CognitiveWorkspaceConfig,
+  type MemoryReuseMetrics,
+  DEFAULT_WORKSPACE_CONFIG,
+} from './cognitive-workspace.js';
+
 import { EpisodicStore, createEpisodicStore, CreateEpisodicOptions } from './episodic.js';
 import { SemanticStore, createSemanticStore, CreateSemanticOptions } from './semantic.js';
 import { ProceduralStore, createProceduralStore, CreateProceduralOptions } from './procedural.js';
 import { ConsolidationService, createConsolidationService } from './consolidation.js';
+import {
+  CognitiveWorkspace,
+  createCognitiveWorkspace,
+  CognitiveWorkspaceConfig,
+  AnticipationContext,
+  WorkingMemoryItem,
+  MemoryReuseMetrics,
+} from './cognitive-workspace.js';
 import {
   Memory,
   EpisodicMemory,
@@ -94,6 +115,8 @@ export interface MemorySystemConfig {
     backgroundIntervalMs?: number;
     autoStart?: boolean;
   };
+  // Memory 2.0: Cognitive Workspace
+  workspace?: Partial<CognitiveWorkspaceConfig>;
 }
 
 // ============================================================================
@@ -108,6 +131,7 @@ export class MemorySystem {
   readonly semantic: SemanticStore;
   readonly procedural: ProceduralStore;
   readonly consolidation: ConsolidationService;
+  readonly workspace: CognitiveWorkspace;  // Memory 2.0
 
   constructor(config: MemorySystemConfig = {}) {
     this.episodic = createEpisodicStore(config.episodic);
@@ -119,6 +143,25 @@ export class MemorySystem {
       this.procedural,
       config.consolidation
     );
+
+    // Memory 2.0: Create cognitive workspace
+    this.workspace = createCognitiveWorkspace(config.workspace);
+
+    // Connect workspace to stores
+    this.workspace.connectStores({
+      episodic: {
+        search: (q: string, l: number) => this.episodic.search(q, l),
+        get: (id: string) => this.episodic.get(id),
+      },
+      semantic: {
+        search: (q: string, l: number) => this.semantic.search(q, l),
+        getByConcept: (c: string) => this.semantic.getByConcept(c),
+      },
+      procedural: {
+        search: (q: string, l: number) => this.procedural.search(q, l),
+        getByName: (n: string) => this.procedural.getByName(n),
+      },
+    });
 
     // Auto-start background consolidation if configured
     if (config.consolidation?.autoStart) {
@@ -149,6 +192,30 @@ export class MemorySystem {
    */
   learnSkill(options: CreateProceduralOptions): ProceduralMemory {
     return this.procedural.createSkill(options);
+  }
+
+  /**
+   * Anticipate needed memories based on context (Memory 2.0)
+   *
+   * Uses context cues to predict which memories will be needed,
+   * pre-loading them into working memory for fast access.
+   */
+  async anticipate(context: AnticipationContext): Promise<WorkingMemoryItem[]> {
+    return this.workspace.anticipate(context);
+  }
+
+  /**
+   * Get currently active memories in working memory (Memory 2.0)
+   */
+  getActive(): WorkingMemoryItem[] {
+    return this.workspace.getActive();
+  }
+
+  /**
+   * Get memory reuse metrics (Memory 2.0)
+   */
+  getReuseMetrics(): MemoryReuseMetrics {
+    return this.workspace.getMetrics();
   }
 
   /**
@@ -244,6 +311,8 @@ export class MemorySystem {
       procedural: ReturnType<typeof calculateForgettingStats>;
     };
     consolidation: ReturnType<ConsolidationService['getStats']>;
+    workspace: ReturnType<CognitiveWorkspace['getStats']>;  // Memory 2.0
+    reuse: MemoryReuseMetrics;  // Memory 2.0
   } {
     const episodicStats = this.episodic.stats();
     const semanticStats = this.semantic.stats();
@@ -260,6 +329,8 @@ export class MemorySystem {
         procedural: calculateForgettingStats(this.procedural.getAll()),
       },
       consolidation: this.consolidation.getStats(),
+      workspace: this.workspace.getStats(),  // Memory 2.0
+      reuse: this.workspace.getMetrics(),    // Memory 2.0
     };
   }
 
@@ -270,6 +341,7 @@ export class MemorySystem {
     this.episodic.clear();
     this.semantic.clear();
     this.procedural.clear();
+    this.workspace.clear();  // Memory 2.0
   }
 
   /**
@@ -277,6 +349,7 @@ export class MemorySystem {
    */
   shutdown(): void {
     this.consolidation.stopBackground();
+    this.workspace.shutdown();  // Memory 2.0
   }
 
   // ============================================================================

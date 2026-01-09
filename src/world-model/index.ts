@@ -50,6 +50,22 @@ export { LatentDecoder, createLatentDecoder, type DecoderEventHandler, type Text
 export { WorldModelPredictor, createWorldModelPredictor, createAction, type PredictorEventHandler } from './predictor.js';
 export { DigitalTwinInstance, DigitalTwinManager, createDigitalTwin, createDigitalTwinManager, type TwinEventHandler, type TwinHealth, type WhatIfResult, type TwinSnapshot, type TwinMetrics } from './digital-twin.js';
 
+// Value-Guided JEPA (Genesis 6.2)
+export {
+  ValueFunction,
+  ValueGuidedJEPA,
+  createValueFunction,
+  getValueFunction,
+  resetValueFunction,
+  createValueGuidedJEPA,
+  type ValueEstimate,
+  type ValuedTrajectory,
+  type ActionValue,
+  type ValueFunctionConfig,
+  type FreeEnergyDecomposition,
+  DEFAULT_VALUE_CONFIG,
+} from './value-jepa.js';
+
 import {
   MultimodalInput,
   LatentState,

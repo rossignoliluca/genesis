@@ -31,11 +31,14 @@
 import {
   AutonomousLoop,
   createAutonomousLoop,
+} from './autonomous-loop.js';
+import {
   createObservationGatherer,
   ObservationGatherer,
+} from './observations.js';
+import {
   registerAction,
-  ActionResult,
-} from './index.js';
+} from './actions.js';
 
 import type { Kernel, KernelState, Task } from '../kernel/index.js';
 import type { Daemon } from '../daemon/index.js';

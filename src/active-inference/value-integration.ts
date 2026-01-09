@@ -33,7 +33,6 @@ import {
   ActionType,
   ACTIONS,
   ACTION_COUNT,
-  AIEvent,
 } from './types.js';
 
 import {
@@ -42,7 +41,6 @@ import {
   createValueFunction,
   createValueGuidedJEPA,
   type ValueEstimate,
-  type ActionValue,
   type FreeEnergyDecomposition,
   type ValueFunctionConfig,
 } from '../world-model/value-jepa.js';
@@ -51,7 +49,6 @@ import type {
   LatentState,
   Action,
   ActionType as WMActionType,
-  PredictedState,
 } from '../world-model/types.js';
 
 // ============================================================================
@@ -622,7 +619,7 @@ export async function createFullyIntegratedEngine(
 // Utility: Wrap existing AutonomousLoop with value integration
 // ============================================================================
 
-import { AutonomousLoop, createAutonomousLoop, type AutonomousLoopConfig } from './index.js';
+import { AutonomousLoop, createAutonomousLoop, type AutonomousLoopConfig } from './autonomous-loop.js';
 
 /**
  * Configuration for value-integrated autonomous loop

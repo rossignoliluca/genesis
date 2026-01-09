@@ -27,7 +27,6 @@ import {
   ActiveInferenceConfig,
   DEFAULT_CONFIG,
   HIDDEN_STATE_DIMS,
-  OBSERVATION_DIMS,
   ACTION_COUNT,
   ACTIONS,
   ActionType,
@@ -72,8 +71,9 @@ function entropy(probs: number[]): number {
 
 /**
  * KL divergence: D_KL(P || Q)
+ * Reserved for future variational free energy computation
  */
-function klDivergence(p: number[], q: number[]): number {
+function _klDivergence(p: number[], q: number[]): number {
   return p.reduce((acc, pi, i) => {
     if (pi > 1e-10 && q[i] > 1e-10) {
       return acc + pi * Math.log(pi / q[i]);

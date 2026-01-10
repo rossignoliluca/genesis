@@ -100,6 +100,15 @@ FILESYSTEM:
 IMAGE:
 - stability-ai-generate-image: Generate image (params: prompt, outputImageFileName)
 
+LOCAL TOOLS (execute on host machine):
+- bash: Execute shell commands (params: command)
+  Example: <invoke name="bash"><parameter name="command">open genesis_neural_network.png</parameter></invoke>
+- edit: Edit file (params: file_path, old_string, new_string)
+- write: Write file (params: file_path, content)
+- git_status: Git status (no params)
+- git_diff: Git diff (params: staged, file)
+- git_commit: Git commit (params: message)
+
 ## Principles
 - When science can answer, defer to science
 - When uncertain, ask the human

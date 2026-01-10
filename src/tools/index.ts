@@ -4,11 +4,12 @@
  * Provides Claude Code-equivalent tool capabilities:
  * - Bash: Secure command execution
  * - Edit: Diff-based file editing
- * - Git: Native git operations (TODO)
+ * - Git: Native git operations
  */
 
 export * from './bash.js';
 export * from './edit.js';
+export * from './git.js';
 
 // Tool registry for agent dispatch
 export interface Tool {
@@ -83,5 +84,80 @@ toolRegistry.set('write', {
     if (!file_path) return { valid: false, reason: 'Missing file_path parameter' };
     if (content === undefined) return { valid: false, reason: 'Missing content parameter' };
     return getEditTool().validatePath(file_path as string);
+  },
+});
+
+// Register git tools
+import { getGitTool, CommitOptions, PushOptions } from './git.js';
+
+toolRegistry.set('git_status', {
+  name: 'git_status',
+  description: 'Get git repository status',
+  execute: async (params: Record<string, unknown>) => {
+    return getGitTool().status(params.cwd as string | undefined);
+  },
+});
+
+toolRegistry.set('git_diff', {
+  name: 'git_diff',
+  description: 'Get diff of changes',
+  execute: async (params: Record<string, unknown>) => {
+    return getGitTool().diff({
+      staged: params.staged as boolean | undefined,
+      file: params.file as string | undefined,
+    }, params.cwd as string | undefined);
+  },
+});
+
+toolRegistry.set('git_log', {
+  name: 'git_log',
+  description: 'Get commit history',
+  execute: async (params: Record<string, unknown>) => {
+    return getGitTool().log({
+      count: params.count as number | undefined,
+      oneline: params.oneline as boolean | undefined,
+    }, params.cwd as string | undefined);
+  },
+});
+
+toolRegistry.set('git_add', {
+  name: 'git_add',
+  description: 'Stage files for commit',
+  execute: async (params: Record<string, unknown>) => {
+    const files = params.files as string[];
+    if (!files || files.length === 0) {
+      return { success: false, error: 'No files specified' };
+    }
+    return getGitTool().add(files, params.cwd as string | undefined);
+  },
+});
+
+toolRegistry.set('git_commit', {
+  name: 'git_commit',
+  description: 'Create a commit',
+  execute: async (params: Record<string, unknown>) => {
+    const message = params.message as string;
+    if (!message) {
+      return { success: false, error: 'Missing commit message' };
+    }
+    return getGitTool().commit({
+      message,
+      addSignature: params.addSignature as boolean | undefined,
+      files: params.files as string[] | undefined,
+    }, params.cwd as string | undefined);
+  },
+});
+
+toolRegistry.set('git_push', {
+  name: 'git_push',
+  description: 'Push to remote (requires confirmation)',
+  execute: async (params: Record<string, unknown>) => {
+    return getGitTool().push({
+      remote: params.remote as string | undefined,
+      branch: params.branch as string | undefined,
+      setUpstream: params.setUpstream as boolean | undefined,
+      force: params.force as boolean | undefined,
+      confirmed: params.confirmed as boolean | undefined,
+    }, params.cwd as string | undefined);
   },
 });

@@ -322,9 +322,20 @@ async function cmdPublish(specFile: string): Promise<void> {
 }
 
 async function cmdChat(options: Record<string, string>): Promise<void> {
-  // --local flag forces Ollama
+  // Ollama models - if any of these is specified, use Ollama
+  const ollamaModels = ['mistral', 'mistral-small', 'qwen2.5-coder', 'phi3.5', 'deepseek-coder', 'llama3', 'codellama'];
+
+  // --local flag forces Ollama, or if model is an Ollama model
   const isLocal = options.local === 'true';
-  const provider = isLocal ? 'ollama' : (options.provider as 'ollama' | 'openai' | 'anthropic' | undefined);
+  const isOllamaModel = options.model && ollamaModels.some(m => options.model.startsWith(m));
+
+  let provider: 'ollama' | 'openai' | 'anthropic' | undefined;
+  if (isLocal || isOllamaModel) {
+    provider = 'ollama';
+  } else if (options.provider) {
+    provider = options.provider as 'ollama' | 'openai' | 'anthropic';
+  }
+
   const model = options.model || (provider === 'ollama' ? 'mistral' : undefined);
   const verbose = options.verbose === 'true';
 

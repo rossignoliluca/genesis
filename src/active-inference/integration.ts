@@ -35,12 +35,16 @@ import {
 import {
   createObservationGatherer,
   ObservationGatherer,
+  KernelState,
+  PhiState,
+  SensorResult,
+  WorldModelState,
 } from './observations.js';
 import {
   registerAction,
 } from './actions.js';
 
-import type { Kernel, KernelState, Task } from '../kernel/index.js';
+import type { Kernel, KernelState as KernelStateFull, Task } from '../kernel/index.js';
 import type { Daemon } from '../daemon/index.js';
 
 // ============================================================================
@@ -84,7 +88,7 @@ export const DEFAULT_INTEGRATION_CONFIG: IntegrationConfig = {
  * Maps KernelState to task status for observations
  */
 function mapKernelStateToTaskStatus(
-  state: KernelState
+  state: KernelStateFull
 ): 'none' | 'pending' | 'running' | 'completed' | 'failed' {
   switch (state) {
     case 'idle':
@@ -616,4 +620,223 @@ export async function createIntegratedSystem(
       },
     }),
   };
+}
+
+// ============================================================================
+// MCP Observation Bridge
+// ============================================================================
+
+export interface MCPObservationConfig {
+  verbose: boolean;
+}
+
+/**
+ * Creates observation sources backed by real MCP calls
+ *
+ * Maps MCPs to observations:
+ * - memory.read_graph → energy (from entity state) + worldModel coherence
+ * - brave-search → tool perception (latency, success)
+ * - gemini → phi state (from search activity)
+ */
+export async function createMCPObservationBridge(
+  config: Partial<MCPObservationConfig> = {}
+): Promise<{
+  kernelState: () => KernelState;
+  phiState: () => PhiState;
+  sensorResult: () => Promise<SensorResult>;
+  worldModelState: () => WorldModelState;
+  lastMCPResults: () => {
+    memory: any;
+    search: any;
+    latencies: Record<string, number>;
+  };
+}> {
+  const { getMCPClient } = await import('../mcp/index.js');
+  const mcpClient = getMCPClient();
+
+  // Track latest MCP results
+  let lastMemoryResult: any = null;
+  let lastSearchResult: any = null;
+  let mcpLatencies: Record<string, number> = {};
+
+  // Fetch memory graph (cached for 5 seconds)
+  let memoryCache: { data: any; timestamp: number } | null = null;
+  const CACHE_TTL = 5000;
+
+  async function fetchMemoryGraph() {
+    const now = Date.now();
+    if (memoryCache && now - memoryCache.timestamp < CACHE_TTL) {
+      return memoryCache.data;
+    }
+
+    const start = Date.now();
+    try {
+      const result = await mcpClient.call('memory', 'read_graph', {});
+      mcpLatencies['memory'] = Date.now() - start;
+      lastMemoryResult = result.success ? result.data : null;
+      memoryCache = { data: lastMemoryResult, timestamp: now };
+      return lastMemoryResult;
+    } catch (error) {
+      mcpLatencies['memory'] = Date.now() - start;
+      if (config.verbose) {
+        console.log(`[MCP Obs] Memory fetch error: ${error}`);
+      }
+      return null;
+    }
+  }
+
+  // Calculate energy from memory graph
+  function calculateEnergy(memoryGraph: any): number {
+    if (!memoryGraph?.entities) return 0.5;
+
+    // More entities = more active system = higher energy
+    const entityCount = memoryGraph.entities.length;
+    const relationCount = memoryGraph.relations?.length ?? 0;
+
+    // Normalize: 0-10 entities = 0.3-1.0 energy
+    const entityEnergy = Math.min(1.0, 0.3 + (entityCount / 10) * 0.7);
+    const relationBonus = Math.min(0.2, relationCount * 0.02);
+
+    return Math.min(1.0, entityEnergy + relationBonus);
+  }
+
+  // Calculate world model coherence
+  function calculateCoherence(memoryGraph: any): { consistent: boolean; issues: number } {
+    if (!memoryGraph) {
+      return { consistent: false, issues: 1 };
+    }
+
+    // Check for dangling relations (referencing non-existent entities)
+    const entityNames = new Set((memoryGraph.entities || []).map((e: any) => e.name));
+    const relations = memoryGraph.relations || [];
+    let issues = 0;
+
+    for (const rel of relations) {
+      if (!entityNames.has(rel.from)) issues++;
+      if (!entityNames.has(rel.to)) issues++;
+    }
+
+    return { consistent: issues === 0, issues };
+  }
+
+  return {
+    kernelState: () => {
+      // Use cached memory result
+      const energy = memoryCache?.data ? calculateEnergy(memoryCache.data) : 0.5;
+      const avgLatency = Object.values(mcpLatencies).reduce((a, b) => a + b, 0) /
+        Math.max(1, Object.keys(mcpLatencies).length);
+
+      // Infer state from latency
+      let state = 'idle';
+      if (avgLatency < 500) state = 'active';
+      else if (avgLatency < 2000) state = 'sensing';
+      else state = 'slow';
+
+      return {
+        energy,
+        state,
+        taskStatus: 'none' as const,
+      };
+    },
+
+    phiState: () => {
+      // Infer phi from MCP responsiveness
+      const avgLatency = Object.values(mcpLatencies).reduce((a, b) => a + b, 0) /
+        Math.max(1, Object.keys(mcpLatencies).length);
+      const successCount = Object.keys(mcpLatencies).length;
+
+      // Phi represents integrated information (how well MCPs are working together)
+      let phi = 0.5;
+      if (successCount >= 3 && avgLatency < 1000) phi = 0.9;
+      else if (successCount >= 2 && avgLatency < 2000) phi = 0.7;
+      else if (successCount >= 1) phi = 0.4;
+      else phi = 0.1;
+
+      return {
+        phi,
+        state: phi > 0.6 ? 'aware' as const : phi > 0.3 ? 'alert' as const : 'drowsy' as const,
+      };
+    },
+
+    sensorResult: async () => {
+      // Actually call an MCP to measure real latency
+      const start = Date.now();
+      try {
+        // Fetch memory graph (this is the primary sensor)
+        await fetchMemoryGraph();
+
+        // Also try a quick brave search to test connectivity
+        const searchStart = Date.now();
+        try {
+          const searchResult = await mcpClient.call('brave-search', 'brave_web_search', {
+            query: 'test connection',
+            count: 1,
+          });
+          mcpLatencies['brave-search'] = Date.now() - searchStart;
+          lastSearchResult = searchResult.success ? searchResult.data : null;
+        } catch (e) {
+          mcpLatencies['brave-search'] = Date.now() - searchStart;
+          if (config.verbose) {
+            console.log(`[MCP Obs] Brave search error: ${e}`);
+          }
+        }
+
+        const totalLatency = Date.now() - start;
+        return {
+          success: true,
+          latency: totalLatency,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          latency: Date.now() - start,
+          error: String(error),
+        };
+      }
+    },
+
+    worldModelState: () => {
+      return calculateCoherence(memoryCache?.data);
+    },
+
+    lastMCPResults: () => ({
+      memory: lastMemoryResult,
+      search: lastSearchResult,
+      latencies: { ...mcpLatencies },
+    }),
+  };
+}
+
+/**
+ * Create Active Inference loop with real MCP observations
+ */
+export async function createMCPInferenceLoop(
+  config: Partial<IntegrationConfig & MCPObservationConfig> = {}
+): Promise<{
+  loop: AutonomousLoop;
+  mcpBridge: Awaited<ReturnType<typeof createMCPObservationBridge>>;
+}> {
+  const fullConfig = { ...DEFAULT_INTEGRATION_CONFIG, ...config };
+
+  // Create MCP observation bridge
+  const mcpBridge = await createMCPObservationBridge({ verbose: fullConfig.verbose });
+
+  // Create the loop
+  const loop = createAutonomousLoop({
+    cycleInterval: fullConfig.cycleInterval,
+    maxCycles: fullConfig.maxCycles,
+    stopOnEnergyCritical: true,
+    verbose: fullConfig.verbose,
+  });
+
+  // Configure observations with MCP sources
+  const components = loop.getComponents();
+  components.observations.configure({
+    kernelState: mcpBridge.kernelState,
+    phiState: mcpBridge.phiState,
+    sensorResult: mcpBridge.sensorResult,
+    worldModelState: mcpBridge.worldModelState,
+  });
+
+  return { loop, mcpBridge };
 }

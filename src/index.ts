@@ -28,7 +28,7 @@ import { getLLMBridge } from './llm/index.js';
 import { getMCPClient, logMCPMode, MCP_SERVER_REGISTRY } from './mcp/index.js';
 import { getProcessManager, LOG_FILE } from './daemon/process.js';
 import { createPipelineExecutor } from './pipeline/index.js';
-import { createAutonomousLoop, ACTIONS, integrateActiveInference, createIntegratedSystem } from './active-inference/index.js';
+import { createAutonomousLoop, ACTIONS, integrateActiveInference, createIntegratedSystem, createMCPInferenceLoop } from './active-inference/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -605,6 +605,7 @@ ${c('Usage:', 'cyan')}
 ${c('Subcommands:', 'cyan')}
   run         Run autonomous inference cycles (default)
   integrated  Run with Kernel & Daemon integration
+  mcp         Run with REAL MCP observations
   beliefs     Show current beliefs
   step        Run a single inference cycle
   stats       Show inference statistics
@@ -623,6 +624,7 @@ ${c('Examples:', 'cyan')}
   genesis infer step               Run single cycle
   genesis infer --verbose          Verbose output
   genesis infer integrated         Run with full system integration
+  genesis infer mcp                Run with real MCP observations
 `);
     return;
   }
@@ -690,6 +692,81 @@ ${c('Examples:', 'cyan')}
 
     } catch (error) {
       console.error(c(`Error: ${error}`, 'red'));
+    }
+
+    return;
+  }
+
+  // MCP mode: connect to real MCP servers for observations
+  const mcpMode = subcommand === 'mcp' || options.mcp === 'true';
+  if (mcpMode) {
+    console.log(c('\n=== Active Inference with Real MCPs ===\n', 'bold'));
+    console.log(`  ${c('Mode:', 'cyan')} Real MCP observations`);
+    console.log(`  ${c('Cycles:', 'cyan')} ${cycles}`);
+    console.log(`  ${c('Interval:', 'cyan')} ${interval}ms`);
+    console.log();
+
+    try {
+      const { loop: mcpLoop, mcpBridge } = await createMCPInferenceLoop({
+        cycleInterval: interval,
+        maxCycles: 0,
+        verbose,
+      });
+
+      // Initial MCP probe
+      console.log(`  ${c('Probing MCPs...', 'dim')}`);
+      const initialObs = await mcpLoop.getComponents().observations.gather();
+      console.log(`  ${c('Initial Observation:', 'green')} E:${initialObs.energy} Φ:${initialObs.phi} T:${initialObs.tool} C:${initialObs.coherence}`);
+
+      const mcpResults = mcpBridge.lastMCPResults();
+      if (Object.keys(mcpResults.latencies).length > 0) {
+        console.log(`  ${c('MCP Latencies:', 'cyan')}`);
+        for (const [mcp, lat] of Object.entries(mcpResults.latencies)) {
+          console.log(`    ${mcp}: ${lat}ms`);
+        }
+      }
+      console.log();
+
+      // Subscribe to cycle events
+      mcpLoop.onCycle((cycle, action, beliefs) => {
+        const state = mcpLoop.getMostLikelyState();
+        const mcpInfo = mcpBridge.lastMCPResults();
+        const avgLat = Object.values(mcpInfo.latencies).reduce((a, b) => a + b, 0) /
+          Math.max(1, Object.keys(mcpInfo.latencies).length);
+
+        const line = `[${cycle.toString().padStart(4)}] ${action.padEnd(15)} | ` +
+          `V:${state.viability.padEnd(8)} Lat:${avgLat.toFixed(0)}ms`;
+        console.log(line);
+
+        if (verbose) {
+          console.log(`        Beliefs: W=${state.worldState} C=${state.coupling} G=${state.goalProgress}`);
+        }
+      });
+
+      // Subscribe to stop event
+      mcpLoop.onStop((reason, stats) => {
+        const mcpInfo = mcpBridge.lastMCPResults();
+        console.log(c(`\n=== Stopped: ${reason} ===\n`, 'bold'));
+        console.log(`  Cycles: ${stats.cycles}`);
+        console.log(`  Avg Surprise: ${stats.avgSurprise.toFixed(3)}`);
+        console.log(`  MCP Connections:`);
+        for (const [mcp, lat] of Object.entries(mcpInfo.latencies)) {
+          console.log(`    ${mcp}: ${lat}ms`);
+        }
+        console.log(`  Actions taken:`);
+        for (const [action, count] of Object.entries(stats.actions)) {
+          const pct = ((count as number) / stats.cycles * 100).toFixed(1);
+          console.log(`    ${action}: ${count} (${pct}%)`);
+        }
+        console.log();
+      });
+
+      // Run the loop
+      console.log(c(`Running ${cycles} MCP-connected cycles...\n`, 'dim'));
+      await mcpLoop.run(cycles);
+
+    } catch (error) {
+      console.error(c(`MCP Inference Error: ${error}`, 'red'));
     }
 
     return;

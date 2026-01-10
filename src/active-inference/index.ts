@@ -57,8 +57,12 @@ export {
   createKernelObservationBridge,
   registerKernelActions,
   registerDaemonTask,
+  // MCP integration (Genesis 6.3+)
+  createMCPObservationBridge,
+  createMCPInferenceLoop,
   type IntegrationConfig,
   type IntegratedSystem,
+  type MCPObservationConfig,
 } from './integration.js';
 
 // Export Value-Guided JEPA integration (Genesis 6.2)

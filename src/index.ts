@@ -24,7 +24,7 @@
 import { createOrchestrator, MCP_CAPABILITIES, GenesisPipeline } from './orchestrator.js';
 import { SystemSpec, MCPServerName, PipelineStage } from './types.js';
 import { startChat } from './cli/chat.js';
-import { getLLMBridge } from './llm/index.js';
+import { getLLMBridge, getHybridRouter, detectHardware } from './llm/index.js';
 import { getMCPClient, logMCPMode, MCP_SERVER_REGISTRY } from './mcp/index.js';
 import { getProcessManager, LOG_FILE } from './daemon/process.js';
 import { createPipelineExecutor } from './pipeline/index.js';
@@ -882,6 +882,71 @@ ${c('Examples:', 'cyan')}
   await loop.run(cycles);
 }
 
+async function cmdHardware(): Promise<void> {
+  console.log(c('\n=== HARDWARE PROFILE ===\n', 'bold'));
+
+  const hw = detectHardware();
+  const router = getHybridRouter({ logDecisions: false });
+
+  // Hardware info
+  console.log(c('Detected:', 'cyan'));
+  console.log(`  CPU:              ${hw.cpu}`);
+  console.log(`  Apple Silicon:    ${hw.isAppleSilicon ? c('Yes', 'green') : 'No'}`);
+  console.log(`  Cores:            ${hw.cores}`);
+  console.log(`  Memory:           ${hw.memoryGB} GB`);
+  console.log(`  Performance Tier: ${c(hw.tier.toUpperCase(), hw.tier === 'ultra' ? 'green' : hw.tier === 'high' ? 'cyan' : 'yellow')}`);
+  console.log();
+
+  // Router config
+  const config = router.getConfig();
+  console.log(c('Router Configuration:', 'cyan'));
+  console.log(`  Cloud Threshold:  ${config.cloudThreshold} (tasks ≥ ${config.cloudThreshold} → cloud)`);
+  console.log(`  Local Max Tokens: ${config.localMaxTokens}`);
+  console.log(`  Prefer Local:     ${config.preferLocal ? c('Yes', 'green') : 'No'}`);
+  console.log(`  Auto Fallback:    ${config.autoFallback ? 'Yes' : 'No'}`);
+  console.log();
+
+  // Recommendations
+  console.log(c('Recommendations:', 'cyan'));
+  if (hw.tier === 'ultra') {
+    console.log(`  ${c('✓', 'green')} Excellent hardware - local LLM will handle most tasks`);
+    console.log(`  ${c('✓', 'green')} Only creative/complex generation needs cloud`);
+    console.log(`  ${c('✓', 'green')} Can use larger models (mistral-small 24B)`);
+  } else if (hw.tier === 'high') {
+    console.log(`  ${c('✓', 'green')} Good hardware - local LLM for routine tasks`);
+    console.log(`  ${c('✓', 'green')} Cloud for complex architecture/design`);
+  } else if (hw.tier === 'medium') {
+    console.log(`  ${c('●', 'yellow')} Medium hardware - balance local/cloud`);
+    console.log(`  ${c('●', 'yellow')} Use local for simple tasks, cloud for complex`);
+  } else {
+    console.log(`  ${c('●', 'yellow')} Limited hardware - prefer cloud for quality`);
+    console.log(`  ${c('●', 'yellow')} Use --provider openai or anthropic`);
+  }
+  console.log();
+
+  // Test Ollama latency
+  console.log(c('Testing Ollama latency...', 'dim'));
+  try {
+    const start = Date.now();
+    const response = await fetch('http://localhost:11434/api/tags', {
+      signal: AbortSignal.timeout(2000),
+    });
+    if (response.ok) {
+      const latency = Date.now() - start;
+      console.log(`  Ollama Status:    ${c('Running', 'green')} (${latency}ms)`);
+
+      const data = await response.json();
+      const models = data.models?.map((m: any) => m.name).join(', ') || 'none';
+      console.log(`  Available Models: ${models}`);
+    } else {
+      console.log(`  Ollama Status:    ${c('Error', 'red')}`);
+    }
+  } catch {
+    console.log(`  Ollama Status:    ${c('Not running', 'yellow')} (start with: ollama serve)`);
+  }
+  console.log();
+}
+
 function cmdHelp(): void {
   printBanner();
   console.log(`${c('Usage:', 'bold')}
@@ -925,6 +990,7 @@ ${c('Commands:', 'bold')}
     --verbose            Show detailed output
 
   ${c('status', 'green')}                Show MCP servers status
+  ${c('hardware', 'green')}              Show hardware profile & router config
   ${c('help', 'green')}                  Show this help
 
 ${c('MCP Servers (13):', 'bold')}
@@ -1040,6 +1106,9 @@ async function main(): Promise<void> {
         break;
       case 'infer':
         await cmdInfer(positional, options);
+        break;
+      case 'hardware':
+        await cmdHardware();
         break;
       default:
         console.error(c(`Unknown command: ${command}`, 'red'));

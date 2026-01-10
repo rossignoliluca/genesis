@@ -16,6 +16,79 @@
  */
 
 import { LLMBridge, LLMProvider, LLMResponse, getLLMBridge } from './index.js';
+import * as os from 'os';
+
+// ============================================================================
+// Hardware Detection
+// ============================================================================
+
+export interface HardwareProfile {
+  /** Detected CPU type */
+  cpu: string;
+  /** Is Apple Silicon (M1/M2/M3/M4)? */
+  isAppleSilicon: boolean;
+  /** CPU cores */
+  cores: number;
+  /** Total memory in GB */
+  memoryGB: number;
+  /** Performance tier: low, medium, high, ultra */
+  tier: 'low' | 'medium' | 'high' | 'ultra';
+  /** Recommended cloud threshold */
+  recommendedThreshold: TaskComplexity;
+  /** Recommended max tokens */
+  recommendedMaxTokens: number;
+}
+
+/**
+ * Detect hardware capabilities and recommend router config
+ */
+export function detectHardware(): HardwareProfile {
+  const cpus = os.cpus();
+  const cpu = cpus[0]?.model || 'Unknown';
+  const cores = cpus.length;
+  const memoryGB = Math.round(os.totalmem() / (1024 ** 3));
+
+  // Detect Apple Silicon
+  const isAppleSilicon = cpu.includes('Apple M') ||
+                         process.arch === 'arm64' && process.platform === 'darwin';
+
+  // Determine tier
+  let tier: HardwareProfile['tier'];
+  let recommendedThreshold: TaskComplexity;
+  let recommendedMaxTokens: number;
+
+  if (isAppleSilicon && memoryGB >= 24) {
+    // M3 Pro/Max/Ultra or M4 Pro/Max - top tier
+    tier = 'ultra';
+    recommendedThreshold = 'creative';  // Only creative to cloud
+    recommendedMaxTokens = 16384;       // Can handle large context
+  } else if (isAppleSilicon && memoryGB >= 16) {
+    // M1/M2/M3/M4 base with good RAM
+    tier = 'high';
+    recommendedThreshold = 'creative';
+    recommendedMaxTokens = 8192;
+  } else if (cores >= 8 && memoryGB >= 16) {
+    // Good desktop/laptop
+    tier = 'medium';
+    recommendedThreshold = 'complex';
+    recommendedMaxTokens = 4096;
+  } else {
+    // Limited hardware
+    tier = 'low';
+    recommendedThreshold = 'moderate';  // Route more to cloud
+    recommendedMaxTokens = 2048;
+  }
+
+  return {
+    cpu,
+    isAppleSilicon,
+    cores,
+    memoryGB,
+    tier,
+    recommendedThreshold,
+    recommendedMaxTokens,
+  };
+}
 
 // ============================================================================
 // Types
@@ -72,8 +145,8 @@ export interface RouterStats {
 const DEFAULT_CONFIG: RouterConfig = {
   preferLocal: true,
   forceCloud: false,
-  localMaxTokens: 4096,
-  cloudThreshold: 'complex',
+  localMaxTokens: 8192,       // M4 Pro can handle larger context
+  cloudThreshold: 'creative', // Only creative → cloud (M4 Pro is fast enough for complex)
   autoFallback: true,
   logDecisions: false,
 };
@@ -261,9 +334,31 @@ export class HybridRouter {
 
   private localBridge: LLMBridge | null = null;
   private cloudBridge: LLMBridge | null = null;
+  private hardwareProfile: HardwareProfile;
 
   constructor(config?: Partial<RouterConfig>) {
-    this.config = { ...DEFAULT_CONFIG, ...config };
+    // Detect hardware and auto-configure
+    this.hardwareProfile = detectHardware();
+
+    // Apply hardware-based defaults, then user overrides
+    this.config = {
+      ...DEFAULT_CONFIG,
+      cloudThreshold: this.hardwareProfile.recommendedThreshold,
+      localMaxTokens: this.hardwareProfile.recommendedMaxTokens,
+      ...config,
+    };
+
+    if (this.config.logDecisions) {
+      console.log(`[Router] Hardware: ${this.hardwareProfile.tier} tier (${this.hardwareProfile.cpu})`);
+      console.log(`[Router] Config: cloudThreshold=${this.config.cloudThreshold}, localMaxTokens=${this.config.localMaxTokens}`);
+    }
+  }
+
+  /**
+   * Get detected hardware profile
+   */
+  getHardwareProfile(): HardwareProfile {
+    return { ...this.hardwareProfile };
   }
 
   // ==========================================================================

@@ -33,6 +33,10 @@
 // Re-export everything from epistemic stack
 export * from './epistemic-stack.js';
 
+// Re-export verifier and feedback loop
+export * from './verifier.js';
+export * from './feedback.js';
+
 import {
   EpistemicStack,
   EpistemicClaim,
@@ -237,3 +241,46 @@ export function getGroundingSystem(config?: Partial<GroundingConfig>): Grounding
 export function resetGroundingSystem(): void {
   groundingInstance = null;
 }
+
+// ============================================================================
+// Code Verification (from verifier.ts)
+// ============================================================================
+
+import {
+  verifyCode,
+  quickVerify,
+  isCodeValid,
+  formatVerificationResult,
+  getVerifier,
+  resetVerifier,
+} from './verifier.js';
+
+import {
+  runFeedbackLoop,
+  verifyAndFix,
+  isProjectValid,
+  formatFeedbackResult,
+  getFeedbackLoop,
+  resetFeedbackLoop,
+} from './feedback.js';
+
+/**
+ * Code verification and feedback loop utilities
+ */
+export const codeGrounding = {
+  // Verification
+  verify: verifyCode,
+  quickVerify,
+  isCodeValid,
+  formatResult: formatVerificationResult,
+  getVerifier,
+  resetVerifier,
+
+  // Feedback Loop
+  runLoop: runFeedbackLoop,
+  verifyAndFix,
+  isProjectValid,
+  formatLoopResult: formatFeedbackResult,
+  getLoop: getFeedbackLoop,
+  resetLoop: resetFeedbackLoop,
+};

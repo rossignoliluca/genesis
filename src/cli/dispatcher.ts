@@ -509,7 +509,7 @@ export class ToolDispatcher {
   }
 
   /**
-   * Get available tools
+   * Get available tools (names only, for backward compatibility)
    */
   listTools(): { local: string[]; mcp: Record<string, string[]> } {
     const local = Array.from(toolRegistry.keys());
@@ -520,6 +520,33 @@ export class ToolDispatcher {
         mcp[server] = [];
       }
       mcp[server].push(tool);
+    }
+
+    return { local, mcp };
+  }
+
+  /**
+   * Get available tools with schemas (for dynamic prompt building)
+   * Returns tool definitions with name, description, and inputSchema
+   */
+  listToolsWithSchemas(): {
+    local: Array<{ name: string; description?: string }>;
+    mcp: Record<string, Array<{ name: string; description?: string }>>;
+  } {
+    // Local tools with basic info from registry
+    const local = Array.from(toolRegistry.entries()).map(([name, tool]) => ({
+      name,
+      description: tool.description,
+    }));
+
+    // MCP tools - for now use static descriptions, but can be enhanced
+    // to call getMCPClient().discoverAllTools() for real schemas
+    const mcp: Record<string, Array<{ name: string; description?: string }>> = {};
+    for (const [tool, server] of Object.entries(MCP_TOOL_MAP)) {
+      if (!mcp[server]) {
+        mcp[server] = [];
+      }
+      mcp[server].push({ name: tool });
     }
 
     return { local, mcp };

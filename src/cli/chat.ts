@@ -78,8 +78,8 @@ export class ChatSession {
   async start(): Promise<void> {
     this.printBanner();
 
-    // Build dynamic system prompt from available tools
-    const tools = this.dispatcher.listTools();
+    // Build dynamic system prompt from available tools (with schemas)
+    const tools = this.dispatcher.listToolsWithSchemas();
     this.systemPrompt = await buildSystemPrompt(tools.mcp, tools.local);
 
     if (this.verbose) {
@@ -286,10 +286,14 @@ export class ChatSession {
           console.log(this.systemPrompt || GENESIS_IDENTITY_PROMPT);
           console.log(c('─'.repeat(60), 'dim'));
 
-          // Show tool stats
-          const tools = this.dispatcher.listTools();
+          // Show tool stats with schemas
+          const tools = this.dispatcher.listToolsWithSchemas();
           console.log(c(`\nTools discovered:`, 'yellow'));
-          console.log(`  Local: ${tools.local.length} (${tools.local.join(', ')})`);
+          console.log(`  Local: ${tools.local.length}`);
+          for (const tool of tools.local) {
+            const desc = tool.description ? `: ${tool.description.slice(0, 40)}...` : '';
+            console.log(`    - ${tool.name}${desc}`);
+          }
           console.log(`  MCP servers: ${Object.keys(tools.mcp).length}`);
           for (const [server, serverTools] of Object.entries(tools.mcp)) {
             console.log(`    ${server}: ${serverTools.length} tools`);

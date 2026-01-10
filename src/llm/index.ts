@@ -95,11 +95,70 @@ Respond concisely. Ask clarifying questions when needed.`;
 // ============================================================================
 
 /**
+ * Tool definition with optional schema (matches MCPToolDefinition)
+ */
+export interface ToolDefinition {
+  name: string;
+  description?: string;
+  inputSchema?: {
+    type: 'object';
+    properties?: Record<string, {
+      type?: string;
+      description?: string;
+    }>;
+    required?: string[];
+  };
+}
+
+/**
+ * Format a tool for the system prompt
+ * With schema: `tool_name(param1: type, param2: type): description`
+ * Without schema: `tool_name: description` or just `tool_name`
+ */
+function formatTool(tool: ToolDefinition | string): string {
+  if (typeof tool === 'string') {
+    return `- ${tool}`;
+  }
+
+  const { name, description, inputSchema } = tool;
+
+  // Build parameter signature if schema available
+  let signature = name;
+  if (inputSchema?.properties) {
+    const params = Object.entries(inputSchema.properties)
+      .map(([key, prop]) => {
+        const required = inputSchema.required?.includes(key) ? '' : '?';
+        return `${key}${required}: ${prop.type || 'any'}`;
+      })
+      .join(', ');
+    if (params) {
+      signature = `${name}(${params})`;
+    }
+  }
+
+  // Add description if available
+  if (description) {
+    // Truncate long descriptions
+    const shortDesc = description.length > 60
+      ? description.slice(0, 57) + '...'
+      : description;
+    return `- ${signature}: ${shortDesc}`;
+  }
+
+  return `- ${signature}`;
+}
+
+/**
  * Build complete system prompt with dynamically discovered tools
+ *
+ * @param mcpTools - MCP tools by server (with optional schemas)
+ * @param localTools - Local tools (names or definitions)
+ * @param includeSchemas - Whether to include parameter signatures (default: true)
  */
 export async function buildSystemPrompt(
-  mcpTools?: Record<string, string[]>,
-  localTools?: string[]
+  mcpTools?: Record<string, (ToolDefinition | string)[]>,
+  localTools?: (ToolDefinition | string)[],
+  includeSchemas = true
 ): Promise<string> {
   const parts: string[] = [GENESIS_IDENTITY_PROMPT];
 
@@ -112,7 +171,7 @@ export async function buildSystemPrompt(
       if (tools.length > 0) {
         parts.push(`\n### ${server.toUpperCase()}`);
         for (const tool of tools) {
-          parts.push(`- ${tool}`);
+          parts.push(includeSchemas ? formatTool(tool) : `- ${typeof tool === 'string' ? tool : tool.name}`);
         }
       }
     }
@@ -122,7 +181,7 @@ export async function buildSystemPrompt(
   if (localTools && localTools.length > 0) {
     parts.push('\n### LOCAL (execute on host)');
     for (const tool of localTools) {
-      parts.push(`- ${tool}`);
+      parts.push(includeSchemas ? formatTool(tool) : `- ${typeof tool === 'string' ? tool : tool.name}`);
     }
   }
 

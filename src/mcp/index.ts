@@ -293,12 +293,25 @@ class MCPConnectionManager {
   }
 
   /**
-   * List available tools on an MCP server
+   * List available tools on an MCP server (names only)
    */
   async listTools(server: MCPServerName): Promise<string[]> {
     const connection = await this.getConnection(server);
     const result = await connection.client.listTools();
     return result.tools.map((t) => t.name);
+  }
+
+  /**
+   * List available tools with full schema (for dynamic prompt building)
+   */
+  async listToolsWithSchema(server: MCPServerName): Promise<MCPToolDefinition[]> {
+    const connection = await this.getConnection(server);
+    const result = await connection.client.listTools();
+    return result.tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      inputSchema: t.inputSchema as MCPToolDefinition['inputSchema'],
+    }));
   }
 
   /**
@@ -342,6 +355,24 @@ class MCPConnectionManager {
 // MCP Client Interface
 // ============================================================================
 
+/**
+ * MCP Tool definition with full schema (from MCP SDK)
+ */
+export interface MCPToolDefinition {
+  name: string;
+  description?: string;
+  inputSchema?: {
+    type: 'object';
+    properties?: Record<string, {
+      type?: string;
+      description?: string;
+      enum?: string[];
+      items?: any;
+    }>;
+    required?: string[];
+  };
+}
+
 export interface IMCPClient {
   call<T = any>(
     server: MCPServerName,
@@ -351,6 +382,8 @@ export interface IMCPClient {
   ): Promise<MCPCallResult<T>>;
 
   listTools(server: MCPServerName): Promise<string[]>;
+  listToolsWithSchema(server: MCPServerName): Promise<MCPToolDefinition[]>;
+  discoverAllTools(): Promise<Record<MCPServerName, MCPToolDefinition[]>>;
   isAvailable(server: MCPServerName): Promise<boolean>;
   getMode(): MCPMode;
   setMode(mode: MCPMode): void;
@@ -430,6 +463,29 @@ class RealMCPClient implements IMCPClient {
     return this.manager.listTools(server);
   }
 
+  async listToolsWithSchema(server: MCPServerName): Promise<MCPToolDefinition[]> {
+    return this.manager.listToolsWithSchema(server);
+  }
+
+  async discoverAllTools(): Promise<Record<MCPServerName, MCPToolDefinition[]>> {
+    const result: Record<string, MCPToolDefinition[]> = {};
+    const servers = Object.keys(MCP_SERVER_REGISTRY) as MCPServerName[];
+
+    // Discover tools from all servers in parallel
+    await Promise.allSettled(
+      servers.map(async (server) => {
+        try {
+          result[server] = await this.listToolsWithSchema(server);
+        } catch {
+          // Server not available, use registry fallback
+          result[server] = MCP_SERVER_REGISTRY[server].tools.map(name => ({ name }));
+        }
+      })
+    );
+
+    return result as Record<MCPServerName, MCPToolDefinition[]>;
+  }
+
   async isAvailable(server: MCPServerName): Promise<boolean> {
     return this.manager.isAvailable(server);
   }
@@ -505,6 +561,26 @@ class SimulatedMCPClient implements IMCPClient {
 
   async listTools(server: MCPServerName): Promise<string[]> {
     return MCP_SERVER_REGISTRY[server]?.tools || [];
+  }
+
+  async listToolsWithSchema(server: MCPServerName): Promise<MCPToolDefinition[]> {
+    // In simulated mode, return basic tool info from registry
+    const tools = MCP_SERVER_REGISTRY[server]?.tools || [];
+    return tools.map(name => ({
+      name,
+      description: `[Simulated] ${name} tool`,
+    }));
+  }
+
+  async discoverAllTools(): Promise<Record<MCPServerName, MCPToolDefinition[]>> {
+    const result: Record<string, MCPToolDefinition[]> = {};
+    const servers = Object.keys(MCP_SERVER_REGISTRY) as MCPServerName[];
+
+    for (const server of servers) {
+      result[server] = await this.listToolsWithSchema(server);
+    }
+
+    return result as Record<MCPServerName, MCPToolDefinition[]>;
   }
 
   async isAvailable(server: MCPServerName): Promise<boolean> {
@@ -629,6 +705,22 @@ class HybridMCPClient implements IMCPClient {
       return await this.realClient.listTools(server);
     } catch {
       return this.simClient.listTools(server);
+    }
+  }
+
+  async listToolsWithSchema(server: MCPServerName): Promise<MCPToolDefinition[]> {
+    try {
+      return await this.realClient.listToolsWithSchema(server);
+    } catch {
+      return this.simClient.listToolsWithSchema(server);
+    }
+  }
+
+  async discoverAllTools(): Promise<Record<MCPServerName, MCPToolDefinition[]>> {
+    try {
+      return await this.realClient.discoverAllTools();
+    } catch {
+      return this.simClient.discoverAllTools();
     }
   }
 

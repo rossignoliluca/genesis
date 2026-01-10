@@ -131,9 +131,9 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
   // VISUAL (from Claude Code config)
   'stability-ai': {
     command: 'npx',
-    args: ['-y', '@anthropic-ai/mcp-server-stability-ai'],
+    args: ['-y', 'mcp-server-stability-ai'],
     envVars: () => ({ STABILITY_AI_API_KEY: process.env.STABILITY_AI_API_KEY || '' }),
-    tools: ['stability-ai-generate-image', 'stability-ai-generate-image-sd35'],
+    tools: ['stability-ai-generate-image', 'stability-ai-generate-image-sd35', 'stability-ai-0-list-resources'],
   },
 
   // STORAGE

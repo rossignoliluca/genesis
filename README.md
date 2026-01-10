@@ -1,8 +1,8 @@
-# Genesis 6.7
+# Genesis 6.8
 
 **Claude Code Equivalent - Autonomous AI System Creator**
 
-Genesis is a self-improving AI system powered by 13 MCP servers. It doesn't just create systems - it thinks, feels, remembers, and operates autonomously via Active Inference. **Now with full standalone capabilities: bash sandbox, file editing, git operations, self-healing, and human-in-the-loop.**
+Genesis is a self-improving AI system powered by 13 MCP servers. It doesn't just create systems - it thinks, feels, remembers, and operates autonomously via Active Inference. **Now with Local-First optimization: works offline with Ollama, caches fixes, and gracefully degrades when cloud unavailable.**
 
 ```
 ╔═══════════════════════════════════════════════════════════════════════╗
@@ -14,7 +14,7 @@ Genesis is a self-improving AI system powered by 13 MCP servers. It doesn't just
 ║    ╚██████╔╝███████╗██║ ╚████║███████╗███████║██║███████║            ║
 ║     ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚══════╝╚═╝╚══════╝            ║
 ║                                                                       ║
-║    "Not just intelligent, but alive."                    v6.7.0      ║
+║    "Not just intelligent, but alive."                    v6.8.0      ║
 ║                                                                       ║
 ╚═══════════════════════════════════════════════════════════════════════╝
 ```
@@ -67,7 +67,7 @@ genesis chat --provider anthropic   # Use Claude
 genesis chat --model gpt-4o         # Specific model
 ```
 
-### Standalone Tools (NEW in 6.7!)
+### Standalone Tools
 ```bash
 # Code execution (sandboxed)
 genesis bash "npm test"             # Execute safely
@@ -82,6 +82,22 @@ genesis git commit "fix: bug in parser"
 
 # Interactive REPL
 genesis repl                        # Full REPL with tools
+```
+
+### Local-First (NEW in 6.8!)
+```bash
+# Mac setup (installs Ollama + models)
+./bin/setup-mac.sh
+
+# Hybrid routing (local for simple, cloud for complex)
+genesis chat                        # Auto-routes to best LLM
+genesis chat --local                # Force local (Ollama)
+genesis chat --cloud                # Force cloud (OpenAI/Anthropic)
+
+# Works offline!
+# - Fix cache: instant reuse of successful fixes
+# - Project indexer: search code without LLM
+# - Resilient MCP: automatic fallback when offline
 ```
 
 ### Autonomous Inference

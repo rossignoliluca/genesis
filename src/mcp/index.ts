@@ -1,5 +1,5 @@
 /**
- * Genesis 6.0 - Real MCP Client Module
+ * Genesis 6.8 - Real MCP Client Module
  *
  * Connects to actual MCP servers using @modelcontextprotocol/sdk.
  * Spawns servers on demand and manages connections.
@@ -9,6 +9,9 @@
  * - GENESIS_MCP_TIMEOUT: Timeout in ms (default: 30000)
  * - GENESIS_MCP_LOG: Enable MCP call logging (default: false)
  */
+
+// Re-export Phase 8: Resilient MCP Wrapper
+export * from './resilient.js';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';

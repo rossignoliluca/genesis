@@ -52,6 +52,10 @@ export * from './types.js';
 
 // Re-export modules
 export * from './forgetting.js';
+
+// Re-export Phase 8: Local-First modules
+export * from './cache.js';
+export * from './indexer.js';
 export { EpisodicStore, createEpisodicStore, type CreateEpisodicOptions } from './episodic.js';
 export { SemanticStore, createSemanticStore, type CreateSemanticOptions } from './semantic.js';
 export { ProceduralStore, createProceduralStore, type CreateProceduralOptions } from './procedural.js';

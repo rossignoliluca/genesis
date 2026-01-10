@@ -1,5 +1,5 @@
 /**
- * Genesis 6.3 - LLM Bridge
+ * Genesis 6.8 - LLM Bridge
  *
  * Direct API integration with LLM providers:
  * - Ollama (Mistral, Qwen, Phi) - LOCAL, FREE
@@ -9,6 +9,9 @@
  * Hybrid routing: use local for 80% of tasks, cloud for complex ones.
  * No external dependencies - uses native fetch.
  */
+
+// Re-export Phase 8: Hybrid Router
+export * from './router.js';
 
 // ============================================================================
 // Types

@@ -2,7 +2,7 @@
 
 **Obiettivo**: Genesis come sostituto completo di Claude Code
 
-**Status**: ✅ **COMPLETE** (v6.7.0)
+**Status**: ✅ **COMPLETE** (v6.8.0)
 
 **Timeline**: Completato in 3 sessioni
 
@@ -290,6 +290,65 @@ src/cli/human-loop.ts (644 lines)
 
 ---
 
+## Phase 8: Local-First Optimization ✅
+
+### 8.1 Fix Cache
+```
+src/memory/cache.ts (350 lines)
+```
+
+- JSON-based cache for successful fixes
+- SHA256 key generation (error + file + context)
+- LRU eviction when cache full
+- Hit rate tracking
+- `getCachedFixOrGenerate()` for transparent caching
+
+### 8.2 Project Indexer
+```
+src/memory/indexer.ts (500 lines)
+```
+
+- Trigram-based full-text search (no SQLite deps)
+- Symbol extraction (functions, classes, interfaces)
+- Auto-incremental indexing
+- File change detection (mtime-based)
+- `search()`, `searchSymbol()` methods
+
+### 8.3 Hybrid LLM Router
+```
+src/llm/router.ts (400 lines)
+```
+
+- Task complexity analysis (trivial/simple/moderate/complex/creative)
+- Ollama (local) for simple tasks (80%)
+- OpenAI/Anthropic (cloud) for complex tasks (20%)
+- Automatic fallback when local unavailable
+- Cost tracking
+
+### 8.4 Resilient MCP Wrapper
+```
+src/mcp/resilient.ts (550 lines)
+```
+
+- Circuit breaker pattern (5 failures = open)
+- Automatic retry with exponential backoff
+- Fallback to local cache when offline
+- Alternative server selection (same category)
+- Health monitoring per server
+
+### 8.5 Mac Setup Script
+```
+bin/setup-mac.sh (250 lines)
+```
+
+- Homebrew installation check
+- Ollama installation and model download
+- qwen2.5-coder model (optimized for coding)
+- Global `genesis` binary creation
+- Data directories at ~/.genesis
+
+---
+
 ## Implementazione Pratica
 
 ### Week 1
@@ -320,7 +379,7 @@ src/cli/human-loop.ts (644 lines)
 
 ## Success Criteria ✅ ALL COMPLETE
 
-Genesis è "Claude Code equivalent":
+Genesis è "Claude Code equivalent" + Local-First:
 
 1. ✅ **Code Execution**: `src/tools/bash.ts` - Sandbox con whitelist/blacklist
 2. ✅ **File Editing**: `src/tools/edit.ts` - Diff-based con unique match
@@ -329,6 +388,7 @@ Genesis è "Claude Code equivalent":
 5. ✅ **Grounding**: `src/grounding/*` - Compile + test + semantic
 6. ✅ **Tool Orchestration**: `src/cli/dispatcher.ts` - Multi-format parsing
 7. ✅ **Human-in-Loop**: `src/cli/human-loop.ts` - Confirmations & choices
+8. ✅ **Local-First**: `src/memory/cache.ts`, `src/llm/router.ts` - Offline-capable
 
 ### Test di Validazione
 

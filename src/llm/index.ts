@@ -91,10 +91,12 @@ export class LLMBridge {
   private conversationHistory: LLMMessage[] = [];
 
   constructor(config: Partial<LLMConfig> = {}) {
+    // Detect provider first, then use it for model selection
+    const provider = config.provider || this.detectProvider();
     this.config = {
-      provider: config.provider || this.detectProvider(),
-      model: config.model || this.defaultModel(config.provider),
-      apiKey: config.apiKey || this.detectApiKey(config.provider),
+      provider,
+      model: config.model || this.defaultModel(provider),
+      apiKey: config.apiKey || this.detectApiKey(provider),
       temperature: config.temperature ?? 0.7,
       maxTokens: config.maxTokens ?? 4096,
     };

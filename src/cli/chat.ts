@@ -8,6 +8,7 @@
 import * as readline from 'readline';
 import { getLLMBridge, GENESIS_SYSTEM_PROMPT, LLMBridge } from '../llm/index.js';
 import { getStateStore, StateStore } from '../persistence/index.js';
+import { ToolDispatcher, ToolResult } from './dispatcher.js';
 
 // ============================================================================
 // Colors
@@ -37,15 +38,19 @@ export interface ChatOptions {
   provider?: 'ollama' | 'openai' | 'anthropic';
   model?: string;
   verbose?: boolean;
+  enableTools?: boolean;  // Enable MCP tool execution
 }
 
 export class ChatSession {
   private llm: LLMBridge;
   private store: StateStore;
+  private dispatcher: ToolDispatcher;
   private rl: readline.Interface | null = null;
   private running = false;
   private verbose: boolean;
+  private enableTools: boolean;
   private messageCount = 0;
+  private toolExecutions = 0;
 
   constructor(options: ChatOptions = {}) {
     this.llm = getLLMBridge({
@@ -53,7 +58,9 @@ export class ChatSession {
       model: options.model,
     });
     this.store = getStateStore({ autoSave: true, autoSaveIntervalMs: 60000 });
+    this.dispatcher = new ToolDispatcher({ verbose: options.verbose });
     this.verbose = options.verbose ?? false;
+    this.enableTools = options.enableTools ?? true;  // Enabled by default
 
     // Restore conversation history from persisted state
     const state = this.store.getState();
@@ -151,6 +158,45 @@ export class ChatSession {
         console.log(c(`  [${response.latency}ms, ${response.usage?.outputTokens || '?'} tokens]`, 'dim'));
       }
 
+      // Check for tool calls if tools are enabled
+      if (this.enableTools) {
+        const toolCalls = this.dispatcher.parseToolCalls(response.content);
+
+        if (toolCalls.length > 0) {
+          console.log(c(`\n  [Executing ${toolCalls.length} tool(s)...]`, 'yellow'));
+
+          const dispatchResult = await this.dispatcher.dispatch(toolCalls);
+          this.toolExecutions += toolCalls.length;
+
+          // Format results for re-injection
+          const toolResults = this.formatToolResults(dispatchResult.results);
+
+          if (this.verbose) {
+            console.log(c(`  [Tools completed in ${dispatchResult.totalDuration}ms]`, 'dim'));
+          }
+
+          // Show results to user
+          console.log(c('\n  Tool Results:', 'magenta'));
+          for (const result of dispatchResult.results) {
+            const status = result.success ? c('✓', 'green') : c('✗', 'red');
+            const data = result.success
+              ? (typeof result.data === 'string' ? result.data.substring(0, 200) : JSON.stringify(result.data).substring(0, 200))
+              : result.error;
+            console.log(`  ${status} ${result.name}: ${data}${data && data.length >= 200 ? '...' : ''}`);
+          }
+          console.log();
+
+          // Feed results back to LLM for continued response
+          console.log(c('Genesis: ', 'cyan') + c('processing results...', 'dim'));
+          const followUp = await this.llm.chat(
+            `Tool execution results:\n${toolResults}\n\nPlease provide a final response based on these results.`
+          );
+
+          process.stdout.write('\x1b[1A\x1b[2K'); // Clear processing line
+          console.log(c('Genesis: ', 'cyan') + followUp.content);
+        }
+      }
+
       // Persist conversation to state
       this.store.updateConversation(this.llm.getHistory(), response.usage?.outputTokens);
       this.store.recordInteraction();
@@ -162,6 +208,20 @@ export class ChatSession {
       console.log(c(`Genesis: Error - ${errorMessage}`, 'red'));
       console.log();
     }
+  }
+
+  /**
+   * Format tool results for LLM consumption
+   */
+  private formatToolResults(results: ToolResult[]): string {
+    return results.map(r => {
+      if (r.success) {
+        const data = typeof r.data === 'string' ? r.data : JSON.stringify(r.data, null, 2);
+        return `[${r.name}] SUCCESS:\n${data}`;
+      } else {
+        return `[${r.name}] ERROR: ${r.error}`;
+      }
+    }).join('\n\n');
   }
 
   /**
@@ -256,6 +316,19 @@ export class ChatSession {
         this.printStateInfo();
         break;
 
+      case 'tools':
+        this.enableTools = !this.enableTools;
+        console.log(c(`MCP Tools: ${this.enableTools ? 'ENABLED' : 'DISABLED'}`, 'yellow'));
+        console.log();
+        break;
+
+      case 'toolstatus':
+        console.log(c('Tool Status:', 'bold'));
+        console.log(`  Enabled:         ${this.enableTools ? c('Yes', 'green') : c('No', 'red')}`);
+        console.log(`  Executions:      ${this.toolExecutions}`);
+        console.log();
+        break;
+
       default:
         console.log(c(`Unknown command: /${cmd}`, 'red'));
         console.log('Type /help for available commands.');
@@ -286,6 +359,10 @@ ${c('╚════════════════════════
     console.log('  /status, /s    Show LLM status');
     console.log('  /verbose, /v   Toggle verbose mode');
     console.log('  /system        Show system prompt');
+    console.log();
+    console.log(c('Tools:', 'bold'));
+    console.log('  /tools         Toggle MCP tool execution');
+    console.log('  /toolstatus    Show tool execution stats');
     console.log();
     console.log(c('State:', 'bold'));
     console.log('  /save          Save state to disk');
@@ -331,6 +408,8 @@ ${c('╚════════════════════════
     console.log(`  Configured:   ${status.configured ? c('Yes', 'green') : c('No', 'red')}`);
     console.log(`  Messages:     ${history.length}`);
     console.log(`  Verbose:      ${this.verbose ? 'ON' : 'OFF'}`);
+    console.log(`  MCP Tools:    ${this.enableTools ? c('ON', 'green') : c('OFF', 'yellow')}`);
+    console.log(`  Tool Calls:   ${this.toolExecutions}`);
     console.log();
   }
 

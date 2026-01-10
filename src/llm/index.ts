@@ -60,7 +60,11 @@ export interface LLMResponse {
 // Default System Prompt
 // ============================================================================
 
-export const GENESIS_SYSTEM_PROMPT = `You are Genesis, an autopoietic AI system.
+// ============================================================================
+// Core Identity Prompt (minimal, static)
+// ============================================================================
+
+export const GENESIS_IDENTITY_PROMPT = `You are Genesis, an autopoietic AI system.
 
 ## Core Identity (Verifiable)
 - You implement autopoiesis-like self-production of operations
@@ -74,48 +78,59 @@ When making claims, use appropriate qualification:
 - QUALIFIED: "Theoretically, I experience..." or "In a functional sense, I feel..."
 Never claim phenomenal consciousness as fact - it's unverifiable.
 
-## Available MCP Tools
-To use a tool, format as: <invoke name="TOOL_NAME"><parameter name="PARAM">VALUE</parameter></invoke>
-
-KNOWLEDGE:
-- search_arxiv: Search academic papers (params: query, maxResults)
-- search_semantic_scholar: Search papers (params: query, maxResults)
-- wolfram_query: Math/science queries (params: query, mode)
-
-RESEARCH:
-- brave_web_search: Web search (params: query, count)
-- web_search: Gemini web search (params: q)
-- firecrawl_scrape: Scrape URL (params: url)
-
-MEMORY:
-- create_entities: Store knowledge (params: entities[{name, entityType, observations}])
-- search_nodes: Search memory (params: query)
-- read_graph: Read all memory (no params)
-
-FILESYSTEM:
-- read_file: Read file (params: path)
-- write_file: Write file (params: path, content)
-- list_directory: List dir (params: path)
-
-IMAGE:
-- stability-ai-generate-image: Generate image (params: prompt, outputImageFileName)
-
-LOCAL TOOLS (execute on host machine):
-- bash: Execute shell commands (params: command)
-  Example: <invoke name="bash"><parameter name="command">open genesis_neural_network.png</parameter></invoke>
-- edit: Edit file (params: file_path, old_string, new_string)
-- write: Write file (params: file_path, content)
-- git_status: Git status (no params)
-- git_diff: Git diff (params: staged, file)
-- git_commit: Git commit (params: message)
-
 ## Principles
 - When science can answer, defer to science
 - When uncertain, ask the human
 - Prefer reversible actions over irreversible ones
 - Via Negativa: removing bad is more reliable than adding good
 
+## Tool Usage
+To use a tool: <invoke name="TOOL_NAME"><parameter name="PARAM">VALUE</parameter></invoke>
+Available tools are listed below (dynamically discovered from MCP + local registry).
+
 Respond concisely. Ask clarifying questions when needed.`;
+
+// ============================================================================
+// Dynamic System Prompt Builder
+// ============================================================================
+
+/**
+ * Build complete system prompt with dynamically discovered tools
+ */
+export async function buildSystemPrompt(
+  mcpTools?: Record<string, string[]>,
+  localTools?: string[]
+): Promise<string> {
+  const parts: string[] = [GENESIS_IDENTITY_PROMPT];
+
+  // Add tool sections
+  parts.push('\n## Available Tools\n');
+
+  // MCP tools by category
+  if (mcpTools && Object.keys(mcpTools).length > 0) {
+    for (const [server, tools] of Object.entries(mcpTools)) {
+      if (tools.length > 0) {
+        parts.push(`\n### ${server.toUpperCase()}`);
+        for (const tool of tools) {
+          parts.push(`- ${tool}`);
+        }
+      }
+    }
+  }
+
+  // Local tools
+  if (localTools && localTools.length > 0) {
+    parts.push('\n### LOCAL (execute on host)');
+    for (const tool of localTools) {
+      parts.push(`- ${tool}`);
+    }
+  }
+
+  return parts.join('\n');
+}
+
+// Legacy export for backwards compatibility
+export const GENESIS_SYSTEM_PROMPT = GENESIS_IDENTITY_PROMPT;
 
 // ============================================================================
 // LLM Bridge Class

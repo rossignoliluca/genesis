@@ -6,7 +6,7 @@
  */
 
 import * as readline from 'readline';
-import { getLLMBridge, GENESIS_SYSTEM_PROMPT, LLMBridge } from '../llm/index.js';
+import { getLLMBridge, buildSystemPrompt, GENESIS_IDENTITY_PROMPT, LLMBridge } from '../llm/index.js';
 import { getStateStore, StateStore } from '../persistence/index.js';
 import { ToolDispatcher, ToolResult } from './dispatcher.js';
 
@@ -51,6 +51,7 @@ export class ChatSession {
   private enableTools: boolean;
   private messageCount = 0;
   private toolExecutions = 0;
+  private systemPrompt: string = '';  // Built dynamically at start()
 
   constructor(options: ChatOptions = {}) {
     this.llm = getLLMBridge({
@@ -76,6 +77,17 @@ export class ChatSession {
    */
   async start(): Promise<void> {
     this.printBanner();
+
+    // Build dynamic system prompt from available tools
+    const tools = this.dispatcher.listTools();
+    this.systemPrompt = await buildSystemPrompt(tools.mcp, tools.local);
+
+    if (this.verbose) {
+      console.log(c('System prompt built dynamically:', 'dim'));
+      console.log(c(`  Local tools: ${tools.local.length}`, 'dim'));
+      console.log(c(`  MCP servers: ${Object.keys(tools.mcp).length}`, 'dim'));
+      console.log();
+    }
 
     // Check if LLM is configured
     if (!this.llm.isConfigured()) {
@@ -147,7 +159,7 @@ export class ChatSession {
     console.log(c('Genesis: ', 'cyan') + c('thinking...', 'dim'));
 
     try {
-      const response = await this.llm.chat(message);
+      const response = await this.llm.chat(message, this.systemPrompt);
       this.messageCount++;
 
       // Clear "thinking..." line and print response
@@ -269,10 +281,19 @@ export class ChatSession {
         if (args.length > 0) {
           console.log(c('Custom system prompts not yet supported.', 'yellow'));
         } else {
-          console.log(c('Current system prompt:', 'cyan'));
-          console.log(c('─'.repeat(50), 'dim'));
-          console.log(GENESIS_SYSTEM_PROMPT);
-          console.log(c('─'.repeat(50), 'dim'));
+          console.log(c('System Prompt (dynamically built):', 'cyan'));
+          console.log(c('─'.repeat(60), 'dim'));
+          console.log(this.systemPrompt || GENESIS_IDENTITY_PROMPT);
+          console.log(c('─'.repeat(60), 'dim'));
+
+          // Show tool stats
+          const tools = this.dispatcher.listTools();
+          console.log(c(`\nTools discovered:`, 'yellow'));
+          console.log(`  Local: ${tools.local.length} (${tools.local.join(', ')})`);
+          console.log(`  MCP servers: ${Object.keys(tools.mcp).length}`);
+          for (const [server, serverTools] of Object.entries(tools.mcp)) {
+            console.log(`    ${server}: ${serverTools.length} tools`);
+          }
         }
         console.log();
         break;

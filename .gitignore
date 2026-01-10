@@ -34,3 +34,4 @@ coverage/
 tmp/
 temp/
 *.tmp
+.env.keys

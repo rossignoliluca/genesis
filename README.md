@@ -1,8 +1,8 @@
-# Genesis 6.0
+# Genesis 6.3
 
-**A Living System That Creates Systems**
+**Autonomous AI System Creator**
 
-Fully autonomous AI system powered by 13 MCP servers. Genesis doesn't just create systems - it thinks, feels, remembers, forgets, runs as a daemon, and improves itself.
+Genesis is a self-improving AI system powered by 13 MCP servers. It doesn't just create systems - it thinks, feels, remembers, and operates autonomously via Active Inference.
 
 ```
 ╔═══════════════════════════════════════════════════════════════════════╗
@@ -14,234 +14,204 @@ Fully autonomous AI system powered by 13 MCP servers. Genesis doesn't just creat
 ║    ╚██████╔╝███████╗██║ ╚████║███████╗███████║██║███████║            ║
 ║     ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚══════╝╚═╝╚══════╝            ║
 ║                                                                       ║
-║    "Not just intelligent, but alive."                    v6.0.0      ║
+║    "Not just intelligent, but alive."                    v6.3.0      ║
 ║                                                                       ║
 ╚═══════════════════════════════════════════════════════════════════════╝
 ```
 
-## What's New in v6.0.0
-
-| Milestone | Feature | Description |
-|-----------|---------|-------------|
-| **M1** | LLM Bridge | OpenAI/Anthropic API with conversation history |
-| **M2** | CLI Chat | Interactive REPL with `/commands` |
-| **M3** | State Persistence | Auto-save to `~/.genesis/` |
-| **M4** | Real MCP | Connect to actual MCP servers via SDK |
-| **M5** | Daemon Process | Background service with Unix socket IPC |
-
 ## Quick Start
 
 ```bash
-# Install
+# Clone and build
 git clone https://github.com/rossignoliluca/genesis.git
 cd genesis
 npm install
 npm run build
 
-# Set API key
-export OPENAI_API_KEY=sk-...
-# or
-export ANTHROPIC_API_KEY=sk-ant-...
+# Configure API keys
+cp .env.example .env
+# Edit .env with your API keys (see below)
+chmod 600 .env
 
-# Start chatting
-node dist/src/index.js chat
+# Install globally (optional)
+npm link
 
-# Start background daemon
-node dist/src/index.js daemon start
+# Start!
+genesis help
+genesis chat
+genesis infer mcp --cycles 10
+```
 
-# Check daemon status
-node dist/src/index.js daemon status
+## API Keys Setup
+
+Copy `.env.example` to `.env` and add your keys:
+
+| Service | Get Key At | Required |
+|---------|------------|----------|
+| OpenAI | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | Yes* |
+| Anthropic | [console.anthropic.com](https://console.anthropic.com/settings/keys) | Yes* |
+| Gemini | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | Recommended |
+| Brave Search | [brave.com/search/api](https://brave.com/search/api/) | Recommended |
+| Firecrawl | [firecrawl.dev](https://firecrawl.dev/) | Optional |
+| Exa | [exa.ai](https://exa.ai/) | Optional |
+| Stability AI | [platform.stability.ai](https://platform.stability.ai/) | Optional |
+
+*At least one LLM provider required
+
+## Core Commands
+
+### Chat Mode
+```bash
+genesis chat                        # Interactive chat (uses OpenAI)
+genesis chat --provider anthropic   # Use Claude
+genesis chat --model gpt-4o         # Specific model
+```
+
+### Autonomous Inference (NEW in 6.3!)
+```bash
+genesis infer mcp --cycles 10       # Run with REAL MCP observations
+genesis infer mcp --verbose         # See detailed beliefs/actions
+genesis infer integrated            # With Kernel & Daemon
+```
+
+### MCP Servers
+```bash
+genesis status                      # Show all 13 MCP servers
+genesis mcp test --server memory    # Test a server
+genesis mcp list --server arxiv     # List available tools
+```
+
+### System Creation
+```bash
+genesis create my-agent --type agent --description "An autonomous agent"
+genesis research "autopoiesis in AI"
+genesis pipeline spec.json --execute
+```
+
+## The 13 MCP Servers
+
+Genesis perceives the world through 13 sensory channels:
+
+| Category | Servers | Purpose |
+|----------|---------|---------|
+| **KNOWLEDGE** | arxiv, semantic-scholar, context7, wolfram | Papers, docs, math |
+| **RESEARCH** | gemini, brave-search, exa, firecrawl | Web search, scraping |
+| **CREATION** | openai, github | Code generation, publishing |
+| **VISUAL** | stability-ai | Image generation |
+| **STORAGE** | memory, filesystem | Knowledge graph, files |
+
+## Active Inference
+
+Genesis 6.3 introduces autonomous operation via the Free Energy Principle:
+
+```
+Observations (from MCPs) → Beliefs → Actions → World Change → New Observations
+```
+
+The system:
+- **Senses** via real MCP calls (memory, brave-search, etc.)
+- **Infers** beliefs about viability, world state, coupling
+- **Decides** actions to minimize surprise (Free Energy)
+- **Acts** autonomously (plan, execute, verify, rest)
+
+```bash
+# Watch Genesis think autonomously
+genesis infer mcp --cycles 20 --verbose
+
+# Output:
+# [   1] plan.goals      | V:optimal  Lat:321ms
+# [   2] execute.task    | V:optimal  Lat:150ms
+# [   3] sense.mcp       | V:optimal  Lat:120ms
+# ...
 ```
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                           GENESIS 6.0                               │
+│                         GENESIS 6.3                                  │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │                         CLI LAYER                              │ │
-│  │   Chat │ Daemon │ MCP │ Create │ Research │ Design │ Publish  │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                                │                                    │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │                      DAEMON PROCESS                            │ │
-│  │   Scheduler │ Maintenance │ Dream Mode │ IPC (Unix Socket)    │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                                │                                    │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │                       LLM BRIDGE                               │ │
-│  │   OpenAI (GPT-4o) │ Anthropic (Claude) │ Conversation History │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                                │                                    │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │                    STATE PERSISTENCE                           │ │
-│  │     ~/.genesis/state.json │ Memory │ Sessions │ Backups       │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                                │                                    │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │              SENSORY LAYER (13 MCP Servers)                   │ │
-│  │  arxiv │ semantic-scholar │ brave │ gemini │ wolfram │ ctx7  │ │
-│  │  openai │ stability-ai │ firecrawl │ exa │ github │ fs │ mem │ │
-│  └───────────────────────────────────────────────────────────────┘ │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                    ACTIVE INFERENCE                          │   │
+│  │   Observations → Beliefs → Actions → World Model Update     │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                              │                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                     STRONG KERNEL                            │   │
+│  │   10 Agents │ Message Bus │ State Machine │ Invariants      │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                              │                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                   MCP OBSERVATION BRIDGE                     │   │
+│  │   Real MCP calls → Energy, Phi, Tool, Coherence metrics     │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                              │                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                  13 MCP SERVERS (Senses)                     │   │
+│  │  arxiv │ brave │ gemini │ memory │ github │ stability-ai   │   │
+│  └─────────────────────────────────────────────────────────────┘   │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## The 13 MCP Servers
-
-Genesis perceives the world through 13 MCP servers:
-
-| Category | Servers | Purpose |
-|----------|---------|---------|
-| **KNOWLEDGE** | arxiv, semantic-scholar, context7, wolfram | Scientific papers, docs, math |
-| **RESEARCH** | gemini, brave-search, exa, firecrawl | Web search, scraping |
-| **CREATION** | openai, github | Code generation, publishing |
-| **VISUAL** | stability-ai | Image generation |
-| **STORAGE** | memory, filesystem | Knowledge graph, files |
-
-## CLI Commands
-
-### Chat Mode
-
-```bash
-# Start interactive chat
-genesis chat
-
-# Chat commands
-/help          Show help
-/clear         Clear conversation
-/history       Show history
-/status        Show LLM status
-/save          Save state
-/load          Load state
-/quit          Exit (auto-saves)
-```
-
-### Daemon Mode
-
-```bash
-# Start background daemon
-genesis daemon start
-# Daemon started (PID: 12345)
-
-# Check status (via IPC)
-genesis daemon status
-# Status: Running
-# PID: 12345
-# Uptime: 3600s
-# Tasks: 10 completed
-
-# View scheduled tasks
-genesis daemon tasks
-
-# View logs
-genesis daemon logs --lines 100
-
-# Trigger dream cycle
-genesis daemon dream
-
-# Stop daemon
-genesis daemon stop
-```
-
-### MCP Commands
-
-```bash
-# Show MCP status
-genesis mcp status
-
-# Test a server (real mode)
-GENESIS_MCP_MODE=real genesis mcp test --server memory --tool read_graph
-
-# List available tools
-GENESIS_MCP_MODE=real genesis mcp list --server filesystem
-```
-
-### System Creation
-
-```bash
-# Create a new system
-genesis create my-agent --type agent --description "An autonomous agent"
-
-# Research a topic
-genesis research "autopoiesis in AI systems"
-
-# Run full pipeline
-genesis pipeline my-system.genesis.json
-```
-
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `OPENAI_API_KEY` | OpenAI API key | - |
-| `ANTHROPIC_API_KEY` | Anthropic API key | - |
-| `GENESIS_MCP_MODE` | `real`, `simulated`, `hybrid` | `simulated` |
-| `GENESIS_MCP_LOG` | Enable MCP debug logging | `false` |
-| `BRAVE_API_KEY` | Brave Search API key | - |
-| `EXA_API_KEY` | Exa Search API key | - |
-| `FIRECRAWL_API_KEY` | Firecrawl API key | - |
+```bash
+# Required (at least one)
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
 
-## File Locations
+# Recommended
+GEMINI_API_KEY=AIza...
+BRAVE_API_KEY=BSA...
 
-| File | Purpose |
-|------|---------|
-| `~/.genesis/state.json` | Persisted state |
-| `~/.genesis/daemon.pid` | Daemon process ID |
-| `~/.genesis/daemon.sock` | Unix socket for IPC |
-| `~/.genesis/daemon.log` | Daemon log file |
-| `~/.genesis/backups/` | State backups |
+# Optional
+FIRECRAWL_API_KEY=fc-...
+EXA_API_KEY=...
+STABILITY_AI_API_KEY=sk-...
 
-## What Makes Genesis Different?
-
-| Feature | Traditional AI | Genesis 6.0 |
-|---------|---------------|-------------|
-| Architecture | Monolithic | Multi-agent with daemon |
-| Memory | Append-only | Forgets like humans (Ebbinghaus) |
-| Persistence | None | Auto-save to disk |
-| Background | None | Daemon with IPC |
-| MCP | Simulated | Real server connections |
-| Self-improvement | None | Darwin Gödel (test, don't prove) |
-| Senses | API calls | 13 MCP as biological organs |
-
-## Daemon Features
-
-The background daemon provides:
-
-- **Scheduler**: Run tasks at intervals
-- **Health Checks**: Monitor system health every 60s
-- **Dream Mode**: Memory consolidation during idle
-- **Maintenance**: Self-repair and cleanup
-- **IPC**: Unix socket for CLI communication
-
-## Scientific Foundations
-
-| Theory | Author | How We Use It |
-|--------|--------|---------------|
-| Autopoiesis | Maturana & Varela | Self-production, closure |
-| Free Energy Principle | Friston | Minimize surprise |
-| Society of Mind | Minsky | Multi-agent architecture |
-| Ebbinghaus Curve | Ebbinghaus | Memory decay |
-| Learning Progress | Oudeyer | Curiosity as reward |
-| Conatus | Spinoza | Self-preservation drive |
-
-## Specifications
-
-- [GENESIS-5.0.md](spec/GENESIS-5.0.md) - Conscious World-Modeling System
-- [GENESIS-4.0.md](spec/GENESIS-4.0.md) - Multi-Agent Living System
-- [IMPLEMENTATION-ROADMAP.md](IMPLEMENTATION-ROADMAP.md) - Implementation plan
+# Genesis config
+GENESIS_MCP_MODE=real        # real | simulated | hybrid
+GENESIS_MCP_LOG=false        # Enable debug logging
+```
 
 ## Version History
 
 | Version | Codename | Key Features |
 |---------|----------|--------------|
-| v6.0.0 | **Standalone** | LLM Bridge, CLI Chat, State, Real MCP, Daemon |
-| v5.0.0 | Dreaming Machine | World Model, Active Inference |
+| **v6.3.0** | **Autonomous** | MCP Observation Bridge, Real Active Inference |
+| v6.2.0 | Memory 2.0 | Ebbinghaus decay, workspace state |
+| v6.1.0 | Active Inference | Free Energy Principle, autonomous loop |
+| v6.0.0 | Standalone | LLM Bridge, CLI Chat, Daemon |
+| v5.0.0 | Dreaming | World Model, Value-Guided JEPA |
 | v4.0.0 | Living System | Multi-Agent, Strong Kernel |
-| v2.0.0 | Self-Producer | Autopoiesis, Self-Production |
-| v1.0.0 | Genesis | Initial release |
+
+## Scientific Foundations
+
+| Theory | Author | Implementation |
+|--------|--------|----------------|
+| Autopoiesis | Maturana & Varela | Self-production, operational closure |
+| Free Energy Principle | Friston | Active Inference loop |
+| Society of Mind | Minsky | 10 specialized agents |
+| Ebbinghaus Curve | Ebbinghaus | Memory decay (R = e^(-t/S)) |
+| Conatus | Spinoza | Self-preservation drive |
+
+## Development
+
+```bash
+# Build
+npm run build
+
+# Watch mode
+npm run dev
+
+# Run tests
+npm test
+
+# Link globally
+npm link
+```
 
 ## License
 
@@ -251,4 +221,6 @@ MIT
 
 Created by **rossignoliluca**
 
-*Genesis 6.0 - The Standalone System*
+---
+
+*Genesis 6.3 - The Autonomous System*

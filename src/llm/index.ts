@@ -1,10 +1,12 @@
 /**
- * Genesis 6.0 - LLM Bridge
+ * Genesis 6.3 - LLM Bridge
  *
  * Direct API integration with LLM providers:
- * - OpenAI (GPT-4o, o1)
- * - Anthropic (Claude)
+ * - Ollama (Mistral, Qwen, Phi) - LOCAL, FREE
+ * - OpenAI (GPT-4o, o1) - CLOUD, PAID
+ * - Anthropic (Claude) - CLOUD, PAID
  *
+ * Hybrid routing: use local for 80% of tasks, cloud for complex ones.
  * No external dependencies - uses native fetch.
  */
 
@@ -12,7 +14,20 @@
 // Types
 // ============================================================================
 
-export type LLMProvider = 'openai' | 'anthropic';
+export type LLMProvider = 'ollama' | 'openai' | 'anthropic';
+
+// Ollama config
+export const OLLAMA_CONFIG = {
+  baseUrl: process.env.OLLAMA_HOST || 'http://localhost:11434',
+  defaultModel: 'mistral',  // Best balance of quality/speed
+  models: {
+    'mistral': { name: 'mistral', description: 'Mistral 7B - Best all-around' },
+    'mistral-small': { name: 'mistral-small', description: 'Mistral Small 24B - High quality' },
+    'qwen2.5-coder': { name: 'qwen2.5-coder', description: 'Qwen 2.5 Coder - Code specialist' },
+    'phi3.5': { name: 'phi3.5', description: 'Phi-3.5 - Fast, lightweight' },
+    'deepseek-coder': { name: 'deepseek-coder', description: 'DeepSeek Coder - Code generation' },
+  },
+};
 
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant';
@@ -83,23 +98,40 @@ export class LLMBridge {
   }
 
   private detectProvider(): LLMProvider {
+    // Priority: Ollama (free) > Anthropic > OpenAI
+    if (process.env.OLLAMA_HOST || process.env.USE_OLLAMA === 'true') return 'ollama';
     if (process.env.ANTHROPIC_API_KEY) return 'anthropic';
     if (process.env.OPENAI_API_KEY) return 'openai';
-    return 'openai'; // Default
+    return 'ollama'; // Default to local (free)
   }
 
   private detectApiKey(provider?: LLMProvider): string {
     const p = provider || this.config?.provider || this.detectProvider();
-    if (p === 'anthropic') {
-      return process.env.ANTHROPIC_API_KEY || '';
-    }
+    if (p === 'ollama') return 'not-needed'; // Ollama is local
+    if (p === 'anthropic') return process.env.ANTHROPIC_API_KEY || '';
     return process.env.OPENAI_API_KEY || '';
   }
 
   private defaultModel(provider?: LLMProvider): string {
-    const p = provider || this.config?.provider || 'openai';
+    const p = provider || this.config?.provider || 'ollama';
+    if (p === 'ollama') return OLLAMA_CONFIG.defaultModel;
     if (p === 'anthropic') return 'claude-sonnet-4-20250514';
     return 'gpt-4o';
+  }
+
+  /**
+   * Check if Ollama is running
+   */
+  async isOllamaAvailable(): Promise<boolean> {
+    try {
+      const response = await fetch(`${OLLAMA_CONFIG.baseUrl}/api/tags`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(2000),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -116,7 +148,9 @@ export class LLMBridge {
     try {
       let response: LLMResponse;
 
-      if (this.config.provider === 'anthropic') {
+      if (this.config.provider === 'ollama') {
+        response = await this.callOllama(system);
+      } else if (this.config.provider === 'anthropic') {
         response = await this.callAnthropic(system);
       } else {
         response = await this.callOpenAI(system);
@@ -128,6 +162,16 @@ export class LLMBridge {
       return response;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Fallback: if Ollama fails, try cloud
+      if (this.config.provider === 'ollama' && process.env.OPENAI_API_KEY) {
+        console.log('[LLM] Ollama unavailable, falling back to OpenAI...');
+        this.config.provider = 'openai';
+        this.config.apiKey = process.env.OPENAI_API_KEY;
+        this.config.model = 'gpt-4o';
+        return this.chat(userMessage, systemPrompt);
+      }
+
       throw new Error(`LLM call failed: ${errorMessage}`);
     }
   }
@@ -220,6 +264,53 @@ export class LLMBridge {
   }
 
   /**
+   * Call Ollama API (local, free)
+   * Uses OpenAI-compatible endpoint for easy switching
+   */
+  private async callOllama(systemPrompt: string): Promise<LLMResponse> {
+    const startTime = Date.now();
+
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...this.conversationHistory,
+    ];
+
+    const response = await fetch(`${OLLAMA_CONFIG.baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: this.config.model,
+        messages,
+        stream: false,
+        options: {
+          temperature: this.config.temperature,
+          num_predict: this.config.maxTokens,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Ollama API error: ${response.status} - ${error}`);
+    }
+
+    const data = await response.json();
+
+    return {
+      content: data.message?.content || '',
+      model: this.config.model,
+      provider: 'ollama',
+      usage: {
+        inputTokens: data.prompt_eval_count || 0,
+        outputTokens: data.eval_count || 0,
+      },
+      latency: Date.now() - startTime,
+    };
+  }
+
+  /**
    * Clear conversation history
    */
   clearHistory(): void {
@@ -241,21 +332,37 @@ export class LLMBridge {
   }
 
   /**
-   * Check if API key is configured
+   * Check if API key is configured (or Ollama available)
    */
   isConfigured(): boolean {
+    if (this.config.provider === 'ollama') return true; // Local, no key needed
     return !!this.config.apiKey;
   }
 
   /**
    * Get provider status
    */
-  status(): { configured: boolean; provider: LLMProvider; model: string } {
+  status(): { configured: boolean; provider: LLMProvider; model: string; isLocal: boolean } {
     return {
       configured: this.isConfigured(),
       provider: this.config.provider,
       model: this.config.model,
+      isLocal: this.config.provider === 'ollama',
     };
+  }
+
+  /**
+   * List available Ollama models
+   */
+  async listOllamaModels(): Promise<string[]> {
+    try {
+      const response = await fetch(`${OLLAMA_CONFIG.baseUrl}/api/tags`);
+      if (!response.ok) return [];
+      const data = await response.json();
+      return data.models?.map((m: any) => m.name) || [];
+    } catch {
+      return [];
+    }
   }
 }
 

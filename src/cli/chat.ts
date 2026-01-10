@@ -34,7 +34,7 @@ function c(text: string, color: keyof typeof colors): string {
 // ============================================================================
 
 export interface ChatOptions {
-  provider?: 'openai' | 'anthropic';
+  provider?: 'ollama' | 'openai' | 'anthropic';
   model?: string;
   verbose?: boolean;
 }

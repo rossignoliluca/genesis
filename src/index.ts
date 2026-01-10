@@ -322,9 +322,17 @@ async function cmdPublish(specFile: string): Promise<void> {
 }
 
 async function cmdChat(options: Record<string, string>): Promise<void> {
-  const provider = options.provider as 'openai' | 'anthropic' | undefined;
-  const model = options.model;
+  // --local flag forces Ollama
+  const isLocal = options.local === 'true';
+  const provider = isLocal ? 'ollama' : (options.provider as 'ollama' | 'openai' | 'anthropic' | undefined);
+  const model = options.model || (provider === 'ollama' ? 'mistral' : undefined);
   const verbose = options.verbose === 'true';
+
+  // Show provider info
+  if (provider === 'ollama' || (!provider && !process.env.OPENAI_API_KEY && !process.env.ANTHROPIC_API_KEY)) {
+    console.log(c(`\n[LLM] Using Ollama (local, free) - model: ${model || 'mistral'}`, 'cyan'));
+    console.log(c('[LLM] If Ollama unavailable, will fallback to cloud API\n', 'dim'));
+  }
 
   await startChat({ provider, model, verbose });
 }
@@ -870,8 +878,9 @@ function cmdHelp(): void {
 
 ${c('Commands:', 'bold')}
   ${c('chat', 'green')}                  ${c('Interactive chat with Genesis', 'bold')}
-    --provider <p>       LLM provider: openai, anthropic
-    --model <m>          Model name (e.g., gpt-4o, claude-sonnet-4-20250514)
+    --local              Use Ollama (free, local) - DEFAULT
+    --provider <p>       LLM provider: ollama, openai, anthropic
+    --model <m>          Model name (e.g., mistral, gpt-4o, claude-sonnet-4-20250514)
     --verbose            Show latency and token usage
 
   ${c('create', 'green')} <name>         Create a new system
@@ -915,8 +924,10 @@ ${c('MCP Servers (13):', 'bold')}
   ${c('STORAGE:', 'cyan')}    memory, filesystem
 
 ${c('Examples:', 'bold')}
-  genesis chat                          ${c('Start interactive chat', 'dim')}
-  genesis chat --provider anthropic     ${c('Use Claude', 'dim')}
+  genesis chat                          ${c('Chat with Mistral (local, free)', 'dim')}
+  genesis chat --provider openai        ${c('Chat with GPT-4o (cloud)', 'dim')}
+  genesis chat --provider anthropic     ${c('Chat with Claude (cloud)', 'dim')}
+  genesis infer mcp --cycles 10         ${c('Autonomous inference with MCPs', 'dim')}
   genesis create my-agent --type agent --features "state-machine,events"
 
   ${c('# Run full pipeline with real MCPs:', 'dim')}

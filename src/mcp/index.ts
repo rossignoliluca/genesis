@@ -69,7 +69,7 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
   // KNOWLEDGE (from Claude Code config)
   'arxiv': {
     command: 'npx',
-    args: ['-y', '@iflow-mcp/arxiv-paper-mcp'],
+    args: ['-y', '@iflow-mcp/arxiv-paper-mcp@latest'],
     tools: ['search_arxiv', 'parse_paper_content', 'get_recent_ai_papers', 'get_arxiv_pdf_url'],
   },
   'semantic-scholar': {
@@ -84,7 +84,7 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
   },
   'wolfram': {
     command: 'npx',
-    args: ['-y', '@anthropic-ai/mcp-server-wolfram'],
+    args: ['-y', 'wolfram-mcp'],
     envVars: () => ({ WOLFRAM_APP_ID: process.env.WOLFRAM_APP_ID || '' }),
     tools: ['wolfram_query'],
   },
@@ -98,8 +98,7 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
   },
   'brave-search': {
     command: 'npx',
-    args: ['-y', '@brave/brave-search-mcp-server'],
-    envVars: () => ({ BRAVE_API_KEY: process.env.BRAVE_API_KEY || '' }),
+    args: () => ['-y', '@brave/brave-search-mcp-server', '--brave-api-key', process.env.BRAVE_API_KEY || ''],
     tools: ['brave_web_search', 'brave_local_search', 'brave_news_search', 'brave_image_search', 'brave_video_search'],
   },
   'exa': {

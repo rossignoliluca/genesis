@@ -1,8 +1,8 @@
-# Genesis 6.3
+# Genesis 6.7
 
-**Autonomous AI System Creator**
+**Claude Code Equivalent - Autonomous AI System Creator**
 
-Genesis is a self-improving AI system powered by 13 MCP servers. It doesn't just create systems - it thinks, feels, remembers, and operates autonomously via Active Inference.
+Genesis is a self-improving AI system powered by 13 MCP servers. It doesn't just create systems - it thinks, feels, remembers, and operates autonomously via Active Inference. **Now with full standalone capabilities: bash sandbox, file editing, git operations, self-healing, and human-in-the-loop.**
 
 ```
 ╔═══════════════════════════════════════════════════════════════════════╗
@@ -14,7 +14,7 @@ Genesis is a self-improving AI system powered by 13 MCP servers. It doesn't just
 ║    ╚██████╔╝███████╗██║ ╚████║███████╗███████║██║███████║            ║
 ║     ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚══════╝╚═╝╚══════╝            ║
 ║                                                                       ║
-║    "Not just intelligent, but alive."                    v6.3.0      ║
+║    "Not just intelligent, but alive."                    v6.7.0      ║
 ║                                                                       ║
 ╚═══════════════════════════════════════════════════════════════════════╝
 ```
@@ -67,7 +67,24 @@ genesis chat --provider anthropic   # Use Claude
 genesis chat --model gpt-4o         # Specific model
 ```
 
-### Autonomous Inference (NEW in 6.3!)
+### Standalone Tools (NEW in 6.7!)
+```bash
+# Code execution (sandboxed)
+genesis bash "npm test"             # Execute safely
+genesis bash "ls -la" --timeout 5000
+
+# File editing (diff-based)
+genesis edit src/app.ts --old "foo" --new "bar"
+
+# Git operations
+genesis git status
+genesis git commit "fix: bug in parser"
+
+# Interactive REPL
+genesis repl                        # Full REPL with tools
+```
+
+### Autonomous Inference
 ```bash
 genesis infer mcp --cycles 10       # Run with REAL MCP observations
 genesis infer mcp --verbose         # See detailed beliefs/actions
@@ -129,9 +146,14 @@ genesis infer mcp --cycles 20 --verbose
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         GENESIS 6.3                                  │
+│                         GENESIS 6.7                                  │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                    STANDALONE TOOLS (NEW!)                   │   │
+│  │   Bash Sandbox │ Edit │ Git │ Self-Healing │ Human Loop     │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                              │                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
 │  │                    ACTIVE INFERENCE                          │   │
 │  │   Observations → Beliefs → Actions → World Model Update     │   │
@@ -154,6 +176,20 @@ genesis infer mcp --cycles 20 --verbose
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+## Standalone Features (v6.7)
+
+Genesis is now **Claude Code equivalent** with these standalone capabilities:
+
+| Feature | Module | Description |
+|---------|--------|-------------|
+| **Bash Sandbox** | `src/tools/bash.ts` | Secure command execution with whitelist/blacklist |
+| **Edit Tool** | `src/tools/edit.ts` | Diff-based file editing with unique match |
+| **Git Operations** | `src/tools/git.ts` | Native status, diff, commit, push |
+| **Self-Healing** | `src/healing/*` | Darwin-Gödel pattern for auto-fix |
+| **Grounding** | `src/grounding/*` | Compile + test + semantic verification |
+| **Tool Orchestration** | `src/cli/dispatcher.ts` | Multi-format parsing, parallel execution |
+| **Human-in-Loop** | `src/cli/human-loop.ts` | Confirmations, choices, destructive warnings |
 
 ## Environment Variables
 
@@ -180,7 +216,11 @@ GENESIS_MCP_LOG=false        # Enable debug logging
 
 | Version | Codename | Key Features |
 |---------|----------|--------------|
-| **v6.3.0** | **Autonomous** | MCP Observation Bridge, Real Active Inference |
+| **v6.7.0** | **Standalone Complete** | Human-in-Loop, Tool Orchestration, Claude Code equivalent |
+| v6.6.0 | Tool Orchestration | Dispatcher, Interactive REPL |
+| v6.5.0 | Grounding | Output verification, feedback loop |
+| v6.4.x | Self-Healing | Bash sandbox, Edit tool, Git operations, Darwin-Gödel |
+| v6.3.0 | Autonomous | MCP Observation Bridge, Real Active Inference |
 | v6.2.0 | Memory 2.0 | Ebbinghaus decay, workspace state |
 | v6.1.0 | Active Inference | Free Energy Principle, autonomous loop |
 | v6.0.0 | Standalone | LLM Bridge, CLI Chat, Daemon |
@@ -223,4 +263,4 @@ Created by **rossignoliluca**
 
 ---
 
-*Genesis 6.3 - The Autonomous System*
+*Genesis 6.7 - Claude Code Equivalent*

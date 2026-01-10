@@ -1,7 +1,7 @@
 {
   "name": "@rossignoliluca/genesis",
-  "version": "6.3.0",
-  "description": "Autonomous AI System Creator - 13 MCP servers, Active Inference, Self-Production",
+  "version": "6.7.0",
+  "description": "Autonomous AI System Creator - Claude Code equivalent with 13 MCP servers, Active Inference, Self-Production",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "bin": {

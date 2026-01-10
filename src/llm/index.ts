@@ -19,13 +19,13 @@ export type LLMProvider = 'ollama' | 'openai' | 'anthropic';
 // Ollama config
 export const OLLAMA_CONFIG = {
   baseUrl: process.env.OLLAMA_HOST || 'http://localhost:11434',
-  defaultModel: 'mistral',  // Best balance of quality/speed
+  defaultModel: 'qwen2.5-coder',  // Best for code: 7x faster, concise output
   models: {
-    'mistral': { name: 'mistral', description: 'Mistral 7B - Best all-around' },
+    'qwen2.5-coder': { name: 'qwen2.5-coder', description: 'Qwen 2.5 Coder - Code specialist (DEFAULT)' },
+    'mistral': { name: 'mistral', description: 'Mistral 7B - Best for chat' },
     'mistral-small': { name: 'mistral-small', description: 'Mistral Small 24B - High quality' },
-    'qwen2.5-coder': { name: 'qwen2.5-coder', description: 'Qwen 2.5 Coder - Code specialist' },
+    'deepseek-coder': { name: 'deepseek-coder', description: 'DeepSeek Coder - Lightweight (776MB)' },
     'phi3.5': { name: 'phi3.5', description: 'Phi-3.5 - Fast, lightweight' },
-    'deepseek-coder': { name: 'deepseek-coder', description: 'DeepSeek Coder - Code generation' },
   },
 };
 

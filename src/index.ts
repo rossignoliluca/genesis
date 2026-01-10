@@ -336,12 +336,12 @@ async function cmdChat(options: Record<string, string>): Promise<void> {
     provider = options.provider as 'ollama' | 'openai' | 'anthropic';
   }
 
-  const model = options.model || (provider === 'ollama' ? 'mistral' : undefined);
+  const model = options.model || (provider === 'ollama' ? 'qwen2.5-coder' : undefined);
   const verbose = options.verbose === 'true';
 
   // Show provider info
   if (provider === 'ollama' || (!provider && !process.env.OPENAI_API_KEY && !process.env.ANTHROPIC_API_KEY)) {
-    console.log(c(`\n[LLM] Using Ollama (local, free) - model: ${model || 'mistral'}`, 'cyan'));
+    console.log(c(`\n[LLM] Using Ollama (local, free) - model: ${model || 'qwen2.5-coder'}`, 'cyan'));
     console.log(c('[LLM] If Ollama unavailable, will fallback to cloud API\n', 'dim'));
   }
 

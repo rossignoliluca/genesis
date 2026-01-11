@@ -26,6 +26,8 @@ import * as readline from 'readline';
 import { getLLMBridge, buildSystemPrompt, GENESIS_IDENTITY_PROMPT, LLMBridge } from '../llm/index.js';
 import { getStateStore, StateStore } from '../persistence/index.js';
 import { ToolDispatcher, ToolResult } from './dispatcher.js';
+import { getMCPClient, MCP_SERVER_REGISTRY } from '../mcp/index.js';
+import { MCPServerName } from '../types.js';
 import { Brain, getBrain, BrainMetrics, BrainTrace, createBrainTrace } from '../brain/index.js';
 import { getMemorySystem, MemorySystem } from '../memory/index.js';
 import { healing } from '../healing/index.js';
@@ -545,6 +547,11 @@ export class ChatSession {
         console.log(`  Enabled:         ${this.enableTools ? c('Yes', 'green') : c('No', 'red')}`);
         console.log(`  Executions:      ${this.toolExecutions}`);
         console.log();
+        break;
+
+      case 'mcptest':
+      case 'mcp':
+        await this.runMCPDiagnostics();
         break;
 
       // Phase 10: Brain commands
@@ -1232,6 +1239,94 @@ export class ChatSession {
     console.log('  ✓ Healing (Darwin-Gödel)');
     console.log('  ✓ Consciousness (φ Monitor)');
     console.log('  ✓ Kernel (Agent Orchestration)');
+    console.log();
+  }
+
+  /**
+   * v7.3.6: Run MCP Diagnostics - test all MCP servers and show status
+   */
+  private async runMCPDiagnostics(): Promise<void> {
+    console.log(c('MCP Server Diagnostics:', 'bold'));
+    console.log();
+
+    const client = getMCPClient();
+    const servers = Object.keys(MCP_SERVER_REGISTRY) as MCPServerName[];
+
+    // Check required API keys
+    const requiredKeys: Record<string, string[]> = {
+      'wolfram': ['WOLFRAM_APP_ID'],
+      'brave-search': ['BRAVE_API_KEY'],
+      'exa': ['EXA_API_KEY'],
+      'firecrawl': ['FIRECRAWL_API_KEY'],
+      'openai': ['OPENAI_API_KEY'],
+      'github': ['GITHUB_PERSONAL_ACCESS_TOKEN', 'GITHUB_TOKEN'],
+      'stability-ai': ['STABILITY_AI_API_KEY'],
+      'gemini': ['GOOGLE_API_KEY', 'GEMINI_API_KEY'],
+    };
+
+    const results: Array<{ server: string; status: 'ok' | 'error' | 'no-key'; tools: number; message?: string }> = [];
+
+    console.log(info('Testing MCP servers...'));
+    console.log();
+
+    for (const server of servers) {
+      process.stdout.write(`  ${server}: `);
+
+      // Check API keys first
+      const keys = requiredKeys[server];
+      if (keys) {
+        const hasKey = keys.some(k => !!process.env[k]);
+        if (!hasKey) {
+          console.log(warning(`MISSING API KEY (${keys.join(' or ')})`));
+          results.push({ server, status: 'no-key', tools: 0, message: `Missing: ${keys.join(' or ')}` });
+          continue;
+        }
+      }
+
+      // Try to connect and list tools
+      try {
+        const available = await client.isAvailable(server);
+        if (available) {
+          const tools = await client.listTools(server);
+          console.log(success(`✓ OK (${tools.length} tools)`));
+          results.push({ server, status: 'ok', tools: tools.length });
+        } else {
+          console.log(error('✗ NOT AVAILABLE'));
+          results.push({ server, status: 'error', tools: 0, message: 'Connection failed' });
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(error(`✗ ERROR: ${msg.slice(0, 50)}`));
+        results.push({ server, status: 'error', tools: 0, message: msg });
+      }
+    }
+
+    console.log();
+
+    // Summary
+    const okCount = results.filter(r => r.status === 'ok').length;
+    const errorCount = results.filter(r => r.status === 'error').length;
+    const noKeyCount = results.filter(r => r.status === 'no-key').length;
+    const totalTools = results.reduce((sum, r) => sum + r.tools, 0);
+
+    console.log(c('Summary:', 'cyan'));
+    console.log(`  Servers OK:       ${success(String(okCount))}/${servers.length}`);
+    console.log(`  Servers Error:    ${errorCount > 0 ? error(String(errorCount)) : muted('0')}`);
+    console.log(`  Missing API Keys: ${noKeyCount > 0 ? warning(String(noKeyCount)) : muted('0')}`);
+    console.log(`  Total Tools:      ${totalTools}`);
+    console.log();
+
+    // Show local tools
+    const localTools = this.dispatcher.listTools().local;
+    console.log(c('Local Tools:', 'cyan'));
+    console.log(`  Available:        ${localTools.length}`);
+    console.log(`  Tools:            ${localTools.slice(0, 5).join(', ')}${localTools.length > 5 ? '...' : ''}`);
+    console.log();
+
+    // Mode info
+    console.log(c('Mode:', 'cyan'));
+    console.log(`  MCP Mode:         ${client.getMode()}`);
+    console.log(`  Tools Enabled:    ${this.enableTools ? success('YES') : warning('NO')}`);
     console.log();
   }
 

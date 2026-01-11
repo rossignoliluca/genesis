@@ -1205,7 +1205,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  printBanner();
+  // Chat command has its own banner, skip main banner
+  if (command !== 'chat') {
+    printBanner();
+  }
 
   // Parse options
   const options: Record<string, string> = {};

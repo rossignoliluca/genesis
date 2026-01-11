@@ -747,7 +747,8 @@ class HybridMCPClient implements IMCPClient {
 // ============================================================================
 
 function createMCPClient(config: Partial<MCPClientConfig> = {}): IMCPClient {
-  const mode = (process.env.GENESIS_MCP_MODE as MCPMode) || config.mode || 'simulated';
+  // v7.0: Default changed from 'simulated' to 'real'
+  const mode = (process.env.GENESIS_MCP_MODE as MCPMode) || config.mode || 'real';
   const timeout = parseInt(process.env.GENESIS_MCP_TIMEOUT || '') || config.timeout || 30000;
   const logCalls = process.env.GENESIS_MCP_LOG === 'true' || config.logCalls || false;
 
@@ -757,6 +758,11 @@ function createMCPClient(config: Partial<MCPClientConfig> = {}): IMCPClient {
     timeout,
     logCalls,
   };
+
+  // Log mode for transparency
+  if (logCalls) {
+    console.log(`[MCP] Mode: ${mode} (timeout: ${timeout}ms)`);
+  }
 
   switch (mode) {
     case 'real':

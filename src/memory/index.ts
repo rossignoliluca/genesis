@@ -431,10 +431,20 @@ let memorySystemInstance: MemorySystem | null = null;
 
 /**
  * Get or create the global memory system instance
+ * v7.0: Consolidation auto-starts by default for real memory behavior
  */
 export function getMemorySystem(config?: MemorySystemConfig): MemorySystem {
   if (!memorySystemInstance) {
-    memorySystemInstance = createMemorySystem(config);
+    // v7.0: Default to autoStart for consolidation
+    const configWithDefaults: MemorySystemConfig = {
+      ...config,
+      consolidation: {
+        autoStart: true,  // v7.0: Enable consolidation by default
+        backgroundIntervalMs: 10 * 60 * 1000, // 10 minutes
+        ...config?.consolidation,
+      },
+    };
+    memorySystemInstance = createMemorySystem(configWithDefaults);
   }
   return memorySystemInstance;
 }

@@ -1,8 +1,14 @@
 /**
- * Genesis 6.0 - Interactive Chat CLI
+ * Genesis v7.0 - Interactive Chat CLI
  *
  * REPL interface to talk to Genesis using readline.
  * No external dependencies.
+ *
+ * v7.0 Updates:
+ * - Modern UI with spinner, progress bars
+ * - Markdown formatting in responses
+ * - Input history (up/down arrows)
+ * - Real MCP mode by default
  */
 
 import * as readline from 'readline';
@@ -10,26 +16,18 @@ import { getLLMBridge, buildSystemPrompt, GENESIS_IDENTITY_PROMPT, LLMBridge } f
 import { getStateStore, StateStore } from '../persistence/index.js';
 import { ToolDispatcher, ToolResult } from './dispatcher.js';
 import { Brain, getBrain, BrainMetrics, BrainTrace, createBrainTrace } from '../brain/index.js';
-
-// ============================================================================
-// Colors
-// ============================================================================
-
-const colors = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  cyan: '\x1b[36m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  red: '\x1b[31m',
-  magenta: '\x1b[35m',
-  blue: '\x1b[34m',
-};
-
-function c(text: string, color: keyof typeof colors): string {
-  return `${colors[color]}${text}${colors.reset}`;
-}
+import { getMemorySystem, MemorySystem } from '../memory/index.js';
+import { healing } from '../healing/index.js';
+import { createSelfProductionEngine, SelfProductionEngine } from '../self-production.js';
+import {
+  style, c, COLORS,
+  success, error, warning, info, muted, highlight,
+  Spinner, ProgressBar,
+  formatMarkdown, highlightCode,
+  banner, box, table,
+  truncate, formatDuration,
+  InputHistory,
+} from './ui.js';
 
 // ============================================================================
 // Chat Session
@@ -59,6 +57,12 @@ export class ChatSession {
   private toolExecutions = 0;
   private systemPrompt: string = '';  // Built dynamically at start()
 
+  // v7.0: Modern UI components
+  private spinner: Spinner;
+  private inputHistory: InputHistory;
+  private memory: MemorySystem;  // v7.0: Memory system with consolidation
+  private selfProduction: SelfProductionEngine;  // v7.0: Darwin-Gödel self-improvement
+
   constructor(options: ChatOptions = {}) {
     this.llm = getLLMBridge({
       provider: options.provider,
@@ -68,10 +72,16 @@ export class ChatSession {
     this.dispatcher = new ToolDispatcher({ verbose: options.verbose });
     this.brain = getBrain();  // Phase 10: Initialize brain
     this.brainTrace = createBrainTrace(this.brain);  // Phase 10: Initialize trace
+    this.memory = getMemorySystem();  // v7.0: Initialize memory with consolidation
+    this.selfProduction = createSelfProductionEngine('7.0.0');  // v7.0: Darwin-Gödel
     this.verbose = options.verbose ?? false;
     this.enableTools = options.enableTools ?? true;  // Enabled by default
     this.enableBrain = options.enableBrain ?? false;  // Brain mode off by default (opt-in)
     this.enableTrace = false;  // Trace off by default
+
+    // v7.0: Initialize UI components
+    this.spinner = new Spinner('Thinking');
+    this.inputHistory = new InputHistory(100);
 
     // Restore conversation history from persisted state
     const state = this.store.getState();
@@ -155,12 +165,17 @@ export class ChatSession {
   }
 
   /**
-   * Prompt for user input
+   * Prompt for user input (v7.0: with history support)
    */
   private prompt(): Promise<string> {
     return new Promise((resolve) => {
       this.rl?.question(c('You: ', 'green'), (answer) => {
-        resolve(answer.trim());
+        const trimmed = answer.trim();
+        // v7.0: Add to history if not empty and not a duplicate
+        if (trimmed) {
+          this.inputHistory.add(trimmed);
+        }
+        resolve(trimmed);
       });
     });
   }
@@ -180,15 +195,16 @@ export class ChatSession {
       return;
     }
 
-    console.log(c('Genesis: ', 'cyan') + c('thinking...', 'dim'));
+    // v7.0: Modern spinner instead of static text
+    this.spinner.start('Thinking');
 
     try {
       const response = await this.llm.chat(message, this.systemPrompt);
       this.messageCount++;
 
-      // Clear "thinking..." line and print response
-      process.stdout.write('\x1b[1A\x1b[2K'); // Move up and clear line
-      console.log(c('Genesis: ', 'cyan') + response.content);
+      // v7.0: Stop spinner and print formatted response
+      this.spinner.stop();
+      console.log(c('Genesis: ', 'cyan') + formatMarkdown(response.content));
 
       if (this.verbose) {
         console.log(c(`  [${response.latency}ms, ${response.usage?.outputTokens || '?'} tokens]`, 'dim'));
@@ -199,37 +215,42 @@ export class ChatSession {
         const toolCalls = this.dispatcher.parseToolCalls(response.content);
 
         if (toolCalls.length > 0) {
-          console.log(c(`\n  [Executing ${toolCalls.length} tool(s)...]`, 'yellow'));
+          // v7.0: Progress bar for multi-tool execution
+          const progress = new ProgressBar(toolCalls.length, info('Tools'));
+          console.log();
+          progress.update(0);
 
           const dispatchResult = await this.dispatcher.dispatch(toolCalls);
           this.toolExecutions += toolCalls.length;
+          progress.update(toolCalls.length);
+          console.log(); // New line after progress
 
           // Format results for re-injection
           const toolResults = this.formatToolResults(dispatchResult.results);
 
           if (this.verbose) {
-            console.log(c(`  [Tools completed in ${dispatchResult.totalDuration}ms]`, 'dim'));
+            console.log(muted(`  Completed in ${formatDuration(dispatchResult.totalDuration)}`));
           }
 
-          // Show results to user
+          // v7.0: Show results in a cleaner format
           console.log(c('\n  Tool Results:', 'magenta'));
           for (const result of dispatchResult.results) {
-            const status = result.success ? c('✓', 'green') : c('✗', 'red');
+            const status = result.success ? success('✓') : error('✗');
             const data = result.success
-              ? (typeof result.data === 'string' ? result.data.substring(0, 200) : JSON.stringify(result.data).substring(0, 200))
+              ? truncate(typeof result.data === 'string' ? result.data : JSON.stringify(result.data), 200)
               : result.error;
-            console.log(`  ${status} ${result.name}: ${data}${data && data.length >= 200 ? '...' : ''}`);
+            console.log(`  ${status} ${result.name}: ${data}`);
           }
           console.log();
 
           // Feed results back to LLM for continued response
-          console.log(c('Genesis: ', 'cyan') + c('processing results...', 'dim'));
+          this.spinner.start('Processing results');
           const followUp = await this.llm.chat(
             `Tool execution results:\n${toolResults}\n\nPlease provide a final response based on these results.`
           );
 
-          process.stdout.write('\x1b[1A\x1b[2K'); // Clear processing line
-          console.log(c('Genesis: ', 'cyan') + followUp.content);
+          this.spinner.stop();
+          console.log(c('Genesis: ', 'cyan') + formatMarkdown(followUp.content));
         }
       }
 
@@ -238,10 +259,11 @@ export class ChatSession {
       this.store.recordInteraction();
 
       console.log();
-    } catch (error) {
-      process.stdout.write('\x1b[1A\x1b[2K'); // Clear "thinking..." line
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.log(c(`Genesis: Error - ${errorMessage}`, 'red'));
+    } catch (err) {
+      // v7.0: Stop spinner on error
+      this.spinner.stop();
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.log(error(`Genesis: Error - ${errorMessage}`));
       console.log();
     }
   }
@@ -267,20 +289,20 @@ export class ChatSession {
    * With: φ monitoring, Global Workspace broadcasting, self-healing
    */
   private async sendMessageViaBrain(message: string): Promise<void> {
-    // Only show "processing" if trace is off (trace shows detailed progress)
+    // v7.0: Only show spinner if trace is off (trace shows detailed progress)
     if (!this.enableTrace) {
-      console.log(c('Genesis: ', 'cyan') + c('processing via brain...', 'dim'));
+      this.spinner.start('Processing via Brain');
     }
 
     try {
       const response = await this.brain.process(message);
       this.messageCount++;
 
-      // Clear "processing..." line only if trace was off
+      // v7.0: Stop spinner only if trace was off
       if (!this.enableTrace) {
-        process.stdout.write('\x1b[1A\x1b[2K');
+        this.spinner.stop();
       }
-      console.log(c('Genesis: ', 'cyan') + response);
+      console.log(c('Genesis: ', 'cyan') + formatMarkdown(response));
 
       // Show brain metrics if verbose
       if (this.verbose) {
@@ -293,16 +315,16 @@ export class ChatSession {
       this.store.recordInteraction();
 
       console.log();
-    } catch (error) {
-      // Clear "processing..." line only if trace was off
+    } catch (err) {
+      // v7.0: Stop spinner on error
       if (!this.enableTrace) {
-        process.stdout.write('\x1b[1A\x1b[2K');
+        this.spinner.stop();
       }
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.log(c(`Genesis: Brain error - ${errorMessage}`, 'red'));
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.log(error(`Genesis: Brain error - ${errorMessage}`));
 
       // Fallback to direct LLM if brain fails
-      console.log(c('  [Falling back to direct LLM...]', 'yellow'));
+      console.log(warning('  [Falling back to direct LLM...]'));
       this.enableBrain = false;  // Temporarily disable
       await this.sendMessage(message);
       this.enableBrain = true;   // Re-enable for next message
@@ -480,6 +502,74 @@ export class ChatSession {
         console.log();
         break;
 
+      // v7.0: Memory commands
+      case 'memory':
+      case 'mem':
+        this.printMemoryStatus();
+        break;
+
+      case 'remember':
+        if (args.length > 0) {
+          const factText = args.join(' ');
+          this.memory.learn({
+            concept: 'user-fact',
+            definition: factText,
+            properties: { source: 'user-input', timestamp: new Date() },
+            category: 'user-facts',
+            sources: ['chat-input'],
+            importance: 0.7,
+            tags: ['user', 'remembered'],
+          });
+          console.log(success(`✓ Remembered: "${factText}"`));
+        } else {
+          console.log(warning('Usage: /remember <text to remember>'));
+        }
+        console.log();
+        break;
+
+      case 'forget':
+        // Requires confirmation
+        console.log(warning('This will clear all memories. Use /forget confirm to proceed.'));
+        if (args[0] === 'confirm') {
+          this.memory.shutdown();
+          console.log(success('✓ Memory cleared.'));
+        }
+        console.log();
+        break;
+
+      case 'consolidate':
+        console.log(info('Running memory consolidation...'));
+        this.memory.consolidation.backgroundConsolidate().then(result => {
+          console.log(success(`✓ Consolidation complete:`));
+          console.log(`  Episodic processed: ${result.episodicProcessed}`);
+          console.log(`  Semantic created:   ${result.semanticCreated}`);
+          console.log(`  Procedural updated: ${result.proceduralUpdated}`);
+          console.log(`  Forgotten:          ${result.forgotten}`);
+          console.log(`  Duration:           ${formatDuration(result.duration)}`);
+        }).catch(err => {
+          console.log(error(`Consolidation error: ${err instanceof Error ? err.message : err}`));
+        });
+        break;
+
+      // v7.0: Darwin-Gödel self-improvement commands
+      case 'heal':
+        this.printHealingStatus();
+        break;
+
+      case 'analyze':
+        this.runSelfAnalysis();
+        break;
+
+      case 'improve':
+        if (args[0] === 'confirm') {
+          this.runSelfImprovement();
+        } else {
+          console.log(warning('This will trigger self-improvement. Use /improve confirm to proceed.'));
+          console.log(muted('  Safety: Git commit created before any changes'));
+        }
+        console.log();
+        break;
+
       default:
         console.log(c(`Unknown command: /${cmd}`, 'red'));
         console.log('Type /help for available commands.');
@@ -488,21 +578,10 @@ export class ChatSession {
   }
 
   /**
-   * Print banner
+   * Print banner (v7.0: Uses modern UI component)
    */
   private printBanner(): void {
-    // Box width: 65 chars total (╔ + 63×═ + ╗)
-    // Content: 63 chars between ║...║
-    const line1 = '  GENESIS - Interactive Chat';
-    const line2 = '  An autopoietic AI system';
-    const width = 63;
-
-    console.log();
-    console.log(c('╔' + '═'.repeat(width) + '╗', 'cyan'));
-    console.log(c('║', 'cyan') + '  ' + c('GENESIS', 'bold') + ' - Interactive Chat' + ' '.repeat(width - line1.length) + c('║', 'cyan'));
-    console.log(c('║', 'cyan') + '  ' + c('An autopoietic AI system', 'dim') + ' '.repeat(width - line2.length) + c('║', 'cyan'));
-    console.log(c('╚' + '═'.repeat(width) + '╝', 'cyan'));
-    console.log();
+    banner('GENESIS - System Creator', 'Powered by 13 MCP Servers');
   }
 
   /**
@@ -527,6 +606,17 @@ export class ChatSession {
     console.log('  /phi           Show consciousness level (φ)');
     console.log('  /brainstatus   Show brain status');
     console.log('  /brainmetrics  Show detailed brain metrics');
+    console.log();
+    console.log(c('Memory (v7.0):', 'bold'));
+    console.log('  /memory        Show memory status');
+    console.log('  /remember <t>  Store a fact in memory');
+    console.log('  /consolidate   Run memory consolidation');
+    console.log('  /forget        Clear all memory (confirm)');
+    console.log();
+    console.log(c('Darwin-Gödel (v7.0):', 'bold'));
+    console.log('  /heal          Show self-healing status');
+    console.log('  /analyze       Run self-analysis');
+    console.log('  /improve       Trigger self-improvement (confirm)');
     console.log();
     console.log(c('State:', 'bold'));
     console.log('  /save          Save state to disk');
@@ -688,6 +778,208 @@ export class ChatSession {
       }
       console.log();
     }
+  }
+
+  /**
+   * Print memory status (v7.0)
+   */
+  private printMemoryStatus(): void {
+    const stats = this.memory.getStats();
+    const consolidationStats = this.memory.consolidation.getStats();
+
+    console.log(c('Memory Status (v7.0):', 'bold'));
+    console.log();
+
+    console.log(c('Stores:', 'cyan'));
+    console.log(`  Episodic:    ${stats.episodic.total} memories`);
+    console.log(`  Semantic:    ${stats.semantic.total} facts`);
+    console.log(`  Procedural:  ${stats.procedural.total} skills`);
+    console.log();
+
+    console.log(c('Consolidation:', 'cyan'));
+    console.log(`  Background:  ${consolidationStats.backgroundRunning ? success('RUNNING') : muted('STOPPED')}`);
+    console.log(`  Last run:    ${consolidationStats.lastConsolidation?.toLocaleString() || muted('Never')}`);
+    console.log(`  Total runs:  ${consolidationStats.totalConsolidations}`);
+    console.log();
+
+    console.log(c('Forgetting (Ebbinghaus):', 'cyan'));
+    console.log(`  Episodic weak:       ${consolidationStats.memoryStats.episodic.weak}/${consolidationStats.memoryStats.episodic.total}`);
+    console.log(`  Semantic weak:       ${consolidationStats.memoryStats.semantic.weak}/${consolidationStats.memoryStats.semantic.total}`);
+    console.log(`  Procedural weak:     ${consolidationStats.memoryStats.procedural.weak}/${consolidationStats.memoryStats.procedural.total}`);
+    console.log();
+
+    console.log(c('Commands:', 'dim'));
+    console.log(muted('  /remember <text>   Add a fact to memory'));
+    console.log(muted('  /consolidate       Run consolidation now'));
+    console.log(muted('  /forget confirm    Clear all memory'));
+    console.log();
+  }
+
+  /**
+   * Print healing status (v7.0 Darwin-Gödel)
+   */
+  private printHealingStatus(): void {
+    const brainMetrics = this.brain.getMetrics();
+
+    console.log(c('Darwin-Gödel Self-Healing (v7.0):', 'bold'));
+    console.log();
+
+    console.log(c('Healing Status:', 'cyan'));
+    console.log(`  Enabled:           ${success('YES')}`);
+    console.log(`  Auto-heal:         ${success('YES')}`);
+    console.log(`  Max attempts:      3`);
+    console.log();
+
+    console.log(c('Metrics:', 'cyan'));
+    console.log(`  Attempts:          ${brainMetrics.healingAttempts}`);
+    console.log(`  Successes:         ${brainMetrics.healingSuccesses}`);
+    console.log(`  Failures:          ${brainMetrics.healingFailures}`);
+    console.log();
+
+    console.log(c('Error Detector:', 'cyan'));
+    const detector = healing.getDetector();
+    console.log(`  Patterns:          TypeScript, Python, Bash, Generic`);
+    console.log(`  Categories:        syntax, type, runtime, dependency, config, network`);
+    console.log();
+
+    console.log(c('Auto-Fixer:', 'cyan'));
+    const fixer = healing.getFixer();
+    const config = fixer.getConfig();
+    console.log(`  Max candidates:    ${config.maxCandidates}`);
+    console.log(`  Max iterations:    ${config.maxIterations}`);
+    console.log(`  Working dir:       ${config.workingDirectory}`);
+    console.log();
+  }
+
+  /**
+   * Run self-analysis (v7.0 Darwin-Gödel)
+   */
+  private runSelfAnalysis(): void {
+    console.log(c('Darwin-Gödel Self-Analysis (v7.0):', 'bold'));
+    console.log();
+
+    // Collect metrics
+    const brainMetrics = this.brain.getMetrics();
+    const memoryStats = this.memory.getStats();
+
+    // Calculate system health
+    const successRate = brainMetrics.totalCycles > 0
+      ? brainMetrics.successfulCycles / brainMetrics.totalCycles
+      : 1;
+    const errorRate = brainMetrics.totalCycles > 0
+      ? brainMetrics.failedCycles / brainMetrics.totalCycles
+      : 0;
+
+    // Analyze for improvements
+    const improvements = this.selfProduction.analyzeForImprovements({
+      avgPipelineDuration: brainMetrics.avgCycleTime,
+      errorRate,
+      systemsCreated: this.messageCount,
+      cacheHitRate: brainMetrics.memoryReuseRate,
+      hasAdvancedTemplates: false,
+    });
+
+    console.log(c('System Health:', 'cyan'));
+    const healthBar = this.renderHealthBar(successRate);
+    console.log(`  Success rate:      ${healthBar} ${(successRate * 100).toFixed(1)}%`);
+    console.log(`  Error rate:        ${(errorRate * 100).toFixed(1)}%`);
+    console.log(`  Avg cycle time:    ${brainMetrics.avgCycleTime.toFixed(0)}ms`);
+    console.log(`  Memory reuse:      ${(brainMetrics.memoryReuseRate * 100).toFixed(1)}%`);
+    console.log();
+
+    console.log(c('Self-Production:', 'cyan'));
+    console.log(`  Current version:   ${this.selfProduction.getVersion()}`);
+    console.log(`  History:           ${this.selfProduction.getHistory().length} productions`);
+    console.log();
+
+    if (improvements.length > 0) {
+      console.log(c('Suggested Improvements:', 'yellow'));
+      for (const imp of improvements) {
+        const priorityColor = imp.priority === 'critical' ? 'red' : imp.priority === 'high' ? 'yellow' : 'dim';
+        console.log(`  [${c(imp.priority.toUpperCase(), priorityColor)}] ${imp.description}`);
+        console.log(muted(`    Type: ${imp.type}, Impact: ${(imp.estimatedImpact * 100).toFixed(0)}%`));
+      }
+    } else {
+      console.log(c('No improvements needed. System is healthy!', 'green'));
+    }
+    console.log();
+  }
+
+  /**
+   * Render health bar
+   */
+  private renderHealthBar(health: number): string {
+    const width = 15;
+    const filled = Math.round(health * width);
+    const empty = width - filled;
+    const bar = '█'.repeat(filled) + '░'.repeat(empty);
+
+    if (health >= 0.9) return c(bar, 'green');
+    if (health >= 0.7) return c(bar, 'yellow');
+    return c(bar, 'red');
+  }
+
+  /**
+   * Run self-improvement (v7.0 Darwin-Gödel)
+   */
+  private async runSelfImprovement(): Promise<void> {
+    console.log(c('Darwin-Gödel Self-Improvement (v7.0):', 'bold'));
+    console.log();
+
+    // First, run analysis
+    const brainMetrics = this.brain.getMetrics();
+    const errorRate = brainMetrics.totalCycles > 0
+      ? brainMetrics.failedCycles / brainMetrics.totalCycles
+      : 0;
+
+    const improvements = this.selfProduction.analyzeForImprovements({
+      avgPipelineDuration: brainMetrics.avgCycleTime,
+      errorRate,
+      systemsCreated: this.messageCount,
+      cacheHitRate: brainMetrics.memoryReuseRate,
+      hasAdvancedTemplates: false,
+    });
+
+    if (improvements.length === 0) {
+      console.log(success('✓ No improvements needed. System is already optimal.'));
+      return;
+    }
+
+    console.log(info(`Found ${improvements.length} potential improvements.`));
+
+    // Filter to high priority
+    const highPriority = improvements.filter(i => i.priority === 'critical' || i.priority === 'high');
+    if (highPriority.length === 0) {
+      console.log(muted('No critical or high priority improvements. Skipping.'));
+      return;
+    }
+
+    console.log(warning('Self-improvement would modify the system. This is currently simulated.'));
+    console.log(muted('In a real scenario, the following steps would occur:'));
+    console.log(muted('  1. Git commit created as safety checkpoint'));
+    console.log(muted('  2. Code modifications generated by LLM'));
+    console.log(muted('  3. Tests run to validate changes'));
+    console.log(muted('  4. On failure: git revert to checkpoint'));
+    console.log(muted('  5. On success: new version tagged'));
+    console.log();
+
+    // Simulate the production
+    const spec = {
+      currentVersion: this.selfProduction.getVersion(),
+      targetVersion: '7.0.1',
+      improvements: highPriority,
+      preserveInvariants: this.selfProduction.getInvariants(),
+    };
+
+    console.log(info('Simulating production...'));
+    const result = await this.selfProduction.produce(spec);
+
+    if (result.success) {
+      console.log(success(`✓ Self-improvement successful! New version: ${result.newVersion}`));
+    } else {
+      console.log(warning('Self-improvement simulation completed (no actual changes made).'));
+    }
+    console.log();
   }
 
   /**

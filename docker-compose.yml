@@ -1,0 +1,51 @@
+# Genesis v7.2 - Docker Compose
+# Usage:
+#   cp .env.example .env  # Edit with your API keys
+#   docker-compose up genesis-simulated  # Simulated mode
+#   docker-compose up genesis-real       # Real MCP mode
+
+services:
+  # Simulated mode - no API keys needed
+  genesis-simulated:
+    build: .
+    environment:
+      - GENESIS_MCP_MODE=simulated
+      - NODE_ENV=production
+    volumes:
+      - genesis-data:/app/data
+    command: ["node", "dist/src/index.js", "help"]
+
+  # Real MCP mode - requires API keys in .env
+  genesis-real:
+    build: .
+    env_file:
+      - .env
+    environment:
+      - GENESIS_MCP_MODE=real
+      - NODE_ENV=production
+    volumes:
+      - genesis-data:/app/data
+    command: ["node", "dist/src/index.js", "help"]
+
+  # Interactive chat in simulated mode
+  genesis-chat-sim:
+    build: .
+    stdin_open: true
+    tty: true
+    environment:
+      - GENESIS_MCP_MODE=simulated
+    command: ["node", "dist/src/index.js", "chat"]
+
+  # Interactive chat in real mode
+  genesis-chat-real:
+    build: .
+    stdin_open: true
+    tty: true
+    env_file:
+      - .env
+    environment:
+      - GENESIS_MCP_MODE=real
+    command: ["node", "dist/src/index.js", "chat"]
+
+volumes:
+  genesis-data:

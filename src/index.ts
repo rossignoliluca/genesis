@@ -362,7 +362,10 @@ async function cmdChat(options: Record<string, string>, promptArg?: string): Pro
   const verbose = options.verbose === 'true';
 
   // v7.4: Headless mode with -p/--print flag
-  const isHeadless = options.print === 'true' || options.p === 'true';
+  // -p "text" → options.p = "text" (prompt from flag)
+  // -p (no arg) → options.p = 'true' (prompt from stdin/positional)
+  const headlessFlag = options.print || options.p;
+  const isHeadless = !!headlessFlag;
   const outputFormat = (options.format || options.output || 'text') as 'text' | 'json';
 
   // v7.4: Session resume
@@ -370,8 +373,10 @@ async function cmdChat(options: Record<string, string>, promptArg?: string): Pro
   const sessionName = options.name;
 
   if (isHeadless) {
-    // Get prompt from argument or stdin
-    let prompt = promptArg || '';
+    // Get prompt from -p argument (if string), positional arg, or stdin
+    let prompt = (typeof headlessFlag === 'string' && headlessFlag !== 'true')
+      ? headlessFlag
+      : (promptArg || '');
 
     // If no prompt argument, try reading from stdin
     if (!prompt) {

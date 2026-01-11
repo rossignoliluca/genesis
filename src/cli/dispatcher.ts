@@ -119,6 +119,174 @@ const MCP_TOOL_MAP: Record<string, MCPServerName> = {
 };
 
 // ============================================================================
+// v7.3: Static Tool Schemas (fallback when MCP discovery fails)
+// ============================================================================
+
+const STATIC_TOOL_SCHEMAS: Record<string, { description?: string; inputSchema?: any }> = {
+  // Gemini - note: parameter is 'q' not 'query'
+  'web_search': {
+    description: 'Web search via Gemini AI',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        q: { type: 'string', description: 'Search query (required)' },
+        mode: { type: 'string', description: 'Search mode: normal or research' },
+      },
+      required: ['q'],
+    },
+  },
+
+  // Brave Search
+  'brave_web_search': {
+    description: 'Web search via Brave',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query (required)' },
+        count: { type: 'number', description: 'Number of results (1-20)' },
+      },
+      required: ['query'],
+    },
+  },
+
+  // arXiv
+  'search_arxiv': {
+    description: 'Search academic papers on arXiv',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query' },
+        maxResults: { type: 'number', description: 'Max results (default 5)' },
+      },
+      required: ['query'],
+    },
+  },
+
+  // OpenAI
+  'openai_chat': {
+    description: 'Chat completion via GPT-4',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messages: { type: 'array', description: 'Array of {role, content} messages' },
+        model: { type: 'string', description: 'Model: gpt-4o, gpt-4o-mini, o1-preview' },
+      },
+      required: ['messages'],
+    },
+  },
+
+  // Filesystem
+  'read_file': {
+    description: 'Read file contents',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute file path' },
+      },
+      required: ['path'],
+    },
+  },
+  'write_file': {
+    description: 'Write content to file',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute file path' },
+        content: { type: 'string', description: 'File content' },
+      },
+      required: ['path', 'content'],
+    },
+  },
+  'list_directory': {
+    description: 'List directory contents',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Directory path' },
+      },
+      required: ['path'],
+    },
+  },
+
+  // Memory
+  'read_graph': {
+    description: 'Read the entire knowledge graph',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  'search_nodes': {
+    description: 'Search nodes in knowledge graph',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query' },
+      },
+      required: ['query'],
+    },
+  },
+  'create_entities': {
+    description: 'Create entities in knowledge graph',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entities: { type: 'array', description: 'Array of {name, entityType, observations}' },
+      },
+      required: ['entities'],
+    },
+  },
+
+  // GitHub
+  'create_repository': {
+    description: 'Create GitHub repository',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Repository name' },
+        description: { type: 'string', description: 'Repository description' },
+        private: { type: 'boolean', description: 'Private repository' },
+      },
+      required: ['name'],
+    },
+  },
+
+  // Wolfram
+  'wolfram_query': {
+    description: 'Query Wolfram Alpha for math/science',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Query in natural language' },
+        mode: { type: 'string', description: 'Mode: llm, full, short, simple' },
+      },
+      required: ['query'],
+    },
+  },
+
+  // Firecrawl
+  'firecrawl_scrape': {
+    description: 'Scrape content from URL',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'URL to scrape' },
+        formats: { type: 'array', description: 'Output formats: markdown, html' },
+      },
+      required: ['url'],
+    },
+  },
+  'firecrawl_search': {
+    description: 'Search the web via Firecrawl',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query' },
+        limit: { type: 'number', description: 'Max results' },
+      },
+      required: ['query'],
+    },
+  },
+};
+
+// ============================================================================
 // Default Config
 // ============================================================================
 
@@ -528,6 +696,7 @@ export class ToolDispatcher {
   /**
    * Get available tools with schemas (for dynamic prompt building)
    * Returns tool definitions with name, description, and inputSchema
+   * Note: This is the sync version with static fallbacks - use discoverToolsWithSchemas() for real schemas
    */
   listToolsWithSchemas(): {
     local: Array<{ name: string; description?: string }>;
@@ -539,14 +708,52 @@ export class ToolDispatcher {
       description: tool.description,
     }));
 
-    // MCP tools - for now use static descriptions, but can be enhanced
-    // to call getMCPClient().discoverAllTools() for real schemas
+    // MCP tools - use static fallback schemas
     const mcp: Record<string, Array<{ name: string; description?: string }>> = {};
     for (const [tool, server] of Object.entries(MCP_TOOL_MAP)) {
       if (!mcp[server]) {
         mcp[server] = [];
       }
-      mcp[server].push({ name: tool });
+      mcp[server].push({ name: tool, ...STATIC_TOOL_SCHEMAS[tool] });
+    }
+
+    return { local, mcp };
+  }
+
+  /**
+   * v7.3: Discover tools with REAL schemas from MCP servers
+   * Falls back to static schemas for servers that fail to connect
+   */
+  async discoverToolsWithSchemas(): Promise<{
+    local: Array<{ name: string; description?: string; inputSchema?: any }>;
+    mcp: Record<string, Array<{ name: string; description?: string; inputSchema?: any }>>;
+  }> {
+    const local = Array.from(toolRegistry.entries()).map(([name, tool]) => ({
+      name,
+      description: tool.description,
+    }));
+
+    // Try to get real schemas from MCP client
+    const client = getMCPClient();
+    let realSchemas: Record<string, Array<{ name: string; description?: string; inputSchema?: any }>> = {};
+
+    try {
+      realSchemas = await client.discoverAllTools();
+    } catch {
+      // Fall back to static schemas
+      console.log('[Dispatcher] Failed to discover MCP tools, using static schemas');
+    }
+
+    // Merge real schemas with static fallbacks
+    const mcp: Record<string, Array<{ name: string; description?: string; inputSchema?: any }>> = {};
+    for (const [tool, server] of Object.entries(MCP_TOOL_MAP)) {
+      if (!mcp[server]) {
+        mcp[server] = realSchemas[server] || [];
+      }
+      // If tool not in real schemas, add static fallback
+      if (!mcp[server].find(t => t.name === tool)) {
+        mcp[server].push({ name: tool, ...STATIC_TOOL_SCHEMAS[tool] });
+      }
     }
 
     return { local, mcp };

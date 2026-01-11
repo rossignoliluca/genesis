@@ -93,6 +93,11 @@ export type ActionType =
   | 'plan.goals'      // Decompose goals
   | 'verify.ethics'   // Ethical check
   | 'execute.task'    // Execute planned task
+  | 'execute.code'    // Execute generated code (Code Execution Mode)
+  | 'adapt.code'      // Adapt code based on errors
+  | 'execute.cycle'   // Full execution cycle with iteration
+  | 'self.modify'     // Radical self-modification (Darwin-Gödel)
+  | 'self.analyze'    // Analyze own code for improvements
   | 'dream.cycle'     // Memory consolidation
   | 'rest.idle'       // Do nothing (save energy)
   | 'recharge';       // Restore energy
@@ -103,6 +108,11 @@ export const ACTIONS: ActionType[] = [
   'plan.goals',
   'verify.ethics',
   'execute.task',
+  'execute.code',
+  'adapt.code',
+  'execute.cycle',
+  'self.modify',
+  'self.analyze',
   'dream.cycle',
   'rest.idle',
   'recharge',

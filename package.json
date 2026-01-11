@@ -1,6 +1,6 @@
 {
   "name": "@rossignoliluca/genesis",
-  "version": "7.3.7",
+  "version": "7.3.8",
   "description": "Autonomous AI System Creator - Brain ON by default, Active Inference integrated, Curiosity-driven, Φ monitoring in every response",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",

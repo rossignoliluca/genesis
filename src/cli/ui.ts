@@ -139,6 +139,116 @@ export class Spinner {
 }
 
 // ============================================================================
+// Thinking Spinner (v7.3.8) - Shows time, module path, and current action
+// ============================================================================
+
+const MODULE_ICONS: Record<string, string> = {
+  memory: '🧠',
+  llm: '💭',
+  grounding: '🔍',
+  tools: '🔧',
+  healing: '🩹',
+  consciousness: '✨',
+  kernel: '⚙️',
+  done: '✓',
+};
+
+const MODULE_NAMES: Record<string, string> = {
+  memory: 'Recalling',
+  llm: 'Thinking',
+  grounding: 'Verifying',
+  tools: 'Executing',
+  healing: 'Healing',
+  consciousness: 'Integrating',
+  kernel: 'Coordinating',
+};
+
+export class ThinkingSpinner {
+  private interval: NodeJS.Timeout | null = null;
+  private frame = 0;
+  private running = false;
+  private startTime = 0;
+  private currentModule = '';
+  private currentAction = '';
+  private modulePath: string[] = [];
+
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+    this.startTime = Date.now();
+    this.frame = 0;
+    this.modulePath = [];
+    this.currentModule = '';
+    this.currentAction = 'Initializing';
+
+    this.render();
+    this.interval = setInterval(() => {
+      this.frame = (this.frame + 1) % SPINNER_FRAMES.length;
+      this.render();
+    }, 80);
+  }
+
+  private render(): void {
+    const elapsed = ((Date.now() - this.startTime) / 1000).toFixed(1);
+    const icon = MODULE_ICONS[this.currentModule] || '○';
+    const moduleName = MODULE_NAMES[this.currentModule] || this.currentModule || 'Processing';
+
+    // Build module path display (e.g., "memory → llm → tools")
+    const pathStr = this.modulePath.length > 0
+      ? ` ${style(this.modulePath.join(' → '), 'dim')}`
+      : '';
+
+    // Build action display
+    const actionStr = this.currentAction
+      ? ` ${style('· ' + this.currentAction, 'dim')}`
+      : '';
+
+    const line = `${style(SPINNER_FRAMES[this.frame], 'cyan')} ${style(`[${elapsed}s]`, 'yellow')} ${icon} ${moduleName}${actionStr}${pathStr}`;
+
+    process.stdout.write(`\r\x1b[K${line}`);
+  }
+
+  setModule(module: string): void {
+    if (module && module !== 'done' && module !== this.currentModule) {
+      this.currentModule = module;
+      if (!this.modulePath.includes(module)) {
+        this.modulePath.push(module);
+      }
+    }
+    if (this.running) this.render();
+  }
+
+  setAction(action: string): void {
+    this.currentAction = action;
+    if (this.running) this.render();
+  }
+
+  stop(): void {
+    if (!this.running) return;
+    this.running = false;
+
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = null;
+    }
+
+    const elapsed = ((Date.now() - this.startTime) / 1000).toFixed(1);
+    process.stdout.write(`\r\x1b[K`); // Clear line
+
+    // Optional: show final summary
+    // console.log(`${style('✓', 'green')} Completed in ${elapsed}s [${this.modulePath.join(' → ')}]`);
+  }
+
+  isRunning(): boolean {
+    return this.running;
+  }
+
+  getElapsed(): number {
+    return Date.now() - this.startTime;
+  }
+}
+
+// ============================================================================
 // Progress Bar
 // ============================================================================
 

@@ -43,7 +43,7 @@ import {
 import {
   style, c, COLORS,
   success, error, warning, info, muted, highlight,
-  Spinner, ProgressBar,
+  Spinner, ThinkingSpinner, ProgressBar,
   formatMarkdown, highlightCode,
   banner, box, table,
   truncate, formatDuration,
@@ -84,6 +84,8 @@ export class ChatSession {
 
   // v7.0: Modern UI components
   private spinner: Spinner;
+  private thinkingSpinner: ThinkingSpinner;  // v7.3.8: Shows time, module, action
+  private brainEventUnsub: (() => void) | null = null;  // v7.3.8: Brain event cleanup
   private inputHistory: InputHistory;
   private memory: MemorySystem;  // v7.0: Memory system with consolidation
   private selfProduction: SelfProductionEngine;  // v7.0: Darwin-Gödel self-improvement
@@ -113,7 +115,42 @@ export class ChatSession {
 
     // v7.0: Initialize UI components
     this.spinner = new Spinner('Thinking');
+    this.thinkingSpinner = new ThinkingSpinner();  // v7.3.8
     this.inputHistory = new InputHistory(100);
+
+    // v7.3.8: Subscribe to brain events for thinking visualization
+    this.brainEventUnsub = this.brain.on((event) => {
+      if (!this.thinkingSpinner.isRunning()) return;
+
+      switch (event.type) {
+        case 'module_enter':
+          this.thinkingSpinner.setModule(event.module || '');
+          break;
+        case 'memory_recall':
+          this.thinkingSpinner.setAction('Recalling context');
+          break;
+        case 'memory_anticipate':
+          this.thinkingSpinner.setAction('Anticipating needs');
+          break;
+        case 'llm_request':
+          this.thinkingSpinner.setAction('Generating response');
+          break;
+        case 'tool_execute':
+          const toolCount = (event.data as { count?: number })?.count || 0;
+          this.thinkingSpinner.setAction(`Calling ${toolCount} tool(s)`);
+          break;
+        case 'grounding_check':
+          this.thinkingSpinner.setAction('Verifying facts');
+          break;
+        case 'healing_start':
+          this.thinkingSpinner.setAction('Self-healing');
+          break;
+        case 'phi_update':
+          const phi = (event.data as { phi?: number })?.phi || 0;
+          this.thinkingSpinner.setAction(`φ=${phi.toFixed(2)}`);
+          break;
+      }
+    });
 
     // v7.1: Initialize Active Inference loop
     if (this.enableInference) {
@@ -375,18 +412,18 @@ export class ChatSession {
       }
     }
 
-    // v7.0: Only show spinner if trace is off (trace shows detailed progress)
+    // v7.3.8: Use ThinkingSpinner for Brain processing (shows time, module, action)
     if (!this.enableTrace) {
-      this.spinner.start('Processing via Brain');
+      this.thinkingSpinner.start();
     }
 
     try {
       const response = await this.brain.process(message);
       this.messageCount++;
 
-      // v7.0: Stop spinner only if trace was off
+      // v7.3.8: Stop thinking spinner
       if (!this.enableTrace) {
-        this.spinner.stop();
+        this.thinkingSpinner.stop();
       }
       console.log(c('Genesis: ', 'cyan') + formatMarkdown(response));
 
@@ -419,9 +456,9 @@ export class ChatSession {
 
       console.log();
     } catch (err) {
-      // v7.0: Stop spinner on error
+      // v7.3.8: Stop thinking spinner on error
       if (!this.enableTrace) {
-        this.spinner.stop();
+        this.thinkingSpinner.stop();
       }
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.log(error(`Genesis: Brain error - ${errorMessage}`));
@@ -1361,6 +1398,12 @@ export class ChatSession {
    */
   stop(): void {
     this.running = false;
+
+    // v7.3.8: Cleanup brain event subscription
+    if (this.brainEventUnsub) {
+      this.brainEventUnsub();
+      this.brainEventUnsub = null;
+    }
 
     // Stop brain if running
     if (this.enableBrain) {

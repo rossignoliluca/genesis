@@ -40,6 +40,15 @@ import {
   createValueIntegratedLoop,
   ValueAugmentedEngine,
 } from '../active-inference/index.js';
+
+// v7.4: Subagent System
+import {
+  getSubagentExecutor,
+  SubagentExecutor,
+  TaskRequest,
+  BackgroundTask,
+  getSubagentNames,
+} from '../subagents/index.js';
 import {
   style, c, COLORS,
   success, error, warning, info, muted, highlight,
@@ -95,6 +104,9 @@ export class ChatSession {
   private lastCuriosity: number = 0;  // Track curiosity level
   private lastSurprise: number = 0;   // Track surprise from inference
 
+  // v7.4: Subagent System
+  private subagentExecutor: SubagentExecutor;
+
   constructor(options: ChatOptions = {}) {
     this.llm = getLLMBridge({
       provider: options.provider,
@@ -106,6 +118,8 @@ export class ChatSession {
     this.brainTrace = createBrainTrace(this.brain);  // Phase 10: Initialize trace
     this.memory = getMemorySystem();  // v7.0: Initialize memory with consolidation
     this.selfProduction = createSelfProductionEngine('7.1.0');  // v7.1: Darwin-Gödel
+    this.subagentExecutor = getSubagentExecutor();  // v7.4: Subagent system
+    this.subagentExecutor.setDispatcher(this.dispatcher);  // v7.4: Wire dispatcher
     this.verbose = options.verbose ?? false;
     this.enableTools = options.enableTools ?? true;  // Enabled by default
     this.enableBrain = options.enableBrain ?? true;  // v7.1: Brain mode ON by default!
@@ -754,6 +768,41 @@ export class ChatSession {
         this.printBeliefs();
         break;
 
+      // v7.4: Subagent commands
+      case 'task':
+        await this.runSubagentTask(args);
+        break;
+
+      case 'tasks':
+        this.printRunningTasks();
+        break;
+
+      case 'taskwait':
+        if (args[0]) {
+          await this.waitForTask(args[0]);
+        } else {
+          console.log(warning('Usage: /taskwait <taskId>'));
+        }
+        break;
+
+      case 'taskcancel':
+        if (args[0]) {
+          const cancelled = this.subagentExecutor.cancelTask(args[0]);
+          if (cancelled) {
+            console.log(success(`✓ Task ${args[0]} cancelled`));
+          } else {
+            console.log(error(`Task ${args[0]} not found or not running`));
+          }
+        } else {
+          console.log(warning('Usage: /taskcancel <taskId>'));
+        }
+        console.log();
+        break;
+
+      case 'agents':
+        this.printAvailableAgents();
+        break;
+
       default:
         console.log(c(`Unknown command: /${cmd}`, 'red'));
         console.log('Type /help for available commands.');
@@ -806,6 +855,13 @@ export class ChatSession {
     console.log('  /heal          Show self-healing status');
     console.log('  /analyze       Run self-analysis');
     console.log('  /improve       Trigger self-improvement (confirm)');
+    console.log();
+    console.log(c('Subagents (v7.4):', 'bold'));
+    console.log('  /task <t> <p>  Run subagent task (explore, plan, code, research, general)');
+    console.log('  /tasks         List running background tasks');
+    console.log('  /taskwait <id> Wait for task completion');
+    console.log('  /taskcancel <id> Cancel running task');
+    console.log('  /agents        Show available subagents');
     console.log();
     console.log(c('State:', 'bold'));
     console.log('  /save          Save state to disk');
@@ -965,6 +1021,175 @@ export class ChatSession {
       const pct = stats.cycles > 0 ? ((count as number) / stats.cycles * 100).toFixed(1) : '0';
       console.log(`    ${action}: ${count} (${pct}%)`);
     }
+    console.log();
+  }
+
+  // ============================================================================
+  // v7.4: Subagent Commands
+  // ============================================================================
+
+  /**
+   * Run a subagent task
+   */
+  private async runSubagentTask(args: string[]): Promise<void> {
+    if (args.length < 2) {
+      console.log(c('Usage: /task <type> <prompt>', 'yellow'));
+      console.log(c('  Types: explore, plan, code, research, general', 'dim'));
+      console.log(c('  Example: /task explore Find all authentication handlers', 'dim'));
+      console.log(c('  Add --bg at end to run in background', 'dim'));
+      console.log();
+      return;
+    }
+
+    const subagentType = args[0];
+    const availableTypes = getSubagentNames();
+    if (!availableTypes.includes(subagentType)) {
+      console.log(error(`Unknown agent type: ${subagentType}`));
+      console.log(c(`Available: ${availableTypes.join(', ')}`, 'dim'));
+      console.log();
+      return;
+    }
+
+    // Check for background flag
+    const isBackground = args[args.length - 1] === '--bg';
+    const promptArgs = isBackground ? args.slice(1, -1) : args.slice(1);
+    const prompt = promptArgs.join(' ');
+
+    const request: TaskRequest = {
+      description: prompt.slice(0, 30) + (prompt.length > 30 ? '...' : ''),
+      prompt,
+      subagentType,
+      runInBackground: isBackground,
+    };
+
+    if (isBackground) {
+      // Background execution
+      try {
+        const taskId = await this.subagentExecutor.executeBackground(request);
+        console.log(success(`✓ Task ${taskId} started in background`));
+        console.log(c(`  Agent: ${subagentType}`, 'dim'));
+        console.log(c(`  Use /tasks to see status, /taskwait ${taskId} to wait`, 'dim'));
+      } catch (err) {
+        console.log(error(`Failed to start task: ${err instanceof Error ? err.message : err}`));
+      }
+    } else {
+      // Foreground execution with spinner
+      this.thinkingSpinner.start();
+      this.thinkingSpinner.setModule(subagentType);
+      this.thinkingSpinner.setAction('Running task');
+
+      try {
+        const result = await this.subagentExecutor.execute(request);
+        this.thinkingSpinner.stop();
+
+        if (result.success) {
+          console.log(success(`✓ Task completed in ${formatDuration(result.duration)}`));
+          console.log();
+          console.log(formatMarkdown(result.result || 'No output'));
+        } else {
+          console.log(error(`Task failed: ${result.error}`));
+        }
+      } catch (err) {
+        this.thinkingSpinner.stop();
+        console.log(error(`Task error: ${err instanceof Error ? err.message : err}`));
+      }
+    }
+    console.log();
+  }
+
+  /**
+   * Print running tasks
+   */
+  private printRunningTasks(): void {
+    const tasks = this.subagentExecutor.getTasks();
+
+    console.log(c('Background Tasks (v7.4):', 'bold'));
+    console.log();
+
+    if (tasks.length === 0) {
+      console.log(muted('No tasks running.'));
+      console.log();
+      return;
+    }
+
+    const taskData = tasks.map(t => {
+      const statusColor = t.status === 'completed' ? 'green' :
+                         t.status === 'running' ? 'cyan' :
+                         t.status === 'failed' ? 'red' : 'yellow';
+      const duration = t.endTime
+        ? formatDuration(t.endTime - t.startTime)
+        : formatDuration(Date.now() - t.startTime);
+
+      return {
+        id: t.taskId,
+        status: c(t.status, statusColor),
+        agent: t.subagentType,
+        description: truncate(t.description, 30),
+        duration,
+      };
+    });
+
+    console.log(table(taskData, [
+      { header: 'ID', key: 'id' },
+      { header: 'Status', key: 'status' },
+      { header: 'Agent', key: 'agent' },
+      { header: 'Description', key: 'description' },
+      { header: 'Duration', key: 'duration', align: 'right' },
+    ]));
+    console.log();
+  }
+
+  /**
+   * Wait for a task to complete
+   */
+  private async waitForTask(taskId: string): Promise<void> {
+    console.log(info(`Waiting for task ${taskId}...`));
+
+    try {
+      const result = await this.subagentExecutor.waitForTask(taskId);
+
+      if (result.success) {
+        console.log(success(`✓ Task completed in ${formatDuration(result.duration)}`));
+        console.log();
+        console.log(formatMarkdown(result.result || 'No output'));
+      } else {
+        console.log(error(`Task failed: ${result.error}`));
+      }
+    } catch (err) {
+      console.log(error(`Error: ${err instanceof Error ? err.message : err}`));
+    }
+    console.log();
+  }
+
+  /**
+   * Print available agents
+   */
+  private printAvailableAgents(): void {
+    console.log(c('Available Subagents (v7.4):', 'bold'));
+    console.log();
+
+    const agentData = [
+      { agent: 'explore', desc: 'Fast codebase exploration', caps: 'read-only, fast searches', model: 'fast' },
+      { agent: 'plan', desc: 'Architecture planning', caps: 'design strategies, no code changes', model: 'powerful' },
+      { agent: 'code', desc: 'Code generation', caps: 'write and modify code', model: 'balanced' },
+      { agent: 'research', desc: 'Web/paper research', caps: 'external sources, citations', model: 'balanced' },
+      { agent: 'general', desc: 'General-purpose', caps: 'complex multi-step tasks', model: 'powerful' },
+    ];
+
+    console.log(table(agentData, [
+      { header: 'Agent', key: 'agent' },
+      { header: 'Description', key: 'desc' },
+      { header: 'Capabilities', key: 'caps' },
+      { header: 'Model', key: 'model' },
+    ]));
+
+    console.log();
+    console.log(c('Usage:', 'cyan'));
+    console.log(c('  /task <agent> <prompt>         Run task in foreground', 'dim'));
+    console.log(c('  /task <agent> <prompt> --bg    Run task in background', 'dim'));
+    console.log(c('  /tasks                         List running tasks', 'dim'));
+    console.log(c('  /taskwait <id>                 Wait for task completion', 'dim'));
+    console.log(c('  /taskcancel <id>               Cancel running task', 'dim'));
     console.log();
   }
 

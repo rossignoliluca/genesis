@@ -40,7 +40,7 @@ for (const file of envFiles) {
 
 import { createOrchestrator, MCP_CAPABILITIES, GenesisPipeline } from './orchestrator.js';
 import { SystemSpec, MCPServerName, PipelineStage } from './types.js';
-import { startChat } from './cli/chat.js';
+import { startChat, runHeadless, readStdin } from './cli/chat.js';
 import { getLLMBridge, getHybridRouter, detectHardware } from './llm/index.js';
 import { getMCPClient, logMCPMode, MCP_SERVER_REGISTRY } from './mcp/index.js';
 import { getProcessManager, LOG_FILE } from './daemon/process.js';
@@ -343,7 +343,7 @@ async function cmdPublish(specFile: string): Promise<void> {
   console.log('  STORAGE: memory (knowledge persistence)');
 }
 
-async function cmdChat(options: Record<string, string>): Promise<void> {
+async function cmdChat(options: Record<string, string>, promptArg?: string): Promise<void> {
   // Ollama models - if any of these is specified, use Ollama
   const ollamaModels = ['mistral', 'mistral-small', 'qwen2.5-coder', 'phi3.5', 'deepseek-coder', 'llama3', 'codellama'];
 
@@ -361,7 +361,30 @@ async function cmdChat(options: Record<string, string>): Promise<void> {
   const model = options.model || (provider === 'ollama' ? 'qwen2.5-coder' : undefined);
   const verbose = options.verbose === 'true';
 
-  // Show provider info
+  // v7.4: Headless mode with -p/--print flag
+  const isHeadless = options.print === 'true' || options.p === 'true';
+  const outputFormat = (options.format || options.output || 'text') as 'text' | 'json';
+
+  if (isHeadless) {
+    // Get prompt from argument or stdin
+    let prompt = promptArg || '';
+
+    // If no prompt argument, try reading from stdin
+    if (!prompt) {
+      prompt = await readStdin();
+    }
+
+    if (!prompt) {
+      console.error(c('Error: No prompt provided. Use: genesis chat -p "your prompt" or pipe input.', 'red'));
+      process.exit(1);
+    }
+
+    // Run headless (no banner, no interactive UI)
+    await runHeadless(prompt, { provider, model, verbose, outputFormat });
+    return;
+  }
+
+  // Interactive mode - show provider info
   if (provider === 'ollama' || (!provider && !process.env.OPENAI_API_KEY && !process.env.ANTHROPIC_API_KEY)) {
     console.log(c(`\n[LLM] Using Ollama (local, free) - model: ${model || 'qwen2.5-coder'}`, 'cyan'));
     console.log(c('[LLM] If Ollama unavailable, will fallback to cloud API\n', 'dim'));
@@ -1142,6 +1165,8 @@ ${c('Commands:', 'bold')}
     --provider <p>       LLM provider: ollama, openai, anthropic
     --model <m>          Model name (e.g., mistral, gpt-4o, claude-sonnet-4-20250514)
     --verbose            Show latency and token usage
+    -p, --print "text"   ${c('Headless mode: process prompt and exit', 'yellow')}
+    --format <f>         Output format: text (default), json
 
   ${c('create', 'green')} <name>         Create a new system
     --type <type>        System type: autopoietic, agent, multi-agent, service
@@ -1195,9 +1220,11 @@ ${c('MCP Servers (13):', 'bold')}
   ${c('STORAGE:', 'cyan')}    memory, filesystem
 
 ${c('Examples:', 'bold')}
-  genesis chat                          ${c('Chat with Mistral (local, free)', 'dim')}
+  genesis chat                          ${c('Interactive chat with Mistral (local)', 'dim')}
   genesis chat --provider openai        ${c('Chat with GPT-4o (cloud)', 'dim')}
-  genesis chat --provider anthropic     ${c('Chat with Claude (cloud)', 'dim')}
+  genesis chat -p "Explain recursion"   ${c('Headless: single prompt, output, exit', 'dim')}
+  echo "What is 2+2?" | genesis chat -p ${c('Headless: read from stdin', 'dim')}
+  genesis chat -p "..." --format json   ${c('Headless: JSON output for scripting', 'dim')}
   genesis infer mcp --cycles 10         ${c('Autonomous inference with MCPs', 'dim')}
   genesis create my-agent --type agent --features "state-machine,events"
 
@@ -1225,13 +1252,29 @@ async function main(): Promise<void> {
     printBanner();
   }
 
-  // Parse options
+  // Parse options (handles both --flag and -f short flags)
   const options: Record<string, string> = {};
   for (let i = 1; i < args.length; i++) {
     if (args[i].startsWith('--')) {
       const key = args[i].slice(2);
-      options[key] = args[i + 1] || 'true';
-      i++;
+      // Check if next arg is a value or another flag
+      const nextArg = args[i + 1];
+      if (nextArg && !nextArg.startsWith('-')) {
+        options[key] = nextArg;
+        i++;
+      } else {
+        options[key] = 'true';
+      }
+    } else if (args[i].startsWith('-') && args[i].length === 2) {
+      // Short flag: -p, -v, etc.
+      const key = args[i].slice(1);
+      const nextArg = args[i + 1];
+      if (nextArg && !nextArg.startsWith('-')) {
+        options[key] = nextArg;
+        i++;
+      } else {
+        options[key] = 'true';
+      }
     }
   }
 
@@ -1241,7 +1284,8 @@ async function main(): Promise<void> {
   try {
     switch (command) {
       case 'chat':
-        await cmdChat(options);
+        // v7.4: Pass positional arg as prompt for headless mode (-p "prompt")
+        await cmdChat(options, positional);
         break;
       case 'status':
         await cmdStatus();

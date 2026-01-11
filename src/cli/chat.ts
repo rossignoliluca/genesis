@@ -71,6 +71,10 @@ export interface ChatOptions {
   enableBrain?: boolean;  // Enable Brain integration (Phase 10) - DEFAULT: true in v7.1
   enableInference?: boolean;  // v7.1: Enable Active Inference loop
   enableCuriosity?: boolean;  // v7.1: Enable curiosity-driven behavior
+  // v7.4: Headless mode for scripting/CI-CD
+  headless?: boolean;       // If true, run non-interactively (no REPL)
+  prompt?: string;          // Prompt to process in headless mode
+  outputFormat?: 'text' | 'json';  // Output format for headless mode
 }
 
 export class ChatSession {
@@ -111,6 +115,10 @@ export class ChatSession {
   private isProcessing = false;  // True when processing a message
   private currentTaskAbort: AbortController | null = null;  // For cancelling current task
 
+  // v7.4: Headless mode
+  private headlessMode = false;
+  private outputFormat: 'text' | 'json' = 'text';
+
   constructor(options: ChatOptions = {}) {
     this.llm = getLLMBridge({
       provider: options.provider,
@@ -130,6 +138,8 @@ export class ChatSession {
     this.enableTrace = false;  // Trace off by default
     this.enableInference = options.enableInference ?? true;  // v7.1: Inference ON by default
     this.enableCuriosity = options.enableCuriosity ?? true;  // v7.1: Curiosity ON by default
+    this.headlessMode = options.headless ?? false;  // v7.4: Headless mode
+    this.outputFormat = options.outputFormat ?? 'text';  // v7.4: Output format
 
     // v7.0: Initialize UI components
     this.spinner = new Spinner('Thinking');
@@ -1693,6 +1703,90 @@ export class ChatSession {
   }
 
   /**
+   * v7.4: Run in headless mode (non-interactive, for scripting/CI-CD)
+   * Processes a single prompt and outputs the response to stdout
+   */
+  async runHeadless(prompt: string): Promise<void> {
+    // Initialize without UI
+    await this.initializeHeadless();
+
+    try {
+      let response: string;
+
+      if (this.enableBrain) {
+        // Use Brain for processing
+        response = await this.brain.process(prompt);
+      } else {
+        // Direct LLM call
+        const result = await this.llm.chat(prompt, this.systemPrompt);
+        response = result.content;
+      }
+
+      // Output based on format
+      if (this.outputFormat === 'json') {
+        const metrics = this.enableBrain ? this.brain.getMetrics() : null;
+        const output = {
+          success: true,
+          response,
+          metrics: metrics ? {
+            phi: metrics.avgPhi,
+            cycles: metrics.totalCycles,
+            memoryReuseRate: metrics.memoryReuseRate,
+          } : undefined,
+        };
+        console.log(JSON.stringify(output));
+      } else {
+        // Plain text output
+        console.log(response);
+      }
+
+      // Cleanup
+      this.cleanupHeadless();
+      process.exit(0);
+
+    } catch (err) {
+      if (this.outputFormat === 'json') {
+        console.log(JSON.stringify({
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        }));
+      } else {
+        console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      this.cleanupHeadless();
+      process.exit(1);
+    }
+  }
+
+  /**
+   * v7.4: Initialize for headless mode (minimal setup, no UI)
+   */
+  private async initializeHeadless(): Promise<void> {
+    // Build system prompt dynamically
+    const toolsWithSchemas = this.dispatcher.listToolsWithSchemas();
+    this.systemPrompt = await buildSystemPrompt(toolsWithSchemas.mcp, toolsWithSchemas.local);
+
+    // Start brain if enabled
+    if (this.enableBrain && !this.brain.isRunning()) {
+      this.brain.start();
+    }
+  }
+
+  /**
+   * v7.4: Cleanup for headless mode
+   */
+  private cleanupHeadless(): void {
+    if (this.enableBrain) {
+      this.brain.stop();
+    }
+    if (this.brainEventUnsub) {
+      this.brainEventUnsub();
+      this.brainEventUnsub = null;
+    }
+    this.store.close();
+  }
+
+  /**
    * Stop chat session
    */
   stop(): void {
@@ -1734,5 +1828,43 @@ export function createChatSession(options?: ChatOptions): ChatSession {
  */
 export async function startChat(options?: ChatOptions): Promise<void> {
   const session = createChatSession(options);
+
+  // v7.4: Headless mode support
+  if (options?.headless && options?.prompt) {
+    await session.runHeadless(options.prompt);
+    return;
+  }
+
   await session.start();
+}
+
+/**
+ * v7.4: Run headless mode with prompt from stdin or argument
+ * Used by CLI for -p/--print flag
+ */
+export async function runHeadless(
+  prompt: string,
+  options?: Omit<ChatOptions, 'headless' | 'prompt'>
+): Promise<void> {
+  const session = createChatSession({ ...options, headless: true });
+  await session.runHeadless(prompt);
+}
+
+/**
+ * v7.4: Read prompt from stdin (for piping)
+ */
+export function readStdin(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (process.stdin.isTTY) {
+      // No piped input
+      resolve('');
+      return;
+    }
+
+    let data = '';
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', chunk => { data += chunk; });
+    process.stdin.on('end', () => resolve(data.trim()));
+    process.stdin.on('error', reject);
+  });
 }

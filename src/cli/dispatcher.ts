@@ -340,7 +340,7 @@ export class ToolDispatcher {
       return response.map(call => this.parseLLMToolCall(call));
     }
 
-    // Parse from text (Claude XML-style)
+    // Parse from text (XML-style)
     return this.parseXMLToolCalls(response);
   }
 

@@ -69,7 +69,7 @@ interface MCPServerInfo {
  * - Third-party: arxiv-mcp-server, @brave/brave-search-mcp-server, etc.
  */
 const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
-  // KNOWLEDGE (from Claude Code config)
+  // KNOWLEDGE
   'arxiv': {
     command: 'npx',
     args: ['-y', '@iflow-mcp/arxiv-paper-mcp@latest'],
@@ -92,7 +92,7 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
     tools: ['wolfram_query'],
   },
 
-  // RESEARCH (from Claude Code config)
+  // RESEARCH
   'gemini': {
     command: 'npx',
     args: ['-y', 'mcp-gemini-web'],
@@ -117,7 +117,7 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
     tools: ['firecrawl_scrape', 'firecrawl_search', 'firecrawl_map', 'firecrawl_crawl', 'firecrawl_extract'],
   },
 
-  // CREATION (from Claude Code config)
+  // CREATION
   'openai': {
     command: 'npx',
     args: ['-y', '@mzxrai/mcp-openai'],
@@ -134,7 +134,7 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
     tools: ['create_repository', 'search_repositories', 'create_issue', 'create_pull_request', 'get_file_contents'],
   },
 
-  // VISUAL (from Claude Code config)
+  // VISUAL
   'stability-ai': {
     command: 'npx',
     args: ['-y', 'mcp-server-stability-ai'],

@@ -1,7 +1,7 @@
 /**
  * Genesis Diff-Based File Editor
  *
- * Provides Claude Code-equivalent file editing:
+ * File editing capabilities:
  * - old_string -> new_string replacement
  * - Unique match verification
  * - replace_all for global replacements

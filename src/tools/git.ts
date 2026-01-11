@@ -1,7 +1,7 @@
 /**
  * Genesis Native Git Operations
  *
- * Provides Claude Code-equivalent git operations:
+ * Git operations:
  * - status, diff, log (read-only, always safe)
  * - add, commit (with message templates)
  * - push (only with explicit confirmation)

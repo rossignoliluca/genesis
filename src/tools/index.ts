@@ -1,7 +1,7 @@
 /**
  * Genesis Tools Module
  *
- * Provides Claude Code-equivalent tool capabilities:
+ * Local tool capabilities:
  * - Bash: Secure command execution
  * - Edit: Diff-based file editing
  * - Git: Native git operations

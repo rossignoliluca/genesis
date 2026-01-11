@@ -2,7 +2,7 @@
  * Genesis Phase 10 - Brain Trace System
  *
  * Visual real-time output of Brain internal processing.
- * Shows "thinking" like Claude Code does.
+ * Shows thinking progress during reasoning.
  *
  * Usage:
  *   const trace = new BrainTrace(brain);

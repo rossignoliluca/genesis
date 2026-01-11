@@ -1,12 +1,7 @@
 /**
- * Genesis v7.2 - Modern UI Components
+ * Genesis v7.3 - Modern UI Components
  *
  * Reusable CLI components for beautiful terminal output.
- * Inspired by Claude Code's clean interface.
- *
- * SELF-MODIFICATION MARKER: This comment was added while Genesis was running.
- * Timestamp: 2026-01-11T07:35:00Z
- * Modified by: Claude Opus 4.5 via Claude Code
  */
 
 // ============================================================================

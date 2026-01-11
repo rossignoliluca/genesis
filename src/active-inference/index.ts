@@ -3,8 +3,8 @@
  *
  * Autonomous decision-making via Free Energy Principle.
  *
- * This module enables Genesis to operate WITHOUT Claude Code,
- * making decisions purely through Active Inference math.
+ * This module enables Genesis to operate autonomously,
+ * making decisions through Active Inference math.
  *
  * Usage:
  * ```typescript

@@ -87,7 +87,7 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
   },
   'wolfram': {
     command: 'npx',
-    args: ['-y', '@anthropic/mcp-wolfram'],
+    args: ['-y', 'wolfram-mcp'],
     envVars: () => ({ WOLFRAM_APP_ID: process.env.WOLFRAM_APP_ID || '' }),
     tools: ['wolfram_query'],
   },

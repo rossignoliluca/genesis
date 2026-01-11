@@ -29,6 +29,7 @@ import { getMCPClient, logMCPMode, MCP_SERVER_REGISTRY } from './mcp/index.js';
 import { getProcessManager, LOG_FILE } from './daemon/process.js';
 import { createPipelineExecutor } from './pipeline/index.js';
 import { createAutonomousLoop, ACTIONS, integrateActiveInference, createIntegratedSystem, createMCPInferenceLoop } from './active-inference/index.js';
+import { getBrain, resetBrain } from './brain/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -882,6 +883,168 @@ ${c('Examples:', 'cyan')}
   await loop.run(cycles);
 }
 
+// ============================================================================
+// Brain Command (Phase 10: Neural Integration)
+// ============================================================================
+
+async function cmdBrain(subcommand: string | undefined, options: Record<string, string>): Promise<void> {
+  const brain = getBrain();
+
+  if (!subcommand || subcommand === 'status') {
+    const metrics = brain.getMetrics();
+    const running = brain.isRunning();
+
+    console.log(c('\n=== BRAIN STATUS (Phase 10) ===\n', 'bold'));
+    console.log(`  ${c('Running:', 'cyan')}     ${running ? c('Yes', 'green') : c('No', 'yellow')}`);
+    console.log();
+
+    console.log(c('Consciousness (φ):', 'cyan'));
+    console.log(`  Level:         ${metrics.avgPhi.toFixed(3)}`);
+    console.log(`  Violations:    ${metrics.phiViolations}`);
+    console.log(`  Broadcasts:    ${metrics.broadcasts}`);
+    console.log();
+
+    console.log(c('Processing:', 'cyan'));
+    console.log(`  Total Cycles:  ${metrics.totalCycles}`);
+    console.log(`  Successful:    ${metrics.successfulCycles}`);
+    console.log(`  Failed:        ${metrics.failedCycles}`);
+    console.log(`  Avg Time:      ${metrics.avgCycleTime.toFixed(0)}ms`);
+    console.log();
+
+    console.log(c('Memory (Cognitive Workspace):', 'cyan'));
+    console.log(`  Recalls:       ${metrics.memoryRecalls}`);
+    console.log(`  Reuse Rate:    ${(metrics.memoryReuseRate * 100).toFixed(1)}% (target: 54-60%)`);
+    console.log(`  Anticipation:  ${metrics.anticipationHits} hits, ${metrics.anticipationMisses} misses`);
+    console.log();
+
+    console.log(c('Grounding:', 'cyan'));
+    console.log(`  Checks:        ${metrics.groundingChecks}`);
+    console.log(`  Passes:        ${metrics.groundingPasses}`);
+    console.log(`  Failures:      ${metrics.groundingFailures}`);
+    console.log(`  Human Consults: ${metrics.humanConsultations}`);
+    console.log();
+
+    console.log(c('Healing (Darwin-Gödel):', 'cyan'));
+    console.log(`  Attempts:      ${metrics.healingAttempts}`);
+    console.log(`  Successes:     ${metrics.healingSuccesses}`);
+    console.log(`  Failures:      ${metrics.healingFailures}`);
+    console.log();
+
+    console.log(c('Tools:', 'cyan'));
+    console.log(`  Executions:    ${metrics.toolExecutions}`);
+    console.log(`  Successes:     ${metrics.toolSuccesses}`);
+    console.log(`  Failures:      ${metrics.toolFailures}`);
+    console.log();
+
+    // Module transitions
+    if (Object.keys(metrics.moduleTransitions).length > 0) {
+      console.log(c('Module Transitions:', 'cyan'));
+      for (const [transition, count] of Object.entries(metrics.moduleTransitions)) {
+        console.log(`    ${transition}: ${count}`);
+      }
+      console.log();
+    }
+    return;
+  }
+
+  if (subcommand === 'phi') {
+    const metrics = brain.getMetrics();
+    const phi = metrics.avgPhi;
+
+    console.log(c('\n=== CONSCIOUSNESS LEVEL (φ) ===\n', 'bold'));
+
+    // Visual bar
+    const width = 30;
+    const filled = Math.round(phi * width);
+    const empty = width - filled;
+    const bar = '█'.repeat(filled) + '░'.repeat(empty);
+
+    console.log(`  Current φ:    ${phi.toFixed(3)}`);
+
+    if (phi >= 0.7) {
+      console.log(`  Level:        ${c(bar, 'green')} HIGH`);
+      console.log(`  Status:       ${c('Global Workspace active - full broadcasting', 'green')}`);
+    } else if (phi >= 0.3) {
+      console.log(`  Level:        ${c(bar, 'yellow')} MEDIUM`);
+      console.log(`  Status:       ${c('Ignition threshold - selective broadcasting', 'yellow')}`);
+    } else {
+      console.log(`  Level:        ${c(bar, 'dim')} LOW`);
+      console.log(`  Status:       ${c('Local processing - no broadcasting', 'dim')}`);
+    }
+
+    console.log();
+    console.log(c('Theory:', 'dim'));
+    console.log('  φ (phi) measures integrated information (IIT 4.0)');
+    console.log('  Values: 0 = no integration, 1 = maximum integration');
+    console.log('  Ignition (φ > 0.3): Information broadcasts globally (GWT)');
+    console.log();
+    return;
+  }
+
+  if (subcommand === 'start') {
+    if (brain.isRunning()) {
+      console.log(c('\nBrain is already running', 'yellow'));
+      return;
+    }
+    brain.start();
+    console.log(c('\nBrain started', 'green'));
+    console.log(c('  Neural Integration Layer is now active', 'dim'));
+    return;
+  }
+
+  if (subcommand === 'stop') {
+    if (!brain.isRunning()) {
+      console.log(c('\nBrain is not running', 'yellow'));
+      return;
+    }
+    brain.stop();
+    console.log(c('\nBrain stopped', 'yellow'));
+    return;
+  }
+
+  if (subcommand === 'reset') {
+    resetBrain();
+    console.log(c('\nBrain reset to initial state', 'yellow'));
+    console.log(c('  All metrics cleared', 'dim'));
+    return;
+  }
+
+  if (subcommand === 'cycle') {
+    const query = options.query || 'Test query for brain cycle';
+    console.log(c('\n=== RUNNING BRAIN CYCLE ===\n', 'bold'));
+    console.log(`  Query: "${query}"`);
+    console.log();
+
+    if (!brain.isRunning()) {
+      brain.start();
+      console.log(c('  [Starting brain...]', 'dim'));
+    }
+
+    try {
+      const start = Date.now();
+      const response = await brain.process(query);
+      const duration = Date.now() - start;
+
+      console.log(c('Response:', 'cyan'));
+      console.log(`  ${response.substring(0, 500)}${response.length > 500 ? '...' : ''}`);
+      console.log();
+
+      const metrics = brain.getMetrics();
+      console.log(c('Metrics:', 'cyan'));
+      console.log(`  Duration:      ${duration}ms`);
+      console.log(`  φ Level:       ${metrics.avgPhi.toFixed(3)}`);
+      console.log(`  Memory Reuse:  ${(metrics.memoryReuseRate * 100).toFixed(1)}%`);
+      console.log();
+    } catch (error) {
+      console.log(c(`  Error: ${error}`, 'red'));
+    }
+    return;
+  }
+
+  console.log(c(`Unknown brain subcommand: ${subcommand}`, 'red'));
+  console.log('Use: status, phi, start, stop, reset, cycle');
+}
+
 async function cmdHardware(): Promise<void> {
   console.log(c('\n=== HARDWARE PROFILE ===\n', 'bold'));
 
@@ -988,6 +1151,16 @@ ${c('Commands:', 'bold')}
     --cycles <n>         Number of cycles (default: 10, 0=unlimited)
     --interval <ms>      Interval between cycles (default: 1000)
     --verbose            Show detailed output
+
+  ${c('brain', 'green')} [subcommand]      Phase 10: Neural Integration Layer
+    status               Show brain status and metrics
+    phi                  Show consciousness level (φ)
+    start                Start the brain
+    stop                 Stop the brain
+    reset                Reset brain to initial state
+    cycle --query <q>    Run a brain processing cycle
+
+  ${c('phi', 'green')}                    Shortcut for 'brain phi'
 
   ${c('status', 'green')}                Show MCP servers status
   ${c('hardware', 'green')}              Show hardware profile & router config
@@ -1109,6 +1282,13 @@ async function main(): Promise<void> {
         break;
       case 'hardware':
         await cmdHardware();
+        break;
+      case 'brain':
+        await cmdBrain(positional, options);
+        break;
+      case 'phi':
+        // Shortcut for brain phi
+        await cmdBrain('phi', options);
         break;
       default:
         console.error(c(`Unknown command: ${command}`, 'red'));

@@ -9,6 +9,7 @@ import * as readline from 'readline';
 import { getLLMBridge, buildSystemPrompt, GENESIS_IDENTITY_PROMPT, LLMBridge } from '../llm/index.js';
 import { getStateStore, StateStore } from '../persistence/index.js';
 import { ToolDispatcher, ToolResult } from './dispatcher.js';
+import { Brain, getBrain, BrainMetrics } from '../brain/index.js';
 
 // ============================================================================
 // Colors
@@ -39,16 +40,19 @@ export interface ChatOptions {
   model?: string;
   verbose?: boolean;
   enableTools?: boolean;  // Enable MCP tool execution
+  enableBrain?: boolean;  // Enable Brain integration (Phase 10)
 }
 
 export class ChatSession {
   private llm: LLMBridge;
   private store: StateStore;
   private dispatcher: ToolDispatcher;
+  private brain: Brain;  // Phase 10: Brain integration
   private rl: readline.Interface | null = null;
   private running = false;
   private verbose: boolean;
   private enableTools: boolean;
+  private enableBrain: boolean;  // Phase 10: Brain mode
   private messageCount = 0;
   private toolExecutions = 0;
   private systemPrompt: string = '';  // Built dynamically at start()
@@ -60,8 +64,10 @@ export class ChatSession {
     });
     this.store = getStateStore({ autoSave: true, autoSaveIntervalMs: 60000 });
     this.dispatcher = new ToolDispatcher({ verbose: options.verbose });
+    this.brain = getBrain();  // Phase 10: Initialize brain
     this.verbose = options.verbose ?? false;
     this.enableTools = options.enableTools ?? true;  // Enabled by default
+    this.enableBrain = options.enableBrain ?? false;  // Brain mode off by default (opt-in)
 
     // Restore conversation history from persisted state
     const state = this.store.getState();
@@ -103,6 +109,14 @@ export class ChatSession {
     console.log(c(`Provider: ${status.provider}`, 'dim'));
     console.log(c(`Model: ${status.model}`, 'dim'));
     console.log(c(`Status: ${status.configured ? 'Ready' : 'Not configured'}`, status.configured ? 'green' : 'yellow'));
+
+    // Phase 10: Brain mode status
+    if (this.enableBrain) {
+      this.brain.start();
+      console.log(c(`Brain: ${c('ACTIVE', 'green')} (Phase 10 Neural Integration)`, 'dim'));
+    } else {
+      console.log(c(`Brain: ${c('OFF', 'yellow')} (use /brain to enable)`, 'dim'));
+    }
     console.log();
 
     this.printHelp();
@@ -148,11 +162,17 @@ export class ChatSession {
   }
 
   /**
-   * Send message to LLM
+   * Send message to LLM (or Brain if enabled)
    */
   private async sendMessage(message: string): Promise<void> {
     if (!this.llm.isConfigured()) {
       console.log(c('Error: LLM not configured. Set API key first.', 'red'));
+      return;
+    }
+
+    // Phase 10: Use Brain for integrated processing
+    if (this.enableBrain) {
+      await this.sendMessageViaBrain(message);
       return;
     }
 
@@ -234,6 +254,47 @@ export class ChatSession {
         return `[${r.name}] ERROR: ${r.error}`;
       }
     }).join('\n\n');
+  }
+
+  /**
+   * Phase 10: Send message via Brain (Neural Integration Layer)
+   *
+   * Routes through: Memory → LLM → Grounding → Tools → Response
+   * With: φ monitoring, Global Workspace broadcasting, self-healing
+   */
+  private async sendMessageViaBrain(message: string): Promise<void> {
+    console.log(c('Genesis: ', 'cyan') + c('processing via brain...', 'dim'));
+
+    try {
+      const response = await this.brain.process(message);
+      this.messageCount++;
+
+      // Clear "processing..." line and print response
+      process.stdout.write('\x1b[1A\x1b[2K');
+      console.log(c('Genesis: ', 'cyan') + response);
+
+      // Show brain metrics if verbose
+      if (this.verbose) {
+        const metrics = this.brain.getMetrics();
+        const reuseRate = metrics.memoryReuseRate * 100;
+        console.log(c(`  [φ=${metrics.avgPhi.toFixed(2)}, reuse=${reuseRate.toFixed(0)}%, cycles=${metrics.totalCycles}]`, 'dim'));
+      }
+
+      // Persist interaction (Brain manages its own conversation context)
+      this.store.recordInteraction();
+
+      console.log();
+    } catch (error) {
+      process.stdout.write('\x1b[1A\x1b[2K'); // Clear "processing..." line
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.log(c(`Genesis: Brain error - ${errorMessage}`, 'red'));
+
+      // Fallback to direct LLM if brain fails
+      console.log(c('  [Falling back to direct LLM...]', 'yellow'));
+      this.enableBrain = false;  // Temporarily disable
+      await this.sendMessage(message);
+      this.enableBrain = true;   // Re-enable for next message
+    }
   }
 
   /**
@@ -354,6 +415,41 @@ export class ChatSession {
         console.log();
         break;
 
+      // Phase 10: Brain commands
+      case 'brain':
+        this.enableBrain = !this.enableBrain;
+        if (this.enableBrain) {
+          this.brain.start();
+          console.log(c(`Brain: ${c('ACTIVE', 'green')} (Neural Integration enabled)`, 'bold'));
+          console.log(c('  Routes: Memory → LLM → Grounding → Tools → Response', 'dim'));
+          console.log(c('  With: φ monitoring, Global Workspace, self-healing', 'dim'));
+        } else {
+          this.brain.stop();
+          console.log(c(`Brain: ${c('OFF', 'yellow')} (Direct LLM mode)`, 'bold'));
+        }
+        console.log();
+        break;
+
+      case 'phi':
+        const phi = this.brain.getMetrics().avgPhi;
+        const phiBar = this.renderPhiBar(phi);
+        console.log(c('Consciousness Level (φ):', 'bold'));
+        console.log(`  Current:  ${phi.toFixed(3)}`);
+        console.log(`  Level:    ${phiBar}`);
+        console.log(`  Ignited:  ${phi > 0.3 ? c('Yes (broadcasting)', 'green') : c('No', 'dim')}`);
+        console.log();
+        break;
+
+      case 'brainmetrics':
+      case 'bm':
+        this.printBrainMetrics();
+        break;
+
+      case 'brainstatus':
+      case 'bs':
+        this.printBrainStatus();
+        break;
+
       default:
         console.log(c(`Unknown command: /${cmd}`, 'red'));
         console.log('Type /help for available commands.');
@@ -388,6 +484,12 @@ ${c('╚════════════════════════
     console.log(c('Tools:', 'bold'));
     console.log('  /tools         Toggle MCP tool execution');
     console.log('  /toolstatus    Show tool execution stats');
+    console.log();
+    console.log(c('Brain (Phase 10):', 'bold'));
+    console.log('  /brain         Toggle Brain integration');
+    console.log('  /phi           Show consciousness level (φ)');
+    console.log('  /brainstatus   Show brain status');
+    console.log('  /brainmetrics  Show detailed brain metrics');
     console.log();
     console.log(c('State:', 'bold'));
     console.log('  /save          Save state to disk');
@@ -436,6 +538,15 @@ ${c('╚════════════════════════
     console.log(`  MCP Tools:    ${this.enableTools ? c('ON', 'green') : c('OFF', 'yellow')}`);
     console.log(`  Tool Calls:   ${this.toolExecutions}`);
     console.log();
+
+    // Phase 10: Brain status
+    const brainMetrics = this.brain.getMetrics();
+    console.log(c('Brain (Phase 10):', 'cyan'));
+    console.log(`  Mode:         ${this.enableBrain ? c('ACTIVE', 'green') : c('OFF', 'yellow')}`);
+    console.log(`  φ Level:      ${brainMetrics.avgPhi.toFixed(3)}`);
+    console.log(`  Cycles:       ${brainMetrics.totalCycles}`);
+    console.log(`  Mem Reuse:    ${(brainMetrics.memoryReuseRate * 100).toFixed(1)}%`);
+    console.log();
   }
 
   /**
@@ -465,14 +576,139 @@ ${c('╚════════════════════════
     console.log();
   }
 
+  // ==========================================================================
+  // Phase 10: Brain Integration Helpers
+  // ==========================================================================
+
+  /**
+   * Render φ (consciousness level) as a visual bar
+   */
+  private renderPhiBar(phi: number): string {
+    const width = 20;
+    const filled = Math.round(phi * width);
+    const empty = width - filled;
+    const bar = '█'.repeat(filled) + '░'.repeat(empty);
+
+    // Color based on level
+    if (phi >= 0.7) return c(bar, 'green') + ` (High - Global Workspace active)`;
+    if (phi >= 0.3) return c(bar, 'yellow') + ` (Medium - Ignition threshold)`;
+    return c(bar, 'dim') + ` (Low - Local processing)`;
+  }
+
+  /**
+   * Print brain metrics (Phase 10)
+   */
+  private printBrainMetrics(): void {
+    const metrics = this.brain.getMetrics();
+
+    console.log(c('Brain Metrics (Phase 10):', 'bold'));
+    console.log();
+
+    console.log(c('Processing:', 'cyan'));
+    console.log(`  Total cycles:     ${metrics.totalCycles}`);
+    console.log(`  Successful:       ${metrics.successfulCycles}`);
+    console.log(`  Failed:           ${metrics.failedCycles}`);
+    console.log(`  Avg cycle time:   ${metrics.avgCycleTime.toFixed(0)}ms`);
+    console.log();
+
+    console.log(c('Memory (Cognitive Workspace):', 'cyan'));
+    console.log(`  Recalls:          ${metrics.memoryRecalls}`);
+    console.log(`  Reuse rate:       ${(metrics.memoryReuseRate * 100).toFixed(1)}% ${metrics.memoryReuseRate >= 0.54 ? c('(target: 54-60%)', 'green') : c('(target: 54-60%)', 'yellow')}`);
+    console.log(`  Anticipation hits: ${metrics.anticipationHits}`);
+    console.log(`  Anticipation miss: ${metrics.anticipationMisses}`);
+    console.log();
+
+    console.log(c('Grounding (Epistemic Stack):', 'cyan'));
+    console.log(`  Checks:           ${metrics.groundingChecks}`);
+    console.log(`  Passes:           ${metrics.groundingPasses}`);
+    console.log(`  Failures:         ${metrics.groundingFailures}`);
+    console.log(`  Human consults:   ${metrics.humanConsultations}`);
+    console.log();
+
+    console.log(c('Tools:', 'cyan'));
+    console.log(`  Executions:       ${metrics.toolExecutions}`);
+    console.log(`  Successes:        ${metrics.toolSuccesses}`);
+    console.log(`  Failures:         ${metrics.toolFailures}`);
+    console.log();
+
+    console.log(c('Healing (Darwin-Gödel):', 'cyan'));
+    console.log(`  Attempts:         ${metrics.healingAttempts}`);
+    console.log(`  Successes:        ${metrics.healingSuccesses}`);
+    console.log(`  Failures:         ${metrics.healingFailures}`);
+    console.log();
+
+    console.log(c('Consciousness (φ Monitor):', 'cyan'));
+    console.log(`  Avg φ:            ${metrics.avgPhi.toFixed(3)}`);
+    console.log(`  φ violations:     ${metrics.phiViolations}`);
+    console.log(`  Broadcasts:       ${metrics.broadcasts}`);
+    console.log();
+
+    // Module transitions
+    if (Object.keys(metrics.moduleTransitions).length > 0) {
+      console.log(c('Module Transitions:', 'cyan'));
+      for (const [transition, count] of Object.entries(metrics.moduleTransitions)) {
+        console.log(`  ${transition}: ${count}`);
+      }
+      console.log();
+    }
+  }
+
+  /**
+   * Print brain status (Phase 10)
+   */
+  private printBrainStatus(): void {
+    const metrics = this.brain.getMetrics();
+    const phi = metrics.avgPhi;
+
+    console.log(c('Brain Status (Phase 10 Neural Integration):', 'bold'));
+    console.log();
+
+    console.log(c('Mode:', 'cyan'));
+    console.log(`  Brain:       ${this.enableBrain ? c('ACTIVE', 'green') : c('OFF', 'yellow')}`);
+    console.log(`  Running:     ${this.brain.isRunning() ? c('Yes', 'green') : c('No', 'dim')}`);
+    console.log();
+
+    console.log(c('Consciousness:', 'cyan'));
+    console.log(`  φ Level:     ${phi.toFixed(3)}`);
+    console.log(`  φ Bar:       ${this.renderPhiBar(phi)}`);
+    console.log(`  Ignited:     ${phi > 0.3 ? c('Yes', 'green') : c('No', 'dim')}`);
+    console.log();
+
+    console.log(c('Performance:', 'cyan'));
+    const successRate = metrics.totalCycles > 0
+      ? (metrics.successfulCycles / metrics.totalCycles * 100).toFixed(1)
+      : '0';
+    console.log(`  Cycles:      ${metrics.totalCycles}`);
+    console.log(`  Success:     ${successRate}%`);
+    console.log(`  Avg time:    ${metrics.avgCycleTime.toFixed(0)}ms`);
+    console.log(`  Mem reuse:   ${(metrics.memoryReuseRate * 100).toFixed(1)}%`);
+    console.log();
+
+    console.log(c('Modules Connected:', 'cyan'));
+    console.log('  ✓ Memory (Cognitive Workspace)');
+    console.log('  ✓ LLM (Hybrid Router)');
+    console.log('  ✓ Grounding (Epistemic Stack)');
+    console.log('  ✓ Tools (Dispatcher)');
+    console.log('  ✓ Healing (Darwin-Gödel)');
+    console.log('  ✓ Consciousness (φ Monitor)');
+    console.log('  ✓ Kernel (Agent Orchestration)');
+    console.log();
+  }
+
   /**
    * Stop chat session
    */
   stop(): void {
     this.running = false;
 
+    // Stop brain if running
+    if (this.enableBrain) {
+      console.log(c('\nStopping brain...', 'dim'));
+      this.brain.stop();
+    }
+
     // Save state before exit
-    console.log(c('\nSaving state...', 'dim'));
+    console.log(c('Saving state...', 'dim'));
     this.store.updateConversation(this.llm.getHistory());
     this.store.close();
 

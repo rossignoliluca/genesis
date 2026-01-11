@@ -127,7 +127,10 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
   'github': {
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-github'],
-    envVars: () => ({ GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_TOKEN || '' }),
+    // v7.3: Accept both variable names for compatibility
+    envVars: () => ({
+      GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_PERSONAL_ACCESS_TOKEN || process.env.GITHUB_TOKEN || ''
+    }),
     tools: ['create_repository', 'search_repositories', 'create_issue', 'create_pull_request', 'get_file_contents'],
   },
 
@@ -211,6 +214,12 @@ class MCPConnectionManager {
     const serverInfo = MCP_SERVER_REGISTRY[server];
     if (!serverInfo) {
       throw new Error(`Unknown MCP server: ${server}`);
+    }
+
+    // v7.3: Check required API keys before spawning
+    const missingKey = this.checkRequiredKeys(server);
+    if (missingKey) {
+      throw new Error(`MCP server '${server}' requires ${missingKey} to be set. Please add it to your .env file.`);
     }
 
     // Resolve args and envVars at connection time (supports functions for dynamic values)
@@ -348,6 +357,38 @@ class MCPConnectionManager {
   async closeAll(): Promise<void> {
     const servers = Array.from(this.connections.keys());
     await Promise.all(servers.map((s) => this.closeConnection(s)));
+  }
+
+  /**
+   * v7.3: Check if required API keys are set for a server
+   * Returns the name of the missing key, or null if all keys are present
+   */
+  private checkRequiredKeys(server: MCPServerName): string | null {
+    // Map of servers to their required environment variables
+    const requiredKeys: Partial<Record<MCPServerName, string[]>> = {
+      'wolfram': ['WOLFRAM_APP_ID'],
+      'brave-search': ['BRAVE_API_KEY'],
+      'exa': ['EXA_API_KEY'],
+      'firecrawl': ['FIRECRAWL_API_KEY'],
+      'openai': ['OPENAI_API_KEY'],
+      'github': ['GITHUB_PERSONAL_ACCESS_TOKEN', 'GITHUB_TOKEN'], // Either one
+      'stability-ai': ['STABILITY_AI_API_KEY'],
+      'gemini': ['GOOGLE_API_KEY', 'GEMINI_API_KEY'], // Either one
+      // These don't need API keys:
+      // 'arxiv', 'semantic-scholar', 'context7', 'memory', 'filesystem'
+    };
+
+    const keys = requiredKeys[server];
+    if (!keys) return null; // No required keys
+
+    // For servers that accept either of multiple keys (like github, gemini)
+    // Check if at least one is set
+    const hasAtLeastOne = keys.some(key => !!process.env[key]);
+    if (!hasAtLeastOne) {
+      return keys.join(' or ');
+    }
+
+    return null; // All required keys present
   }
 }
 

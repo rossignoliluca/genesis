@@ -1,6 +1,6 @@
 {
   "name": "@rossignoliluca/genesis",
-  "version": "7.2.0",
+  "version": "7.3.0",
   "description": "Autonomous AI System Creator - Brain ON by default, Active Inference integrated, Curiosity-driven, Φ monitoring in every response",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
@@ -54,6 +54,7 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.25.2"
+    "@modelcontextprotocol/sdk": "^1.25.2",
+    "dotenv": "^17.2.3"
   }
 }

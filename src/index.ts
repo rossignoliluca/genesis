@@ -21,6 +21,23 @@
  *   genesis help                        Show help
  */
 
+// v7.3: Load environment variables from .env files BEFORE anything else
+import { config as dotenvConfig } from 'dotenv';
+import * as path from 'path';
+import * as fs from 'fs';
+
+// Load .env files in priority order (later files override earlier ones)
+const envFiles = [
+  '.env',           // Base config
+  '.env.local',     // Local overrides (gitignored)
+];
+for (const file of envFiles) {
+  const envPath = path.join(process.cwd(), file);
+  if (fs.existsSync(envPath)) {
+    dotenvConfig({ path: envPath });
+  }
+}
+
 import { createOrchestrator, MCP_CAPABILITIES, GenesisPipeline } from './orchestrator.js';
 import { SystemSpec, MCPServerName, PipelineStage } from './types.js';
 import { startChat } from './cli/chat.js';
@@ -30,8 +47,6 @@ import { getProcessManager, LOG_FILE } from './daemon/process.js';
 import { createPipelineExecutor } from './pipeline/index.js';
 import { createAutonomousLoop, ACTIONS, integrateActiveInference, createIntegratedSystem, createMCPInferenceLoop } from './active-inference/index.js';
 import { getBrain, resetBrain } from './brain/index.js';
-import * as fs from 'fs';
-import * as path from 'path';
 
 // ============================================================================
 // CLI Colors

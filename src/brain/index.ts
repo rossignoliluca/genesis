@@ -990,3 +990,4 @@ export function resetBrain(): void {
 // ============================================================================
 
 export * from './types.js';
+export * from './trace.js';

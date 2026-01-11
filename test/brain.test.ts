@@ -381,3 +381,65 @@ describe('Brain Types Validation', () => {
     assert.strictEqual(typeof mockContext.reuseRate, 'number');
   });
 });
+
+describe('Brain Trace (Phase 10)', () => {
+  test('createBrainTrace creates trace instance', async () => {
+    const { createBrain, createBrainTrace } = await import('../src/brain/index.js');
+
+    const brain = createBrain();
+    const trace = createBrainTrace(brain);
+
+    assert.ok(trace, 'Trace should be created');
+  });
+
+  test('trace has enable/disable methods', async () => {
+    const { createBrain, createBrainTrace } = await import('../src/brain/index.js');
+
+    const brain = createBrain();
+    const trace = createBrainTrace(brain);
+
+    assert.strictEqual(typeof trace.enable, 'function');
+    assert.strictEqual(typeof trace.disable, 'function');
+    assert.strictEqual(typeof trace.isEnabled, 'function');
+    assert.strictEqual(typeof trace.toggle, 'function');
+  });
+
+  test('trace starts disabled', async () => {
+    const { createBrain, createBrainTrace } = await import('../src/brain/index.js');
+
+    const brain = createBrain();
+    const trace = createBrainTrace(brain);
+
+    assert.strictEqual(trace.isEnabled(), false);
+  });
+
+  test('enable() enables trace', async () => {
+    const { createBrain, createBrainTrace } = await import('../src/brain/index.js');
+
+    const brain = createBrain();
+    const trace = createBrainTrace(brain);
+
+    trace.enable();
+    assert.strictEqual(trace.isEnabled(), true);
+
+    trace.disable();
+    assert.strictEqual(trace.isEnabled(), false);
+  });
+
+  test('toggle() toggles trace state', async () => {
+    const { createBrain, createBrainTrace } = await import('../src/brain/index.js');
+
+    const brain = createBrain();
+    const trace = createBrainTrace(brain);
+
+    assert.strictEqual(trace.isEnabled(), false);
+
+    const result1 = trace.toggle();
+    assert.strictEqual(result1, true);
+    assert.strictEqual(trace.isEnabled(), true);
+
+    const result2 = trace.toggle();
+    assert.strictEqual(result2, false);
+    assert.strictEqual(trace.isEnabled(), false);
+  });
+});

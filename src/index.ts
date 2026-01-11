@@ -58,12 +58,18 @@ function c(text: string, color: keyof typeof colors): string {
 // ============================================================================
 
 function printBanner(): void {
-  console.log(`
-${c('╔═══════════════════════════════════════════════════════════════╗', 'cyan')}
-${c('║', 'cyan')}  ${c('GENESIS', 'bold')} - System Creator                                   ${c('║', 'cyan')}
-${c('║', 'cyan')}  ${c('Powered by 13 MCP Servers', 'dim')}                                   ${c('║', 'cyan')}
-${c('╚═══════════════════════════════════════════════════════════════╝', 'cyan')}
-`);
+  // Box width: 65 chars total (╔ + 63×═ + ╗)
+  // Content: 63 chars between ║...║
+  const line1 = '  GENESIS - System Creator';
+  const line2 = '  Powered by 13 MCP Servers';
+  const width = 63;
+
+  console.log();
+  console.log(c('╔' + '═'.repeat(width) + '╗', 'cyan'));
+  console.log(c('║', 'cyan') + '  ' + c('GENESIS', 'bold') + ' - System Creator' + ' '.repeat(width - line1.length) + c('║', 'cyan'));
+  console.log(c('║', 'cyan') + '  ' + c('Powered by 13 MCP Servers', 'dim') + ' '.repeat(width - line2.length) + c('║', 'cyan'));
+  console.log(c('╚' + '═'.repeat(width) + '╝', 'cyan'));
+  console.log();
 }
 
 // ============================================================================

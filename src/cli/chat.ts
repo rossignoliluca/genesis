@@ -9,7 +9,7 @@ import * as readline from 'readline';
 import { getLLMBridge, buildSystemPrompt, GENESIS_IDENTITY_PROMPT, LLMBridge } from '../llm/index.js';
 import { getStateStore, StateStore } from '../persistence/index.js';
 import { ToolDispatcher, ToolResult } from './dispatcher.js';
-import { Brain, getBrain, BrainMetrics } from '../brain/index.js';
+import { Brain, getBrain, BrainMetrics, BrainTrace, createBrainTrace } from '../brain/index.js';
 
 // ============================================================================
 // Colors
@@ -48,11 +48,13 @@ export class ChatSession {
   private store: StateStore;
   private dispatcher: ToolDispatcher;
   private brain: Brain;  // Phase 10: Brain integration
+  private brainTrace: BrainTrace;  // Phase 10: Brain trace visualization
   private rl: readline.Interface | null = null;
   private running = false;
   private verbose: boolean;
   private enableTools: boolean;
   private enableBrain: boolean;  // Phase 10: Brain mode
+  private enableTrace: boolean;  // Phase 10: Brain trace mode
   private messageCount = 0;
   private toolExecutions = 0;
   private systemPrompt: string = '';  // Built dynamically at start()
@@ -65,9 +67,11 @@ export class ChatSession {
     this.store = getStateStore({ autoSave: true, autoSaveIntervalMs: 60000 });
     this.dispatcher = new ToolDispatcher({ verbose: options.verbose });
     this.brain = getBrain();  // Phase 10: Initialize brain
+    this.brainTrace = createBrainTrace(this.brain);  // Phase 10: Initialize trace
     this.verbose = options.verbose ?? false;
     this.enableTools = options.enableTools ?? true;  // Enabled by default
     this.enableBrain = options.enableBrain ?? false;  // Brain mode off by default (opt-in)
+    this.enableTrace = false;  // Trace off by default
 
     // Restore conversation history from persisted state
     const state = this.store.getState();
@@ -263,14 +267,19 @@ export class ChatSession {
    * With: φ monitoring, Global Workspace broadcasting, self-healing
    */
   private async sendMessageViaBrain(message: string): Promise<void> {
-    console.log(c('Genesis: ', 'cyan') + c('processing via brain...', 'dim'));
+    // Only show "processing" if trace is off (trace shows detailed progress)
+    if (!this.enableTrace) {
+      console.log(c('Genesis: ', 'cyan') + c('processing via brain...', 'dim'));
+    }
 
     try {
       const response = await this.brain.process(message);
       this.messageCount++;
 
-      // Clear "processing..." line and print response
-      process.stdout.write('\x1b[1A\x1b[2K');
+      // Clear "processing..." line only if trace was off
+      if (!this.enableTrace) {
+        process.stdout.write('\x1b[1A\x1b[2K');
+      }
       console.log(c('Genesis: ', 'cyan') + response);
 
       // Show brain metrics if verbose
@@ -285,7 +294,10 @@ export class ChatSession {
 
       console.log();
     } catch (error) {
-      process.stdout.write('\x1b[1A\x1b[2K'); // Clear "processing..." line
+      // Clear "processing..." line only if trace was off
+      if (!this.enableTrace) {
+        process.stdout.write('\x1b[1A\x1b[2K');
+      }
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.log(c(`Genesis: Brain error - ${errorMessage}`, 'red'));
 
@@ -450,6 +462,24 @@ export class ChatSession {
         this.printBrainStatus();
         break;
 
+      case 'braintrace':
+      case 'trace':
+      case 'bt':
+        this.enableTrace = !this.enableTrace;
+        if (this.enableTrace) {
+          this.brainTrace.enable();
+          console.log(c(`Brain Trace: ${c('ON', 'green')} - Shows internal thinking process`, 'bold'));
+          console.log(c('  You will see: memory recalls, LLM requests, grounding checks, etc.', 'dim'));
+          if (!this.enableBrain) {
+            console.log(c('  Note: Enable /brain for trace to show during chat', 'yellow'));
+          }
+        } else {
+          this.brainTrace.disable();
+          console.log(c(`Brain Trace: ${c('OFF', 'yellow')}`, 'bold'));
+        }
+        console.log();
+        break;
+
       default:
         console.log(c(`Unknown command: /${cmd}`, 'red'));
         console.log('Type /help for available commands.');
@@ -461,12 +491,18 @@ export class ChatSession {
    * Print banner
    */
   private printBanner(): void {
-    console.log(`
-${c('╔═══════════════════════════════════════════════════════════════╗', 'cyan')}
-${c('║', 'cyan')}  ${c('GENESIS', 'bold')} - Interactive Chat                                ${c('║', 'cyan')}
-${c('║', 'cyan')}  ${c('An autopoietic AI system', 'dim')}                                   ${c('║', 'cyan')}
-${c('╚═══════════════════════════════════════════════════════════════╝', 'cyan')}
-`);
+    // Box width: 65 chars total (╔ + 63×═ + ╗)
+    // Content: 63 chars between ║...║
+    const line1 = '  GENESIS - Interactive Chat';
+    const line2 = '  An autopoietic AI system';
+    const width = 63;
+
+    console.log();
+    console.log(c('╔' + '═'.repeat(width) + '╗', 'cyan'));
+    console.log(c('║', 'cyan') + '  ' + c('GENESIS', 'bold') + ' - Interactive Chat' + ' '.repeat(width - line1.length) + c('║', 'cyan'));
+    console.log(c('║', 'cyan') + '  ' + c('An autopoietic AI system', 'dim') + ' '.repeat(width - line2.length) + c('║', 'cyan'));
+    console.log(c('╚' + '═'.repeat(width) + '╝', 'cyan'));
+    console.log();
   }
 
   /**
@@ -487,6 +523,7 @@ ${c('╚════════════════════════
     console.log();
     console.log(c('Brain (Phase 10):', 'bold'));
     console.log('  /brain         Toggle Brain integration');
+    console.log('  /braintrace    Toggle visible thinking trace');
     console.log('  /phi           Show consciousness level (φ)');
     console.log('  /brainstatus   Show brain status');
     console.log('  /brainmetrics  Show detailed brain metrics');

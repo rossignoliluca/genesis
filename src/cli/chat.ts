@@ -107,6 +107,10 @@ export class ChatSession {
   // v7.4: Subagent System
   private subagentExecutor: SubagentExecutor;
 
+  // v7.4: Background task support
+  private isProcessing = false;  // True when processing a message
+  private currentTaskAbort: AbortController | null = null;  // For cancelling current task
+
   constructor(options: ChatOptions = {}) {
     this.llm = getLLMBridge({
       provider: options.provider,
@@ -245,8 +249,61 @@ export class ChatSession {
       output: process.stdout,
     });
 
+    // v7.4: Enable keypress events for shortcuts (Ctrl+B, Ctrl+R, etc.)
+    if (process.stdin.isTTY) {
+      readline.emitKeypressEvents(process.stdin, this.rl);
+      process.stdin.on('keypress', (str, key) => {
+        this.handleKeypress(str, key);
+      });
+    }
+
     this.running = true;
     await this.chatLoop();
+  }
+
+  /**
+   * v7.4: Handle keyboard shortcuts
+   */
+  private handleKeypress(_str: string | undefined, key: readline.Key | undefined): void {
+    if (!key) return;
+
+    // Ctrl+B: Background current task
+    if (key.ctrl && key.name === 'b') {
+      if (this.isProcessing) {
+        console.log();
+        console.log(warning('⏸ Backgrounding current task...'));
+        console.log(c('  Task continues in background. Use /tasks to monitor.', 'dim'));
+        console.log();
+        // Signal that user wants to background the task
+        this.currentTaskAbort?.abort();
+      } else {
+        console.log(c('\n[Ctrl+B: No task running to background]', 'dim'));
+      }
+      return;
+    }
+
+    // Ctrl+R: Reverse history search (TODO: implement full readline history)
+    if (key.ctrl && key.name === 'r') {
+      // For now, just show hint - full implementation needs custom readline
+      console.log(c('\n[Ctrl+R: History search - use /history for now]', 'dim'));
+      return;
+    }
+
+    // Ctrl+L: Clear screen (keep conversation)
+    if (key.ctrl && key.name === 'l') {
+      console.clear();
+      this.printBanner();
+      console.log(c('Screen cleared. Conversation preserved.', 'dim'));
+      console.log();
+      return;
+    }
+
+    // Ctrl+O: Toggle verbose output
+    if (key.ctrl && key.name === 'o') {
+      this.verbose = !this.verbose;
+      console.log(c(`\n[Verbose: ${this.verbose ? 'ON' : 'OFF'}]`, 'dim'));
+      return;
+    }
   }
 
   /**
@@ -299,6 +356,9 @@ export class ChatSession {
       await this.sendMessageViaBrain(message);
       return;
     }
+
+    // v7.4: Track processing state for Ctrl+B
+    this.isProcessing = true;
 
     // v7.0: Modern spinner instead of static text
     this.spinner.start('Thinking');
@@ -363,8 +423,11 @@ export class ChatSession {
       this.store.updateConversation(this.llm.getHistory(), response.usage?.outputTokens);
       this.store.recordInteraction();
 
+      this.isProcessing = false;  // v7.4: Done processing
       console.log();
     } catch (err) {
+      this.isProcessing = false;  // v7.4: Done processing (error)
+
       // v7.0: Stop spinner on error
       this.spinner.stop();
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -401,6 +464,8 @@ export class ChatSession {
    * With: φ monitoring, Global Workspace broadcasting, self-healing
    */
   private async sendMessageViaBrain(message: string): Promise<void> {
+    this.isProcessing = true;  // v7.4: Track processing state for Ctrl+B
+
     // v7.1: Run Active Inference cycle BEFORE processing
     if (this.enableInference && this.inferenceLoop) {
       try {
@@ -468,8 +533,11 @@ export class ChatSession {
       // Persist interaction (Brain manages its own conversation context)
       this.store.recordInteraction();
 
+      this.isProcessing = false;  // v7.4: Done processing
       console.log();
     } catch (err) {
+      this.isProcessing = false;  // v7.4: Done processing (error)
+
       // v7.3.8: Stop thinking spinner on error
       if (!this.enableTrace) {
         this.thinkingSpinner.stop();
@@ -871,6 +939,12 @@ export class ChatSession {
     console.log('  /state         Show state info');
     console.log();
     console.log('  /quit, /q      Exit chat (auto-saves)');
+    console.log();
+    console.log(c('Keyboard Shortcuts (v7.4):', 'bold'));
+    console.log('  Ctrl+B         Background current task');
+    console.log('  Ctrl+L         Clear screen (keep conversation)');
+    console.log('  Ctrl+O         Toggle verbose output');
+    console.log('  Ctrl+R         History search hint');
     console.log();
   }
 

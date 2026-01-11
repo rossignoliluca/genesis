@@ -74,6 +74,7 @@ import {
 import {
   LLMBridge,
   getLLMBridge,
+  buildSystemPrompt,
 } from '../llm/index.js';
 import {
   ToolDispatcher,
@@ -106,6 +107,7 @@ export class Brain {
   // State
   private running: boolean = false;
   private currentState: BrainState | null = null;
+  private systemPrompt: string = ''; // v7.2: Cached system prompt with tools
 
   // Metrics
   private metrics: BrainMetrics = this.createInitialMetrics();
@@ -144,10 +146,13 @@ export class Brain {
   /**
    * Start the brain (initializes consciousness monitoring)
    */
-  start(): void {
+  async start(): Promise<void> {
     if (this.running) return;
 
     this.running = true;
+
+    // v7.2: Build system prompt with available tools
+    await this.initializeSystemPrompt();
 
     // Start consciousness monitoring
     if (this.config.consciousness.enabled) {
@@ -161,6 +166,21 @@ export class Brain {
     }
 
     this.emit({ type: 'cycle_start', timestamp: new Date(), data: { status: 'brain_started' } });
+  }
+
+  /**
+   * v7.2: Build system prompt with all available tools
+   */
+  private async initializeSystemPrompt(): Promise<void> {
+    if (this.systemPrompt) return; // Already built
+
+    const tools = this.dispatcher.listToolsWithSchemas();
+
+    // Convert to format expected by buildSystemPrompt
+    const mcpTools: Record<string, Array<{ name: string; description?: string }>> = tools.mcp;
+    const localTools = tools.local;
+
+    this.systemPrompt = await buildSystemPrompt(mcpTools, localTools, true);
   }
 
   /**
@@ -365,8 +385,8 @@ export class Brain {
       ? `Context:\n${contextStr}\n\nUser: ${state.query}`
       : state.query;
 
-    // Call LLM
-    const response = await this.llm.chat(prompt);
+    // Call LLM with system prompt that includes available tools
+    const response = await this.llm.chat(prompt, this.systemPrompt || undefined);
 
     this.emit({ type: 'llm_response', timestamp: new Date(), data: { length: response.content.length } });
 

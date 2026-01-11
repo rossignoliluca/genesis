@@ -225,8 +225,8 @@ export const DEFAULT_BRAIN_CONFIG: BrainConfig = {
   },
   grounding: {
     enabled: true,
-    verifyAllResponses: true,
-    confidenceThreshold: 0.5,
+    verifyAllResponses: false,  // v7.2: Only verify when explicitly requested (was too aggressive)
+    confidenceThreshold: 0.3,   // v7.2: Lowered from 0.5 to reduce false positives
   },
   tools: {
     enabled: true,

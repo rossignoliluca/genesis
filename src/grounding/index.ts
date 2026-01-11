@@ -75,8 +75,8 @@ const DEFAULT_CONFIG: GroundingConfig = {
   wisdomEnabled: true,
   traditionEnabled: true,
   humanEnabled: true,
-  defaultToHumanOnUncertainty: true,
-  uncertaintyThreshold: 0.5,
+  defaultToHumanOnUncertainty: false,  // v7.2: Disabled by default (too aggressive without connected grounders)
+  uncertaintyThreshold: 0.2,           // v7.2: Lowered from 0.5 - only flag truly uncertain claims
 };
 
 export class GroundingSystem {

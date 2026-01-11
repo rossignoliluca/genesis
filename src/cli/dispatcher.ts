@@ -413,8 +413,9 @@ export class ToolDispatcher {
       // Not JSON, continue with XML parsing
     }
 
-    // Parse <param name="...">value</param>
-    const paramPattern = /<param\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/param>/gi;
+    // Parse <param name="...">value</param> OR <parameter name="...">value</parameter>
+    // v7.3.2: Support both tag formats (system prompt uses <parameter>, some parsers expect <param>)
+    const paramPattern = /<param(?:eter)?\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/param(?:eter)?>/gi;
     let match;
     while ((match = paramPattern.exec(content)) !== null) {
       const name = match[1];

@@ -92,12 +92,17 @@ export const CHAIN_TEMPLATES: Record<string, ChainDefinition> = {
         id: 'generate',
         server: 'stability-ai',
         tool: 'stability-ai-generate-image',
-        params: (ctx) => ({
-          prompt: ctx.data.prompt || 'a beautiful landscape',
-          outputImageFileName: ctx.data.filename || `genesis-${Date.now()}`,
-        }),
+        params: (ctx) => {
+          const filename = ctx.data.filename || `genesis-${Date.now()}`;
+          // Store filename in context for later use
+          ctx.data._generatedFilename = filename;
+          return {
+            prompt: ctx.data.prompt || 'a beautiful landscape',
+            outputImageFileName: filename,
+          };
+        },
         transform: (result) => ({
-          imagePath: result.imagePath || result.outputPath || result,
+          message: result,
         }),
       },
       {
@@ -105,9 +110,10 @@ export const CHAIN_TEMPLATES: Record<string, ChainDefinition> = {
         server: 'filesystem',
         tool: 'read_file',
         params: (ctx) => ({
-          path: ctx.results.get('generate')?.imagePath,
+          // Stability AI MCP saves images to /tmp/tadasant-mcp-server-stability-ai/
+          path: `/tmp/tadasant-mcp-server-stability-ai/${ctx.data._generatedFilename}.png`,
         }),
-        condition: (ctx) => !!ctx.results.get('generate')?.imagePath,
+        condition: (ctx) => !!ctx.data._generatedFilename,
       },
     ],
   },

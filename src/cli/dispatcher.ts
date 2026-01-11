@@ -105,8 +105,10 @@ const MCP_TOOL_MAP: Record<string, MCPServerName> = {
   'create_issue': 'github',
   'create_pull_request': 'github',
 
-  // Storage
+  // Storage - Memory (knowledge graph)
   'create_entities': 'memory',
+  'create_relations': 'memory',
+  'add_observations': 'memory',
   'search_nodes': 'memory',
   'read_graph': 'memory',
   'read_file': 'filesystem',
@@ -231,6 +233,26 @@ const STATIC_TOOL_SCHEMAS: Record<string, { description?: string; inputSchema?: 
         entities: { type: 'array', description: 'Array of {name, entityType, observations}' },
       },
       required: ['entities'],
+    },
+  },
+  'create_relations': {
+    description: 'Create relations between entities in knowledge graph',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        relations: { type: 'array', description: 'Array of {from, to, relationType}' },
+      },
+      required: ['relations'],
+    },
+  },
+  'add_observations': {
+    description: 'Add observations to existing entities',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        observations: { type: 'array', description: 'Array of {entityName, contents[]}' },
+      },
+      required: ['observations'],
     },
   },
 

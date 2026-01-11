@@ -102,7 +102,7 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
   'brave-search': {
     command: 'npx',
     args: () => ['-y', '@brave/brave-search-mcp-server', '--brave-api-key', process.env.BRAVE_API_KEY || ''],
-    tools: ['brave_web_search', 'brave_local_search', 'brave_news_search', 'brave_image_search', 'brave_video_search'],
+    tools: ['brave_web_search', 'brave_local_search', 'brave_news_search', 'brave_image_search', 'brave_video_search', 'brave_summarizer'],
   },
   'exa': {
     command: 'npx',
@@ -114,7 +114,7 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
     command: 'npx',
     args: ['-y', 'firecrawl-mcp'],
     envVars: () => ({ FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY || '' }),
-    tools: ['firecrawl_scrape', 'firecrawl_search', 'firecrawl_map', 'firecrawl_crawl', 'firecrawl_extract'],
+    tools: ['firecrawl_scrape', 'firecrawl_search', 'firecrawl_map', 'firecrawl_crawl', 'firecrawl_check_crawl_status', 'firecrawl_extract', 'firecrawl_agent', 'firecrawl_agent_status'],
   },
 
   // CREATION
@@ -131,7 +131,12 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
     envVars: () => ({
       GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_PERSONAL_ACCESS_TOKEN || process.env.GITHUB_TOKEN || ''
     }),
-    tools: ['create_repository', 'search_repositories', 'create_issue', 'create_pull_request', 'get_file_contents'],
+    tools: [
+      'create_repository', 'search_repositories', 'create_issue', 'list_issues', 'get_issue', 'update_issue',
+      'add_issue_comment', 'create_pull_request', 'get_pull_request', 'list_pull_requests', 'merge_pull_request',
+      'get_pull_request_files', 'create_pull_request_review', 'get_file_contents', 'create_or_update_file',
+      'push_files', 'create_branch', 'list_commits', 'fork_repository', 'search_code', 'search_issues', 'search_users'
+    ],
   },
 
   // VISUAL
@@ -139,19 +144,29 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
     command: 'npx',
     args: ['-y', 'mcp-server-stability-ai'],
     envVars: () => ({ STABILITY_AI_API_KEY: process.env.STABILITY_AI_API_KEY || '' }),
-    tools: ['stability-ai-generate-image', 'stability-ai-generate-image-sd35', 'stability-ai-0-list-resources'],
+    tools: [
+      'stability-ai-generate-image', 'stability-ai-generate-image-sd35', 'stability-ai-remove-background',
+      'stability-ai-outpaint', 'stability-ai-search-and-replace', 'stability-ai-upscale-fast',
+      'stability-ai-upscale-creative', 'stability-ai-control-sketch', 'stability-ai-0-list-resources',
+      'stability-ai-search-and-recolor', 'stability-ai-replace-background-and-relight',
+      'stability-ai-control-style', 'stability-ai-control-structure'
+    ],
   },
 
   // STORAGE
   'memory': {
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-memory'],
-    tools: ['create_entities', 'create_relations', 'search_nodes', 'read_graph', 'add_observations'],
+    tools: ['create_entities', 'create_relations', 'add_observations', 'delete_entities', 'delete_relations', 'delete_observations', 'search_nodes', 'open_nodes', 'read_graph'],
   },
   'filesystem': {
     command: 'npx',
     args: () => ['-y', '@modelcontextprotocol/server-filesystem', process.env.HOME || '/tmp'],
-    tools: ['read_file', 'read_text_file', 'write_file', 'list_directory', 'search_files', 'create_directory'],
+    tools: [
+      'read_file', 'read_text_file', 'read_media_file', 'read_multiple_files', 'write_file', 'edit_file',
+      'create_directory', 'list_directory', 'list_directory_with_sizes', 'directory_tree',
+      'move_file', 'search_files', 'get_file_info', 'list_allowed_directories'
+    ],
   },
 };
 

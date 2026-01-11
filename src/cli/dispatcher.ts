@@ -82,42 +82,120 @@ const LOCAL_TOOLS = [
 ];
 
 const MCP_TOOL_MAP: Record<string, MCPServerName> = {
-  // Knowledge
+  // Knowledge - ArXiv
   'search_arxiv': 'arxiv',
   'parse_paper_content': 'arxiv',
   'get_recent_ai_papers': 'arxiv',
+  'get_arxiv_pdf_url': 'arxiv',
+
+  // Knowledge - Semantic Scholar
   'search_semantic_scholar': 'semantic-scholar',
   'get_semantic_scholar_paper': 'semantic-scholar',
+  'get_paper_citations': 'semantic-scholar',
+  'semantic_scholar_to_bibtex': 'semantic-scholar',
+
+  // Knowledge - Context7
   'resolve-library-id': 'context7',
   'query-docs': 'context7',
+
+  // Knowledge - Wolfram
   'wolfram_query': 'wolfram',
 
-  // Research
+  // Research - Gemini
   'web_search': 'gemini',
+  'web_search_batch': 'gemini',
+  'health_check': 'gemini',
+
+  // Research - Brave Search (ALL tools)
   'brave_web_search': 'brave-search',
+  'brave_local_search': 'brave-search',
+  'brave_news_search': 'brave-search',
+  'brave_image_search': 'brave-search',
+  'brave_video_search': 'brave-search',
+  'brave_summarizer': 'brave-search',
+
+  // Research - EXA
   'web_search_exa': 'exa',
+  'get_code_context_exa': 'exa',
+
+  // Research - Firecrawl (ALL tools)
   'firecrawl_scrape': 'firecrawl',
   'firecrawl_search': 'firecrawl',
+  'firecrawl_map': 'firecrawl',
+  'firecrawl_crawl': 'firecrawl',
+  'firecrawl_check_crawl_status': 'firecrawl',
+  'firecrawl_extract': 'firecrawl',
+  'firecrawl_agent': 'firecrawl',
+  'firecrawl_agent_status': 'firecrawl',
 
-  // Creation
+  // Creation - OpenAI
   'openai_chat': 'openai',
+
+  // Creation - GitHub (ALL tools)
   'create_repository': 'github',
+  'search_repositories': 'github',
   'create_issue': 'github',
+  'list_issues': 'github',
+  'get_issue': 'github',
+  'update_issue': 'github',
+  'add_issue_comment': 'github',
   'create_pull_request': 'github',
+  'get_pull_request': 'github',
+  'list_pull_requests': 'github',
+  'merge_pull_request': 'github',
+  'get_pull_request_files': 'github',
+  'create_pull_request_review': 'github',
+  'get_file_contents': 'github',
+  'create_or_update_file': 'github',
+  'push_files': 'github',
+  'create_branch': 'github',
+  'list_commits': 'github',
+  'fork_repository': 'github',
+  'search_code': 'github',
+  'search_issues': 'github',
+  'search_users': 'github',
 
   // Storage - Memory (knowledge graph)
   'create_entities': 'memory',
   'create_relations': 'memory',
   'add_observations': 'memory',
+  'delete_entities': 'memory',
+  'delete_relations': 'memory',
+  'delete_observations': 'memory',
   'search_nodes': 'memory',
+  'open_nodes': 'memory',
   'read_graph': 'memory',
-  'read_file': 'filesystem',
-  'write_file': 'filesystem',
-  'list_directory': 'filesystem',
 
-  // Visual
+  // Storage - Filesystem (ALL tools)
+  'read_file': 'filesystem',
+  'read_text_file': 'filesystem',
+  'read_media_file': 'filesystem',
+  'read_multiple_files': 'filesystem',
+  'write_file': 'filesystem',
+  'edit_file': 'filesystem',
+  'create_directory': 'filesystem',
+  'list_directory': 'filesystem',
+  'list_directory_with_sizes': 'filesystem',
+  'directory_tree': 'filesystem',
+  'move_file': 'filesystem',
+  'search_files': 'filesystem',
+  'get_file_info': 'filesystem',
+  'list_allowed_directories': 'filesystem',
+
+  // Visual - Stability AI (ALL tools)
   'stability-ai-generate-image': 'stability-ai',
   'stability-ai-generate-image-sd35': 'stability-ai',
+  'stability-ai-remove-background': 'stability-ai',
+  'stability-ai-outpaint': 'stability-ai',
+  'stability-ai-search-and-replace': 'stability-ai',
+  'stability-ai-upscale-fast': 'stability-ai',
+  'stability-ai-upscale-creative': 'stability-ai',
+  'stability-ai-control-sketch': 'stability-ai',
+  'stability-ai-0-list-resources': 'stability-ai',
+  'stability-ai-search-and-recolor': 'stability-ai',
+  'stability-ai-replace-background-and-relight': 'stability-ai',
+  'stability-ai-control-style': 'stability-ai',
+  'stability-ai-control-structure': 'stability-ai',
 };
 
 // ============================================================================

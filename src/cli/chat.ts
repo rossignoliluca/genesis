@@ -57,6 +57,10 @@ import {
   banner, box, table,
   truncate, formatDuration,
   InputHistory,
+  // v7.4.4: Extended Thinking visualization
+  formatResponseWithThinking,
+  ThinkingSettings,
+  DEFAULT_THINKING_SETTINGS,
 } from './ui.js';
 
 // ============================================================================
@@ -127,6 +131,9 @@ export class ChatSession {
   private sessionName: string | undefined;
   private resumeSessionId: string | boolean | undefined;
 
+  // v7.4.4: Extended Thinking visualization
+  private thinkingSettings: ThinkingSettings;
+
   constructor(options: ChatOptions = {}) {
     this.llm = getLLMBridge({
       provider: options.provider,
@@ -151,6 +158,7 @@ export class ChatSession {
     this.sessionManager = getSessionManager();  // v7.4: Session manager
     this.sessionName = options.sessionName;  // v7.4: Session name
     this.resumeSessionId = options.resume;  // v7.4: Resume session
+    this.thinkingSettings = { ...DEFAULT_THINKING_SETTINGS };  // v7.4.4: Extended thinking
 
     // v7.0: Initialize UI components
     this.spinner = new Spinner('Thinking');
@@ -414,7 +422,13 @@ export class ChatSession {
 
       // v7.0: Stop spinner and print formatted response
       this.spinner.stop();
-      console.log(c('Genesis: ', 'cyan') + formatMarkdown(response.content));
+      // v7.4.4: Process thinking blocks before display
+      const { formatted, hasThinking, thinkingCount } = formatResponseWithThinking(
+        response.content,
+        this.thinkingSettings.enabled,
+        this.thinkingSettings.collapsed
+      );
+      console.log(c('Genesis: ', 'cyan') + formatted);
 
       if (this.verbose) {
         console.log(c(`  [${response.latency}ms, ${response.usage?.outputTokens || '?'} tokens]`, 'dim'));
@@ -460,7 +474,13 @@ export class ChatSession {
           );
 
           this.spinner.stop();
-          console.log(c('Genesis: ', 'cyan') + formatMarkdown(followUp.content));
+          // v7.4.4: Process thinking blocks in follow-up
+          const followUpFormatted = formatResponseWithThinking(
+            followUp.content,
+            this.thinkingSettings.enabled,
+            this.thinkingSettings.collapsed
+          );
+          console.log(c('Genesis: ', 'cyan') + followUpFormatted.formatted);
         }
       }
 
@@ -549,7 +569,13 @@ export class ChatSession {
       if (!this.enableTrace) {
         this.thinkingSpinner.stop();
       }
-      console.log(c('Genesis: ', 'cyan') + formatMarkdown(response));
+      // v7.4.4: Process thinking blocks in brain response
+      const brainFormatted = formatResponseWithThinking(
+        response,
+        this.thinkingSettings.enabled,
+        this.thinkingSettings.collapsed
+      );
+      console.log(c('Genesis: ', 'cyan') + brainFormatted.formatted);
 
       // v7.1: ALWAYS show Φ and key metrics (not just in verbose mode)
       const metrics = this.brain.getMetrics();
@@ -958,6 +984,42 @@ export class ChatSession {
         console.log();
         break;
 
+      // v7.4.4: Extended Thinking visualization
+      case 'thinking':
+      case 'think':
+        if (args[0] === 'on') {
+          this.thinkingSettings.enabled = true;
+          this.thinkingSettings.collapsed = false;
+          console.log(c(`Extended Thinking: ${c('ON', 'green')} (expanded view)`, 'bold'));
+        } else if (args[0] === 'off') {
+          this.thinkingSettings.enabled = false;
+          console.log(c(`Extended Thinking: ${c('OFF', 'yellow')}`, 'bold'));
+        } else if (args[0] === 'collapsed' || args[0] === 'compact') {
+          this.thinkingSettings.enabled = true;
+          this.thinkingSettings.collapsed = true;
+          console.log(c(`Extended Thinking: ${c('ON', 'green')} (collapsed view)`, 'bold'));
+        } else if (args[0] === 'expanded' || args[0] === 'full') {
+          this.thinkingSettings.enabled = true;
+          this.thinkingSettings.collapsed = false;
+          console.log(c(`Extended Thinking: ${c('ON', 'green')} (expanded view)`, 'bold'));
+        } else {
+          // Toggle or show status
+          if (!args[0]) {
+            this.thinkingSettings.enabled = !this.thinkingSettings.enabled;
+          }
+          const status = this.thinkingSettings.enabled ? c('ON', 'green') : c('OFF', 'yellow');
+          const mode = this.thinkingSettings.collapsed ? 'collapsed' : 'expanded';
+          console.log(c(`Extended Thinking: ${status} (${mode} view)`, 'bold'));
+          console.log(muted('  Shows model reasoning in <think>...</think> blocks'));
+          console.log(muted('  Commands:'));
+          console.log(muted('    /thinking on         - Enable (expanded)'));
+          console.log(muted('    /thinking off        - Disable'));
+          console.log(muted('    /thinking collapsed  - Enable (one-line preview)'));
+          console.log(muted('    /thinking expanded   - Enable (full view)'));
+        }
+        console.log();
+        break;
+
       default:
         console.log(c(`Unknown command: /${cmd}`, 'red'));
         console.log('Type /help for available commands.');
@@ -1023,6 +1085,12 @@ export class ChatSession {
     console.log('  /session name <n>  Name current session');
     console.log('  /session save      Save session checkpoint');
     console.log('  /session fork      Fork session (save & continue new)');
+    console.log();
+    console.log(c('Extended Thinking (v7.4.4):', 'bold'));
+    console.log('  /thinking      Toggle thinking block visibility');
+    console.log('  /thinking on   Show thinking blocks (expanded)');
+    console.log('  /thinking off  Hide thinking blocks');
+    console.log('  /thinking collapsed  Show thinking (one-line)');
     console.log();
     console.log(c('State:', 'bold'));
     console.log('  /save          Save state to disk');

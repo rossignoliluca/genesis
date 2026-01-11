@@ -625,3 +625,166 @@ export function banner(title: string, subtitle?: string, width: number = 63): vo
   console.log(style('╚' + '═'.repeat(width) + '╝', 'cyan'));
   console.log();
 }
+
+// ============================================================================
+// Extended Thinking Visualization (v7.4.4)
+// ============================================================================
+
+/**
+ * Parsed thinking block from LLM response
+ */
+export interface ThinkingBlock {
+  content: string;
+  startIndex: number;
+  endIndex: number;
+  type: 'think' | 'thinking' | 'reasoning';
+}
+
+/**
+ * Result of parsing a response for thinking blocks
+ */
+export interface ParsedResponse {
+  thinking: ThinkingBlock[];
+  content: string;  // Response with thinking blocks removed
+  hasThinking: boolean;
+}
+
+/**
+ * Parse thinking blocks from LLM response
+ * Supports: <think>...</think>, <thinking>...</thinking>, <reasoning>...</reasoning>
+ */
+export function parseThinkingBlocks(response: string): ParsedResponse {
+  const thinking: ThinkingBlock[] = [];
+  let content = response;
+
+  // Patterns for different thinking block formats
+  const patterns = [
+    { regex: /<think>([\s\S]*?)<\/think>/gi, type: 'think' as const },
+    { regex: /<thinking>([\s\S]*?)<\/thinking>/gi, type: 'thinking' as const },
+    { regex: /<reasoning>([\s\S]*?)<\/reasoning>/gi, type: 'reasoning' as const },
+  ];
+
+  for (const { regex, type } of patterns) {
+    let match;
+    while ((match = regex.exec(response)) !== null) {
+      thinking.push({
+        content: match[1].trim(),
+        startIndex: match.index,
+        endIndex: match.index + match[0].length,
+        type,
+      });
+    }
+    // Remove thinking blocks from content
+    content = content.replace(regex, '');
+  }
+
+  // Clean up extra whitespace from removal
+  content = content.replace(/\n{3,}/g, '\n\n').trim();
+
+  return {
+    thinking,
+    content,
+    hasThinking: thinking.length > 0,
+  };
+}
+
+/**
+ * Format a thinking block for display
+ * @param block - The thinking block to format
+ * @param collapsed - Whether to show collapsed (summary only) or expanded
+ * @param maxPreviewLength - Max characters for collapsed preview
+ */
+export function formatThinkingBlock(
+  block: ThinkingBlock,
+  collapsed: boolean = false,
+  maxPreviewLength: number = 80
+): string {
+  const lines: string[] = [];
+  const icon = '💭';
+  const label = block.type === 'reasoning' ? 'Reasoning' : 'Thinking';
+
+  if (collapsed) {
+    // Collapsed: show one-line preview
+    const preview = block.content
+      .replace(/\n/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const truncated = preview.length > maxPreviewLength
+      ? preview.slice(0, maxPreviewLength - 3) + '...'
+      : preview;
+    lines.push(style(`  ${icon} [${label}] ${truncated}`, 'dim'));
+  } else {
+    // Expanded: show full thinking with visual distinction
+    lines.push(style(`  ${icon} ─── ${label} ───`, 'dim'));
+
+    // Indent and dim each line of thinking content
+    const thinkingLines = block.content.split('\n');
+    for (const line of thinkingLines) {
+      lines.push(style(`  │ ${line}`, 'dim'));
+    }
+
+    lines.push(style('  └───────────────', 'dim'));
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Format response with thinking blocks
+ * @param response - Raw LLM response
+ * @param showThinking - Whether to show thinking blocks
+ * @param collapsedThinking - Whether thinking should be collapsed
+ */
+export function formatResponseWithThinking(
+  response: string,
+  showThinking: boolean = true,
+  collapsedThinking: boolean = false
+): { formatted: string; hasThinking: boolean; thinkingCount: number } {
+  const parsed = parseThinkingBlocks(response);
+
+  if (!parsed.hasThinking) {
+    return {
+      formatted: formatMarkdown(parsed.content),
+      hasThinking: false,
+      thinkingCount: 0,
+    };
+  }
+
+  const parts: string[] = [];
+
+  // Show thinking blocks first if enabled
+  if (showThinking && parsed.thinking.length > 0) {
+    for (const block of parsed.thinking) {
+      parts.push(formatThinkingBlock(block, collapsedThinking));
+    }
+    parts.push(''); // Empty line between thinking and response
+  } else if (parsed.thinking.length > 0) {
+    // Just show indicator that thinking was hidden
+    parts.push(style(`  💭 [${parsed.thinking.length} thinking block(s) hidden - use /thinking to show]`, 'dim'));
+    parts.push('');
+  }
+
+  // Add the main response content
+  parts.push(formatMarkdown(parsed.content));
+
+  return {
+    formatted: parts.join('\n'),
+    hasThinking: true,
+    thinkingCount: parsed.thinking.length,
+  };
+}
+
+/**
+ * Thinking visualization settings
+ */
+export interface ThinkingSettings {
+  enabled: boolean;      // Show thinking blocks at all
+  collapsed: boolean;    // Collapsed (one-line) vs expanded view
+  streaming: boolean;    // Show thinking as it streams (future)
+}
+
+export const DEFAULT_THINKING_SETTINGS: ThinkingSettings = {
+  enabled: true,
+  collapsed: false,
+  streaming: false,
+};

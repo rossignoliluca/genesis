@@ -107,10 +107,12 @@ export interface SubagentConfig {
   maxConcurrent: number;     // Max parallel subagents
   defaultTimeout: number;    // Default timeout (ms)
   outputBufferSize: number;  // Max buffered output lines
+  maxTurns: number;          // Max tool execution turns per subagent
 }
 
 export const DEFAULT_SUBAGENT_CONFIG: SubagentConfig = {
   maxConcurrent: 5,
   defaultTimeout: 300000,    // 5 minutes
   outputBufferSize: 1000,
+  maxTurns: 10,              // Multi-turn tool execution limit
 };

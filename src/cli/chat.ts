@@ -109,6 +109,7 @@ export class ChatSession {
   private messageCount = 0;
   private toolExecutions = 0;
   private systemPrompt: string = '';  // Built dynamically at start()
+  private customSystemPrompt: string = '';  // User-defined system prompt prefix
 
   // v7.0: Modern UI components
   private spinner: Spinner;
@@ -442,7 +443,11 @@ export class ChatSession {
     this.spinner.start('Thinking');
 
     try {
-      const response = await this.llm.chat(message, this.systemPrompt);
+      // Combine custom and base system prompts
+      const effectiveSystemPrompt = this.customSystemPrompt
+        ? `${this.customSystemPrompt}\n\n${this.systemPrompt}`
+        : this.systemPrompt;
+      const response = await this.llm.chat(message, effectiveSystemPrompt);
       this.messageCount++;
 
       // v7.0: Stop spinner and print formatted response
@@ -718,9 +723,29 @@ export class ChatSession {
 
       case 'system':
         if (args.length > 0) {
-          console.log(c('Custom system prompts not yet supported.', 'yellow'));
+          const subCmd = args[0].toLowerCase();
+          if (subCmd === 'clear' || subCmd === 'reset') {
+            this.customSystemPrompt = '';
+            console.log(c('Custom system prompt cleared.', 'green'));
+          } else {
+            // Set custom system prompt (everything after /system)
+            this.customSystemPrompt = args.join(' ');
+            console.log(c('Custom system prompt set:', 'green'));
+            console.log(c('─'.repeat(60), 'dim'));
+            console.log(this.customSystemPrompt);
+            console.log(c('─'.repeat(60), 'dim'));
+            console.log(c('Use /system clear to reset.', 'dim'));
+          }
         } else {
-          console.log(c('System Prompt (dynamically built):', 'cyan'));
+          // Show current system prompt
+          if (this.customSystemPrompt) {
+            console.log(c('Custom System Prompt:', 'green'));
+            console.log(c('─'.repeat(60), 'dim'));
+            console.log(this.customSystemPrompt);
+            console.log(c('─'.repeat(60), 'dim'));
+            console.log();
+          }
+          console.log(c('Base System Prompt (dynamically built):', 'cyan'));
           console.log(c('─'.repeat(60), 'dim'));
           console.log(this.systemPrompt || GENESIS_IDENTITY_PROMPT);
           console.log(c('─'.repeat(60), 'dim'));
@@ -2017,8 +2042,11 @@ export class ChatSession {
         // Use Brain for processing
         response = await this.brain.process(prompt);
       } else {
-        // Direct LLM call
-        const result = await this.llm.chat(prompt, this.systemPrompt);
+        // Direct LLM call with combined system prompt
+        const effectiveSystemPrompt = this.customSystemPrompt
+          ? `${this.customSystemPrompt}\n\n${this.systemPrompt}`
+          : this.systemPrompt;
+        const result = await this.llm.chat(prompt, effectiveSystemPrompt);
         response = result.content;
       }
 

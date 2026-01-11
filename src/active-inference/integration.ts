@@ -46,6 +46,8 @@ import {
 
 import type { Kernel, KernelState as KernelStateFull, Task } from '../kernel/index.js';
 import type { Daemon } from '../daemon/index.js';
+import { PhiMonitor, createPhiMonitor } from '../consciousness/phi-monitor.js';
+import { CognitiveWorkspace, getCognitiveWorkspace } from '../memory/cognitive-workspace.js';
 
 // ============================================================================
 // Integration Types
@@ -115,10 +117,24 @@ function mapKernelStateToTaskStatus(
 // ============================================================================
 
 /**
+ * Options for the observation bridge
+ */
+export interface ObservationBridgeOptions {
+  phiMonitor?: PhiMonitor;
+  workspace?: CognitiveWorkspace;
+}
+
+/**
  * Creates an observation gatherer connected to Kernel state
  */
-export function createKernelObservationBridge(kernel: Kernel): ObservationGatherer {
+export function createKernelObservationBridge(
+  kernel: Kernel,
+  options: ObservationBridgeOptions = {}
+): ObservationGatherer {
   const gatherer = createObservationGatherer();
+
+  // Get or create phi-monitor
+  const phiMonitor = options.phiMonitor || createPhiMonitor();
 
   gatherer.configure({
     // Map Kernel energy and state to observations
@@ -128,13 +144,13 @@ export function createKernelObservationBridge(kernel: Kernel): ObservationGather
       taskStatus: mapKernelStateToTaskStatus(kernel.getState()),
     }),
 
-    // Phi state (placeholder - would connect to consciousness module)
+    // Connected to real phi-monitor
     phiState: () => {
-      // TODO: Connect to phi-monitor when available
-      const state = kernel.getState();
+      const level = phiMonitor.getCurrentLevel();
+      const consciousnessState = phiMonitor.getState();
       return {
-        phi: state === 'dormant' ? 0.1 : state === 'error' ? 0.3 : 0.7,
-        state: state === 'dormant' ? 'dormant' as const : 'aware' as const,
+        phi: level.phi,
+        state: consciousnessState === 'dormant' ? 'dormant' as const : 'aware' as const,
       };
     },
 
@@ -167,9 +183,18 @@ export function createKernelObservationBridge(kernel: Kernel): ObservationGather
 // ============================================================================
 
 /**
+ * Options for registering kernel actions
+ */
+export interface RegisterActionsOptions {
+  workspace?: CognitiveWorkspace;
+}
+
+/**
  * Registers action executors that connect to Kernel operations
  */
-export function registerKernelActions(kernel: Kernel): void {
+export function registerKernelActions(kernel: Kernel, options: RegisterActionsOptions = {}): void {
+  // Get or create workspace for memory actions
+  const workspace = options.workspace || getCognitiveWorkspace();
   // sense.mcp: Use Kernel's sensor agent
   registerAction('sense.mcp', async (context) => {
     try {
@@ -196,15 +221,53 @@ export function registerKernelActions(kernel: Kernel): void {
     }
   });
 
-  // recall.memory: Query memory via Kernel
+  // recall.memory: Query memory via CognitiveWorkspace
   registerAction('recall.memory', async (context) => {
     try {
-      // TODO: Connect to Memory agent when integrated
+      const startTime = Date.now();
+
+      // Anticipate memories based on current goal/context
+      if (context.goal) {
+        await workspace.anticipate({
+          goal: context.goal,
+          keywords: context.parameters?.keywords as string[] | undefined,
+          tags: context.parameters?.tags as string[] | undefined,
+        });
+      }
+
+      // Get all active memories from working memory
+      const activeItems = workspace.getActive();
+      const recalled = activeItems.map(item => {
+        // Extract summary based on memory type
+        let summary: string;
+        const mem = item.memory;
+        if (mem.type === 'episodic') {
+          summary = mem.content.what;
+        } else if (mem.type === 'semantic') {
+          summary = mem.content.concept;
+        } else {
+          // procedural
+          summary = `${mem.content.name}: ${mem.content.description}`;
+        }
+        return {
+          id: item.memory.id,
+          type: item.memory.type,
+          summary,
+          relevance: item.relevance,
+          activation: item.activation,
+        };
+      });
+
       return {
         success: true,
         action: 'recall.memory',
-        data: { recalled: [], query: context.goal },
-        duration: 0,
+        data: {
+          recalled,
+          query: context.goal,
+          count: recalled.length,
+          metrics: workspace.getMetrics(),
+        },
+        duration: Date.now() - startTime,
       };
     } catch (error) {
       return {
@@ -417,12 +480,25 @@ export function registerDaemonTask(
  * @param config - Integration configuration
  * @returns Configured AutonomousLoop
  */
+/**
+ * Options for Active Inference integration
+ */
+export interface IntegrationOptions {
+  phiMonitor?: PhiMonitor;
+  workspace?: CognitiveWorkspace;
+}
+
 export function integrateActiveInference(
   kernel: Kernel,
   daemon?: Daemon,
-  config: Partial<IntegrationConfig> = {}
+  config: Partial<IntegrationConfig> = {},
+  options: IntegrationOptions = {}
 ): AutonomousLoop {
   const fullConfig = { ...DEFAULT_INTEGRATION_CONFIG, ...config };
+
+  // Get or create phi-monitor and workspace
+  const phiMonitor = options.phiMonitor || createPhiMonitor();
+  const workspace = options.workspace || getCognitiveWorkspace();
 
   // Create the loop
   const loop = createAutonomousLoop({
@@ -432,22 +508,24 @@ export function integrateActiveInference(
     verbose: fullConfig.verbose,
   });
 
-  // Connect observations to Kernel
-  const observationBridge = createKernelObservationBridge(kernel);
+  // Connect observations to Kernel with real phi-monitor
+  const observationBridge = createKernelObservationBridge(kernel, { phiMonitor, workspace });
   const components = loop.getComponents();
 
-  // Replace the observations gatherer configuration
+  // Replace the observations gatherer configuration with real phi-monitor
   components.observations.configure({
     kernelState: () => ({
       energy: kernel.getEnergy(),
       state: kernel.getState(),
       taskStatus: mapKernelStateToTaskStatus(kernel.getState()),
     }),
+    // Connected to real phi-monitor
     phiState: () => {
-      const state = kernel.getState();
+      const level = phiMonitor.getCurrentLevel();
+      const consciousnessState = phiMonitor.getState();
       return {
-        phi: state === 'dormant' ? 0.1 : state === 'error' ? 0.3 : 0.7,
-        state: state === 'dormant' ? 'dormant' as const : 'aware' as const,
+        phi: level.phi,
+        state: consciousnessState === 'dormant' ? 'dormant' as const : 'aware' as const,
       };
     },
     sensorResult: async () => {
@@ -467,8 +545,8 @@ export function integrateActiveInference(
     },
   });
 
-  // Register Kernel action executors
-  registerKernelActions(kernel);
+  // Register Kernel action executors with workspace
+  registerKernelActions(kernel, { workspace });
 
   // Connect to Kernel state changes
   kernel.onStateChange((newState, prevState) => {

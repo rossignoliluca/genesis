@@ -290,21 +290,87 @@ After completing your task, provide a clear summary of:
     llm: LLMBridge,
     systemPrompt: string,
     userPrompt: string,
-    _allowedTools: string[],
+    allowedTools: string[],
     taskId: string
   ): Promise<string> {
-    // Simple single-turn execution for now
-    // TODO: Multi-turn with tool execution loop
-    const response = await llm.chat(userPrompt, systemPrompt);
+    // Multi-turn tool execution loop
+    const maxTurns = this.config.maxTurns || 10;
+    let turn = 0;
+    let conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    let lastResponse = '';
 
-    this.emit({
-      type: 'task_progress',
-      taskId,
-      timestamp: new Date(),
-      data: { tokensUsed: response.usage },
-    });
+    // Initial user message
+    conversationHistory.push({ role: 'user', content: userPrompt });
 
-    return response.content;
+    while (turn < maxTurns) {
+      turn++;
+
+      // Build prompt with conversation history
+      const historyPrompt = conversationHistory
+        .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+        .join('\n\n');
+
+      const response = await llm.chat(historyPrompt, systemPrompt);
+      lastResponse = response.content;
+
+      this.emit({
+        type: 'task_progress',
+        taskId,
+        timestamp: new Date(),
+        data: { turn, tokensUsed: response.usage },
+      });
+
+      // Add assistant response to history
+      conversationHistory.push({ role: 'assistant', content: lastResponse });
+
+      // Check for tool calls
+      if (!this.dispatcher) {
+        // No dispatcher, single-turn only
+        break;
+      }
+
+      const toolCalls = this.dispatcher.parseToolCalls(lastResponse);
+
+      // Filter to allowed tools only
+      const allowedCalls = allowedTools.includes('*')
+        ? toolCalls
+        : toolCalls.filter(call => allowedTools.includes(call.name));
+
+      if (allowedCalls.length === 0) {
+        // No tool calls, we're done
+        break;
+      }
+
+      // Execute tools
+      const dispatchResult = await this.dispatcher.dispatch(allowedCalls);
+
+      // Format results for continuation
+      const resultsText = dispatchResult.results
+        .map(r => {
+          if (r.success) {
+            const data = typeof r.data === 'string' ? r.data : JSON.stringify(r.data, null, 2);
+            return `Tool ${r.name} succeeded:\n${data}`;
+          } else {
+            return `Tool ${r.name} failed: ${r.error}`;
+          }
+        })
+        .join('\n\n');
+
+      // Add tool results as user message for next turn
+      conversationHistory.push({
+        role: 'user',
+        content: `Tool execution results:\n\n${resultsText}\n\nContinue with your task based on these results.`,
+      });
+
+      this.emit({
+        type: 'task_progress',
+        taskId,
+        timestamp: new Date(),
+        data: { turn, toolsExecuted: allowedCalls.length, results: dispatchResult.results.length },
+      });
+    }
+
+    return lastResponse;
   }
 
   private timeoutPromise(ms: number, taskId: string): Promise<never> {

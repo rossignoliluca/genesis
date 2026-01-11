@@ -104,6 +104,7 @@ import {
   InvariantContext,
   InvariantResult,
 } from './invariants.js';
+import { getStateStore } from '../persistence/index.js';
 
 // ============================================================================
 // Kernel Class
@@ -798,8 +799,8 @@ export class Kernel {
       totalAgentCount: this.agents.size,
 
       // Extended context (for Phase 5.1+ invariants)
-      // These will be populated when the respective modules are implemented
-      merkleValid: true,  // TODO: Check actual Merkle chain
+      // Verify state checksum via StateStore (Merkle chain validation)
+      merkleValid: getStateStore().verifyChecksum(),
       // phi: undefined,          // Phase 5.3
       // phiMin: undefined,       // Phase 5.3
       // budget: undefined,       // Phase 5.1

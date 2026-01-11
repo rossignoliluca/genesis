@@ -653,6 +653,18 @@ export class StateStore {
   }
 
   /**
+   * Verify the current state checksum matches the stored checksum
+   * Returns true if checksum is valid, false if corrupted
+   */
+  verifyChecksum(): boolean {
+    if (!this.state.checksum) {
+      return true; // No checksum stored, assume valid
+    }
+    const calculated = this.calculateChecksum(this.state);
+    return this.state.checksum === calculated;
+  }
+
+  /**
    * Get data directory path
    */
   getDataDir(): string {

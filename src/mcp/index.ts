@@ -1,5 +1,5 @@
 /**
- * Genesis 6.8 - Real MCP Client Module
+ * Genesis 7.5 - Real MCP Client Module
  *
  * Connects to actual MCP servers using @modelcontextprotocol/sdk.
  * Spawns servers on demand and manages connections.
@@ -8,10 +8,26 @@
  * - GENESIS_MCP_MODE: 'real' | 'simulated' | 'hybrid' (default: 'simulated')
  * - GENESIS_MCP_TIMEOUT: Timeout in ms (default: 30000)
  * - GENESIS_MCP_LOG: Enable MCP call logging (default: false)
+ *
+ * New in 7.5: Frontier MCP capabilities
+ * - Tool Chaining: Automatic orchestration of dependent tool calls
+ * - Streaming: Real-time result streaming with progress
+ * - Multimodal: Image/media display in terminal
+ * - Cache: Intelligent per-server caching with TTL
+ * - DAG Executor: Parallel execution with dependency awareness
+ * - Transformers: Composable result transformations
  */
 
 // Re-export Phase 8: Resilient MCP Wrapper
 export * from './resilient.js';
+
+// Re-export Phase 10: Frontier MCP Capabilities
+export * from './tool-chain.js';
+export * from './streaming.js';
+export * from './multimodal.js';
+export * from './cache.js';
+export * from './parallel-executor.js';
+export * from './transformers.js';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';

@@ -139,6 +139,7 @@ export class Kernel {
     tasksFailed: 0,
     invariantViolations: 0,
     energyLowEvents: 0,
+    selfModifications: 1,  // 🧬 Added by Darwin-Gödel self-improvement
   };
 
   // Event handlers

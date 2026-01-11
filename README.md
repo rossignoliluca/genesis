@@ -1,4 +1,4 @@
-# Genesis 6.8
+# Genesis 7.4.5
 
 **Claude Code Equivalent - Autonomous AI System Creator**
 
@@ -14,7 +14,7 @@ Genesis is a self-improving AI system powered by 13 MCP servers. It doesn't just
 ║    ╚██████╔╝███████╗██║ ╚████║███████╗███████║██║███████║            ║
 ║     ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚══════╝╚═╝╚══════╝            ║
 ║                                                                       ║
-║    "Not just intelligent, but alive."                    v6.8.0      ║
+║    "Not just intelligent, but alive."                    v7.4.5      ║
 ║                                                                       ║
 ╚═══════════════════════════════════════════════════════════════════════╝
 ```
@@ -22,19 +22,20 @@ Genesis is a self-improving AI system powered by 13 MCP servers. It doesn't just
 ## Quick Start
 
 ```bash
-# Clone and build
+# Install from npm (recommended)
+npm install -g genesis-ai-cli
+
+# Or clone and build from source
 git clone https://github.com/rossignoliluca/genesis.git
 cd genesis
 npm install
 npm run build
+npm link
 
 # Configure API keys
 cp .env.example .env
 # Edit .env with your API keys (see below)
 chmod 600 .env
-
-# Install globally (optional)
-npm link
 
 # Start!
 genesis help
@@ -162,7 +163,7 @@ genesis infer mcp --cycles 20 --verbose
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         GENESIS 6.7                                  │
+│                         GENESIS 7.4                                  │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐   │
@@ -232,7 +233,9 @@ GENESIS_MCP_LOG=false        # Enable debug logging
 
 | Version | Codename | Key Features |
 |---------|----------|--------------|
-| **v6.7.0** | **Standalone Complete** | Human-in-Loop, Tool Orchestration, Claude Code equivalent |
+| **v7.4.5** | **Claude Code Parity** | Subagents, Background Tasks, Headless Mode, Session Management, Extended Thinking, Hooks System |
+| v6.8.0 | Local-First | Ollama integration, offline mode, hybrid routing |
+| v6.7.0 | Standalone Complete | Human-in-Loop, Tool Orchestration, Claude Code equivalent |
 | v6.6.0 | Tool Orchestration | Dispatcher, Interactive REPL |
 | v6.5.0 | Grounding | Output verification, feedback loop |
 | v6.4.x | Self-Healing | Bash sandbox, Edit tool, Git operations, Darwin-Gödel |
@@ -279,4 +282,6 @@ Created by **rossignoliluca**
 
 ---
 
-*Genesis 6.7 - Claude Code Equivalent*
+*Genesis 7.4.5 - Claude Code Parity*
+
+[![npm version](https://badge.fury.io/js/genesis-ai-cli.svg)](https://www.npmjs.com/package/genesis-ai-cli)

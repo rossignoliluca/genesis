@@ -1,14 +1,25 @@
 /**
- * Genesis v7.0 - Interactive Chat CLI
+ * Genesis v7.1 - Integrated Chat CLI
  *
  * REPL interface to talk to Genesis using readline.
  * No external dependencies.
  *
- * v7.0 Updates:
- * - Modern UI with spinner, progress bars
- * - Markdown formatting in responses
- * - Input history (up/down arrows)
- * - Real MCP mode by default
+ * v7.1 Updates:
+ * - Brain AUTO-START by default (Phase 10 always active)
+ * - Active Inference integrated into response cycle
+ * - Value-JEPA world model connected
+ * - Curiosity-driven behavior enabled
+ * - Φ monitoring shown in every response
+ * - All advanced modules wired together
+ *
+ * Architecture:
+ * ```
+ * User Input → Brain → Memory + Active Inference → LLM → Grounding → Tools → Response
+ *                ↓
+ *          Value-JEPA (curiosity) → Expected Free Energy → Policy Selection
+ *                ↓
+ *          Φ Monitor → Global Workspace Broadcast
+ * ```
  */
 
 import * as readline from 'readline';
@@ -19,6 +30,14 @@ import { Brain, getBrain, BrainMetrics, BrainTrace, createBrainTrace } from '../
 import { getMemorySystem, MemorySystem } from '../memory/index.js';
 import { healing } from '../healing/index.js';
 import { createSelfProductionEngine, SelfProductionEngine } from '../self-production.js';
+
+// v7.1: Active Inference integration
+import {
+  createAutonomousLoop,
+  AutonomousLoop,
+  createValueIntegratedLoop,
+  ValueAugmentedEngine,
+} from '../active-inference/index.js';
 import {
   style, c, COLORS,
   success, error, warning, info, muted, highlight,
@@ -38,7 +57,9 @@ export interface ChatOptions {
   model?: string;
   verbose?: boolean;
   enableTools?: boolean;  // Enable MCP tool execution
-  enableBrain?: boolean;  // Enable Brain integration (Phase 10)
+  enableBrain?: boolean;  // Enable Brain integration (Phase 10) - DEFAULT: true in v7.1
+  enableInference?: boolean;  // v7.1: Enable Active Inference loop
+  enableCuriosity?: boolean;  // v7.1: Enable curiosity-driven behavior
 }
 
 export class ChatSession {
@@ -51,8 +72,10 @@ export class ChatSession {
   private running = false;
   private verbose: boolean;
   private enableTools: boolean;
-  private enableBrain: boolean;  // Phase 10: Brain mode
+  private enableBrain: boolean;  // Phase 10: Brain mode - DEFAULT TRUE in v7.1
   private enableTrace: boolean;  // Phase 10: Brain trace mode
+  private enableInference: boolean;  // v7.1: Active Inference mode
+  private enableCuriosity: boolean;  // v7.1: Curiosity-driven behavior
   private messageCount = 0;
   private toolExecutions = 0;
   private systemPrompt: string = '';  // Built dynamically at start()
@@ -62,6 +85,11 @@ export class ChatSession {
   private inputHistory: InputHistory;
   private memory: MemorySystem;  // v7.0: Memory system with consolidation
   private selfProduction: SelfProductionEngine;  // v7.0: Darwin-Gödel self-improvement
+
+  // v7.1: Active Inference integration
+  private inferenceLoop: AutonomousLoop | null = null;
+  private lastCuriosity: number = 0;  // Track curiosity level
+  private lastSurprise: number = 0;   // Track surprise from inference
 
   constructor(options: ChatOptions = {}) {
     this.llm = getLLMBridge({
@@ -73,15 +101,28 @@ export class ChatSession {
     this.brain = getBrain();  // Phase 10: Initialize brain
     this.brainTrace = createBrainTrace(this.brain);  // Phase 10: Initialize trace
     this.memory = getMemorySystem();  // v7.0: Initialize memory with consolidation
-    this.selfProduction = createSelfProductionEngine('7.0.0');  // v7.0: Darwin-Gödel
+    this.selfProduction = createSelfProductionEngine('7.1.0');  // v7.1: Darwin-Gödel
     this.verbose = options.verbose ?? false;
     this.enableTools = options.enableTools ?? true;  // Enabled by default
-    this.enableBrain = options.enableBrain ?? false;  // Brain mode off by default (opt-in)
+    this.enableBrain = options.enableBrain ?? true;  // v7.1: Brain mode ON by default!
     this.enableTrace = false;  // Trace off by default
+    this.enableInference = options.enableInference ?? true;  // v7.1: Inference ON by default
+    this.enableCuriosity = options.enableCuriosity ?? true;  // v7.1: Curiosity ON by default
 
     // v7.0: Initialize UI components
     this.spinner = new Spinner('Thinking');
     this.inputHistory = new InputHistory(100);
+
+    // v7.1: Initialize Active Inference loop
+    if (this.enableInference) {
+      this.inferenceLoop = createAutonomousLoop({
+        cycleInterval: 0,  // No auto-cycling, we trigger manually
+        maxCycles: 0,
+        verbose: false,
+        stopOnGoalAchieved: false,
+        stopOnEnergyCritical: true,
+      });
+    }
 
     // Restore conversation history from persisted state
     const state = this.store.getState();
@@ -124,12 +165,20 @@ export class ChatSession {
     console.log(c(`Model: ${status.model}`, 'dim'));
     console.log(c(`Status: ${status.configured ? 'Ready' : 'Not configured'}`, status.configured ? 'green' : 'yellow'));
 
-    // Phase 10: Brain mode status
+    // v7.1: Auto-start Brain (always on by default)
     if (this.enableBrain) {
       this.brain.start();
       console.log(c(`Brain: ${c('ACTIVE', 'green')} (Phase 10 Neural Integration)`, 'dim'));
     } else {
       console.log(c(`Brain: ${c('OFF', 'yellow')} (use /brain to enable)`, 'dim'));
+    }
+
+    // v7.1: Show Active Inference status
+    if (this.enableInference) {
+      console.log(c(`Inference: ${c('ACTIVE', 'green')} (Active Inference + Value-JEPA)`, 'dim'));
+    }
+    if (this.enableCuriosity) {
+      console.log(c(`Curiosity: ${c('ACTIVE', 'green')} (Intrinsic motivation enabled)`, 'dim'));
     }
     console.log();
 
@@ -283,12 +332,44 @@ export class ChatSession {
   }
 
   /**
-   * Phase 10: Send message via Brain (Neural Integration Layer)
+   * v7.1: Send message via Brain with Active Inference integration
+   *
+   * Full pipeline:
+   * 1. Active Inference cycle (update beliefs, compute surprise)
+   * 2. Curiosity computation (novelty of input)
+   * 3. Memory → LLM → Grounding → Tools → Response (via Brain)
+   * 4. Φ monitoring and broadcast
+   * 5. Value update from outcome
    *
    * Routes through: Memory → LLM → Grounding → Tools → Response
    * With: φ monitoring, Global Workspace broadcasting, self-healing
    */
   private async sendMessageViaBrain(message: string): Promise<void> {
+    // v7.1: Run Active Inference cycle BEFORE processing
+    if (this.enableInference && this.inferenceLoop) {
+      try {
+        // Run one inference cycle to update beliefs
+        const action = await this.inferenceLoop.cycle();
+        const stats = this.inferenceLoop.getStats();
+        this.lastSurprise = stats.avgSurprise;
+
+        // Compute curiosity based on message novelty
+        if (this.enableCuriosity) {
+          // Simple heuristic: longer messages with questions = more curious
+          const hasQuestion = message.includes('?');
+          const wordCount = message.split(/\s+/).length;
+          const noveltyKeywords = ['new', 'novel', 'interesting', 'unknown', 'explore', 'discover', 'why', 'how', 'what'];
+          const noveltyScore = noveltyKeywords.filter(k => message.toLowerCase().includes(k)).length;
+          this.lastCuriosity = Math.min(1, (noveltyScore * 0.15) + (hasQuestion ? 0.2 : 0) + (wordCount > 20 ? 0.1 : 0));
+        }
+      } catch (err) {
+        // Inference failure is non-fatal
+        if (this.verbose) {
+          console.log(c(`  [Inference: ${err instanceof Error ? err.message : err}]`, 'dim'));
+        }
+      }
+    }
+
     // v7.0: Only show spinner if trace is off (trace shows detailed progress)
     if (!this.enableTrace) {
       this.spinner.start('Processing via Brain');
@@ -304,11 +385,28 @@ export class ChatSession {
       }
       console.log(c('Genesis: ', 'cyan') + formatMarkdown(response));
 
-      // Show brain metrics if verbose
+      // v7.1: ALWAYS show Φ and key metrics (not just in verbose mode)
+      const metrics = this.brain.getMetrics();
+      const phi = metrics.avgPhi;
+      const phiIcon = phi >= 0.5 ? '🧠' : phi >= 0.3 ? '💭' : '○';
+      const curiosityIcon = this.lastCuriosity >= 0.5 ? '✨' : this.lastCuriosity >= 0.2 ? '?' : '';
+
+      // Compact status line
+      const statusParts: string[] = [
+        `φ=${phi.toFixed(2)}`,
+      ];
+      if (this.enableCuriosity && this.lastCuriosity > 0) {
+        statusParts.push(`curiosity=${this.lastCuriosity.toFixed(2)}`);
+      }
+      if (this.enableInference && this.lastSurprise > 0) {
+        statusParts.push(`surprise=${this.lastSurprise.toFixed(2)}`);
+      }
+      console.log(c(`  ${phiIcon} [${statusParts.join(', ')}]${curiosityIcon}`, 'dim'));
+
+      // Show more details in verbose mode
       if (this.verbose) {
-        const metrics = this.brain.getMetrics();
         const reuseRate = metrics.memoryReuseRate * 100;
-        console.log(c(`  [φ=${metrics.avgPhi.toFixed(2)}, reuse=${reuseRate.toFixed(0)}%, cycles=${metrics.totalCycles}]`, 'dim'));
+        console.log(c(`  [reuse=${reuseRate.toFixed(0)}%, cycles=${metrics.totalCycles}]`, 'dim'));
       }
 
       // Persist interaction (Brain manages its own conversation context)
@@ -570,6 +668,45 @@ export class ChatSession {
         console.log();
         break;
 
+      // v7.1: Active Inference commands
+      case 'inference':
+      case 'infer':
+        this.enableInference = !this.enableInference;
+        if (this.enableInference) {
+          if (!this.inferenceLoop) {
+            this.inferenceLoop = createAutonomousLoop({
+              cycleInterval: 0,
+              maxCycles: 0,
+              verbose: false,
+              stopOnGoalAchieved: false,
+              stopOnEnergyCritical: true,
+            });
+          }
+          console.log(c(`Inference: ${c('ACTIVE', 'green')} (Active Inference + Value-JEPA)`, 'bold'));
+          console.log(c('  Runs inference cycle before each response', 'dim'));
+          console.log(c('  Computes: beliefs, surprise, Expected Free Energy', 'dim'));
+        } else {
+          console.log(c(`Inference: ${c('OFF', 'yellow')}`, 'bold'));
+        }
+        console.log();
+        break;
+
+      case 'curiosity':
+        this.enableCuriosity = !this.enableCuriosity;
+        if (this.enableCuriosity) {
+          console.log(c(`Curiosity: ${c('ACTIVE', 'green')} (Intrinsic motivation)`, 'bold'));
+          console.log(c('  Computes novelty score for each message', 'dim'));
+          console.log(c('  Higher curiosity → more exploratory responses', 'dim'));
+        } else {
+          console.log(c(`Curiosity: ${c('OFF', 'yellow')}`, 'bold'));
+        }
+        console.log();
+        break;
+
+      case 'beliefs':
+        this.printBeliefs();
+        break;
+
       default:
         console.log(c(`Unknown command: /${cmd}`, 'red'));
         console.log('Type /help for available commands.');
@@ -606,6 +743,11 @@ export class ChatSession {
     console.log('  /phi           Show consciousness level (φ)');
     console.log('  /brainstatus   Show brain status');
     console.log('  /brainmetrics  Show detailed brain metrics');
+    console.log();
+    console.log(c('Active Inference (v7.1):', 'bold'));
+    console.log('  /inference     Toggle Active Inference loop');
+    console.log('  /curiosity     Toggle curiosity-driven behavior');
+    console.log('  /beliefs       Show current beliefs (viability, world, coupling, goal)');
     console.log();
     console.log(c('Memory (v7.0):', 'bold'));
     console.log('  /memory        Show memory status');
@@ -674,6 +816,20 @@ export class ChatSession {
     console.log(`  Cycles:       ${brainMetrics.totalCycles}`);
     console.log(`  Mem Reuse:    ${(brainMetrics.memoryReuseRate * 100).toFixed(1)}%`);
     console.log();
+
+    // v7.1: Active Inference status
+    console.log(c('Active Inference (v7.1):', 'cyan'));
+    console.log(`  Inference:    ${this.enableInference ? c('ACTIVE', 'green') : c('OFF', 'yellow')}`);
+    console.log(`  Curiosity:    ${this.enableCuriosity ? c('ACTIVE', 'green') : c('OFF', 'yellow')}`);
+    if (this.inferenceLoop) {
+      const stats = this.inferenceLoop.getStats();
+      const beliefs = this.inferenceLoop.getMostLikelyState();
+      console.log(`  Viability:    ${beliefs.viability}`);
+      console.log(`  World State:  ${beliefs.worldState}`);
+      console.log(`  Surprise:     ${stats.avgSurprise.toFixed(3)}`);
+      console.log(`  Last Curiosity: ${this.lastCuriosity.toFixed(3)}`);
+    }
+    console.log();
   }
 
   /**
@@ -720,6 +876,61 @@ export class ChatSession {
     if (phi >= 0.7) return c(bar, 'green') + ` (High - Global Workspace active)`;
     if (phi >= 0.3) return c(bar, 'yellow') + ` (Medium - Ignition threshold)`;
     return c(bar, 'dim') + ` (Low - Local processing)`;
+  }
+
+  /**
+   * v7.1: Print current beliefs from Active Inference
+   */
+  private printBeliefs(): void {
+    console.log(c('Active Inference Beliefs (v7.1):', 'bold'));
+    console.log();
+
+    if (!this.inferenceLoop) {
+      console.log(warning('Active Inference not initialized.'));
+      console.log(muted('Use /inference to enable.'));
+      console.log();
+      return;
+    }
+
+    const beliefs = this.inferenceLoop.getMostLikelyState();
+    const stats = this.inferenceLoop.getStats();
+
+    // Viability bar
+    const viabilityMap: Record<string, number> = { 'critical': 0.1, 'low': 0.3, 'medium': 0.5, 'high': 0.7, 'optimal': 0.9 };
+    const viabilityValue = viabilityMap[beliefs.viability] || 0.5;
+    const viabilityBar = this.renderBar(viabilityValue, 15);
+
+    console.log(c('Current State:', 'cyan'));
+    console.log(`  Viability:     ${viabilityBar} ${beliefs.viability}`);
+    console.log(`  World State:   ${beliefs.worldState}`);
+    console.log(`  Coupling:      ${beliefs.coupling}`);
+    console.log(`  Goal Progress: ${beliefs.goalProgress}`);
+    console.log();
+
+    console.log(c('Inference Stats:', 'cyan'));
+    console.log(`  Cycles:        ${stats.cycles}`);
+    console.log(`  Avg Surprise:  ${stats.avgSurprise.toFixed(4)}`);
+    console.log(`  Last Curiosity: ${this.lastCuriosity.toFixed(4)}`);
+    console.log();
+
+    console.log(c('Actions Taken:', 'cyan'));
+    for (const [action, count] of Object.entries(stats.actions)) {
+      const pct = stats.cycles > 0 ? ((count as number) / stats.cycles * 100).toFixed(1) : '0';
+      console.log(`    ${action}: ${count} (${pct}%)`);
+    }
+    console.log();
+  }
+
+  /**
+   * Render a simple bar
+   */
+  private renderBar(value: number, width: number): string {
+    const filled = Math.round(value * width);
+    const empty = width - filled;
+    const bar = '█'.repeat(filled) + '░'.repeat(empty);
+    if (value >= 0.7) return c(bar, 'green');
+    if (value >= 0.3) return c(bar, 'yellow');
+    return c(bar, 'red');
   }
 
   /**

@@ -127,8 +127,9 @@ export const CHAIN_TEMPLATES: Record<string, ChainDefinition> = {
           count: 3,
         }),
         transform: (result) => ({
-          url: result.results?.[0]?.url || result.web?.results?.[0]?.url,
-          title: result.results?.[0]?.title || result.web?.results?.[0]?.title,
+          // Handle both flat response and nested results array
+          url: result.url || result.results?.[0]?.url || result.web?.results?.[0]?.url,
+          title: result.title || result.results?.[0]?.title || result.web?.results?.[0]?.title,
         }),
       },
       {

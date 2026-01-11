@@ -49,6 +49,14 @@ import {
   BackgroundTask,
   getSubagentNames,
 } from '../subagents/index.js';
+// v7.4.5: Hooks System
+import {
+  getHooksManager,
+  HooksManager,
+  HookEvent,
+  HookContext,
+  createSampleHooksConfig,
+} from '../hooks/index.js';
 import {
   style, c, COLORS,
   success, error, warning, info, muted, highlight,
@@ -134,6 +142,9 @@ export class ChatSession {
   // v7.4.4: Extended Thinking visualization
   private thinkingSettings: ThinkingSettings;
 
+  // v7.4.5: Hooks System
+  private hooks: HooksManager;
+
   constructor(options: ChatOptions = {}) {
     this.llm = getLLMBridge({
       provider: options.provider,
@@ -159,6 +170,7 @@ export class ChatSession {
     this.sessionName = options.sessionName;  // v7.4: Session name
     this.resumeSessionId = options.resume;  // v7.4: Resume session
     this.thinkingSettings = { ...DEFAULT_THINKING_SETTINGS };  // v7.4.4: Extended thinking
+    this.hooks = getHooksManager();  // v7.4.5: Hooks system
 
     // v7.0: Initialize UI components
     this.spinner = new Spinner('Thinking');
@@ -294,6 +306,19 @@ export class ChatSession {
 
     // v7.3.6: Pre-warm critical MCP servers in background to avoid cold start timeouts
     this.preWarmMCPServers();
+
+    // v7.4.5: Execute session-start hook
+    if (this.hooks.hasHooks()) {
+      const hookResult = await this.hooks.execute('session-start', {
+        event: 'session-start',
+        sessionId: this.store.getState().session?.id,
+        workingDir: process.cwd(),
+      });
+      if (hookResult?.blocked) {
+        console.log(error('Session blocked by hook'));
+        process.exit(1);
+      }
+    }
 
     this.printHelp();
 
@@ -531,6 +556,21 @@ export class ChatSession {
   private async sendMessageViaBrain(message: string): Promise<void> {
     this.isProcessing = true;  // v7.4: Track processing state for Ctrl+B
 
+    // v7.4.5: Execute pre-message hook
+    if (this.hooks.hasHooks()) {
+      const hookResult = await this.hooks.execute('pre-message', {
+        event: 'pre-message',
+        message,
+        sessionId: this.store.getState().session?.id,
+        workingDir: process.cwd(),
+      });
+      if (hookResult?.blocked) {
+        console.log(warning('Message blocked by hook'));
+        this.isProcessing = false;
+        return;
+      }
+    }
+
     // v7.1: Run Active Inference cycle BEFORE processing
     if (this.enableInference && this.inferenceLoop) {
       try {
@@ -603,6 +643,17 @@ export class ChatSession {
 
       // Persist interaction (Brain manages its own conversation context)
       this.store.recordInteraction();
+
+      // v7.4.5: Execute post-message hook
+      if (this.hooks.hasHooks()) {
+        this.hooks.execute('post-message', {
+          event: 'post-message',
+          message,
+          response: brainFormatted.formatted,
+          sessionId: this.store.getState().session?.id,
+          workingDir: process.cwd(),
+        });
+      }
 
       this.isProcessing = false;  // v7.4: Done processing
       console.log();
@@ -984,6 +1035,51 @@ export class ChatSession {
         console.log();
         break;
 
+      // v7.4.5: Hooks System
+      case 'hooks':
+        if (args[0] === 'init') {
+          const targetPath = args[1] || '.genesis-hooks.json';
+          try {
+            createSampleHooksConfig(targetPath);
+            console.log(success(`✓ Created sample hooks config: ${targetPath}`));
+          } catch (err) {
+            console.log(error(`Failed to create hooks config: ${err}`));
+          }
+        } else if (args[0] === 'reload') {
+          this.hooks.reload();
+          console.log(success('✓ Hooks configuration reloaded'));
+        } else if (args[0] === 'on') {
+          this.hooks.setEnabled(true);
+          console.log(success('✓ Hooks enabled'));
+        } else if (args[0] === 'off') {
+          this.hooks.setEnabled(false);
+          console.log(warning('Hooks disabled'));
+        } else {
+          // Show hooks status
+          const hasHooks = this.hooks.hasHooks();
+          const configPath = this.hooks.getConfigPath();
+          const configured = this.hooks.getConfiguredHooks();
+
+          console.log(c('Hooks System (v7.4.5):', 'bold'));
+          console.log(`  Status:     ${hasHooks ? c('Active', 'green') : c('No hooks configured', 'yellow')}`);
+          if (configPath) {
+            console.log(`  Config:     ${configPath}`);
+          }
+          if (configured.length > 0) {
+            console.log(`  Configured: ${configured.join(', ')}`);
+          }
+          console.log();
+          console.log(muted('Commands:'));
+          console.log(muted('  /hooks init [path]  - Create sample hooks config'));
+          console.log(muted('  /hooks reload       - Reload hooks configuration'));
+          console.log(muted('  /hooks on/off       - Enable/disable hooks'));
+          console.log();
+          console.log(muted('Events: session-start, session-end, pre-message, post-message,'));
+          console.log(muted('        pre-tool, post-tool, pre-subagent, post-subagent, error'));
+        }
+        console.log();
+        break;
+
       // v7.4.4: Extended Thinking visualization
       case 'thinking':
       case 'think':
@@ -1091,6 +1187,12 @@ export class ChatSession {
     console.log('  /thinking on   Show thinking blocks (expanded)');
     console.log('  /thinking off  Hide thinking blocks');
     console.log('  /thinking collapsed  Show thinking (one-line)');
+    console.log();
+    console.log(c('Hooks (v7.4.5):', 'bold'));
+    console.log('  /hooks         Show hooks status');
+    console.log('  /hooks init    Create sample hooks config');
+    console.log('  /hooks reload  Reload hooks configuration');
+    console.log('  /hooks on/off  Enable/disable hooks');
     console.log();
     console.log(c('State:', 'bold'));
     console.log('  /save          Save state to disk');
@@ -1989,6 +2091,16 @@ export class ChatSession {
    */
   stop(): void {
     this.running = false;
+
+    // v7.4.5: Execute session-end hook
+    if (this.hooks.hasHooks()) {
+      // Fire and forget (async but we don't wait)
+      this.hooks.execute('session-end', {
+        event: 'session-end',
+        sessionId: this.store.getState().session?.id,
+        workingDir: process.cwd(),
+      });
+    }
 
     // v7.3.8: Cleanup brain event subscription
     if (this.brainEventUnsub) {

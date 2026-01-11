@@ -1,5 +1,5 @@
 {
-  "name": "@rossignoliluca/genesis",
+  "name": "genesis-ai-cli",
   "version": "7.4.5",
   "description": "Autonomous AI System Creator - Brain ON by default, Active Inference integrated, Curiosity-driven, Φ monitoring in every response",
   "main": "dist/src/index.js",

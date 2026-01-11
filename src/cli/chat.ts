@@ -184,6 +184,9 @@ export class ChatSession {
     }
     console.log();
 
+    // v7.3.6: Pre-warm critical MCP servers in background to avoid cold start timeouts
+    this.preWarmMCPServers();
+
     this.printHelp();
 
     this.rl = readline.createInterface({
@@ -1328,6 +1331,29 @@ export class ChatSession {
     console.log(`  MCP Mode:         ${client.getMode()}`);
     console.log(`  Tools Enabled:    ${this.enableTools ? success('YES') : warning('NO')}`);
     console.log();
+  }
+
+  /**
+   * v7.3.6: Pre-warm critical MCP servers in background
+   * This prevents cold start timeouts when Genesis needs to use tools
+   */
+  private preWarmMCPServers(): void {
+    // Don't block startup - warm up in background
+    const client = getMCPClient();
+    const criticalServers: MCPServerName[] = ['memory', 'filesystem', 'github'];
+
+    // Fire and forget - we don't need to wait
+    Promise.all(
+      criticalServers.map(async (server) => {
+        try {
+          await client.isAvailable(server);
+        } catch {
+          // Ignore errors during pre-warming
+        }
+      })
+    ).catch(() => {
+      // Silently ignore any errors
+    });
   }
 
   /**

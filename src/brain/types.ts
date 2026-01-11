@@ -242,7 +242,7 @@ export const DEFAULT_BRAIN_CONFIG: BrainConfig = {
     phiThreshold: 0.1,
     broadcastEnabled: true,
   },
-  maxCycleTime: 120000,             // 2 minutes
+  maxCycleTime: 300000,             // 5 minutes (MCP cold starts can be slow)
   maxModuleTransitions: 20,
 };
 

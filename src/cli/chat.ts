@@ -24,7 +24,7 @@
 
 import * as readline from 'readline';
 import { getLLMBridge, buildSystemPrompt, GENESIS_IDENTITY_PROMPT, LLMBridge } from '../llm/index.js';
-import { getStateStore, StateStore } from '../persistence/index.js';
+import { getStateStore, StateStore, getSessionManager, SessionManager, SessionInfo } from '../persistence/index.js';
 import { ToolDispatcher, ToolResult } from './dispatcher.js';
 import { getMCPClient, MCP_SERVER_REGISTRY } from '../mcp/index.js';
 import { MCPServerName } from '../types.js';
@@ -75,6 +75,9 @@ export interface ChatOptions {
   headless?: boolean;       // If true, run non-interactively (no REPL)
   prompt?: string;          // Prompt to process in headless mode
   outputFormat?: 'text' | 'json';  // Output format for headless mode
+  // v7.4: Session management (resume, fork)
+  resume?: string | boolean;  // Session ID to resume ('last' or true for most recent)
+  sessionName?: string;      // Name for the current session
 }
 
 export class ChatSession {
@@ -119,6 +122,11 @@ export class ChatSession {
   private headlessMode = false;
   private outputFormat: 'text' | 'json' = 'text';
 
+  // v7.4: Session management
+  private sessionManager: SessionManager;
+  private sessionName: string | undefined;
+  private resumeSessionId: string | boolean | undefined;
+
   constructor(options: ChatOptions = {}) {
     this.llm = getLLMBridge({
       provider: options.provider,
@@ -140,6 +148,9 @@ export class ChatSession {
     this.enableCuriosity = options.enableCuriosity ?? true;  // v7.1: Curiosity ON by default
     this.headlessMode = options.headless ?? false;  // v7.4: Headless mode
     this.outputFormat = options.outputFormat ?? 'text';  // v7.4: Output format
+    this.sessionManager = getSessionManager();  // v7.4: Session manager
+    this.sessionName = options.sessionName;  // v7.4: Session name
+    this.resumeSessionId = options.resume;  // v7.4: Resume session
 
     // v7.0: Initialize UI components
     this.spinner = new Spinner('Thinking');
@@ -205,6 +216,30 @@ export class ChatSession {
    */
   async start(): Promise<void> {
     this.printBanner();
+
+    // v7.4: Handle session resume
+    if (this.resumeSessionId) {
+      const sessionId = this.resumeSessionId === true ? 'last' : this.resumeSessionId;
+      const resumedState = this.sessionManager.loadSession(sessionId);
+
+      if (resumedState) {
+        // Restore conversation history
+        const history = resumedState.conversation?.history || [];
+        for (const msg of history) {
+          this.llm.getHistory().push(msg);
+        }
+        // Update store with resumed state
+        this.store.update(resumedState);
+
+        console.log(success(`✓ Resumed session: ${resumedState.session?.id?.slice(0, 8) || sessionId}`));
+        console.log(muted(`  ${history.length} messages, ${resumedState.conversation?.totalTokens || 0} tokens`));
+        console.log();
+      } else {
+        console.log(warning(`Session not found: ${sessionId}`));
+        console.log(muted('Starting new session instead.'));
+        console.log();
+      }
+    }
 
     // Build dynamic system prompt from available tools (with schemas)
     const tools = this.dispatcher.listToolsWithSchemas();
@@ -881,6 +916,48 @@ export class ChatSession {
         this.printAvailableAgents();
         break;
 
+      // v7.4: Session management commands
+      case 'sessions':
+        this.printSessions();
+        break;
+
+      case 'session':
+        if (args[0] === 'name' && args[1]) {
+          this.sessionName = args.slice(1).join(' ');
+          console.log(success(`Session named: ${this.sessionName}`));
+        } else if (args[0] === 'save') {
+          const state = this.store.getState();
+          this.store.updateConversation(this.llm.getHistory());
+          const name = args.slice(1).join(' ') || this.sessionName;
+          const id = this.sessionManager.saveSession(this.store.getState(), name);
+          console.log(success(`Session saved: ${id.slice(0, 8)}${name ? ` (${name})` : ''}`));
+        } else if (args[0] === 'fork') {
+          const currentState = this.store.getState();
+          this.store.updateConversation(this.llm.getHistory());
+          const name = args.slice(1).join(' ') || `Fork at ${new Date().toLocaleTimeString()}`;
+          const id = this.sessionManager.saveSession(this.store.getState(), name);
+          // Create new session ID for current session
+          this.store.newSession();
+          console.log(success(`Session forked: ${id.slice(0, 8)}`));
+          console.log(muted('Continuing in new session.'));
+        } else if (args[0] === 'delete' && args[1]) {
+          const deleted = this.sessionManager.deleteSession(args[1]);
+          if (deleted) {
+            console.log(success(`Session deleted: ${args[1]}`));
+          } else {
+            console.log(error(`Session not found: ${args[1]}`));
+          }
+        } else {
+          console.log(info('Session commands:'));
+          console.log('  /session name <name>   - Name current session');
+          console.log('  /session save [name]   - Save session checkpoint');
+          console.log('  /session fork [name]   - Fork session (save and start new)');
+          console.log('  /session delete <id>   - Delete a saved session');
+          console.log('  /sessions              - List all sessions');
+        }
+        console.log();
+        break;
+
       default:
         console.log(c(`Unknown command: /${cmd}`, 'red'));
         console.log('Type /help for available commands.');
@@ -940,6 +1017,12 @@ export class ChatSession {
     console.log('  /taskwait <id> Wait for task completion');
     console.log('  /taskcancel <id> Cancel running task');
     console.log('  /agents        Show available subagents');
+    console.log();
+    console.log(c('Sessions (v7.4):', 'bold'));
+    console.log('  /sessions      List saved sessions');
+    console.log('  /session name <n>  Name current session');
+    console.log('  /session save      Save session checkpoint');
+    console.log('  /session fork      Fork session (save & continue new)');
     console.log();
     console.log(c('State:', 'bold'));
     console.log('  /save          Save state to disk');
@@ -1274,6 +1357,53 @@ export class ChatSession {
     console.log(c('  /tasks                         List running tasks', 'dim'));
     console.log(c('  /taskwait <id>                 Wait for task completion', 'dim'));
     console.log(c('  /taskcancel <id>               Cancel running task', 'dim'));
+    console.log();
+  }
+
+  /**
+   * v7.4: Print saved sessions
+   */
+  private printSessions(): void {
+    const sessions = this.sessionManager.listSessions();
+
+    if (sessions.length === 0) {
+      console.log(muted('No saved sessions.'));
+      console.log(muted('Use /session save to save the current session.'));
+      console.log();
+      return;
+    }
+
+    console.log(c('Saved Sessions (v7.4):', 'bold'));
+    console.log();
+
+    const sessionData = sessions.slice(0, 10).map(s => ({
+      id: s.id.slice(0, 8),
+      name: s.name || '-',
+      messages: s.messageCount.toString(),
+      tokens: s.tokenCount.toString(),
+      modified: new Date(s.lastModified).toLocaleString(),
+      summary: truncate(s.summary || '', 40),
+    }));
+
+    console.log(table(sessionData, [
+      { header: 'ID', key: 'id' },
+      { header: 'Name', key: 'name' },
+      { header: 'Msgs', key: 'messages' },
+      { header: 'Tokens', key: 'tokens' },
+      { header: 'Modified', key: 'modified' },
+      { header: 'Summary', key: 'summary' },
+    ]));
+
+    if (sessions.length > 10) {
+      console.log(muted(`... and ${sessions.length - 10} more sessions`));
+    }
+
+    console.log();
+    console.log(c('Usage:', 'cyan'));
+    console.log(c('  genesis chat --resume          Resume last session', 'dim'));
+    console.log(c('  genesis chat --resume <id>     Resume specific session', 'dim'));
+    console.log(c('  /session fork                  Fork current session', 'dim'));
+    console.log(c('  /session delete <id>           Delete a session', 'dim'));
     console.log();
   }
 
@@ -1807,6 +1937,12 @@ export class ChatSession {
     // Save state before exit
     console.log(c('Saving state...', 'dim'));
     this.store.updateConversation(this.llm.getHistory());
+
+    // v7.4: Save session for resume
+    const state = this.store.getState();
+    const sessionId = this.sessionManager.saveSession(state, this.sessionName);
+    console.log(c(`Session saved: ${sessionId.slice(0, 8)}`, 'dim'));
+
     this.store.close();
 
     console.log(c('Goodbye! Genesis signing off.\n', 'cyan'));

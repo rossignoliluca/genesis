@@ -365,6 +365,10 @@ async function cmdChat(options: Record<string, string>, promptArg?: string): Pro
   const isHeadless = options.print === 'true' || options.p === 'true';
   const outputFormat = (options.format || options.output || 'text') as 'text' | 'json';
 
+  // v7.4: Session resume
+  const resume = options.resume || options.r;
+  const sessionName = options.name;
+
   if (isHeadless) {
     // Get prompt from argument or stdin
     let prompt = promptArg || '';
@@ -390,7 +394,16 @@ async function cmdChat(options: Record<string, string>, promptArg?: string): Pro
     console.log(c('[LLM] If Ollama unavailable, will fallback to cloud API\n', 'dim'));
   }
 
-  await startChat({ provider, model, verbose });
+  // v7.4: Pass resume option (true for --resume, string for --resume <id>)
+  const resumeOption = resume === 'true' ? true : resume;
+
+  await startChat({
+    provider,
+    model,
+    verbose,
+    resume: resumeOption,
+    sessionName,
+  });
 }
 
 async function cmdMCP(subcommand: string | undefined, options: Record<string, string>): Promise<void> {
@@ -1167,6 +1180,8 @@ ${c('Commands:', 'bold')}
     --verbose            Show latency and token usage
     -p, --print "text"   ${c('Headless mode: process prompt and exit', 'yellow')}
     --format <f>         Output format: text (default), json
+    -r, --resume [id]    ${c('Resume previous session (default: last)', 'yellow')}
+    --name <name>        Name for the current session
 
   ${c('create', 'green')} <name>         Create a new system
     --type <type>        System type: autopoietic, agent, multi-agent, service
@@ -1222,6 +1237,8 @@ ${c('MCP Servers (13):', 'bold')}
 ${c('Examples:', 'bold')}
   genesis chat                          ${c('Interactive chat with Mistral (local)', 'dim')}
   genesis chat --provider openai        ${c('Chat with GPT-4o (cloud)', 'dim')}
+  genesis chat --resume                 ${c('Resume last session', 'dim')}
+  genesis chat --resume abc123          ${c('Resume specific session by ID', 'dim')}
   genesis chat -p "Explain recursion"   ${c('Headless: single prompt, output, exit', 'dim')}
   echo "What is 2+2?" | genesis chat -p ${c('Headless: read from stdin', 'dim')}
   genesis chat -p "..." --format json   ${c('Headless: JSON output for scripting', 'dim')}

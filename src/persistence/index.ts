@@ -707,3 +707,227 @@ export function resetStateStore(): void {
   }
   stateStoreInstance = null;
 }
+
+// ============================================================================
+// v7.4: Session Manager for resume/fork functionality
+// ============================================================================
+
+export interface SessionInfo {
+  id: string;
+  name?: string;
+  created: Date;
+  lastModified: Date;
+  messageCount: number;
+  tokenCount: number;
+  summary?: string;  // First line of first message as summary
+}
+
+export interface SessionManagerOptions {
+  dataDir?: string;
+  maxSessions?: number;  // Auto-cleanup old sessions
+}
+
+const SESSIONS_DIR = 'sessions';
+
+export class SessionManager {
+  private dataDir: string;
+  private sessionsDir: string;
+  private options: SessionManagerOptions;
+
+  constructor(options: SessionManagerOptions = {}) {
+    this.options = options;
+    this.dataDir = options.dataDir || path.join(process.env.HOME || '.', '.genesis');
+    this.sessionsDir = path.join(this.dataDir, SESSIONS_DIR);
+    this.ensureDirectory();
+  }
+
+  /**
+   * List all saved sessions
+   */
+  listSessions(): SessionInfo[] {
+    if (!fs.existsSync(this.sessionsDir)) {
+      return [];
+    }
+
+    const files = fs.readdirSync(this.sessionsDir)
+      .filter(f => f.endsWith('.json'))
+      .sort()
+      .reverse();  // Most recent first
+
+    const sessions: SessionInfo[] = [];
+    for (const file of files) {
+      try {
+        const filePath = path.join(this.sessionsDir, file);
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as GenesisState;
+
+        // Extract first user message as summary
+        const firstUserMsg = data.conversation?.history?.find(m => m.role === 'user');
+        const summary = firstUserMsg?.content?.slice(0, 80);
+
+        sessions.push({
+          id: data.session?.id || file.replace('.json', ''),
+          name: (data as any).sessionName,  // Optional session name
+          created: new Date(data.created),
+          lastModified: new Date(data.lastModified),
+          messageCount: data.conversation?.totalMessages || 0,
+          tokenCount: data.conversation?.totalTokens || 0,
+          summary,
+        });
+      } catch {
+        // Skip invalid files
+      }
+    }
+
+    return sessions;
+  }
+
+  /**
+   * Get the most recent session ID
+   */
+  getLastSessionId(): string | null {
+    const sessions = this.listSessions();
+    return sessions.length > 0 ? sessions[0].id : null;
+  }
+
+  /**
+   * Save current state as a session
+   */
+  saveSession(state: GenesisState, name?: string): string {
+    const sessionId = state.session.id;
+    const sessionPath = this.getSessionPath(sessionId);
+
+    const sessionData = {
+      ...state,
+      sessionName: name,
+    };
+
+    fs.writeFileSync(sessionPath, JSON.stringify(sessionData, null, 2));
+
+    // Cleanup old sessions if needed
+    this.cleanupOldSessions();
+
+    return sessionId;
+  }
+
+  /**
+   * Load a session by ID (or 'last' for most recent)
+   */
+  loadSession(sessionIdOrLast: string): GenesisState | null {
+    let sessionId = sessionIdOrLast;
+
+    // Handle 'last' keyword
+    if (sessionIdOrLast === 'last') {
+      const lastId = this.getLastSessionId();
+      if (!lastId) return null;
+      sessionId = lastId;
+    }
+
+    // Try exact match first
+    let sessionPath = this.getSessionPath(sessionId);
+
+    // If not found, try partial match (first 8 chars like git)
+    if (!fs.existsSync(sessionPath)) {
+      const sessions = this.listSessions();
+      const match = sessions.find(s => s.id.startsWith(sessionId));
+      if (match) {
+        sessionPath = this.getSessionPath(match.id);
+      }
+    }
+
+    if (!fs.existsSync(sessionPath)) {
+      return null;
+    }
+
+    try {
+      const data = JSON.parse(fs.readFileSync(sessionPath, 'utf-8')) as GenesisState;
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Fork a session (create a copy with new ID)
+   */
+  forkSession(sessionId: string, newName?: string): string | null {
+    const originalState = this.loadSession(sessionId);
+    if (!originalState) return null;
+
+    // Create new session with new ID
+    const forkedState: GenesisState = {
+      ...originalState,
+      session: {
+        ...originalState.session,
+        id: crypto.randomUUID(),
+        startTime: new Date(),
+      },
+      created: new Date(),
+      lastModified: new Date(),
+    };
+
+    return this.saveSession(forkedState, newName || `Fork of ${sessionId.slice(0, 8)}`);
+  }
+
+  /**
+   * Delete a session
+   */
+  deleteSession(sessionId: string): boolean {
+    const sessionPath = this.getSessionPath(sessionId);
+    if (!fs.existsSync(sessionPath)) {
+      // Try partial match
+      const sessions = this.listSessions();
+      const match = sessions.find(s => s.id.startsWith(sessionId));
+      if (match) {
+        fs.unlinkSync(this.getSessionPath(match.id));
+        return true;
+      }
+      return false;
+    }
+    fs.unlinkSync(sessionPath);
+    return true;
+  }
+
+  /**
+   * Rename a session
+   */
+  renameSession(sessionId: string, newName: string): boolean {
+    const state = this.loadSession(sessionId);
+    if (!state) return false;
+
+    this.saveSession(state, newName);
+    return true;
+  }
+
+  private getSessionPath(sessionId: string): string {
+    return path.join(this.sessionsDir, `${sessionId}.json`);
+  }
+
+  private ensureDirectory(): void {
+    if (!fs.existsSync(this.sessionsDir)) {
+      fs.mkdirSync(this.sessionsDir, { recursive: true });
+    }
+  }
+
+  private cleanupOldSessions(): void {
+    const maxSessions = this.options.maxSessions || 50;
+    const sessions = this.listSessions();
+
+    if (sessions.length > maxSessions) {
+      // Delete oldest sessions
+      const toDelete = sessions.slice(maxSessions);
+      for (const session of toDelete) {
+        this.deleteSession(session.id);
+      }
+    }
+  }
+}
+
+// Singleton
+let sessionManagerInstance: SessionManager | null = null;
+
+export function getSessionManager(options?: SessionManagerOptions): SessionManager {
+  if (!sessionManagerInstance) {
+    sessionManagerInstance = new SessionManager(options);
+  }
+  return sessionManagerInstance;
+}

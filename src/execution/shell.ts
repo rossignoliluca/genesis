@@ -75,12 +75,14 @@ export interface AuditEntry {
 /**
  * Shell metacharacters that could enable injection attacks
  * Based on OWASP and NIST guidelines
+ *
+ * Note: We allow standard command flags (-m, --message, etc.)
+ * Option injection is handled per-command via blockedArgs
  */
 const DANGEROUS_PATTERNS: RegExp[] = [
   /[;&|`$(){}[\]<>\\]/,     // Shell operators
   /\.\./,                    // Path traversal
   /\n|\r/,                   // Newlines (command injection)
-  /^-/,                      // Leading dash (option injection) - checked per-arg
 ];
 
 /**
@@ -179,7 +181,7 @@ export const COMMAND_ALLOWLIST: Map<string, CommandConfig> = new Map([
     description: 'Locate command',
   }],
 
-  // 🟡 MEDIUM RISK - Git read operations
+  // 🟡 MEDIUM RISK - Git operations (local)
   ['git', {
     command: 'git',
     riskLevel: RiskLevel.MEDIUM,
@@ -189,7 +191,9 @@ export const COMMAND_ALLOWLIST: Map<string, CommandConfig> = new Map([
     allowedArgs: [
       'status', 'log', 'diff', 'branch', 'remote', 'show',
       'add', 'commit', 'checkout', 'stash', 'tag', 'fetch',
+      'reset', 'restore', 'rev-parse', 'config',
     ],
+    blockedArgs: [/--force|-f|--hard/],  // Block dangerous options
   }],
 
   // 🟠 HIGH RISK - Network and write operations

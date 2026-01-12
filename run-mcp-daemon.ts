@@ -175,28 +175,25 @@ function createLLMResearchTask(): CreateTaskOptions {
       ctx.logger.info('Starting LLM-driven research...');
 
       // Ask LLM what to research
-      const response = await mcpCtx.llm.chat({
-        messages: [
-          {
-            role: 'system',
-            content: `You are a research assistant daemon. Your job is to identify interesting topics to research.
+      const systemPrompt = `You are a research assistant daemon. Your job is to identify interesting topics to research.
 Output a JSON object with: { "topic": "...", "queries": ["query1", "query2"] }
-Focus on AI, technology, and science topics.`,
-          },
-          {
-            role: 'user',
-            content: 'What should we research next? Pick something interesting and current.',
-          },
-        ],
-      });
+Focus on AI, technology, and science topics. Return ONLY the JSON object, no other text.`;
+
+      const response = await mcpCtx.llm.chat(
+        'What should we research next? Pick something interesting and current.',
+        systemPrompt
+      );
+
+      ctx.logger.info(`LLM response: ${response.content.slice(0, 200)}...`);
 
       // Parse LLM response
       let researchPlan: { topic: string; queries: string[] };
       try {
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error('No JSON found');
+        const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('No JSON found in response');
         researchPlan = JSON.parse(jsonMatch[0]);
-      } catch {
+      } catch (err) {
+        ctx.logger.info(`Parse error: ${err}`);
         return { success: false, duration: Date.now() - startTime, error: new Error('Failed to parse research plan') };
       }
 
@@ -457,11 +454,10 @@ async function runDemo() {
     }
   }
 
-  // Optional: Run LLM research (takes longer, skip for quick demo)
-  // console.log('\n4. Triggering LLM-driven research...');
-  // daemon.triggerTask(llmTask.id);
-  // await new Promise((resolve) => setTimeout(resolve, 15000));
-  console.log('\n(Skipping LLM research task for quick demo)');
+  // Run LLM-driven research task
+  console.log('\n4. Triggering LLM-driven research...');
+  daemon.triggerTask(llmTask.id);
+  await new Promise((resolve) => setTimeout(resolve, 30000));
 
   // Final status
   console.log('\n▶ Final Status');

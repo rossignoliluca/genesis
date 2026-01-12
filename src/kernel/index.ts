@@ -139,7 +139,7 @@ export class Kernel {
     tasksFailed: 0,
     invariantViolations: 0,
     energyLowEvents: 0,
-    selfModifications: 2,  // 🧬 Evolution 2: Added meta-learning system Added by Darwin-Gödel self-improvement
+    selfModifications: 3,  // 🧬 Evolution 3: Secure Shell Execution (OWASP-Compliant)
   };
 
   // Event handlers

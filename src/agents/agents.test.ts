@@ -3,17 +3,17 @@
  * Generated autonomously on 2026-01-12T16:56:32.684Z
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it } from 'node:test';
+import assert from 'node:assert';
 
 describe('agents', () => {
   it('should be importable', async () => {
     const module = await import('./index.js');
-    expect(module).toBeDefined();
+    assert.ok(module, 'module should be defined');
   });
 
   it('should export expected functions', async () => {
     const module = await import('./index.js');
-    // Add specific export checks here
-    expect(typeof module).toBe('object');
+    assert.strictEqual(typeof module, 'object');
   });
 });

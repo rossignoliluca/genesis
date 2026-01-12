@@ -139,7 +139,7 @@ export class Kernel {
     tasksFailed: 0,
     invariantViolations: 0,
     energyLowEvents: 0,
-    selfModifications: 1,  // 🧬 Added by Darwin-Gödel self-improvement
+    selfModifications: 2,  // 🧬 Evolution 2: Added meta-learning system Added by Darwin-Gödel self-improvement
   };
 
   // Event handlers

@@ -323,6 +323,17 @@ export class ActiveInferenceEngine {
     actionsTaken: new Map<ActionType, number>(),
   };
 
+  // 🧬 Evolution: Learning history for meta-learning
+  private learningHistory: Array<{
+    timestamp: number;
+    action: ActionType;
+    surprise: number;
+    beliefEntropy: number;
+    outcome: 'positive' | 'negative' | 'neutral';
+  }> = [];
+
+  private readonly MAX_HISTORY = 1000;
+
   constructor(config: Partial<ActiveInferenceConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
 
@@ -583,6 +594,130 @@ export class ActiveInferenceEngine {
       -safeLog(expectedTask[observation.task]);
 
     return surprise;
+  }
+
+  // ============================================================================
+  // 🧬 Evolution: Meta-Learning System
+  // ============================================================================
+
+  /**
+   * Record a learning event for meta-analysis
+   */
+  recordLearningEvent(
+    action: ActionType,
+    surprise: number,
+    outcome: 'positive' | 'negative' | 'neutral'
+  ): void {
+    const beliefEntropy = this.computeBeliefEntropy();
+
+    this.learningHistory.push({
+      timestamp: Date.now(),
+      action,
+      surprise,
+      beliefEntropy,
+      outcome,
+    });
+
+    // Maintain size limit (FIFO)
+    while (this.learningHistory.length > this.MAX_HISTORY) {
+      this.learningHistory.shift();
+    }
+  }
+
+  /**
+   * Analyze learning patterns to detect meta-level trends
+   */
+  analyzeLearningPatterns(): {
+    avgSurprise: number;
+    surpriseTrend: 'decreasing' | 'stable' | 'increasing';
+    successRate: number;
+    dominantAction: ActionType | null;
+    learningVelocity: number;
+    recommendation: string;
+  } {
+    if (this.learningHistory.length < 20) {
+      return {
+        avgSurprise: 0,
+        surpriseTrend: 'stable',
+        successRate: 0,
+        dominantAction: null,
+        learningVelocity: 0,
+        recommendation: 'Insufficient data for analysis',
+      };
+    }
+
+    const recent = this.learningHistory.slice(-100);
+    const older = this.learningHistory.slice(-200, -100);
+
+    // Calculate metrics
+    const avgSurprise = recent.reduce((s, e) => s + e.surprise, 0) / recent.length;
+    const oldAvgSurprise = older.length > 0
+      ? older.reduce((s, e) => s + e.surprise, 0) / older.length
+      : avgSurprise;
+
+    const surpriseTrend = avgSurprise < oldAvgSurprise - 0.5 ? 'decreasing'
+                        : avgSurprise > oldAvgSurprise + 0.5 ? 'increasing'
+                        : 'stable';
+
+    const positiveCount = recent.filter(e => e.outcome === 'positive').length;
+    const successRate = positiveCount / recent.length;
+
+    // Find dominant action
+    const actionCounts = new Map<ActionType, number>();
+    for (const event of recent) {
+      actionCounts.set(event.action, (actionCounts.get(event.action) || 0) + 1);
+    }
+    let dominantAction: ActionType | null = null;
+    let maxCount = 0;
+    for (const [action, count] of actionCounts) {
+      if (count > maxCount) {
+        maxCount = count;
+        dominantAction = action;
+      }
+    }
+
+    // Learning velocity: rate of surprise reduction
+    const learningVelocity = older.length > 0 ? (oldAvgSurprise - avgSurprise) / 100 : 0;
+
+    // Generate recommendation
+    let recommendation: string;
+    if (surpriseTrend === 'decreasing' && successRate > 0.6) {
+      recommendation = 'Learning is progressing well. Continue current strategy.';
+    } else if (surpriseTrend === 'increasing') {
+      recommendation = 'Environment may be changing. Consider exploration actions.';
+    } else if (successRate < 0.3) {
+      recommendation = 'Low success rate. Consider adjusting action preferences.';
+    } else {
+      recommendation = 'Learning is stable. Monitor for changes.';
+    }
+
+    return {
+      avgSurprise,
+      surpriseTrend,
+      successRate,
+      dominantAction,
+      learningVelocity,
+      recommendation,
+    };
+  }
+
+  /**
+   * Get learning history for external analysis
+   */
+  getLearningHistory() {
+    return [...this.learningHistory];
+  }
+
+  private computeBeliefEntropy(): number {
+    const h = (probs: number[]) => -probs.reduce((acc, p) =>
+      p > 1e-10 ? acc + p * Math.log(p) : acc, 0);
+
+    return (
+      h(this.beliefs.viability) +
+      h(this.beliefs.worldState) +
+      h(this.beliefs.coupling) +
+      h(this.beliefs.goalProgress)
+    ) / 4;
   }
 
   // ============================================================================

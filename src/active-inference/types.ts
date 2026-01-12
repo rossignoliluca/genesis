@@ -94,10 +94,12 @@ export type ActionType =
   | 'verify.ethics'   // Ethical check
   | 'execute.task'    // Execute planned task
   | 'execute.code'    // Execute generated code (Code Execution Mode)
+  | 'execute.shell'   // Execute shell command (OWASP-secure)
   | 'adapt.code'      // Adapt code based on errors
   | 'execute.cycle'   // Full execution cycle with iteration
   | 'self.modify'     // Radical self-modification (Darwin-Gödel)
   | 'self.analyze'    // Analyze own code for improvements
+  | 'git.push'        // Push to remote repository (requires confirmation)
   | 'dream.cycle'     // Memory consolidation
   | 'rest.idle'       // Do nothing (save energy)
   | 'recharge';       // Restore energy
@@ -109,10 +111,12 @@ export const ACTIONS: ActionType[] = [
   'verify.ethics',
   'execute.task',
   'execute.code',
+  'execute.shell',
   'adapt.code',
   'execute.cycle',
   'self.modify',
   'self.analyze',
+  'git.push',
   'dream.cycle',
   'rest.idle',
   'recharge',

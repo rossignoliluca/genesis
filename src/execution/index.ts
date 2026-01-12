@@ -26,3 +26,16 @@ export {
   CodeAdaptationContext,
   ExecutionCycleResult,
 } from './integration.js';
+
+// 🛡️ Secure Shell Execution (OWASP-compliant)
+export {
+  SecureShellExecutor,
+  getShellExecutor,
+  resetShellExecutor,
+  COMMAND_ALLOWLIST,
+  RiskLevel,
+  type CommandConfig,
+  type ExecutionResult as ShellExecutionResult,
+  type ExecutionRequest as ShellExecutionRequest,
+  type AuditEntry,
+} from './shell.js';

@@ -94,10 +94,12 @@ const AI_TO_WM_ACTION: Record<ActionType, WMActionType> = {
   'verify.ethics': 'query',
   'execute.task': 'execute',
   'execute.code': 'execute',    // Code Execution Mode
+  'execute.shell': 'execute',   // Secure shell execution
   'adapt.code': 'transform',    // Code adaptation
   'execute.cycle': 'execute',   // Full execution cycle
   'self.modify': 'transform',   // Radical self-modification
   'self.analyze': 'query',      // Self-analysis
+  'git.push': 'execute',        // Git push (high-risk, requires confirmation)
   'dream.cycle': 'transform',
   'rest.idle': 'observe',
   'recharge': 'transform',

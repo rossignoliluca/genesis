@@ -17,6 +17,7 @@
 import { getCodeRuntime, ExecutionResult, ExecutionObservation, CodeRuntime } from './runtime.js';
 import { registerAction, ActionResult, ActionContext } from '../active-inference/actions.js';
 import { ActionType, Observation } from '../active-inference/types.js';
+import { getShellExecutor, RiskLevel, ExecutionResult as ShellResult } from './shell.js';
 
 // ============================================================================
 // Types
@@ -45,6 +46,19 @@ export interface ExecutionCycleResult {
   beliefUpdates: number;
 }
 
+export interface ShellExecutionContext extends ActionContext {
+  command: string;
+  args: string[];
+  cwd?: string;
+  confirmed?: boolean;  // Human-in-the-loop confirmation
+}
+
+export interface GitPushContext extends ActionContext {
+  remote?: string;
+  branch?: string;
+  confirmed?: boolean;
+}
+
 // ============================================================================
 // Action Registration
 // ============================================================================
@@ -61,6 +75,12 @@ export function registerExecutionActions(): void {
 
   // Full execution cycle with iteration
   registerAction('execute.cycle', executeCycleAction);
+
+  // 🛡️ Secure shell execution (OWASP-compliant)
+  registerAction('execute.shell', executeShellAction);
+
+  // 🚀 Git push action (high-risk, requires confirmation)
+  registerAction('git.push', gitPushAction);
 }
 
 // ============================================================================
@@ -336,6 +356,104 @@ export function toActiveInferenceObservation(execObs: ExecutionObservation): Obs
     coherence: coherenceObs as 0 | 1 | 2,
     task: execObs.data.success ? 3 : 2, // completed or active
   };
+}
+
+// ============================================================================
+// Execute Shell Action (OWASP-Secure)
+// ============================================================================
+
+async function executeShellAction(context: ActionContext): Promise<ActionResult> {
+  const shellContext = context as ShellExecutionContext;
+  const startTime = Date.now();
+
+  if (!shellContext.command) {
+    return {
+      success: false,
+      action: 'execute.shell',
+      error: 'No command provided',
+      duration: 0,
+    };
+  }
+
+  try {
+    // Get shell executor (creates if needed with genesis root)
+    const executor = getShellExecutor(process.cwd());
+
+    const result = await executor.execute({
+      command: shellContext.command,
+      args: shellContext.args || [],
+      cwd: shellContext.cwd,
+      confirmed: shellContext.confirmed,
+    });
+
+    return {
+      success: result.success,
+      action: 'execute.shell',
+      data: {
+        command: result.command,
+        args: result.args,
+        stdout: result.stdout.slice(0, 2000),
+        stderr: result.stderr.slice(0, 500),
+        exitCode: result.exitCode,
+        riskLevel: result.riskLevel,
+        blocked: result.blocked,
+        blockReason: result.blockReason,
+      },
+      duration: Date.now() - startTime,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'execute.shell',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - startTime,
+    };
+  }
+}
+
+// ============================================================================
+// Git Push Action (High-Risk)
+// ============================================================================
+
+async function gitPushAction(context: ActionContext): Promise<ActionResult> {
+  const pushContext = context as GitPushContext;
+  const startTime = Date.now();
+
+  try {
+    const executor = getShellExecutor(process.cwd());
+
+    // Build push arguments
+    const args = ['push'];
+    if (pushContext.remote) args.push(pushContext.remote);
+    if (pushContext.branch) args.push(pushContext.branch);
+
+    const result = await executor.execute({
+      command: 'git-push',  // Uses git-push config with requiresConfirmation
+      args,
+      confirmed: pushContext.confirmed ?? true,  // Assume confirmed if reaching here
+    });
+
+    return {
+      success: result.success,
+      action: 'git.push',
+      data: {
+        remote: pushContext.remote || 'origin',
+        branch: pushContext.branch || 'current',
+        stdout: result.stdout.slice(0, 1000),
+        stderr: result.stderr.slice(0, 500),
+        blocked: result.blocked,
+        blockReason: result.blockReason,
+      },
+      duration: Date.now() - startTime,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'git.push',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - startTime,
+    };
+  }
 }
 
 // ============================================================================

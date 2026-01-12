@@ -29,6 +29,9 @@ export * from './cache.js';
 export * from './parallel-executor.js';
 export * from './transformers.js';
 
+// Re-export Phase 11: Enhanced Client Manager (v7.6)
+export * from './client-manager.js';
+
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { MCPServerName } from '../types.js';

@@ -56,6 +56,11 @@ export * from './forgetting.js';
 // Re-export Phase 8: Local-First modules
 export * from './cache.js';
 export * from './indexer.js';
+
+// Re-export Phase 11: RAG & Vector Embeddings (v7.6)
+export * from './embeddings.js';
+export * from './vector-store.js';
+export * from './rag.js';
 export { EpisodicStore, createEpisodicStore, type CreateEpisodicOptions } from './episodic.js';
 export { SemanticStore, createSemanticStore, type CreateSemanticOptions } from './semantic.js';
 export { ProceduralStore, createProceduralStore, type CreateProceduralOptions } from './procedural.js';

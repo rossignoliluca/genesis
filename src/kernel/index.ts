@@ -28,6 +28,11 @@ import {
   Message,
   MessageType,
   AgentId,
+  // Phase 11: Multi-Agent Coordination (v7.6)
+  AgentCoordinator,
+  getCoordinator,
+  CoordinationPattern,
+  Workflow,
 } from '../agents/index.js';
 
 // ============================================================================
@@ -131,6 +136,9 @@ export class Kernel {
   // Invariant checking (extensible registry)
   private invariants: InvariantRegistry;
 
+  // Multi-Agent Coordination (v7.6)
+  private coordinator: AgentCoordinator;
+
   // Metrics
   private metrics = {
     startTime: new Date(),
@@ -159,6 +167,9 @@ export class Kernel {
 
     // Initialize invariant registry (uses singleton but allows extension)
     this.invariants = invariantRegistry;
+
+    // Initialize multi-agent coordinator (v7.6)
+    this.coordinator = getCoordinator(this.bus);
 
     // Create agent ecosystem
     const ecosystem = createAgentEcosystem(this.bus);
@@ -985,6 +996,77 @@ export class Kernel {
 
   getRegistry(): AgentRegistry {
     return this.registry;
+  }
+
+  // ============================================================================
+  // Multi-Agent Coordination (v7.6)
+  // ============================================================================
+
+  /**
+   * Get the agent coordinator
+   */
+  getCoordinator(): AgentCoordinator {
+    return this.coordinator;
+  }
+
+  /**
+   * Execute a coordinated multi-agent task
+   */
+  async coordinatedTask(options: {
+    query: string;
+    agents?: AgentType[];
+    pattern?: CoordinationPattern;
+    timeout?: number;
+  }): Promise<unknown> {
+    const agents = options.agents || await this.coordinator.route(options.query);
+
+    this.log(`Coordinated task: ${options.query}`);
+    this.log(`Pattern: ${options.pattern || 'parallel'}, Agents: ${agents.join(', ')}`);
+
+    const task = await this.coordinator.coordinate({
+      query: options.query,
+      agents,
+      pattern: options.pattern || 'parallel',
+      timeout: options.timeout || this.config.maxTaskTimeout,
+    });
+
+    if (task.status === 'completed') {
+      this.metrics.tasksCompleted++;
+    } else {
+      this.metrics.tasksFailed++;
+    }
+
+    return task.finalResult;
+  }
+
+  /**
+   * Run a predefined workflow
+   */
+  async runWorkflow(workflowId: string, input: unknown): Promise<unknown> {
+    this.log(`Running workflow: ${workflowId}`);
+
+    const context = await this.coordinator.executeWorkflow(workflowId, input);
+
+    if (context.errors.length > 0) {
+      this.log(`Workflow errors: ${context.errors.join(', ')}`);
+    }
+
+    return context.results.get(context.workflowId) || context.results;
+  }
+
+  /**
+   * Register a custom workflow
+   */
+  registerWorkflow(workflow: Workflow): void {
+    this.coordinator.registerWorkflow(workflow);
+    this.log(`Registered workflow: ${workflow.id}`);
+  }
+
+  /**
+   * Find the best agent for a task
+   */
+  routeTask(task: string): AgentType | null {
+    return this.coordinator.findBestAgent(task);
   }
 
   // ============================================================================

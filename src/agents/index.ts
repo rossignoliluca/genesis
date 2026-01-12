@@ -44,6 +44,29 @@ export { NarratorAgent, createNarratorAgent } from './narrator.js';
 export { SensorAgent, createSensorAgent } from './sensor.js';
 
 // ============================================================================
+// Phase 11: Multi-Agent Coordination (v7.6)
+// ============================================================================
+
+export {
+  AgentCoordinator,
+  getCoordinator,
+  createCoordinator,
+  resetCoordinator,
+  coordinateAgents,
+  routeToAgent,
+  runWorkflow,
+  type CoordinationPattern,
+  type AggregationStrategy,
+  type CoordinationTask,
+  type AgentResponse,
+  type WorkflowStep,
+  type Workflow,
+  type WorkflowContext,
+  type DebateConfig,
+  type VoteResult,
+} from './coordinator.js';
+
+// ============================================================================
 // Import all agents to register factories
 // ============================================================================
 

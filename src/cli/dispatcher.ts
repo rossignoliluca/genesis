@@ -70,6 +70,113 @@ export interface LLMToolCall {
 }
 
 // ============================================================================
+// Tool Name Normalization / Aliases
+// ============================================================================
+
+/**
+ * Map generic/alternate tool names to canonical MCP tool names.
+ * Handles cases where LLMs generate variations like:
+ * - "filesystem" instead of "read_file"
+ * - "web_search" instead of "brave_web_search"
+ * - "search" instead of specific search tools
+ */
+const TOOL_ALIASES: Record<string, string> = {
+  // Filesystem aliases
+  'filesystem': 'list_directory',  // Default filesystem action
+  'fs': 'list_directory',
+  'file': 'read_file',
+  'readfile': 'read_file',
+  'read-file': 'read_file',
+  'writefile': 'write_file',
+  'write-file': 'write_file',
+  'listdir': 'list_directory',
+  'list-directory': 'list_directory',
+  'ls': 'list_directory',
+  'cat': 'read_file',
+  'mkdir': 'create_directory',
+
+  // Search aliases
+  'search': 'brave_web_search',
+  'web-search': 'brave_web_search',
+  'websearch': 'brave_web_search',
+  'google': 'brave_web_search',
+  'bing': 'brave_web_search',
+
+  // Academic search aliases
+  'arxiv': 'search_arxiv',
+  'papers': 'search_arxiv',
+  'academic_search': 'search_arxiv',
+  'scholar': 'search_semantic_scholar',
+
+  // Memory/knowledge graph aliases
+  'memory': 'read_graph',
+  'kg': 'read_graph',
+  'knowledge_graph': 'read_graph',
+  'remember': 'create_entities',
+  'recall': 'search_nodes',
+
+  // GitHub aliases
+  'github': 'search_repositories',
+  'gh': 'search_repositories',
+  'repo': 'search_repositories',
+  'repositories': 'search_repositories',
+
+  // Generic MCP (can't route - mark as invalid)
+  'mcp': '_invalid_generic_mcp',
+  'tool': '_invalid_generic_tool',
+};
+
+/**
+ * Context-aware tool resolution based on parameters.
+ * When a generic tool is called with specific params, infer the right tool.
+ */
+function resolveToolFromContext(name: string, params: Record<string, unknown>): string {
+  const lowerName = name.toLowerCase().replace(/-/g, '_');
+
+  // Handle "filesystem" with context
+  if (lowerName === 'filesystem' || lowerName === 'fs') {
+    if (params.content !== undefined || params.data !== undefined) {
+      return 'write_file';
+    }
+    if (params.path && typeof params.path === 'string') {
+      // If path looks like a file (has extension), read it
+      if (params.path.includes('.')) {
+        return 'read_file';
+      }
+      // Otherwise list directory
+      return 'list_directory';
+    }
+  }
+
+  // Handle generic "search" with context
+  if (lowerName === 'search') {
+    if (params.arxiv || params.paper || params.academic) {
+      return 'search_arxiv';
+    }
+    if (params.code || params.github || params.repo) {
+      return 'search_code';
+    }
+    return 'brave_web_search';
+  }
+
+  // Handle "memory" with context
+  if (lowerName === 'memory' || lowerName === 'kg') {
+    if (params.entities || params.create) {
+      return 'create_entities';
+    }
+    if (params.relations) {
+      return 'create_relations';
+    }
+    if (params.query || params.search) {
+      return 'search_nodes';
+    }
+    return 'read_graph';
+  }
+
+  return name;
+}
+
+// ============================================================================
 // Tool Categories for Routing
 // ============================================================================
 
@@ -426,7 +533,7 @@ export class ToolDispatcher {
    * Parse OpenAI-style tool call
    */
   private parseLLMToolCall(call: LLMToolCall): ToolCall {
-    const name = call.function.name;
+    let name = call.function.name;
     let params: Record<string, unknown> = {};
 
     try {
@@ -434,6 +541,9 @@ export class ToolDispatcher {
     } catch {
       // Invalid JSON, use empty params
     }
+
+    // Normalize tool name
+    name = this.normalizeTool(name, params);
 
     return {
       id: call.id,
@@ -467,11 +577,13 @@ export class ToolDispatcher {
         const content = match[2] || '';
         const params = this.parseToolParams(content);
 
+        // Normalize tool name
+        const normalizedName = this.normalizeTool(name, params);
         calls.push({
           id: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          name,
+          name: normalizedName,
           params,
-          ...this.routeTool(name),
+          ...this.routeTool(normalizedName),
         });
       }
     }
@@ -483,11 +595,13 @@ export class ToolDispatcher {
       try {
         const name = jsonMatch[1];
         const params = JSON.parse(jsonMatch[2]);
+        // Normalize tool name
+        const normalizedName = this.normalizeTool(name, params);
         calls.push({
           id: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          name,
+          name: normalizedName,
           params,
-          ...this.routeTool(name),
+          ...this.routeTool(normalizedName),
         });
       } catch {
         // Invalid JSON, skip
@@ -495,6 +609,32 @@ export class ToolDispatcher {
     }
 
     return calls;
+  }
+
+  /**
+   * Normalize tool name using aliases and context-aware resolution
+   */
+  private normalizeTool(name: string, params: Record<string, unknown>): string {
+    // First try context-aware resolution
+    const contextResolved = resolveToolFromContext(name, params);
+    if (contextResolved !== name) {
+      if (this.config.verbose) {
+        console.log(`  [Normalize] "${name}" -> "${contextResolved}" (context)`);
+      }
+      return contextResolved;
+    }
+
+    // Then try simple aliases
+    const lowerName = name.toLowerCase().replace(/-/g, '_');
+    const alias = TOOL_ALIASES[lowerName] || TOOL_ALIASES[name];
+    if (alias) {
+      if (this.config.verbose) {
+        console.log(`  [Normalize] "${name}" -> "${alias}" (alias)`);
+      }
+      return alias;
+    }
+
+    return name;
   }
 
   /**
@@ -562,6 +702,16 @@ export class ToolDispatcher {
     const mcpServer = MCP_TOOL_MAP[name];
     if (mcpServer) {
       return { source: 'mcp', mcpServer };
+    }
+
+    // Try alias lookup as fallback
+    const lowerName = name.toLowerCase().replace(/-/g, '_');
+    const alias = TOOL_ALIASES[lowerName] || TOOL_ALIASES[name];
+    if (alias && alias !== name && !alias.startsWith('_invalid')) {
+      const aliasServer = MCP_TOOL_MAP[alias];
+      if (aliasServer) {
+        return { source: 'mcp', mcpServer: aliasServer };
+      }
     }
 
     // Default to local (will fail gracefully if not found)

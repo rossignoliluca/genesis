@@ -2,13 +2,13 @@
 /**
  * Genesis - System Creator CLI
  *
- * Create systems powered by 13 MCP servers:
+ * Create systems powered by 17 MCP servers:
  *
  * KNOWLEDGE:  arxiv, semantic-scholar, context7, wolfram
- * RESEARCH:   gemini, brave-search, exa, firecrawl
- * CREATION:   openai, github
+ * RESEARCH:   gemini, brave-search, exa, firecrawl, sentry
+ * CREATION:   openai, github, playwright, aws
  * VISUAL:     stability-ai
- * STORAGE:    memory, filesystem
+ * STORAGE:    memory, filesystem, postgres
  *
  * Usage:
  *   genesis create <name> [options]     Create a new system
@@ -76,13 +76,13 @@ function printBanner(): void {
   // Box width: 65 chars total (╔ + 63×═ + ╗)
   // Content: 63 chars between ║...║
   const line1 = '  GENESIS - System Creator';
-  const line2 = '  Powered by 13 MCP Servers';
+  const line2 = '  Powered by 17 MCP Servers';
   const width = 63;
 
   console.log();
   console.log(c('╔' + '═'.repeat(width) + '╗', 'cyan'));
   console.log(c('║', 'cyan') + '  ' + c('GENESIS', 'bold') + ' - System Creator' + ' '.repeat(width - line1.length) + c('║', 'cyan'));
-  console.log(c('║', 'cyan') + '  ' + c('Powered by 13 MCP Servers', 'dim') + ' '.repeat(width - line2.length) + c('║', 'cyan'));
+  console.log(c('║', 'cyan') + '  ' + c('Powered by 17 MCP Servers', 'dim') + ' '.repeat(width - line2.length) + c('║', 'cyan'));
   console.log(c('╚' + '═'.repeat(width) + '╝', 'cyan'));
   console.log();
 }

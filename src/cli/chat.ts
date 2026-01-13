@@ -1177,7 +1177,7 @@ export class ChatSession {
    * Print banner (v7.0: Uses modern UI component)
    */
   private printBanner(): void {
-    banner('GENESIS - System Creator', 'Powered by 13 MCP Servers');
+    banner('GENESIS - System Creator', 'Powered by 17 MCP Servers');
   }
 
   /**

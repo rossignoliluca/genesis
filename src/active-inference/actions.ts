@@ -676,16 +676,55 @@ registerAction('execute.shell', async (context) => {
 registerAction('self.analyze', async (context) => {
   try {
     const cwd = process.cwd();
+    const memUsage = process.memoryUsage();
+    const toMB = (bytes: number) => Math.round(bytes / 1024 / 1024 * 10) / 10;
+
     const analysis: {
+      // System info
+      timestamp: string;
+      cwd: string;
+      nodeVersion: string;
+      platform: string;
+      arch: string;
+      uptime: number;
+      cpuCount: number;
+      memoryUsage: {
+        rss: number;
+        heapUsed: number;
+        heapTotal: number;
+        external: number;
+      };
+      // Package info
       name: string;
       version: string;
       modules: string[];
       capabilities: string[];
+      // Context
+      goal?: string;
+      beliefs?: Record<string, unknown>;
     } = {
+      // System introspection
+      timestamp: new Date().toISOString(),
+      cwd,
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      uptime: process.uptime(),
+      cpuCount: require('os').cpus().length,
+      memoryUsage: {
+        rss: toMB(memUsage.rss),
+        heapUsed: toMB(memUsage.heapUsed),
+        heapTotal: toMB(memUsage.heapTotal),
+        external: toMB(memUsage.external),
+      },
+      // Package info
       name: 'genesis',
       version: 'unknown',
       modules: [],
       capabilities: [],
+      // Pass through context
+      goal: context.goal,
+      beliefs: context.beliefs as Record<string, unknown>,
     };
 
     // Read package.json for version

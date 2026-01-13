@@ -21,17 +21,23 @@
 
 /**
  * Modules that can be routed to
+ * v7.13: Full integration of all subsystems
  */
 export type BrainModule =
-  | 'memory'      // Cognitive Workspace - recall/anticipate
-  | 'llm'         // Hybrid Router - generate response
-  | 'grounding'   // Epistemic Stack - verify claims
-  | 'tools'       // Tool Dispatcher - execute tool calls
-  | 'healing'     // Darwin-Gödel - fix errors
-  | 'consciousness' // Phi Monitor - check consciousness level
-  | 'kernel'      // Agent Orchestration - delegate to agents
-  | 'thinking'    // v7.6: Extended thinking with scratchpad + self-critique
-  | 'done';       // End processing
+  | 'memory'           // Cognitive Workspace - recall/anticipate
+  | 'llm'              // Hybrid Router - generate response
+  | 'grounding'        // Epistemic Stack - verify claims
+  | 'tools'            // Tool Dispatcher - execute tool calls
+  | 'healing'          // Darwin-Gödel - fix errors
+  | 'consciousness'    // Phi Monitor - check consciousness level
+  | 'kernel'           // Agent Orchestration - delegate to agents
+  | 'thinking'         // v7.6: Extended thinking with scratchpad + self-critique
+  | 'active-inference' // v7.13: Free Energy minimization + action selection
+  | 'subagents'        // v7.13: Delegate to specialized subagents
+  | 'world-model'      // v7.13: Predictive modeling + simulation
+  | 'self-modify'      // v7.13: Darwin-Gödel self-improvement
+  | 'organism'         // v7.13: Autopoietic lifecycle management
+  | 'done';            // End processing
 
 /**
  * Command for routing between modules

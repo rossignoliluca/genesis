@@ -97,6 +97,32 @@ import {
   ThinkingResult,
 } from '../thinking/index.js';
 
+// v7.13: Full Module Integration
+import {
+  getAutonomousLoop,
+  AutonomousLoop,
+} from '../active-inference/index.js';
+import {
+  SubagentExecutor,
+  getSubagentExecutor,
+} from '../subagents/executor.js';
+import {
+  Kernel,
+  getKernel,
+} from '../kernel/index.js';
+import {
+  getStateStore,
+  StateStore,
+} from '../persistence/index.js';
+import {
+  WorldModelSystem,
+  getWorldModelSystem,
+} from '../world-model/index.js';
+import {
+  getDarwinGodelEngine,
+  DarwinGodelEngine,
+} from '../self-modification/index.js';
+
 // ============================================================================
 // Brain Class
 // ============================================================================
@@ -112,6 +138,14 @@ export class Brain {
   private dispatcher: ToolDispatcher;
   private grounding: GroundingSystem;
   private thinking: ThinkingEngine;  // v7.6: Extended thinking
+
+  // v7.13: Full module integration
+  private activeInference: AutonomousLoop | null = null;
+  private subagentExecutor: SubagentExecutor | null = null;
+  private kernel: Kernel | null = null;
+  private stateStore: StateStore | null = null;
+  private worldModel: WorldModelSystem | null = null;
+  private darwinGodel: DarwinGodelEngine | null = null;
 
   // State
   private running: boolean = false;
@@ -155,6 +189,56 @@ export class Brain {
       enableDeliberativeAlignment: true,
       thinkingBudget: 4096,
     });
+
+    // v7.13: Initialize full module integration (lazy - on first use)
+    this.initializeV713Modules();
+  }
+
+  /**
+   * v7.13: Initialize new module integrations
+   */
+  private initializeV713Modules(): void {
+    try {
+      // Active Inference - Free Energy minimization
+      this.activeInference = getAutonomousLoop();
+    } catch {
+      // Module may not be configured
+    }
+
+    try {
+      // Subagent Executor - specialized task delegation
+      this.subagentExecutor = getSubagentExecutor();
+    } catch {
+      // Module may not be configured
+    }
+
+    try {
+      // Kernel - multi-agent orchestration
+      this.kernel = getKernel();
+    } catch {
+      // Module may not be configured
+    }
+
+    try {
+      // State Store - persistence
+      this.stateStore = getStateStore();
+    } catch {
+      // Module may not be configured
+    }
+
+    try {
+      // World Model - predictive modeling
+      this.worldModel = getWorldModelSystem();
+    } catch {
+      // Module may not be configured
+    }
+
+    try {
+      // Darwin-Gödel Engine - self-modification
+      this.darwinGodel = getDarwinGodelEngine();
+    } catch {
+      // Module may not be configured
+    }
   }
 
   // ============================================================================
@@ -313,9 +397,34 @@ export class Brain {
     // Update metrics
     this.updateMetrics(state, transitions);
 
+    // v7.13: Auto-persistence after each cycle
+    await this.autoPersist(state);
+
     this.emit({ type: 'cycle_complete', timestamp: new Date(), data: { state, transitions } });
 
     return state.response;
+  }
+
+  /**
+   * v7.13: Auto-persist state after each processing cycle
+   */
+  private async autoPersist(state: BrainState): Promise<void> {
+    if (!this.stateStore) return;
+
+    try {
+      // Update session state with cycle info using valid GenesisState fields
+      this.stateStore.update({
+        session: {
+          id: this.stateStore.getState().session?.id || `brain-${Date.now()}`,
+          startTime: this.stateStore.getState().session?.startTime || new Date(),
+          interactions: this.metrics.totalCycles,
+          lastActivity: new Date(),
+        },
+      });
+      await this.stateStore.save();
+    } catch {
+      // Persistence failures are non-fatal - log but don't throw
+    }
   }
 
   // ============================================================================
@@ -350,6 +459,22 @@ export class Brain {
 
       case 'thinking':
         return this.stepThinking(state);
+
+      // v7.13: New module integrations
+      case 'active-inference':
+        return this.stepActiveInference(state);
+
+      case 'subagents':
+        return this.stepSubagents(state);
+
+      case 'world-model':
+        return this.stepWorldModel(state);
+
+      case 'self-modify':
+        return this.stepSelfModify(state);
+
+      case 'organism':
+        return this.stepOrganism(state);
 
       default:
         return { goto: 'done', update: {} };
@@ -638,14 +763,417 @@ export class Brain {
 
   /**
    * Kernel module: delegate to agent orchestration
-   * (Placeholder for future kernel integration)
+   * v7.13: Full multi-agent coordination via Kernel state machine
    */
   private async stepKernel(state: BrainState): Promise<Command> {
-    // For now, just pass through to LLM
+    if (!this.kernel) {
+      return {
+        goto: 'llm',
+        update: {},
+        reason: 'kernel_not_available',
+      };
+    }
+
+    try {
+      // Use coordinatedTask for multi-agent processing
+      const result = await this.kernel.coordinatedTask({
+        query: state.query,
+        pattern: 'parallel',  // Run agents in parallel by default
+        timeout: 60000,       // 1 minute timeout
+      });
+
+      // Result is unknown type, try to extract useful info
+      if (result !== null && result !== undefined) {
+        const resultStr = typeof result === 'string'
+          ? result
+          : JSON.stringify(result, null, 2);
+
+        // If result is substantial, use it as response
+        if (resultStr.length > 10) {
+          return {
+            goto: 'done',
+            update: { response: resultStr },
+            reason: 'kernel_complete',
+          };
+        }
+
+        // Add to context for LLM processing
+        return {
+          goto: 'llm',
+          update: {
+            context: {
+              ...state.context,
+              formatted: state.context.formatted + `\n\n[Kernel Result: ${resultStr.slice(0, 500)}]`,
+            },
+          },
+          reason: 'kernel_delegated',
+        };
+      }
+
+      // No result, passthrough to LLM
+      return {
+        goto: 'llm',
+        update: {},
+        reason: 'kernel_passthrough',
+      };
+    } catch (error) {
+      return {
+        goto: 'llm',
+        update: {},
+        reason: `kernel_error: ${error instanceof Error ? error.message : 'unknown'}`,
+      };
+    }
+  }
+
+  // ============================================================================
+  // v7.13: New Module Step Methods
+  // ============================================================================
+
+  /**
+   * Active Inference module: Free Energy minimization and action selection
+   * Based on: Active Inference framework - minimizes prediction error
+   */
+  private async stepActiveInference(state: BrainState): Promise<Command> {
+    if (!this.activeInference) {
+      return {
+        goto: 'thinking',
+        update: {},
+        reason: 'active_inference_not_available',
+      };
+    }
+
+    try {
+      // Get consciousness level for monitoring
+      const phi = this.getCurrentPhi();
+
+      // Run single active inference cycle
+      const actionType = await this.activeInference.cycle();
+      const beliefs = this.activeInference.getBeliefs();
+
+      // Get stats for monitoring
+      const stats = this.activeInference.getStats();
+
+      // Route based on action type from active inference
+      // ActionType includes: 'recall.memory', 'execute.task', 'execute.code', 'sense.mcp', etc.
+      if (actionType === 'recall.memory' || actionType === 'dream.cycle') {
+        // Trigger memory anticipation based on active inference predictions
+        try {
+          const anticipated = await this.workspace.anticipate({
+            task: state.query,
+            keywords: state.query.split(/\s+/).filter(w => w.length > 3),
+          });
+          if (anticipated.length > 0) {
+            this.metrics.anticipationHits += anticipated.length;
+          }
+        } catch {
+          // Memory anticipation failure is non-fatal
+        }
+
+        return {
+          goto: 'memory',
+          update: {
+            phi,
+            context: {
+              ...state.context,
+              formatted: state.context.formatted + `\n\n[Active Inference: memory recall suggested (surprise: ${stats.avgSurprise.toFixed(2)})]`,
+            },
+          },
+          reason: 'active_inference_recall',
+        };
+      }
+
+      if (actionType === 'execute.task' || actionType === 'execute.code' || actionType === 'execute.shell') {
+        return {
+          goto: 'tools',
+          update: { phi },
+          reason: 'active_inference_tool',
+        };
+      }
+
+      // Default: proceed to thinking with beliefs context
+      const beliefsSummary = Object.entries(beliefs)
+        .slice(0, 3)
+        .map(([k, v]) => `${k}: ${typeof v === 'number' ? v.toFixed(2) : v}`)
+        .join(', ');
+
+      return {
+        goto: 'thinking',
+        update: {
+          phi,
+          context: {
+            ...state.context,
+            formatted: state.context.formatted + `\n\n[Active Inference: ${beliefsSummary}]`,
+          },
+        },
+        reason: 'active_inference_think',
+      };
+    } catch (error) {
+      return {
+        goto: 'thinking',
+        update: {},
+        reason: `active_inference_error: ${error instanceof Error ? error.message : 'unknown'}`,
+      };
+    }
+  }
+
+  /**
+   * Subagents module: delegate to specialized subagents
+   * Routes complex tasks to specialized agents (explore, plan, code, research, general)
+   */
+  private async stepSubagents(state: BrainState): Promise<Command> {
+    if (!this.subagentExecutor) {
+      return {
+        goto: 'llm',
+        update: {},
+        reason: 'subagents_not_available',
+      };
+    }
+
+    try {
+      // Determine appropriate subagent based on query analysis
+      const queryLower = state.query.toLowerCase();
+      let subagentType: 'explore' | 'plan' | 'code' | 'research' | 'general' = 'general';
+
+      if (queryLower.includes('plan') || queryLower.includes('design') || queryLower.includes('architect')) {
+        subagentType = 'plan';
+      } else if (queryLower.includes('implement') || queryLower.includes('build') || queryLower.includes('code') || queryLower.includes('write')) {
+        subagentType = 'code';
+      } else if (queryLower.includes('explore') || queryLower.includes('search') || queryLower.includes('find')) {
+        subagentType = 'explore';
+      } else if (queryLower.includes('research') || queryLower.includes('learn') || queryLower.includes('study')) {
+        subagentType = 'research';
+      }
+
+      // Execute subagent with correct TaskRequest interface
+      const result = await this.subagentExecutor.execute({
+        description: `Brain ${subagentType} task`,
+        prompt: `${state.context.formatted ? `Context:\n${state.context.formatted}\n\n` : ''}Task: ${state.query}`,
+        subagentType,
+        model: 'balanced',
+      });
+
+      if (result.success && result.result) {
+        return {
+          goto: 'done',
+          update: { response: result.result },
+          reason: `subagent_${subagentType}_complete`,
+        };
+      }
+
+      // Subagent failed or no result
+      return {
+        goto: 'llm',
+        update: {
+          context: {
+            ...state.context,
+            formatted: state.context.formatted + `\n\n[Subagent ${subagentType}: ${result.error || 'no result'}]`,
+          },
+        },
+        reason: 'subagent_fallback',
+      };
+    } catch (error) {
+      return {
+        goto: 'llm',
+        update: {},
+        reason: `subagents_error: ${error instanceof Error ? error.message : 'unknown'}`,
+      };
+    }
+  }
+
+  /**
+   * World Model module: predictive modeling and simulation
+   * Based on: Value-Guided JEPA from arXiv:2501.01223
+   */
+  private async stepWorldModel(state: BrainState): Promise<Command> {
+    if (!this.worldModel) {
+      return {
+        goto: 'llm',
+        update: {},
+        reason: 'world_model_not_available',
+      };
+    }
+
+    try {
+      // Encode current state as text modality
+      const encoded = this.worldModel.encode({
+        modality: 'text',
+        data: `Query: ${state.query}\nContext: ${state.context.formatted || 'none'}\nResponse: ${state.response || 'pending'}`,
+        timestamp: new Date(),
+      });
+
+      // Create a simple action for prediction
+      // ActionType: 'observe' | 'query' | 'execute' | 'communicate' | 'transform' | 'create' | 'delete' | 'navigate'
+      const queryAction = {
+        id: `query-${Date.now()}`,
+        type: 'query' as const,
+        parameters: { goal: state.query },
+        agent: 'brain',
+        timestamp: new Date(),
+      };
+
+      // Predict next state given query action
+      const prediction = this.worldModel.predict(encoded, queryAction);
+
+      // Create action sequence for simulation
+      const actions = [queryAction];
+
+      // Simulate trajectory
+      const trajectory = this.worldModel.simulate(encoded, actions, 3);
+
+      // Extract useful info from trajectory
+      const predictionInfo = prediction
+        ? `probability: ${(prediction.probability * 100).toFixed(0)}%, uncertainty: ${(prediction.uncertainty * 100).toFixed(0)}%`
+        : 'no prediction';
+
+      const trajectoryInfo = trajectory
+        ? `steps: ${trajectory.states.length}, total probability: ${(trajectory.totalProbability * 100).toFixed(0)}%`
+        : 'no trajectory';
+
+      return {
+        goto: 'llm',
+        update: {
+          context: {
+            ...state.context,
+            formatted: state.context.formatted + `\n\n[World Model: ${predictionInfo}, ${trajectoryInfo}]`,
+          },
+        },
+        reason: 'world_model_simulated',
+      };
+    } catch (error) {
+      return {
+        goto: 'llm',
+        update: {},
+        reason: `world_model_error: ${error instanceof Error ? error.message : 'unknown'}`,
+      };
+    }
+  }
+
+  /**
+   * Self-Modify module: Darwin-Gödel safe self-improvement
+   * Only triggered explicitly when improvement is requested
+   * Self-modification requires explicit plan - this module validates and applies
+   */
+  private async stepSelfModify(state: BrainState): Promise<Command> {
+    if (!this.darwinGodel) {
+      return {
+        goto: 'done',
+        update: {},
+        reason: 'self_modify_not_available',
+      };
+    }
+
+    try {
+      // Self-modification should only occur with explicit request
+      // Check if query indicates a self-improvement request
+      const queryLower = state.query.toLowerCase();
+      const isImprovementRequest = queryLower.includes('improve') ||
+        queryLower.includes('optimize') ||
+        queryLower.includes('self-modify') ||
+        queryLower.includes('self modify');
+
+      if (!isImprovementRequest) {
+        // Not a self-modification request, skip
+        return {
+          goto: 'done',
+          update: {},
+          reason: 'self_modify_not_requested',
+        };
+      }
+
+      // Create a simple diagnostic checkpoint before any potential changes
+      const checkpointHash = await this.darwinGodel.createCheckpoint('brain-self-modify-checkpoint');
+
+      // Report current system status (no actual modification without explicit plan)
+      const failureRate = this.metrics.failedCycles / Math.max(this.metrics.totalCycles, 1);
+      const healingRate = this.metrics.healingSuccesses / Math.max(this.metrics.healingAttempts, 1);
+
+      const statusReport = [
+        `System Status:`,
+        `- Total cycles: ${this.metrics.totalCycles}`,
+        `- Failure rate: ${(failureRate * 100).toFixed(1)}%`,
+        `- Healing success rate: ${(healingRate * 100).toFixed(1)}%`,
+        `- Avg cycle time: ${this.metrics.avgCycleTime.toFixed(0)}ms`,
+        `- Memory reuse: ${(this.metrics.memoryReuseRate * 100).toFixed(1)}%`,
+        `- Checkpoint: ${checkpointHash || 'none'}`,
+        ``,
+        `Note: Automatic self-modification requires explicit ModificationPlan.`,
+        `Use DarwinGodelEngine.validatePlan() and apply() for safe modifications.`,
+      ].join('\n');
+
+      return {
+        goto: 'done',
+        update: {
+          response: statusReport,
+        },
+        reason: 'self_modify_status_report',
+      };
+    } catch (error) {
+      return {
+        goto: 'done',
+        update: {
+          response: `[Self-modification error: ${error instanceof Error ? error.message : 'unknown'}]`,
+        },
+        reason: `self_modify_error: ${error instanceof Error ? error.message : 'unknown'}`,
+      };
+    }
+  }
+
+  /**
+   * Organism module: autopoietic lifecycle management
+   * Manages system health, resource allocation, and self-maintenance
+   */
+  private async stepOrganism(state: BrainState): Promise<Command> {
+    // Organism module handles system-level health checks
+    const phi = this.getCurrentPhi();
+    const memoryMetrics = this.workspace.getMetrics();
+
+    // Check system health
+    const healthStatus = {
+      consciousness: phi >= this.config.consciousness.phiThreshold,
+      memoryHealth: memoryMetrics.reuseRate >= 0.3,
+      errorRate: this.metrics.failedCycles / Math.max(this.metrics.totalCycles, 1) < 0.1,
+    };
+
+    const allHealthy = Object.values(healthStatus).every(v => v);
+
+    if (!allHealthy) {
+      // Trigger healing if unhealthy
+      const unhealthyAspects = Object.entries(healthStatus)
+        .filter(([_, healthy]) => !healthy)
+        .map(([aspect]) => aspect);
+
+      return {
+        goto: 'healing',
+        update: {
+          error: new Error(`Organism health check failed: ${unhealthyAspects.join(', ')}`),
+        },
+        reason: 'organism_unhealthy',
+      };
+    }
+
+    // Trigger auto-persistence if stateStore available
+    if (this.stateStore && state.response) {
+      try {
+        // Update session state with health check info
+        const currentState = this.stateStore.getState();
+        this.stateStore.update({
+          session: {
+            id: currentState.session?.id || `organism-${Date.now()}`,
+            startTime: currentState.session?.startTime || new Date(),
+            interactions: this.metrics.totalCycles,
+            lastActivity: new Date(),
+          },
+        });
+        await this.stateStore.save();
+      } catch {
+        // Persistence failure is non-fatal
+      }
+    }
+
     return {
-      goto: 'llm',
-      update: {},
-      reason: 'kernel_passthrough',
+      goto: 'done',
+      update: { phi },
+      reason: 'organism_healthy',
     };
   }
 
@@ -1077,6 +1605,13 @@ export class Brain {
         tools: this.config.tools.enabled,
         healing: this.config.healing.enabled,
         consciousness: this.config.consciousness.enabled,
+        // v7.13: New module states
+        activeInference: this.activeInference !== null,
+        subagents: this.subagentExecutor !== null,
+        kernel: this.kernel !== null,
+        persistence: this.stateStore !== null,
+        worldModel: this.worldModel !== null,
+        selfModify: this.darwinGodel !== null,
       },
     };
   }

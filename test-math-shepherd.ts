@@ -87,10 +87,10 @@ function section(text: string) {
 function printAnnotatedSolution(result: AnnotatedSolution, label: string) {
   console.log(`\n📊 ${label}:`);
   console.log(`   Steps analyzed: ${result.stepScores.length}`);
-  console.log(`   Overall score: ${(result.overallScore * 100).toFixed(1)}%`);
-  console.log(`   Method: ${result.scoringMethod}`);
-  console.log(`   Aggregation: ${result.aggregationMethod}`);
-  console.log(`   Correct answer found: ${result.hasCorrectAnswer}`);
+  console.log(`   Overall score: ${(result.solutionScore * 100).toFixed(1)}%`);
+  console.log(`   Final answer: ${result.finalAnswer}`);
+  console.log(`   Correct answer: ${result.isCorrect ?? 'unknown'}`);
+  console.log(`   Processing time: ${result.processingTime}ms`);
 
   console.log('\n   Step-by-step scores:');
   result.stepScores.forEach((step, i) => {
@@ -110,7 +110,8 @@ function printRanking(ranking: SolutionRanking, label: string) {
 
   console.log('\n   Ranked solutions:');
   ranking.rankedSolutions.forEach((sol, i) => {
-    console.log(`     ${i + 1}. Score: ${(sol.overallScore * 100).toFixed(1)}% - "${sol.solution.slice(0, 40)}..."`);
+    const preview = sol.steps.length > 0 ? sol.steps[0].slice(0, 40) : sol.finalAnswer;
+    console.log(`     ${i + 1}. Score: ${(sol.solutionScore * 100).toFixed(1)}% - "${preview}..."`);
   });
 }
 
@@ -119,13 +120,16 @@ function printAnnotations(annotation: ProcessAnnotation, label: string) {
   console.log(`   Problem: "${annotation.problem.slice(0, 50)}..."`);
   console.log(`   Golden answer: ${annotation.goldenAnswer}`);
   console.log(`   Source model: ${annotation.sourceModel}`);
+  console.log(`   Completions used: ${annotation.numCompletions}`);
   console.log(`   Created: ${annotation.timestamp.toISOString()}`);
 
   console.log('\n   Annotated steps:');
-  annotation.annotatedSteps.forEach((step, i) => {
-    const marker = step.label === '+' ? '✓+' : '✗-';
-    console.log(`     ${marker} Step ${i + 1}: "${step.content.slice(0, 40)}..."`);
-    console.log(`         Scores: hard=${(step.hardScore * 100).toFixed(0)}% soft=${(step.softScore * 100).toFixed(0)}%`);
+  annotation.steps.forEach((step, i) => {
+    const hardScore = annotation.hardLabels[i] ?? 0;
+    const softScore = annotation.softLabels[i] ?? 0;
+    const marker = hardScore > 0.5 ? '✓+' : '✗-';
+    console.log(`     ${marker} Step ${i + 1}: "${step.slice(0, 40)}..."`);
+    console.log(`         Scores: hard=${(hardScore * 100).toFixed(0)}% soft=${(softScore * 100).toFixed(0)}%`);
   });
 }
 

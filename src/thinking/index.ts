@@ -1,5 +1,5 @@
 /**
- * Genesis v7.11 - Advanced Reasoning System
+ * Genesis v7.12 - Advanced Reasoning System
  *
  * Frontier-grade reasoning architecture implementing:
  * - Extended Thinking with Scratchpad (o1/Claude style)
@@ -35,12 +35,21 @@
  * - Template matching and instantiation for fast reasoning
  * - 12% cost of multi-query methods (like ToT/GoT)
  *
- * NEW in v7.11 (Math-Shepherd Process Reward Model):
+ * v7.11 (Math-Shepherd Process Reward Model):
  * - Completion-based step verification (arXiv:2312.08935)
  * - Monte Carlo step scoring: complete N paths, check answer correctness
  * - Hard/Soft estimation for process annotation without human labels
  * - Best-of-N solution reranking with step-level scores
  * - 77.9% → 84.1% on GSM8K (Mistral-7B with Math-Shepherd)
+ *
+ * NEW in v7.12 (Conditional Reward Modeling - CRM):
+ * - Conditional step rewards based on ALL preceding steps (arXiv:2509.26578)
+ * - Explicit outcome linkage via probability chain rule
+ * - h(t): P(wrong at t | correct up to t-1) - conditional error probability
+ * - S(t): ∏(1-h(k)) for k=1..t - survival probability (reaching correct answer)
+ * - r_t = log(1-h(t)) - PBRS-derived process reward
+ * - Robust to reward hacking, enables precise credit assignment
+ * - Superior cross-sample comparability for beam search/Best-of-N
  *
  * Based on:
  * - OpenAI o1/o3: Test-time compute scaling, hidden CoT
@@ -683,6 +692,131 @@ export interface ProcessAnnotation {
 }
 
 // ============================================================================
+// v7.12: Conditional Reward Modeling (CRM) Types
+// Based on arXiv:2509.26578 - Linking Process to Outcome
+// ============================================================================
+
+/**
+ * Conditional step score with temporal dependencies
+ * h(t) = P(wrong at step t | correct up to step t-1)
+ */
+export interface ConditionalStepScore {
+  /** Step index (1-based for probability notation) */
+  stepIndex: number;
+  /** The step content */
+  content: string;
+  /** h(t): Conditional probability of error at this step */
+  conditionalErrorProb: number;
+  /** 1 - h(t): Probability this step is correct given previous steps */
+  conditionalCorrectProb: number;
+  /** S(t): Survival probability - P(correct final answer | steps 1..t) */
+  survivalProb: number;
+  /** r_t = log(1 - h(t)): PBRS-derived process reward */
+  processReward: number;
+  /** W(t): Cumulative error probability (entered wrong state by step t) */
+  cumulativeErrorProb: number;
+  /** Raw LLM confidence for h(t) estimation */
+  rawConfidence: number;
+}
+
+/**
+ * Configuration for Conditional Reward Modeling
+ */
+export interface CRMConfig {
+  /** Enable CRM-based scoring */
+  enabled: boolean;
+  /** Method for estimating h(t): 'llm' (direct) or 'completion' (Monte Carlo) */
+  estimationMethod: 'llm' | 'completion';
+  /** Number of completions for Monte Carlo estimation (if method='completion') */
+  numCompletions: number;
+  /** Temperature for completions */
+  completionTemperature: number;
+  /** Whether to use early termination when S(t) drops below threshold */
+  earlyTermination: boolean;
+  /** Threshold for early termination (min survival probability) */
+  survivalThreshold: number;
+  /** How to aggregate trajectory score: 'product' (S(T)) or 'sum' (∑r_t) */
+  trajectoryScoring: 'product' | 'sum';
+  /** Cache h(t) values for identical prefixes */
+  cacheEnabled: boolean;
+}
+
+export const DEFAULT_CRM_CONFIG: CRMConfig = {
+  enabled: false,
+  estimationMethod: 'llm',
+  numCompletions: 4,
+  completionTemperature: 0.7,
+  earlyTermination: true,
+  survivalThreshold: 0.1,
+  trajectoryScoring: 'product',
+  cacheEnabled: true,
+};
+
+/**
+ * Result of CRM analysis on a reasoning trajectory
+ */
+export interface CRMTrajectoryResult {
+  /** Problem being solved */
+  problem: string;
+  /** Full solution trajectory */
+  solution: string;
+  /** Conditional scores for each step */
+  stepScores: ConditionalStepScore[];
+  /** S(T): Final survival probability (trajectory-level score) */
+  trajectoryScore: number;
+  /** Final survival probability S(T) */
+  finalSurvivalProb: number;
+  /** Sum of process rewards: ∑r_t */
+  totalProcessReward: number;
+  /** Whether solution has correct answer (if golden answer provided) */
+  hasCorrectAnswer: boolean;
+  /** Scoring method used */
+  scoringMethod: 'crm';
+  /** Number of steps analyzed */
+  stepsAnalyzed: number;
+  /** Whether early termination was triggered */
+  earlyTerminated: boolean;
+}
+
+/**
+ * Beam search candidate with CRM scoring
+ */
+export interface CRMBeamCandidate {
+  /** Steps generated so far */
+  steps: string[];
+  /** Current survival probability S(t) */
+  survivalProb: number;
+  /** Accumulated process reward ∑r_k for k=1..t */
+  processRewardSum: number;
+  /** Scores for each step */
+  stepScores: ConditionalStepScore[];
+  /** Whether this is a terminal state */
+  isTerminal?: boolean;
+}
+
+/**
+ * Result of CRM-guided beam search
+ */
+export interface CRMBeamSearchResult {
+  /** Best solution found */
+  bestSolution: string;
+  /** Best candidate with full details */
+  bestCandidate: CRMBeamCandidate;
+  /** All final candidates */
+  allCandidates: CRMBeamCandidate[];
+  /** Whether solution has correct answer */
+  hasCorrectAnswer: boolean;
+  /** Beam width used */
+  beamWidth: number;
+  /** Max depth allowed */
+  maxDepth: number;
+  /** Actual depth reached */
+  actualDepth: number;
+  /** Processing time in ms */
+  processingTime: number;
+}
+
+// ============================================================================
 // Core Types
 // ============================================================================
 
@@ -737,6 +871,10 @@ export interface ThinkingConfig {
   // v7.11: Math-Shepherd Process Reward Model
   enableMathShepherd: boolean;
   mathShepherdConfig: MathShepherdConfig;
+
+  // v7.12: Conditional Reward Modeling (CRM)
+  enableCRM: boolean;
+  crmConfig: CRMConfig;
 }
 
 export const DEFAULT_THINKING_CONFIG: ThinkingConfig = {
@@ -785,6 +923,10 @@ export const DEFAULT_THINKING_CONFIG: ThinkingConfig = {
   // v7.11: Math-Shepherd (off by default - expensive)
   enableMathShepherd: false,
   mathShepherdConfig: DEFAULT_MATH_SHEPHERD_CONFIG,
+
+  // v7.12: CRM (off by default)
+  enableCRM: false,
+  crmConfig: DEFAULT_CRM_CONFIG,
 };
 
 export interface ThinkingStep {
@@ -1441,6 +1583,88 @@ Consider:
 
 <comparison>
 equivalent: [true or false]
+reasoning: [brief explanation]
+</comparison>`;
+
+// ============================================================================
+// v7.12: CRM Prompts for Conditional Reward Modeling
+// ============================================================================
+
+/**
+ * Prompt for estimating h(t) - conditional error probability
+ * P(step t is wrong | steps 1..t-1 are correct)
+ */
+const CRM_ESTIMATE_ERROR_PROB_PROMPT = `You are evaluating a single reasoning step in a multi-step solution.
+
+PROBLEM:
+{problem}
+
+PREVIOUS STEPS (assumed correct):
+{previous_steps}
+
+CURRENT STEP TO EVALUATE:
+{current_step}
+
+Given that all previous steps are correct, estimate the probability that THIS step introduces an error that will prevent reaching the correct answer.
+
+Consider:
+1. Is the logical reasoning sound given the previous steps?
+2. Are there any mathematical/computational errors?
+3. Does this step follow correctly from the previous steps?
+4. Could this step lead the solution astray?
+
+<evaluation>
+error_probability: [0.0 to 1.0 - probability this step is wrong given previous steps are correct]
+confidence: [0.0 to 1.0 - your confidence in this estimate]
+reasoning: [brief explanation of your assessment]
+potential_issues: [list any concerns, or "none"]
+</evaluation>`;
+
+/**
+ * Prompt for evaluating trajectory coherence
+ */
+const CRM_TRAJECTORY_COHERENCE_PROMPT = `Evaluate the overall coherence of this reasoning trajectory.
+
+PROBLEM:
+{problem}
+
+FULL SOLUTION:
+{solution}
+
+Analyze whether the reasoning maintains logical consistency throughout and leads to a justified conclusion.
+
+<coherence_analysis>
+overall_survival_estimate: [0.0 to 1.0 - probability this trajectory reaches correct answer]
+weakest_step: [index of the weakest step, or 0 if all steps are strong]
+coherence_score: [0.0 to 1.0 - how well steps connect logically]
+credit_assignment: [which steps contributed most to success/failure]
+</coherence_analysis>`;
+
+/**
+ * Prompt for cross-sample comparison
+ */
+const CRM_COMPARE_TRAJECTORIES_PROMPT = `Compare these two reasoning trajectories for the same problem.
+
+PROBLEM:
+{problem}
+
+TRAJECTORY A:
+{trajectory_a}
+
+TRAJECTORY B:
+{trajectory_b}
+
+Which trajectory is more likely to reach the correct answer? Consider:
+- Logical coherence of each step
+- Mathematical correctness
+- Efficiency of reasoning path
+- Risk of errors accumulating
+
+<comparison>
+preferred: [A or B]
+confidence: [0.0 to 1.0]
+trajectory_a_score: [0.0 to 1.0]
+trajectory_b_score: [0.0 to 1.0]
 reasoning: [brief explanation]
 </comparison>`;
 
@@ -2937,6 +3161,475 @@ Question: ${query}`;
       .replace(/^the\s+/i, '')
       .replace(/\$|\\|{|}/g, '')
       .trim();
+  }
+
+  // ==========================================================================
+  // v7.12: Conditional Reward Modeling (CRM)
+  // Based on arXiv:2509.26578 - "Linking Process to Outcome"
+  // ==========================================================================
+
+  /**
+   * Estimate conditional error probability h(t) for a single step
+   * h(t) = P(wrong at step t | correct up to step t-1)
+   *
+   * This is the core CRM innovation: each step is evaluated CONDITIONED ON
+   * all preceding steps being correct, creating explicit outcome linkage.
+   */
+  async estimateConditionalErrorProb(
+    problem: string,
+    precedingSteps: string[],
+    currentStep: string,
+    goldenAnswer?: string
+  ): Promise<{ errorProb: number; confidence: number; reasoning: string }> {
+    const config = this.config.crmConfig;
+
+    if (config.estimationMethod === 'completion') {
+      // Completion-based estimation (like Math-Shepherd)
+      return this.estimateErrorProbViaCompletion(
+        problem,
+        precedingSteps,
+        currentStep,
+        goldenAnswer,
+        config.numCompletions
+      );
+    }
+
+    // LLM-based direct estimation
+    const precedingContext = precedingSteps.length > 0
+      ? precedingSteps.map((s, i) => `Step ${i + 1}: ${s}`).join('\n')
+      : '(This is the first step)';
+
+    const prompt = CRM_ESTIMATE_ERROR_PROB_PROMPT
+      .replace('{problem}', problem)
+      .replace('{preceding_steps}', precedingContext)
+      .replace('{current_step}', currentStep)
+      .replace('{step_number}', String(precedingSteps.length + 1));
+
+    const result = await this.llm.chat(prompt);
+    const parsed = this.parseErrorProbResponse(result.content);
+
+    return {
+      errorProb: Math.max(0, Math.min(1, parsed.errorProb)),
+      confidence: parsed.confidence,
+      reasoning: parsed.reasoning,
+    };
+  }
+
+  /**
+   * Estimate error probability via Monte Carlo completion rollouts
+   * Similar to Math-Shepherd but for conditional probability estimation
+   */
+  private async estimateErrorProbViaCompletion(
+    problem: string,
+    precedingSteps: string[],
+    currentStep: string,
+    goldenAnswer: string | undefined,
+    numCompletions: number
+  ): Promise<{ errorProb: number; confidence: number; reasoning: string }> {
+    const config = this.config.crmConfig;
+
+    // Build context up to and including current step
+    let context = `Problem: ${problem}\n\n`;
+    for (let i = 0; i < precedingSteps.length; i++) {
+      context += `Step ${i + 1}: ${precedingSteps[i]}\n`;
+    }
+    context += `Step ${precedingSteps.length + 1}: ${currentStep}\n`;
+
+    // Generate completions
+    const prompt = MATH_SHEPHERD_COMPLETION_PROMPT
+      .replace('{problem}', problem)
+      .replace('{partial_solution}', context);
+
+    let correctCompletions = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < numCompletions; i++) {
+      const result = await this.llm.chat(prompt);
+      const answer = this.extractAnswerSimple(result.content);
+
+      if (goldenAnswer) {
+        const isCorrect = this.normalizeAnswer(answer) === this.normalizeAnswer(goldenAnswer);
+        if (isCorrect) correctCompletions++;
+        else errors.push(`Completion ${i + 1} got: ${answer}`);
+      } else {
+        // Without golden answer, use heuristic validation
+        const parsed = this.parseErrorProbResponse(result.content);
+        if (parsed.errorProb < 0.5) correctCompletions++;
+      }
+    }
+
+    // Error prob = 1 - (correct / total)
+    const errorProb = 1 - (correctCompletions / numCompletions);
+
+    return {
+      errorProb,
+      confidence: Math.min(0.95, 0.5 + (numCompletions / 20)),
+      reasoning: errors.length > 0
+        ? `${correctCompletions}/${numCompletions} completions correct. Issues: ${errors.slice(0, 2).join('; ')}`
+        : `${correctCompletions}/${numCompletions} completions reached correct answer`,
+    };
+  }
+
+  /**
+   * Parse error probability response from LLM
+   */
+  private parseErrorProbResponse(
+    content: string
+  ): { errorProb: number; confidence: number; reasoning: string } {
+    // Default values
+    let errorProb = 0.5;
+    let confidence = 0.5;
+    let reasoning = 'Unable to parse response';
+
+    // Extract error_probability
+    const probMatch = content.match(/error_probability:\s*([\d.]+)/i);
+    if (probMatch) {
+      errorProb = parseFloat(probMatch[1]);
+    }
+
+    // Extract confidence
+    const confMatch = content.match(/confidence:\s*([\d.]+)/i);
+    if (confMatch) {
+      confidence = parseFloat(confMatch[1]);
+    }
+
+    // Extract reasoning
+    const reasonMatch = content.match(/reasoning:\s*(.+?)(?:\n|potential_issues|$)/is);
+    if (reasonMatch) {
+      reasoning = reasonMatch[1].trim();
+    }
+
+    return { errorProb, confidence, reasoning };
+  }
+
+  /**
+   * Compute survival probability S(t) for reaching step t correctly
+   * S(t) = ∏(1 - h(k)) for k = 1 to t
+   *
+   * This represents the probability that we reach step t with all
+   * preceding steps being correct - the core outcome linkage mechanism.
+   */
+  computeSurvivalProbability(conditionalErrorProbs: number[]): number[] {
+    const survival: number[] = [];
+    let cumulative = 1.0;
+
+    for (const h of conditionalErrorProbs) {
+      cumulative *= (1 - h);
+      survival.push(cumulative);
+    }
+
+    return survival;
+  }
+
+  /**
+   * Compute process reward r_t for step t
+   * r_t = log(1 - h(t))
+   *
+   * This is PBRS-derived (Potential-Based Reward Shaping) ensuring:
+   * - Optimal policy invariance
+   * - Consistent credit assignment
+   * - Robustness to reward hacking
+   */
+  computeProcessReward(conditionalErrorProb: number): number {
+    // Clamp to avoid log(0)
+    const clampedProb = Math.max(0.001, Math.min(0.999, 1 - conditionalErrorProb));
+    return Math.log(clampedProb);
+  }
+
+  /**
+   * Score a complete trajectory using CRM
+   *
+   * Returns detailed step-by-step analysis with:
+   * - h(t): conditional error probability
+   * - S(t): survival probability
+   * - r_t: process reward
+   * - W(t): cumulative error probability (complement of S(t))
+   */
+  async scoreTrajectoryWithCRM(
+    problem: string,
+    solution: string,
+    goldenAnswer?: string
+  ): Promise<CRMTrajectoryResult> {
+    const config = this.config.crmConfig;
+    const stepStrings = await this.splitSolutionIntoSteps(solution);
+    const steps = stepStrings.map((content, i) => ({ stepNumber: i + 1, content }));
+    const stepScores: ConditionalStepScore[] = [];
+
+    const conditionalErrorProbs: number[] = [];
+    const precedingSteps: string[] = [];
+
+    // Score each step
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+
+      // Estimate h(t)
+      const { errorProb, confidence } = await this.estimateConditionalErrorProb(
+        problem,
+        precedingSteps,
+        step.content,
+        goldenAnswer
+      );
+
+      conditionalErrorProbs.push(errorProb);
+
+      // Compute S(t) up to this point
+      const survivalProbs = this.computeSurvivalProbability(conditionalErrorProbs);
+      const survivalProb = survivalProbs[survivalProbs.length - 1];
+
+      // Compute r_t
+      const processReward = this.computeProcessReward(errorProb);
+
+      // W(t) = 1 - S(t)
+      const cumulativeErrorProb = 1 - survivalProb;
+
+      stepScores.push({
+        stepIndex: i,
+        content: step.content,
+        conditionalErrorProb: errorProb,
+        conditionalCorrectProb: 1 - errorProb,
+        survivalProb,
+        processReward,
+        cumulativeErrorProb,
+        rawConfidence: confidence,
+      });
+
+      // Early termination if survival prob drops too low
+      if (config.earlyTermination && survivalProb < config.survivalThreshold) {
+        break;
+      }
+
+      precedingSteps.push(step.content);
+    }
+
+    // Compute trajectory-level scores
+    const finalSurvival = stepScores.length > 0
+      ? stepScores[stepScores.length - 1].survivalProb
+      : 0;
+
+    const totalProcessReward = stepScores.reduce(
+      (sum, s) => sum + s.processReward,
+      0
+    );
+
+    // Check if final answer is correct (if golden answer provided)
+    let hasCorrectAnswer = false;
+    if (goldenAnswer) {
+      const finalAnswer = this.extractAnswerSimple(solution);
+      hasCorrectAnswer = this.normalizeAnswer(finalAnswer) === this.normalizeAnswer(goldenAnswer);
+    }
+
+    return {
+      problem,
+      solution,
+      stepScores,
+      trajectoryScore: config.trajectoryScoring === 'product'
+        ? finalSurvival
+        : totalProcessReward,
+      finalSurvivalProb: finalSurvival,
+      totalProcessReward,
+      hasCorrectAnswer,
+      scoringMethod: 'crm',
+      stepsAnalyzed: stepScores.length,
+      earlyTerminated: stepScores.length < steps.length,
+    };
+  }
+
+  /**
+   * CRM-guided beam search for solution generation
+   *
+   * Uses survival probability S(t) to guide beam selection,
+   * preferring trajectories most likely to reach correct answer.
+   */
+  async crmBeamSearch(
+    problem: string,
+    goldenAnswer?: string,
+    beamWidth: number = 3,
+    maxDepth: number = 10
+  ): Promise<CRMBeamSearchResult> {
+    const config = this.config.crmConfig;
+    const startTime = Date.now();
+
+    // Initialize beam with empty trajectory
+    let beam: CRMBeamCandidate[] = [{
+      steps: [],
+      survivalProb: 1.0,
+      processRewardSum: 0,
+      stepScores: [],
+    }];
+
+    // Expand beam iteratively
+    for (let depth = 0; depth < maxDepth; depth++) {
+      const nextBeam: CRMBeamCandidate[] = [];
+
+      for (const candidate of beam) {
+        // Generate next step candidates
+        const precedingContext = candidate.steps.map((s, i) =>
+          `Step ${i + 1}: ${s}`
+        ).join('\n');
+
+        const prompt = `Problem: ${problem}
+
+${precedingContext ? `Previous steps:\n${precedingContext}\n\n` : ''}Generate the next reasoning step. If the problem is solved, write "Final Answer: [answer]".
+
+Next step:`;
+
+        // Sample multiple continuations
+        const continuations: string[] = [];
+        for (let i = 0; i < Math.min(beamWidth, 3); i++) {
+          const result = await this.llm.chat(prompt);
+          const nextStep = result.content.trim().split('\n')[0];
+          if (!continuations.includes(nextStep)) {
+            continuations.push(nextStep);
+          }
+        }
+
+        // Score each continuation
+        for (const nextStep of continuations) {
+          const { errorProb, confidence } = await this.estimateConditionalErrorProb(
+            problem,
+            candidate.steps,
+            nextStep,
+            goldenAnswer
+          );
+
+          const newSurvival = candidate.survivalProb * (1 - errorProb);
+          const processReward = this.computeProcessReward(errorProb);
+
+          // Check for terminal state
+          const isTerminal = nextStep.toLowerCase().includes('final answer') ||
+                            nextStep.toLowerCase().includes('therefore') ||
+                            nextStep.toLowerCase().includes('the answer is');
+
+          const newCandidate: CRMBeamCandidate = {
+            steps: [...candidate.steps, nextStep],
+            survivalProb: newSurvival,
+            processRewardSum: candidate.processRewardSum + processReward,
+            stepScores: [...candidate.stepScores, {
+              stepIndex: candidate.steps.length,
+              content: nextStep,
+              conditionalErrorProb: errorProb,
+              conditionalCorrectProb: 1 - errorProb,
+              survivalProb: newSurvival,
+              processReward,
+              cumulativeErrorProb: 1 - newSurvival,
+              rawConfidence: confidence,
+            }],
+            isTerminal,
+          };
+
+          nextBeam.push(newCandidate);
+        }
+      }
+
+      // Prune beam to top-k by survival probability
+      nextBeam.sort((a, b) => b.survivalProb - a.survivalProb);
+      beam = nextBeam.slice(0, beamWidth);
+
+      // Early exit if best candidate is terminal
+      if (beam.length > 0 && beam[0].isTerminal) {
+        break;
+      }
+
+      // Early termination if all survival probs too low
+      if (beam.every(c => c.survivalProb < config.survivalThreshold)) {
+        break;
+      }
+    }
+
+    // Select best solution
+    const best = beam[0];
+    const solution = best.steps.map((s, i) => `Step ${i + 1}: ${s}`).join('\n');
+
+    // Check correctness
+    let hasCorrectAnswer = false;
+    if (goldenAnswer) {
+      const finalAnswer = this.extractAnswerSimple(solution);
+      hasCorrectAnswer = this.normalizeAnswer(finalAnswer) === this.normalizeAnswer(goldenAnswer);
+    }
+
+    return {
+      bestSolution: solution,
+      bestCandidate: best,
+      allCandidates: beam,
+      hasCorrectAnswer,
+      beamWidth,
+      maxDepth,
+      actualDepth: best.steps.length,
+      processingTime: Date.now() - startTime,
+    };
+  }
+
+  /**
+   * Compare two trajectories using CRM
+   * Returns the one with higher survival probability
+   */
+  async compareTrajectories(
+    problem: string,
+    solution1: string,
+    solution2: string,
+    goldenAnswer?: string
+  ): Promise<{
+    winner: 1 | 2;
+    trajectory1: CRMTrajectoryResult;
+    trajectory2: CRMTrajectoryResult;
+    margin: number;
+  }> {
+    const [traj1, traj2] = await Promise.all([
+      this.scoreTrajectoryWithCRM(problem, solution1, goldenAnswer),
+      this.scoreTrajectoryWithCRM(problem, solution2, goldenAnswer),
+    ]);
+
+    const winner = traj1.trajectoryScore >= traj2.trajectoryScore ? 1 : 2;
+    const margin = Math.abs(traj1.trajectoryScore - traj2.trajectoryScore);
+
+    return { winner, trajectory1: traj1, trajectory2: traj2, margin };
+  }
+
+  /**
+   * Best-of-N selection using CRM
+   * Superior to Math-Shepherd due to cross-sample comparability
+   */
+  async selectBestOfNWithCRM(
+    problem: string,
+    solutions: string[],
+    goldenAnswer?: string
+  ): Promise<{
+    selectedIndex: number;
+    selected: CRMTrajectoryResult;
+    allResults: CRMTrajectoryResult[];
+    stats: {
+      avgSurvival: number;
+      maxSurvival: number;
+      correctCount: number;
+    };
+  }> {
+    // Score all solutions
+    const results = await Promise.all(
+      solutions.map(s => this.scoreTrajectoryWithCRM(problem, s, goldenAnswer))
+    );
+
+    // Find best by trajectory score (survival probability)
+    let selectedIndex = 0;
+    let maxScore = -Infinity;
+
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].trajectoryScore > maxScore) {
+        maxScore = results[i].trajectoryScore;
+        selectedIndex = i;
+      }
+    }
+
+    // Compute stats
+    const avgSurvival = results.reduce((s, r) => s + r.finalSurvivalProb, 0) / results.length;
+    const maxSurvival = Math.max(...results.map(r => r.finalSurvivalProb));
+    const correctCount = results.filter(r => r.hasCorrectAnswer).length;
+
+    return {
+      selectedIndex,
+      selected: results[selectedIndex],
+      allResults: results,
+      stats: { avgSurvival, maxSurvival, correctCount },
+    };
   }
 
   // ==========================================================================
@@ -4961,4 +5654,185 @@ export async function thinkBestOfNWithPRM(
 export function getMathShepherdConfig(): MathShepherdConfig {
   const engine = getThinkingEngine();
   return engine.getConfig().mathShepherdConfig;
+}
+
+// =============================================================================
+// v7.12: Conditional Reward Modeling (CRM) Convenience Functions
+// Based on arXiv:2509.26578 - "Linking Process to Outcome"
+// =============================================================================
+
+/**
+ * Score a solution trajectory using Conditional Reward Modeling
+ *
+ * Provides step-by-step analysis with:
+ * - h(t): conditional error probability (wrong at t | correct up to t-1)
+ * - S(t): survival probability (cumulative correctness)
+ * - r_t: process reward (log(1-h(t)))
+ *
+ * @param problem - The problem being solved
+ * @param solution - The solution to score
+ * @param goldenAnswer - Optional correct answer for verification
+ */
+export async function scoreWithCRM(
+  problem: string,
+  solution: string,
+  goldenAnswer?: string
+): Promise<CRMTrajectoryResult> {
+  const engine = getThinkingEngine({
+    enableCRM: true,
+    crmConfig: {
+      ...DEFAULT_CRM_CONFIG,
+      enabled: true,
+    },
+  });
+
+  return engine.scoreTrajectoryWithCRM(problem, solution, goldenAnswer);
+}
+
+/**
+ * Select best solution from multiple candidates using CRM
+ *
+ * Superior to Math-Shepherd due to:
+ * - Cross-sample comparability (consistent probabilistic semantics)
+ * - Explicit outcome linkage via survival probability
+ * - PBRS-derived rewards (robust to reward hacking)
+ *
+ * @param problem - The problem being solved
+ * @param solutions - Array of candidate solutions
+ * @param goldenAnswer - Optional correct answer for verification
+ */
+export async function selectBestWithCRM(
+  problem: string,
+  solutions: string[],
+  goldenAnswer?: string
+): Promise<{
+  selectedIndex: number;
+  selected: CRMTrajectoryResult;
+  allResults: CRMTrajectoryResult[];
+  stats: { avgSurvival: number; maxSurvival: number; correctCount: number };
+}> {
+  const engine = getThinkingEngine({
+    enableCRM: true,
+    crmConfig: {
+      ...DEFAULT_CRM_CONFIG,
+      enabled: true,
+    },
+  });
+
+  return engine.selectBestOfNWithCRM(problem, solutions, goldenAnswer);
+}
+
+/**
+ * CRM-guided beam search for solution generation
+ *
+ * Uses survival probability S(t) to guide beam selection,
+ * preferring trajectories most likely to reach correct answer.
+ *
+ * @param problem - The problem to solve
+ * @param goldenAnswer - Optional correct answer for guidance
+ * @param beamWidth - Number of candidates to maintain (default: 3)
+ * @param maxDepth - Maximum reasoning steps (default: 10)
+ */
+export async function thinkWithCRMBeam(
+  problem: string,
+  goldenAnswer?: string,
+  beamWidth: number = 3,
+  maxDepth: number = 10
+): Promise<CRMBeamSearchResult> {
+  const engine = getThinkingEngine({
+    enableCRM: true,
+    crmConfig: {
+      ...DEFAULT_CRM_CONFIG,
+      enabled: true,
+    },
+  });
+
+  return engine.crmBeamSearch(problem, goldenAnswer, beamWidth, maxDepth);
+}
+
+/**
+ * Compare two solution trajectories using CRM
+ *
+ * @param problem - The problem being solved
+ * @param solution1 - First solution
+ * @param solution2 - Second solution
+ * @param goldenAnswer - Optional correct answer
+ */
+export async function compareTrajectoriesWithCRM(
+  problem: string,
+  solution1: string,
+  solution2: string,
+  goldenAnswer?: string
+): Promise<{
+  winner: 1 | 2;
+  trajectory1: CRMTrajectoryResult;
+  trajectory2: CRMTrajectoryResult;
+  margin: number;
+}> {
+  const engine = getThinkingEngine({
+    enableCRM: true,
+    crmConfig: {
+      ...DEFAULT_CRM_CONFIG,
+      enabled: true,
+    },
+  });
+
+  return engine.compareTrajectories(problem, solution1, solution2, goldenAnswer);
+}
+
+/**
+ * Think and select best solution using CRM
+ *
+ * Combines thinking with CRM Best-of-N selection.
+ *
+ * @param problem - The problem to solve
+ * @param n - Number of solutions to generate (default: 4)
+ */
+export async function thinkBestOfNWithCRM(
+  problem: string,
+  n: number = 4
+): Promise<{
+  best: ThinkingResult;
+  selected: CRMTrajectoryResult;
+  allSolutions: ThinkingResult[];
+  stats: { avgSurvival: number; maxSurvival: number; correctCount: number };
+}> {
+  const engine = getThinkingEngine({
+    enableCRM: true,
+    crmConfig: {
+      ...DEFAULT_CRM_CONFIG,
+      enabled: true,
+    },
+  });
+
+  // Generate N solutions
+  const solutions: ThinkingResult[] = [];
+  for (let i = 0; i < n; i++) {
+    const result = await engine.think(problem);
+    solutions.push(result);
+  }
+
+  // Extract responses for ranking
+  const responses = solutions.map(s => s.response);
+
+  // Rank using CRM
+  const ranking = await engine.selectBestOfNWithCRM(problem, responses);
+
+  // Get best solution
+  const best = solutions[ranking.selectedIndex];
+
+  return {
+    best,
+    selected: ranking.selected,
+    allSolutions: solutions,
+    stats: ranking.stats,
+  };
+}
+
+/**
+ * Get CRM configuration
+ */
+export function getCRMConfig(): CRMConfig {
+  const engine = getThinkingEngine();
+  return engine.getConfig().crmConfig;
 }

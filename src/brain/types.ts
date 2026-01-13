@@ -30,6 +30,7 @@ export type BrainModule =
   | 'healing'     // Darwin-Gödel - fix errors
   | 'consciousness' // Phi Monitor - check consciousness level
   | 'kernel'      // Agent Orchestration - delegate to agents
+  | 'thinking'    // v7.6: Extended thinking with scratchpad + self-critique
   | 'done';       // End processing
 
 /**
@@ -74,6 +75,9 @@ export interface BrainState {
   // Metadata
   startTime: number;          // Processing start time
   moduleHistory: BrainModule[]; // Visited modules
+
+  // v7.6: Extended Thinking
+  thinkingResult?: ThinkingResultSummary;
 }
 
 /**
@@ -124,6 +128,24 @@ export interface ToolResult {
   success: boolean;
   data?: unknown;
   error?: string;
+  duration: number;
+}
+
+// ============================================================================
+// v7.6: Extended Thinking Integration
+// ============================================================================
+
+/**
+ * Summary of thinking process for BrainState
+ * Full ThinkingResult is in thinking/index.ts
+ */
+export interface ThinkingResultSummary {
+  response: string;
+  totalThinkingTokens: number;
+  confidence: number;
+  uncertainties: string[];
+  principlesApplied: string[];
+  iterations: number;
   duration: number;
 }
 
@@ -283,6 +305,13 @@ export interface BrainMetrics {
   avgPhi: number;
   phiViolations: number;
   broadcasts: number;
+
+  // v7.6: Extended Thinking
+  thinkingSteps?: number;        // Total thinking steps executed
+  thinkingTokens?: number;       // Total tokens used for thinking
+  avgConfidence?: number;        // Average confidence from metacognition
+  critiqueRounds?: number;       // Total self-critique iterations
+  deliberationCount?: number;    // Times deliberative alignment was invoked
 
   // Module routing
   moduleTransitions: Record<string, number>;

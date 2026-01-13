@@ -1148,3 +1148,171 @@ export const DEFAULT_THINKING_SETTINGS: ThinkingSettings = {
   collapsed: false,
   streaming: false,
 };
+
+// ============================================================================
+// v7.6: Extended Thinking Result Display
+// ============================================================================
+
+/**
+ * Extended thinking step for display
+ */
+export interface ExtendedThinkingStep {
+  type: 'deliberation' | 'reasoning' | 'critique' | 'revision' | 'uncertainty';
+  content: string;
+  tokens: number;
+  confidence?: number;
+}
+
+/**
+ * Extended thinking result summary
+ */
+export interface ExtendedThinkingDisplay {
+  steps: ExtendedThinkingStep[];
+  totalTokens: number;
+  finalConfidence: number;
+  uncertainties: string[];
+  principlesApplied: string[];
+  iterations: number;
+  duration: number;
+}
+
+/**
+ * Format a single extended thinking step
+ */
+export function formatExtendedThinkingStep(step: ExtendedThinkingStep): string {
+  const icons: Record<string, string> = {
+    deliberation: '⚖️',
+    reasoning: '🧠',
+    critique: '🔍',
+    revision: '✏️',
+    uncertainty: '❓',
+  };
+
+  const colors: Record<string, ColorName> = {
+    deliberation: 'magenta',
+    reasoning: 'cyan',
+    critique: 'yellow',
+    revision: 'green',
+    uncertainty: 'red',
+  };
+
+  const icon = icons[step.type] || '•';
+  const color = colors[step.type] || 'white';
+  const label = step.type.charAt(0).toUpperCase() + step.type.slice(1);
+
+  const lines: string[] = [];
+  lines.push(`${icon} ${style(label, color, 'bold')}${step.confidence !== undefined ? style(` (${(step.confidence * 100).toFixed(0)}% confident)`, 'dim') : ''}`);
+
+  // Indent content
+  const contentLines = step.content.split('\n').map(l => `   ${l}`);
+  lines.push(...contentLines);
+
+  lines.push(style(`   [${step.tokens} tokens]`, 'dim'));
+
+  return lines.join('\n');
+}
+
+/**
+ * Format extended thinking summary bar
+ */
+export function formatExtendedThinkingSummary(display: ExtendedThinkingDisplay): string {
+  const confColor: ColorName = display.finalConfidence >= 0.8 ? 'green' :
+                               display.finalConfidence >= 0.5 ? 'yellow' : 'red';
+
+  const parts = [
+    style('🧠 Extended Thinking:', 'bold'),
+    style(`${display.iterations} iter`, 'cyan'),
+    style(`${display.totalTokens} tokens`, 'dim'),
+    style(`${(display.finalConfidence * 100).toFixed(0)}%`, confColor),
+    style(formatDuration(display.duration), 'dim'),
+  ];
+
+  return parts.join(' • ');
+}
+
+/**
+ * Format full extended thinking visualization
+ */
+export function formatExtendedThinking(
+  display: ExtendedThinkingDisplay,
+  showSteps: boolean = true,
+  maxSteps: number = 10
+): string {
+  const lines: string[] = [];
+
+  // Header with summary
+  lines.push(box(formatExtendedThinkingSummary(display), { borderColor: 'dim' }));
+  lines.push('');
+
+  // Principles applied (if any)
+  if (display.principlesApplied.length > 0) {
+    lines.push(style('⚖️ Principles Applied:', 'magenta', 'bold'));
+    for (const principle of display.principlesApplied.slice(0, 5)) {
+      lines.push(style(`   • ${principle}`, 'dim'));
+    }
+    lines.push('');
+  }
+
+  // Steps (if showing)
+  if (showSteps && display.steps.length > 0) {
+    const stepsToShow = display.steps.slice(0, maxSteps);
+    lines.push(style('📝 Thinking Steps:', 'cyan', 'bold'));
+    lines.push('');
+
+    for (let i = 0; i < stepsToShow.length; i++) {
+      const step = stepsToShow[i];
+      lines.push(style(`Step ${i + 1}/${display.steps.length}`, 'dim'));
+      lines.push(formatExtendedThinkingStep(step));
+      lines.push('');
+    }
+
+    if (display.steps.length > maxSteps) {
+      lines.push(style(`   ... and ${display.steps.length - maxSteps} more steps`, 'dim'));
+      lines.push('');
+    }
+  }
+
+  // Uncertainties (if any)
+  if (display.uncertainties.length > 0) {
+    lines.push(style('❓ Uncertainties:', 'yellow', 'bold'));
+    for (const uncertainty of display.uncertainties.slice(0, 3)) {
+      lines.push(style(`   • ${uncertainty}`, 'yellow'));
+    }
+    if (display.uncertainties.length > 3) {
+      lines.push(style(`   ... and ${display.uncertainties.length - 3} more`, 'dim'));
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Format compact thinking status (for inline display)
+ */
+export function formatThinkingStatus(
+  type: 'deliberating' | 'reasoning' | 'critiquing' | 'revising' | 'selecting',
+  progress?: { current: number; total: number }
+): string {
+  const icons: Record<string, string> = {
+    deliberating: '⚖️',
+    reasoning: '🧠',
+    critiquing: '🔍',
+    revising: '✏️',
+    selecting: '🎯',
+  };
+
+  const labels: Record<string, string> = {
+    deliberating: 'Applying principles',
+    reasoning: 'Extended thinking',
+    critiquing: 'Self-critique',
+    revising: 'Revising response',
+    selecting: 'Best-of-N selection',
+  };
+
+  const icon = icons[type] || '•';
+  const label = labels[type] || type;
+  const progressStr = progress ? style(` [${progress.current}/${progress.total}]`, 'dim') : '';
+
+  return `${icon} ${style(label, 'cyan')}${progressStr}`;
+}

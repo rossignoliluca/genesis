@@ -89,6 +89,14 @@ import {
   getGroundingSystem,
 } from '../grounding/index.js';
 
+// v7.6: Extended Thinking System
+import {
+  ThinkingEngine,
+  getThinkingEngine,
+  ThinkingConfig,
+  ThinkingResult,
+} from '../thinking/index.js';
+
 // ============================================================================
 // Brain Class
 // ============================================================================
@@ -103,6 +111,7 @@ export class Brain {
   private llm: LLMBridge;
   private dispatcher: ToolDispatcher;
   private grounding: GroundingSystem;
+  private thinking: ThinkingEngine;  // v7.6: Extended thinking
 
   // State
   private running: boolean = false;
@@ -137,6 +146,15 @@ export class Brain {
     this.llm = getLLMBridge();
     this.dispatcher = new ToolDispatcher({ verbose: false });
     this.grounding = getGroundingSystem();
+
+    // v7.6: Initialize extended thinking
+    this.thinking = getThinkingEngine({
+      enableExtendedThinking: true,
+      enableSelfCritique: true,
+      enableMetacognition: true,
+      enableDeliberativeAlignment: true,
+      thinkingBudget: 4096,
+    });
   }
 
   // ============================================================================
@@ -330,6 +348,9 @@ export class Brain {
       case 'kernel':
         return this.stepKernel(state);
 
+      case 'thinking':
+        return this.stepThinking(state);
+
       default:
         return { goto: 'done', update: {} };
     }
@@ -366,8 +387,9 @@ export class Brain {
     const wsMetrics = this.workspace.getMetrics();
     this.metrics.memoryReuseRate = wsMetrics.reuseRate;
 
+    // v7.6: Route through thinking module for extended reasoning
     return {
-      goto: 'llm',
+      goto: 'thinking',
       update: { context },
       reason: 'context_retrieved',
     };
@@ -625,6 +647,99 @@ export class Brain {
       update: {},
       reason: 'kernel_passthrough',
     };
+  }
+
+  /**
+   * Thinking module: Extended thinking with scratchpad, self-critique, and metacognition
+   * v7.6: Frontier-grade reasoning
+   */
+  private async stepThinking(state: BrainState): Promise<Command> {
+    this.emit({ type: 'module_enter', timestamp: new Date(), data: { module: 'thinking' }, module: 'thinking' as BrainModule });
+
+    try {
+      // Build context string
+      const contextStr = state.context.formatted || '';
+
+      // Run extended thinking
+      const result: ThinkingResult = await this.thinking.think(
+        state.query,
+        contextStr,
+        this.systemPrompt
+      );
+
+      // Track metrics
+      this.metrics.thinkingSteps = (this.metrics.thinkingSteps || 0) + result.thinking.length;
+      this.metrics.thinkingTokens = (this.metrics.thinkingTokens || 0) + result.totalThinkingTokens;
+      this.metrics.avgConfidence = result.confidence;
+
+      // Emit thinking events
+      for (const step of result.thinking) {
+        this.emit({
+          type: 'thinking_step' as any,
+          timestamp: new Date(),
+          data: {
+            stepType: step.type,
+            confidence: step.confidence,
+            tokens: step.tokenCount,
+          },
+        });
+      }
+
+      // Check confidence threshold - if too low, flag uncertainties
+      const uncertaintyNote = result.confidence < 0.5 && result.uncertainties.length > 0
+        ? `\n\n[Note: Confidence ${(result.confidence * 100).toFixed(0)}% - Uncertainties: ${result.uncertainties.slice(0, 2).join(', ')}]`
+        : '';
+
+      // Check for tool calls in response
+      const toolCalls = this.parseToolCalls(result.response);
+
+      if (toolCalls.length > 0 && this.config.tools.enabled) {
+        return {
+          goto: 'tools',
+          update: {
+            response: result.response + uncertaintyNote,
+            toolCalls,
+            thinkingResult: result,
+          },
+          reason: 'thinking_tool_calls',
+        };
+      }
+
+      // If grounding is needed
+      if (this.config.grounding.verifyAllResponses && this.config.grounding.enabled) {
+        return {
+          goto: 'grounding',
+          update: {
+            response: result.response + uncertaintyNote,
+            thinkingResult: result,
+          },
+          reason: 'thinking_verify',
+        };
+      }
+
+      return {
+        goto: 'done',
+        update: {
+          response: result.response + uncertaintyNote,
+          thinkingResult: result,
+        },
+        reason: 'thinking_complete',
+      };
+    } catch (error) {
+      // Fallback to regular LLM if thinking fails
+      this.emit({
+        type: 'module_exit',
+        timestamp: new Date(),
+        data: { error: error instanceof Error ? error.message : String(error) },
+        module: 'thinking' as BrainModule,
+      });
+
+      return {
+        goto: 'llm',
+        update: {},
+        reason: 'thinking_fallback',
+      };
+    }
   }
 
   // ============================================================================

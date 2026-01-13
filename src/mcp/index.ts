@@ -191,7 +191,7 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
   // v7.14 - WEB & AUTOMATION
   'playwright': {
     command: 'npx',
-    args: ['-y', '@anthropic-ai/mcp-server-playwright'],
+    args: ['-y', '@playwright/mcp'],
     tools: [
       'browser_navigate', 'browser_snapshot', 'browser_take_screenshot', 'browser_click',
       'browser_type', 'browser_fill_form', 'browser_evaluate', 'browser_close',
@@ -203,7 +203,7 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
   },
   'aws': {
     command: 'npx',
-    args: ['-y', '@anthropic-ai/mcp-server-aws'],
+    args: ['-y', 'mcp-aws-devops-server'],
     envVars: () => ({
       AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || '',
       AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY || '',
@@ -212,7 +212,10 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
     tools: [
       'cloud_servers', 'cloud_storage', 'logs_and_metrics', 'ai_assistant',
       'serverless_functions', 'security_permissions', 'databases', 'network_manager',
-      'cost_optimizer', 'security_scanner', 'multi_region', 'workflow', 'runbook'
+      'cost_optimizer', 'security_scanner', 'multi_region', 'workflow', 'runbook',
+      'scheduled_ops', 'auto_remediation', 'slack_webhook', 'teams_webhook',
+      'route53', 'secrets_manager', 'cloudfront', 'azure_devops_projects',
+      'azure_devops_pipelines', 'azure_devops_repos', 'azure_devops_work_items'
     ],
   },
   'sentry': {

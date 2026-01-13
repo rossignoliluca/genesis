@@ -564,6 +564,10 @@ registerAction('execute.code', async (context) => {
       /\bexec\b/,
       /\beval\b/,
       /Function\s*\(/,
+      /\bglobal\b/,
+      /\bglobalThis\b/,
+      /\b__dirname\b/,
+      /\b__filename\b/,
     ];
 
     for (const pattern of dangerousPatterns) {

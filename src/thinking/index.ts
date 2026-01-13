@@ -1,5 +1,5 @@
 /**
- * Genesis v7.7 - Advanced Reasoning System
+ * Genesis v7.8 - Advanced Reasoning System
  *
  * Frontier-grade reasoning architecture implementing:
  * - Extended Thinking with Scratchpad (o1/Claude style)
@@ -8,7 +8,7 @@
  * - Metacognitive Uncertainty Tracking
  * - Deliberative Alignment (explicit value reasoning)
  *
- * NEW in v7.7 (Based on arXiv research):
+ * v7.7 (Based on arXiv research):
  * - Tree-of-Thought (ToT) with BFS/DFS search (arXiv:2305.10601)
  * - Process Reward Model (PRM) for step verification
  * - MCTS-style search with value estimation
@@ -16,27 +16,39 @@
  * - Beam Search with state evaluation and pruning
  * - Dynamic compute budgeting based on problem difficulty
  *
+ * NEW in v7.8 (arXiv:2308.09687 - Graph of Thoughts):
+ * - Graph-of-Thoughts (GoT) with arbitrary graph structure
+ * - Aggregation: Combine k thoughts into 1 (not possible in ToT!)
+ * - Refinement loops: Self-improve thoughts iteratively
+ * - 62% quality improvement over ToT, 31% cost reduction
+ *
  * Based on:
  * - OpenAI o1/o3: Test-time compute scaling, hidden CoT
  * - DeepSeek R1: Transparent reasoning, GRPO
  * - Claude Extended Thinking: Interleaved reasoning
  * - Deliberative Alignment: Explicit specification reasoning
  * - Tree of Thoughts: Deliberate Problem Solving (Yao et al. 2023)
+ * - Graph of Thoughts: Besta et al. ETH Zurich 2023
  * - Uncertainty-aware Step-wise Verification (Oxford 2025)
  *
  * Architecture:
  * ```
  * ┌─────────────────────────────────────────────────────────────────┐
- * │                    ADVANCED REASONING                           │
+ * │                    ADVANCED REASONING v7.8                      │
  * │                                                                 │
+ * │  Tree-of-Thought (ToT):                                        │
  * │  Input → [ToT Search] → [PRM Verify] → [Beam Select] → Output  │
  * │              ↓              ↓              ↓                    │
  * │         BFS/DFS        Step-by-step    Keep top-k              │
- * │         Explore        Verification    Candidates               │
+ * │                                                                 │
+ * │  Graph-of-Thought (GoT):                                       │
+ * │  Decompose → Generate → Refine → Aggregate → Output            │
+ * │      ↓           ↓          ↓         ↓                        │
+ * │  Sub-problems  Solve    Self-loop   k→1 (KEY!)                 │
  * │                                                                 │
  * │  MCTS: Selection → Expansion → Simulation → Backpropagation   │
  * │  CoT Entropy: Sample rationales → Cluster → Compute entropy    │
- * │  Dynamic Budget: Easy=fast, Hard=deep                          │
+ * │  Dynamic Budget: Easy=fast, Hard=deep/GoT                      │
  * └─────────────────────────────────────────────────────────────────┘
  * ```
  */
@@ -173,6 +185,81 @@ export interface ToTResult {
 }
 
 // ============================================================================
+// v7.8: Graph-of-Thoughts Types (arXiv:2308.09687)
+// ============================================================================
+
+/**
+ * Graph node for GoT - extends ThoughtNode with multiple parents
+ */
+export interface GoTNode extends ThoughtNode {
+  parents: string[];           // Multiple parent IDs (enables aggregation)
+  refinementCount: number;     // Number of self-refinements
+  aggregatedFrom: string[];    // IDs of nodes aggregated into this one
+}
+
+/**
+ * Thought transformation types for GoT
+ */
+export type GoTTransformation =
+  | 'generate'      // Generate new thoughts from one (1 → k)
+  | 'aggregate'     // Combine multiple thoughts into one (k → 1)
+  | 'refine'        // Self-loop refinement
+  | 'score'         // Evaluate thought
+  | 'keep_best';    // Select top thoughts
+
+/**
+ * Operation in the Graph of Operations (GoO)
+ */
+export interface GoTOperation {
+  type: GoTTransformation;
+  targetNodes?: string[];      // Nodes to operate on
+  params?: {
+    k?: number;                // Number of thoughts to generate
+    aggregationPrompt?: string;
+    refinementPrompt?: string;
+  };
+}
+
+/**
+ * Configuration for Graph-of-Thoughts
+ */
+export interface GoTConfig {
+  maxNodes: number;            // Maximum nodes in graph
+  maxRefinements: number;      // Max self-refinements per node
+  aggregationStrategy: 'merge' | 'synthesize' | 'vote';
+  enableRefinementLoops: boolean;
+  decompositionDepth: number;  // How many times to decompose problem
+}
+
+export const DEFAULT_GOT_CONFIG: GoTConfig = {
+  maxNodes: 100,
+  maxRefinements: 3,
+  aggregationStrategy: 'synthesize',
+  enableRefinementLoops: true,
+  decompositionDepth: 2,
+};
+
+/**
+ * Result of Graph-of-Thoughts reasoning
+ */
+export interface GoTResult {
+  solution: string;
+  graph: {
+    nodes: GoTNode[];
+    edges: Array<{ from: string; to: string }>;
+  };
+  stats: {
+    totalNodes: number;
+    aggregations: number;
+    refinements: number;
+    generations: number;
+  };
+  confidence: number;
+  volume: number;              // Number of thoughts contributing to solution
+  duration: number;
+}
+
+// ============================================================================
 // Core Types
 // ============================================================================
 
@@ -211,6 +298,10 @@ export interface ThinkingConfig {
 
   // v7.7: Dynamic Compute Budget
   computeBudgetConfig: ComputeBudgetConfig;
+
+  // v7.8: Graph-of-Thoughts
+  enableGraphOfThought: boolean;
+  gotConfig: GoTConfig;
 }
 
 export const DEFAULT_THINKING_CONFIG: ThinkingConfig = {
@@ -243,6 +334,10 @@ export const DEFAULT_THINKING_CONFIG: ThinkingConfig = {
   prmConfig: DEFAULT_PRM_CONFIG,
   entropyConfig: DEFAULT_ENTROPY_CONFIG,
   computeBudgetConfig: DEFAULT_COMPUTE_BUDGET_CONFIG,
+
+  // v7.8: Graph-of-Thoughts (off by default)
+  enableGraphOfThought: false,
+  gotConfig: DEFAULT_GOT_CONFIG,
 };
 
 export interface ThinkingStep {
@@ -463,6 +558,90 @@ estimated_steps: [number]
 reasoning_type: [arithmetic/logical/creative/multi-step/research]
 confidence: [0-1]
 </difficulty>`;
+
+// ============================================================================
+// v7.8: Graph-of-Thoughts Prompts (arXiv:2308.09687)
+// ============================================================================
+
+const GOT_DECOMPOSE_PROMPT = `Decompose this problem into sub-problems that can be solved independently.
+
+Problem: {problem}
+
+Break this down into {k} independent sub-problems. Each sub-problem should:
+- Be solvable on its own
+- Contribute to the overall solution
+- Not depend on other sub-problems (as much as possible)
+
+Format each sub-problem in <subproblem> tags:
+<subproblem id="1">
+[First sub-problem]
+</subproblem>
+<subproblem id="2">
+[Second sub-problem]
+</subproblem>
+...`;
+
+const GOT_AGGREGATE_PROMPT = `Aggregate these multiple solutions into a single, coherent answer.
+
+Original Problem: {problem}
+
+Solutions to aggregate:
+{solutions}
+
+Aggregation strategy: {strategy}
+
+Combine these solutions by:
+- merge: Combine all information without loss
+- synthesize: Create a new solution that's better than any individual one
+- vote: Select the most common/agreed-upon answer
+
+<aggregated>
+[Your aggregated solution here]
+</aggregated>
+
+<rationale>
+[Explain how you combined the solutions]
+</rationale>`;
+
+const GOT_REFINE_PROMPT = `Refine and improve this thought/solution.
+
+Original Problem: {problem}
+Current Thought: {thought}
+Refinement Round: {round}/{max_rounds}
+
+Improve this thought by:
+1. Fixing any errors or inconsistencies
+2. Adding missing details
+3. Clarifying ambiguous parts
+4. Strengthening the reasoning
+
+<refined>
+[Your improved thought here]
+</refined>
+
+<improvements>
+[List what you improved]
+</improvements>`;
+
+const GOT_SCORE_PROMPT = `Score this thought on how well it solves the problem.
+
+Problem: {problem}
+Thought: {thought}
+
+Rate on these dimensions (0-10):
+1. Correctness: Is the reasoning logically valid?
+2. Completeness: Does it fully address the problem?
+3. Clarity: Is it well-explained?
+4. Efficiency: Is it concise without being incomplete?
+
+<score>
+correctness: [0-10]
+completeness: [0-10]
+clarity: [0-10]
+efficiency: [0-10]
+overall: [0-10]
+is_solution: [true/false]
+</score>`;
 
 // ============================================================================
 // ThinkingEngine Class
@@ -1717,6 +1896,293 @@ Question: ${query}`;
 
     return best || nodes[0];
   }
+
+  // ==========================================================================
+  // v7.8: Graph-of-Thoughts (GoT)
+  // Based on arXiv:2308.09687 by Besta et al. (ETH Zurich)
+  // Key advantage: Aggregation (k → 1) not possible in Tree-of-Thought
+  // ==========================================================================
+
+  /**
+   * Graph-of-Thoughts reasoning
+   * Unlike ToT, GoT enables:
+   * - Aggregation: Combine multiple thoughts into one
+   * - Refinement loops: Iteratively improve thoughts
+   * - Arbitrary graph structure (not just tree)
+   */
+  async graphOfThought(problem: string): Promise<GoTResult> {
+    const startTime = Date.now();
+    const config = this.config.gotConfig;
+
+    // Initialize graph
+    const nodes = new Map<string, GoTNode>();
+    const edges: Array<{ from: string; to: string }> = [];
+
+    const stats = {
+      totalNodes: 0,
+      aggregations: 0,
+      refinements: 0,
+      generations: 0,
+    };
+
+    // Phase 1: Decompose problem into sub-problems
+    const subProblems = await this.gotDecompose(problem, config.decompositionDepth);
+    stats.generations++;
+
+    // Create initial nodes for each sub-problem
+    const initialNodes: GoTNode[] = [];
+    for (const subProblem of subProblems) {
+      const node = this.createGoTNode(subProblem, null);
+      nodes.set(node.id, node);
+      initialNodes.push(node);
+      stats.totalNodes++;
+    }
+
+    // Phase 2: Solve each sub-problem (generate thoughts)
+    const solutionNodes: GoTNode[] = [];
+    for (const node of initialNodes) {
+      // Generate solution for this sub-problem
+      const thoughts = await this.generateThoughts(problem, node, 1);
+      if (thoughts.length > 0) {
+        const solutionNode = this.createGoTNode(thoughts[0], node.id);
+        solutionNode.parents = [node.id];
+        nodes.set(solutionNode.id, solutionNode);
+        edges.push({ from: node.id, to: solutionNode.id });
+        solutionNodes.push(solutionNode);
+        stats.totalNodes++;
+        stats.generations++;
+      }
+    }
+
+    // Phase 3: Refine solutions (self-loops)
+    let refinedNodes = solutionNodes;
+    if (config.enableRefinementLoops) {
+      refinedNodes = [];
+      for (const node of solutionNodes) {
+        const refined = await this.gotRefine(problem, node, config.maxRefinements);
+        nodes.set(refined.id, refined);
+        edges.push({ from: node.id, to: refined.id });
+        refinedNodes.push(refined);
+        stats.refinements += refined.refinementCount;
+        stats.totalNodes++;
+      }
+    }
+
+    // Phase 4: Score all refined nodes
+    for (const node of refinedNodes) {
+      const score = await this.gotScore(problem, node);
+      node.value = score.overall;
+      node.isTerminal = score.isSolution;
+    }
+
+    // Phase 5: Aggregate solutions (k → 1)
+    let finalNode: GoTNode;
+    if (refinedNodes.length > 1) {
+      finalNode = await this.gotAggregate(problem, refinedNodes, config.aggregationStrategy);
+      finalNode.parents = refinedNodes.map(n => n.id);
+      nodes.set(finalNode.id, finalNode);
+      for (const node of refinedNodes) {
+        edges.push({ from: node.id, to: finalNode.id });
+      }
+      stats.aggregations++;
+      stats.totalNodes++;
+
+      // Final scoring
+      const finalScore = await this.gotScore(problem, finalNode);
+      finalNode.value = finalScore.overall;
+    } else {
+      finalNode = refinedNodes[0] || this.createGoTNode('No solution found', null);
+    }
+
+    return {
+      solution: finalNode.state,
+      graph: {
+        nodes: Array.from(nodes.values()),
+        edges,
+      },
+      stats,
+      confidence: finalNode.value,
+      volume: refinedNodes.length,
+      duration: Date.now() - startTime,
+    };
+  }
+
+  /**
+   * Decompose problem into sub-problems
+   */
+  private async gotDecompose(problem: string, k: number): Promise<string[]> {
+    const prompt = GOT_DECOMPOSE_PROMPT
+      .replace('{problem}', problem)
+      .replace('{k}', k.toString());
+
+    const result = await this.llm.chat(prompt);
+
+    // Parse sub-problems
+    const subProblems: string[] = [];
+    const subProblemRegex = /<subproblem[^>]*>([\s\S]*?)<\/subproblem>/g;
+    let match;
+    while ((match = subProblemRegex.exec(result.content)) !== null) {
+      subProblems.push(match[1].trim());
+    }
+
+    // Fallback: if no tags found, treat whole response as one problem
+    if (subProblems.length === 0) {
+      subProblems.push(problem);
+    }
+
+    return subProblems;
+  }
+
+  /**
+   * Aggregate multiple thoughts into one (k → 1)
+   * This is the KEY advantage over Tree-of-Thought
+   */
+  private async gotAggregate(
+    problem: string,
+    nodes: GoTNode[],
+    strategy: 'merge' | 'synthesize' | 'vote'
+  ): Promise<GoTNode> {
+    const solutionsStr = nodes.map((n, i) =>
+      `Solution ${i + 1}:\n${n.state}`
+    ).join('\n\n---\n\n');
+
+    const prompt = GOT_AGGREGATE_PROMPT
+      .replace('{problem}', problem)
+      .replace('{solutions}', solutionsStr)
+      .replace('{strategy}', strategy);
+
+    const result = await this.llm.chat(prompt);
+
+    // Parse aggregated solution
+    const aggregatedMatch = result.content.match(/<aggregated>([\s\S]*?)<\/aggregated>/);
+    const aggregated = aggregatedMatch ? aggregatedMatch[1].trim() : result.content;
+
+    const node = this.createGoTNode(aggregated, null);
+    node.aggregatedFrom = nodes.map(n => n.id);
+
+    return node;
+  }
+
+  /**
+   * Refine a thought through self-loops
+   */
+  private async gotRefine(problem: string, node: GoTNode, maxRounds: number): Promise<GoTNode> {
+    let current = node;
+
+    for (let round = 1; round <= maxRounds; round++) {
+      const prompt = GOT_REFINE_PROMPT
+        .replace('{problem}', problem)
+        .replace('{thought}', current.state)
+        .replace('{round}', round.toString())
+        .replace('{max_rounds}', maxRounds.toString());
+
+      const result = await this.llm.chat(prompt);
+
+      // Parse refined thought
+      const refinedMatch = result.content.match(/<refined>([\s\S]*?)<\/refined>/);
+      if (refinedMatch) {
+        const refinedNode = this.createGoTNode(refinedMatch[1].trim(), current.id);
+        refinedNode.parents = [current.id];
+        refinedNode.refinementCount = round;
+        current = refinedNode;
+      } else {
+        break;  // No improvement found
+      }
+
+      // Check if improvements section indicates no changes
+      const improvementsMatch = result.content.match(/<improvements>([\s\S]*?)<\/improvements>/);
+      if (improvementsMatch) {
+        const improvements = improvementsMatch[1].toLowerCase();
+        if (improvements.includes('no') && improvements.includes('change') ||
+            improvements.includes('none') ||
+            improvements.includes('already optimal')) {
+          break;
+        }
+      }
+    }
+
+    return current;
+  }
+
+  /**
+   * Score a thought
+   */
+  private async gotScore(problem: string, node: GoTNode): Promise<{
+    correctness: number;
+    completeness: number;
+    clarity: number;
+    efficiency: number;
+    overall: number;
+    isSolution: boolean;
+  }> {
+    const prompt = GOT_SCORE_PROMPT
+      .replace('{problem}', problem)
+      .replace('{thought}', node.state);
+
+    const result = await this.llm.chat(prompt);
+
+    // Parse score
+    const scoreMatch = result.content.match(/<score>([\s\S]*?)<\/score>/);
+    if (scoreMatch) {
+      const content = scoreMatch[1];
+      const correctness = this.parseScore(content, 'correctness');
+      const completeness = this.parseScore(content, 'completeness');
+      const clarity = this.parseScore(content, 'clarity');
+      const efficiency = this.parseScore(content, 'efficiency');
+      const overall = this.parseScore(content, 'overall');
+      const isSolutionMatch = content.match(/is_solution:\s*(true|false)/i);
+
+      return {
+        correctness,
+        completeness,
+        clarity,
+        efficiency,
+        overall,
+        isSolution: isSolutionMatch ? isSolutionMatch[1].toLowerCase() === 'true' : false,
+      };
+    }
+
+    return {
+      correctness: 0.5,
+      completeness: 0.5,
+      clarity: 0.5,
+      efficiency: 0.5,
+      overall: 0.5,
+      isSolution: false,
+    };
+  }
+
+  /**
+   * Parse a numeric score from text
+   */
+  private parseScore(content: string, field: string): number {
+    const match = content.match(new RegExp(`${field}:\\s*(\\d+(?:\\.\\d+)?)`));
+    return match ? parseFloat(match[1]) / 10 : 0.5;
+  }
+
+  /**
+   * Create a GoT node
+   */
+  private createGoTNode(thought: string, parent: string | null): GoTNode {
+    return {
+      id: `got_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      thought,
+      state: thought,
+      parent,
+      parents: parent ? [parent] : [],
+      children: [],
+      depth: 0,
+      value: 0,
+      visits: 0,
+      isTerminal: false,
+      isValid: true,
+      refinementCount: 0,
+      aggregatedFrom: [],
+      metadata: {
+        generatedAt: Date.now(),
+      },
+    };
+  }
 }
 
 // ============================================================================
@@ -1865,7 +2331,7 @@ export async function estimateProblemDifficulty(
 export async function thinkAdaptive(
   problem: string
 ): Promise<{
-  thinking: ThinkingResult | ToTResult;
+  thinking: ThinkingResult | ToTResult | GoTResult;
   difficulty: { level: string; estimatedSteps: number; reasoningType: string; budget: number };
   strategyUsed: string;
 }> {
@@ -1875,7 +2341,7 @@ export async function thinkAdaptive(
   const difficulty = await engine.estimateDifficulty(problem);
 
   // Step 2: Choose strategy based on difficulty
-  let thinking: ThinkingResult | ToTResult;
+  let thinking: ThinkingResult | ToTResult | GoTResult;
   let strategyUsed: string;
 
   switch (difficulty.level) {
@@ -1901,6 +2367,128 @@ export async function thinkAdaptive(
       });
       strategyUsed = 'tot_mcts';
       thinking = await engine.treeOfThought(problem);
+      break;
+    default:
+      strategyUsed = 'extended_thinking';
+      thinking = await engine.think(problem);
+  }
+
+  return { thinking, difficulty, strategyUsed };
+}
+
+// ============================================================================
+// v7.8: Quick Functions for Graph-of-Thoughts
+// ============================================================================
+
+/**
+ * Graph-of-Thoughts reasoning with aggregation
+ * Based on arXiv:2308.09687 - 62% quality improvement over ToT
+ */
+export async function thinkWithGoT(
+  problem: string,
+  aggregationStrategy: 'merge' | 'synthesize' | 'vote' = 'synthesize'
+): Promise<GoTResult> {
+  const engine = getThinkingEngine({
+    enableGraphOfThought: true,
+    gotConfig: { ...DEFAULT_GOT_CONFIG, aggregationStrategy },
+  });
+  return engine.graphOfThought(problem);
+}
+
+/**
+ * Graph-of-Thoughts with deep decomposition (more sub-problems)
+ */
+export async function thinkWithGoTDeep(
+  problem: string,
+  decompositionDepth: number = 4
+): Promise<GoTResult> {
+  const engine = getThinkingEngine({
+    enableGraphOfThought: true,
+    gotConfig: { ...DEFAULT_GOT_CONFIG, decompositionDepth },
+  });
+  return engine.graphOfThought(problem);
+}
+
+/**
+ * Graph-of-Thoughts with extra refinement loops
+ */
+export async function thinkWithGoTRefined(
+  problem: string,
+  maxRefinements: number = 5
+): Promise<GoTResult> {
+  const engine = getThinkingEngine({
+    enableGraphOfThought: true,
+    gotConfig: { ...DEFAULT_GOT_CONFIG, maxRefinements, enableRefinementLoops: true },
+  });
+  return engine.graphOfThought(problem);
+}
+
+/**
+ * Adaptive reasoning that chooses between ToT and GoT based on problem type
+ * Uses GoT for problems requiring synthesis/aggregation
+ */
+export async function thinkAdaptiveAdvanced(
+  problem: string
+): Promise<{
+  thinking: ThinkingResult | ToTResult | GoTResult;
+  difficulty: { level: string; estimatedSteps: number; reasoningType: string; budget: number };
+  strategyUsed: string;
+}> {
+  const engine = getThinkingEngine();
+
+  // Step 1: Estimate difficulty
+  const difficulty = await engine.estimateDifficulty(problem);
+
+  // Step 2: Choose strategy based on difficulty AND reasoning type
+  let thinking: ThinkingResult | ToTResult | GoTResult;
+  let strategyUsed: string;
+
+  // Use GoT for multi-step or creative problems (need aggregation)
+  const useGoT = difficulty.reasoningType === 'multi-step' ||
+                 difficulty.reasoningType === 'creative' ||
+                 difficulty.estimatedSteps > 5;
+
+  switch (difficulty.level) {
+    case 'easy':
+      strategyUsed = 'extended_thinking';
+      thinking = await engine.think(problem);
+      break;
+    case 'medium':
+      strategyUsed = 'self_critique';
+      thinking = await engine.think(problem);
+      break;
+    case 'hard':
+      if (useGoT) {
+        // GoT for problems needing synthesis
+        engine.updateConfig({
+          enableGraphOfThought: true,
+          gotConfig: DEFAULT_GOT_CONFIG,
+        });
+        strategyUsed = 'got_synthesize';
+        thinking = await engine.graphOfThought(problem);
+      } else {
+        // ToT for structured search
+        strategyUsed = 'tot_bfs';
+        thinking = await engine.treeOfThought(problem);
+      }
+      break;
+    case 'very_hard':
+      if (useGoT) {
+        // GoT with deep decomposition
+        engine.updateConfig({
+          enableGraphOfThought: true,
+          gotConfig: { ...DEFAULT_GOT_CONFIG, decompositionDepth: 4, maxRefinements: 5 },
+        });
+        strategyUsed = 'got_deep';
+        thinking = await engine.graphOfThought(problem);
+      } else {
+        // MCTS for exhaustive search
+        engine.updateConfig({
+          totConfig: { ...DEFAULT_TOT_CONFIG, strategy: 'mcts', maxIterations: 100 },
+        });
+        strategyUsed = 'tot_mcts';
+        thinking = await engine.treeOfThought(problem);
+      }
       break;
     default:
       strategyUsed = 'extended_thinking';

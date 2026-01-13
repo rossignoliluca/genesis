@@ -461,14 +461,16 @@ registerAction('git.push', async (context) => {
       results.branch = 'unknown';
     }
 
-    // Get status
+    // Get status (only tracked changes matter for push safety)
     try {
       const { stdout: status } = await execAsync(
         'git status --porcelain 2>/dev/null',
         { cwd, timeout: 5000 }
       );
-      const changes = status.trim().split('\n').filter(Boolean);
-      results.status = changes.length === 0 ? 'clean' : `${changes.length} changes`;
+      const allChanges = status.trim().split('\n').filter(Boolean);
+      // Filter out untracked files (??) - they don't affect push safety
+      const trackedChanges = allChanges.filter(line => !line.startsWith('??'));
+      results.status = trackedChanges.length === 0 ? 'clean' : `${trackedChanges.length} tracked changes`;
     } catch {
       results.status = 'unknown';
     }

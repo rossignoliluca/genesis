@@ -1,5 +1,5 @@
 /**
- * Genesis v7.9 - Advanced Reasoning System
+ * Genesis v7.10 - Advanced Reasoning System
  *
  * Frontier-grade reasoning architecture implementing:
  * - Extended Thinking with Scratchpad (o1/Claude style)
@@ -22,11 +22,18 @@
  * - Refinement loops: Self-improve thoughts iteratively
  * - 62% quality improvement over ToT, 31% cost reduction
  *
- * NEW in v7.9 (arXiv:2410.09008 - SuperCorrect):
+ * v7.9 (arXiv:2410.09008 - SuperCorrect):
  * - Hierarchical Thought Templates (high-level + detailed steps)
  * - Cross-model Self-Correction (teacher/student pattern)
  * - Two-stage: Template distillation → Error-driven correction
  * - 7.5% accuracy improvement on MATH benchmark
+ *
+ * NEW in v7.10 (Buffer of Thoughts + Reasoning-Aware Compression):
+ * - Trace compression for efficient storage (arXiv:2406.04271)
+ * - Meta-buffer storing reusable thought templates
+ * - Step pruning with importance-based filtering (arXiv:2509.12464)
+ * - Template matching and instantiation for fast reasoning
+ * - 12% cost of multi-query methods (like ToT/GoT)
  *
  * Based on:
  * - OpenAI o1/o3: Test-time compute scaling, hidden CoT
@@ -36,12 +43,13 @@
  * - Tree of Thoughts: Deliberate Problem Solving (Yao et al. 2023)
  * - Graph of Thoughts: Besta et al. ETH Zurich 2023
  * - SuperCorrect: Hierarchical Templates (Llama 2024)
+ * - Buffer of Thoughts: Thought-Augmented Reasoning (2024)
  * - Uncertainty-aware Step-wise Verification (Oxford 2025)
  *
  * Architecture:
  * ```
  * ┌─────────────────────────────────────────────────────────────────┐
- * │                    ADVANCED REASONING v7.9                      │
+ * │                    ADVANCED REASONING v7.10                     │
  * │                                                                 │
  * │  Tree-of-Thought (ToT):                                        │
  * │  Input → [ToT Search] → [PRM Verify] → [Beam Select] → Output  │
@@ -57,6 +65,11 @@
  * │  Template → Solve → Detect Errors → Correct → Verify          │
  * │      ↓         ↓           ↓            ↓         ↓            │
  * │  Hierarchical Strategy  Teacher      Student   Loop            │
+ * │                                                                 │
+ * │  Buffer of Thoughts (Compression):                              │
+ * │  Trace → [Summarize/Prune] → [Match Template] → Compressed     │
+ * │    ↓           ↓                    ↓              ↓           │
+ * │  Raw CoT   30% target         Meta-buffer     12% cost         │
  * │                                                                 │
  * │  MCTS: Selection → Expansion → Simulation → Backpropagation   │
  * │  CoT Entropy: Sample rationales → Cluster → Compute entropy    │
@@ -350,6 +363,172 @@ export interface SuperCorrectResult {
 }
 
 // ============================================================================
+// v7.10: Trace Compression Types (Inspired by Buffer of Thoughts)
+// arXiv:2406.04271 - Meta-buffer thought templates + trace efficiency
+// arXiv:2509.12464 - Reasoning-Aware Compression (RAC)
+// ============================================================================
+
+/**
+ * Thought Template for meta-buffer storage
+ * Generalizes reasoning patterns for reuse across similar problems
+ */
+export interface ThoughtTemplate {
+  id: string;
+  problemType: string;            // Type of problem this template solves
+  description: string;            // Human-readable description
+  embedding?: number[];           // Embedding for similarity search
+
+  structure: {
+    highLevelStrategy: string;    // Generalized approach
+    keySteps: string[];           // Essential reasoning steps
+    criticalDecisions: string[];  // Key decision points
+    validationPoints: string[];   // Where to verify correctness
+  };
+
+  metadata: {
+    successRate: number;          // Historical success rate
+    avgTokenSavings: number;      // Typical compression achieved
+    usageCount: number;           // Times this template was used
+    lastUsed: Date;
+    source: 'extracted' | 'distilled' | 'manual';
+  };
+}
+
+/**
+ * Compressed reasoning trace
+ * Maintains semantic content with minimal tokens
+ */
+export interface CompressedTrace {
+  originalTokens: number;
+  compressedTokens: number;
+  compressionRatio: number;       // compressedTokens / originalTokens
+
+  summary: string;                // Condensed reasoning summary
+  keySteps: Array<{
+    step: number;
+    essence: string;              // Core reasoning (compressed)
+    importance: number;           // 0-1, kept during pruning
+    originalLength: number;
+    compressedLength: number;
+  }>;
+
+  decisions: Array<{
+    point: string;
+    choice: string;
+    rationale: string;            // Why this choice
+  }>;
+
+  // For reconstruction
+  templateId?: string;            // If derived from template
+  instantiationParams?: Record<string, unknown>;  // Template params
+}
+
+/**
+ * Meta-buffer for storing and retrieving thought templates
+ * Based on Buffer of Thoughts (BoT) architecture
+ */
+export interface MetaBuffer {
+  templates: ThoughtTemplate[];
+
+  // Retrieval settings
+  similarityThreshold: number;    // δ from paper (0.5-0.7)
+  maxTemplates: number;           // Max templates to store
+
+  // Buffer statistics
+  stats: {
+    totalTemplates: number;
+    avgCompressionRatio: number;
+    cacheHitRate: number;
+    totalTokensSaved: number;
+  };
+}
+
+/**
+ * Configuration for trace compression
+ */
+export interface TraceCompressionConfig {
+  // Compression strategy
+  strategy: 'summarize' | 'prune' | 'template' | 'hybrid';
+
+  // Summarization settings
+  summarizeConfig: {
+    targetRatio: number;          // Target compression ratio (e.g., 0.3 = 30% of original)
+    preserveKeySteps: boolean;    // Always keep critical reasoning steps
+    maxSummaryTokens: number;     // Max tokens for summary
+  };
+
+  // Pruning settings
+  pruneConfig: {
+    importanceThreshold: number;  // Below this, steps may be pruned
+    keepDecisionPoints: boolean;  // Always keep decision points
+    keepValidation: boolean;      // Always keep validation steps
+  };
+
+  // Template settings
+  templateConfig: {
+    enableTemplateMatching: boolean;
+    similarityThreshold: number;  // δ for template retrieval
+    enableTemplateExtraction: boolean;  // Extract new templates
+    minSuccessForTemplate: number;  // Min success rate to create template
+  };
+
+  // Meta-buffer settings
+  metaBufferConfig: {
+    enabled: boolean;
+    maxTemplates: number;
+    persistPath?: string;         // Path to persist templates
+  };
+}
+
+export const DEFAULT_TRACE_COMPRESSION_CONFIG: TraceCompressionConfig = {
+  strategy: 'hybrid',
+
+  summarizeConfig: {
+    targetRatio: 0.3,             // Compress to 30% of original
+    preserveKeySteps: true,
+    maxSummaryTokens: 500,
+  },
+
+  pruneConfig: {
+    importanceThreshold: 0.3,     // Prune steps below 30% importance
+    keepDecisionPoints: true,
+    keepValidation: true,
+  },
+
+  templateConfig: {
+    enableTemplateMatching: true,
+    similarityThreshold: 0.6,     // δ = 0.6 (middle of recommended range)
+    enableTemplateExtraction: true,
+    minSuccessForTemplate: 0.8,
+  },
+
+  metaBufferConfig: {
+    enabled: true,
+    maxTemplates: 100,
+    persistPath: undefined,
+  },
+};
+
+/**
+ * Result of trace compression
+ */
+export interface TraceCompressionResult {
+  compressed: CompressedTrace;
+  templateUsed?: ThoughtTemplate;
+  newTemplateCreated?: ThoughtTemplate;
+
+  stats: {
+    originalTokens: number;
+    compressedTokens: number;
+    compressionRatio: number;
+    strategyUsed: TraceCompressionConfig['strategy'];
+    templateMatched: boolean;
+    stepsPruned: number;
+    processingTime: number;
+  };
+}
+
+// ============================================================================
 // Core Types
 // ============================================================================
 
@@ -396,6 +575,10 @@ export interface ThinkingConfig {
   // v7.9: SuperCorrect
   enableSuperCorrect: boolean;
   superCorrectConfig: SuperCorrectConfig;
+
+  // v7.10: Trace Compression (Buffer of Thoughts)
+  enableTraceCompression: boolean;
+  traceCompressionConfig: TraceCompressionConfig;
 }
 
 export const DEFAULT_THINKING_CONFIG: ThinkingConfig = {
@@ -436,6 +619,10 @@ export const DEFAULT_THINKING_CONFIG: ThinkingConfig = {
   // v7.9: SuperCorrect (off by default)
   enableSuperCorrect: false,
   superCorrectConfig: DEFAULT_SUPERCORRECT_CONFIG,
+
+  // v7.10: Trace Compression (on by default - saves tokens)
+  enableTraceCompression: true,
+  traceCompressionConfig: DEFAULT_TRACE_COMPRESSION_CONFIG,
 };
 
 export interface ThinkingStep {
@@ -864,6 +1051,160 @@ confidence: [0-1 - confidence in the corrected solution]
 </verification>`;
 
 // ============================================================================
+// v7.10: Trace Compression Prompts (Buffer of Thoughts + RAC)
+// ============================================================================
+
+const TRACE_SUMMARIZE_PROMPT = `Compress this reasoning trace while preserving essential information.
+
+Original Trace:
+{trace}
+
+Target: Reduce to approximately {targetRatio}% of original length.
+
+PRESERVATION RULES:
+1. ALWAYS keep: key decisions, final conclusions, critical insights
+2. MAY compress: verbose explanations, repetitive reasoning, intermediate calculations
+3. NEVER lose: logical flow, decision rationale, validation results
+
+<compressed>
+summary: [1-2 sentence high-level summary of the reasoning]
+
+key_steps:
+<step num="1" importance="[0-1]">
+essence: [Core reasoning in minimal words]
+</step>
+<step num="2" importance="[0-1]">
+essence: [Core reasoning in minimal words]
+</step>
+...
+
+decisions:
+<decision>
+point: [What was being decided]
+choice: [What was chosen]
+rationale: [Why - brief]
+</decision>
+...
+</compressed>`;
+
+const TRACE_PRUNE_PROMPT = `Identify steps that can be safely pruned from this reasoning trace.
+
+Original Trace:
+{trace}
+
+Importance Threshold: {threshold} (prune steps below this)
+
+Evaluate each step:
+1. Is this step essential to the logical chain?
+2. Does this step contain a key decision?
+3. Would removing this step break understanding?
+4. Is this step redundant with another step?
+
+<pruning_analysis>
+<step index="{i}">
+importance: [0-1]
+essential: [true/false]
+reason: [Why keep or prune]
+prune_safe: [true/false]
+</step>
+...
+
+recommended_pruning: [list of step indices to remove]
+estimated_savings: [percentage of tokens saved]
+</pruning_analysis>`;
+
+const TRACE_EXTRACT_TEMPLATE_PROMPT = `Extract a reusable thought template from this successful reasoning trace.
+
+Problem Type: {problemType}
+Original Problem: {problem}
+Reasoning Trace: {trace}
+Success Indicator: {success}
+
+Create a GENERALIZED template that can solve similar problems.
+
+GENERALIZATION RULES:
+1. Replace specific values with [PLACEHOLDER] markers
+2. Extract the underlying strategy, not specific calculations
+3. Identify decision points that would vary by problem
+4. Note validation patterns that apply generally
+
+<template>
+id: [unique identifier]
+problem_type: [category of problems this solves]
+description: [When to use this template]
+
+<structure>
+high_level_strategy: [Generalized approach in 1-2 sentences]
+
+key_steps:
+- [Step 1 - generalized]
+- [Step 2 - generalized]
+...
+
+critical_decisions:
+- [Decision point 1: what varies by problem]
+...
+
+validation_points:
+- [When to verify correctness]
+...
+</structure>
+
+<metadata>
+success_rate: [estimated based on trace]
+avg_token_savings: [estimated]
+</metadata>
+</template>`;
+
+const TRACE_MATCH_TEMPLATE_PROMPT = `Determine if this problem matches an existing thought template.
+
+Problem: {problem}
+
+Available Templates:
+{templates}
+
+For each template, assess:
+1. Problem type match (0-1)
+2. Strategy applicability (0-1)
+3. Adaptation difficulty (low/medium/high)
+
+<matching>
+<template id="{templateId}">
+type_match: [0-1]
+strategy_match: [0-1]
+adaptation: [low|medium|high]
+overall_score: [0-1]
+adaptation_notes: [What would need to change]
+</template>
+...
+
+best_match: [template id or "none"]
+confidence: [0-1]
+</matching>`;
+
+const TRACE_INSTANTIATE_TEMPLATE_PROMPT = `Instantiate this thought template for the specific problem.
+
+Template:
+{template}
+
+Problem:
+{problem}
+
+Apply the template by:
+1. Fill in [PLACEHOLDER] markers with problem-specific values
+2. Adapt the strategy to this specific case
+3. Apply the key steps in order
+4. Follow validation points
+
+<instantiated>
+[Complete reasoning using the template structure, adapted to this problem]
+</instantiated>
+
+<adaptation_log>
+[Note any changes made to the template for this problem]
+</adaptation_log>`;
+
+// ============================================================================
 // ThinkingEngine Class
 // ============================================================================
 
@@ -872,9 +1213,30 @@ export class ThinkingEngine {
   private llm: LLMBridge;
   private thinkingHistory: ThinkingStep[] = [];
 
+  // v7.10: Meta-buffer for thought template storage
+  private metaBuffer: MetaBuffer = {
+    templates: [],
+    similarityThreshold: 0.6,
+    maxTemplates: 100,
+    stats: {
+      totalTemplates: 0,
+      avgCompressionRatio: 0,
+      cacheHitRate: 0,
+      totalTokensSaved: 0,
+    },
+  };
+
   constructor(config: Partial<ThinkingConfig> = {}) {
     this.config = { ...DEFAULT_THINKING_CONFIG, ...config };
     this.llm = getLLMBridge();
+  }
+
+  /**
+   * Estimate token count for a string
+   * Simple approximation: ~4 characters per token for English
+   */
+  private estimateTokens(text: string): number {
+    return Math.ceil(text.length / 4);
   }
 
   // ==========================================================================
@@ -2742,6 +3104,453 @@ Provide a complete solution following the steps in the template.`;
     }
     return items;
   }
+
+  // ==========================================================================
+  // v7.10: Trace Compression Methods (Buffer of Thoughts)
+  // ==========================================================================
+
+  /**
+   * Compress a reasoning trace using configured strategy
+   * Based on Buffer of Thoughts (arXiv:2406.04271) and RAC (arXiv:2509.12464)
+   */
+  async compressTrace(
+    trace: string,
+    originalProblem?: string
+  ): Promise<TraceCompressionResult> {
+    const startTime = Date.now();
+    const config = this.config.traceCompressionConfig;
+    const originalTokens = this.estimateTokens(trace);
+
+    // Try template matching first if enabled
+    let templateUsed: ThoughtTemplate | undefined;
+    if (config.templateConfig.enableTemplateMatching && this.metaBuffer.templates.length > 0) {
+      const match = await this.matchTemplate(originalProblem || trace);
+      if (match && match.score >= config.templateConfig.similarityThreshold) {
+        templateUsed = match.template;
+        this.metaBuffer.stats.cacheHitRate =
+          (this.metaBuffer.stats.cacheHitRate * this.metaBuffer.stats.totalTemplates + 1) /
+          (this.metaBuffer.stats.totalTemplates + 1);
+      }
+    }
+
+    // Apply compression strategy
+    let compressed: CompressedTrace;
+    let stepsPruned = 0;
+
+    switch (config.strategy) {
+      case 'summarize':
+        compressed = await this.summarizeTrace(trace, config.summarizeConfig.targetRatio);
+        break;
+
+      case 'prune':
+        const pruneResult = await this.pruneTrace(trace, config.pruneConfig.importanceThreshold);
+        compressed = pruneResult.compressed;
+        stepsPruned = pruneResult.stepsPruned;
+        break;
+
+      case 'template':
+        if (templateUsed) {
+          compressed = await this.compressWithTemplate(trace, templateUsed);
+        } else {
+          // Fallback to summarize if no template
+          compressed = await this.summarizeTrace(trace, config.summarizeConfig.targetRatio);
+        }
+        break;
+
+      case 'hybrid':
+      default:
+        // Hybrid: Use template if available, otherwise summarize + prune
+        if (templateUsed) {
+          compressed = await this.compressWithTemplate(trace, templateUsed);
+        } else {
+          // First prune, then summarize
+          const pruned = await this.pruneTrace(trace, config.pruneConfig.importanceThreshold);
+          stepsPruned = pruned.stepsPruned;
+
+          if (pruned.compressed.compressionRatio > config.summarizeConfig.targetRatio) {
+            // Still too big, summarize further
+            compressed = await this.summarizeTrace(
+              this.compressedTraceToString(pruned.compressed),
+              config.summarizeConfig.targetRatio / pruned.compressed.compressionRatio
+            );
+          } else {
+            compressed = pruned.compressed;
+          }
+        }
+    }
+
+    // Extract new template if successful and enabled
+    let newTemplateCreated: ThoughtTemplate | undefined;
+    if (
+      config.templateConfig.enableTemplateExtraction &&
+      !templateUsed &&
+      originalProblem
+    ) {
+      newTemplateCreated = await this.extractTemplate(originalProblem, trace);
+      if (newTemplateCreated) {
+        this.addToMetaBuffer(newTemplateCreated);
+      }
+    }
+
+    // Update stats
+    const tokensSaved = originalTokens - compressed.compressedTokens;
+    this.metaBuffer.stats.totalTokensSaved += tokensSaved;
+    this.metaBuffer.stats.avgCompressionRatio =
+      (this.metaBuffer.stats.avgCompressionRatio + compressed.compressionRatio) / 2;
+
+    return {
+      compressed,
+      templateUsed,
+      newTemplateCreated,
+      stats: {
+        originalTokens,
+        compressedTokens: compressed.compressedTokens,
+        compressionRatio: compressed.compressionRatio,
+        strategyUsed: config.strategy,
+        templateMatched: !!templateUsed,
+        stepsPruned,
+        processingTime: Date.now() - startTime,
+      },
+    };
+  }
+
+  /**
+   * Summarize trace to target ratio
+   */
+  private async summarizeTrace(trace: string, targetRatio: number): Promise<CompressedTrace> {
+    const originalTokens = this.estimateTokens(trace);
+    const targetPercent = Math.round(targetRatio * 100);
+
+    const prompt = TRACE_SUMMARIZE_PROMPT
+      .replace('{trace}', trace)
+      .replace('{targetRatio}', targetPercent.toString());
+
+    const result = await this.llm.chat(prompt);
+
+    // Parse compressed output
+    const compressedMatch = result.content.match(/<compressed>([\s\S]*?)<\/compressed>/);
+    if (!compressedMatch) {
+      // Fallback: return original as single step
+      return this.createFallbackCompressedTrace(trace, originalTokens);
+    }
+
+    const content = compressedMatch[1];
+    const summary = content.match(/summary:\s*(.+)/)?.[1]?.trim() || trace.slice(0, 200);
+
+    // Parse key steps
+    const keySteps: CompressedTrace['keySteps'] = [];
+    const stepMatches = content.matchAll(/<step num="(\d+)" importance="([\d.]+)">([\s\S]*?)<\/step>/g);
+    for (const match of stepMatches) {
+      const essenceMatch = match[3].match(/essence:\s*(.+)/);
+      keySteps.push({
+        step: parseInt(match[1]),
+        essence: essenceMatch?.[1]?.trim() || '',
+        importance: parseFloat(match[2]),
+        originalLength: 0,  // Unknown after compression
+        compressedLength: essenceMatch?.[1]?.length || 0,
+      });
+    }
+
+    // Parse decisions
+    const decisions: CompressedTrace['decisions'] = [];
+    const decisionMatches = content.matchAll(/<decision>([\s\S]*?)<\/decision>/g);
+    for (const match of decisionMatches) {
+      const pointMatch = match[1].match(/point:\s*(.+)/);
+      const choiceMatch = match[1].match(/choice:\s*(.+)/);
+      const rationaleMatch = match[1].match(/rationale:\s*(.+)/);
+      decisions.push({
+        point: pointMatch?.[1]?.trim() || '',
+        choice: choiceMatch?.[1]?.trim() || '',
+        rationale: rationaleMatch?.[1]?.trim() || '',
+      });
+    }
+
+    const compressedText = summary + keySteps.map(s => s.essence).join(' ');
+    const compressedTokens = this.estimateTokens(compressedText);
+
+    return {
+      originalTokens,
+      compressedTokens,
+      compressionRatio: compressedTokens / originalTokens,
+      summary,
+      keySteps,
+      decisions,
+    };
+  }
+
+  /**
+   * Prune trace by removing low-importance steps
+   */
+  private async pruneTrace(
+    trace: string,
+    threshold: number
+  ): Promise<{ compressed: CompressedTrace; stepsPruned: number }> {
+    const originalTokens = this.estimateTokens(trace);
+
+    const prompt = TRACE_PRUNE_PROMPT
+      .replace('{trace}', trace)
+      .replace('{threshold}', threshold.toString());
+
+    const result = await this.llm.chat(prompt);
+
+    // Parse pruning analysis
+    const analysisMatch = result.content.match(/<pruning_analysis>([\s\S]*?)<\/pruning_analysis>/);
+    if (!analysisMatch) {
+      return {
+        compressed: this.createFallbackCompressedTrace(trace, originalTokens),
+        stepsPruned: 0,
+      };
+    }
+
+    const content = analysisMatch[1];
+
+    // Parse step evaluations
+    const keySteps: CompressedTrace['keySteps'] = [];
+    const stepMatches = content.matchAll(/<step index="(\d+)">([\s\S]*?)<\/step>/g);
+    let stepsPruned = 0;
+
+    for (const match of stepMatches) {
+      const stepContent = match[2];
+      const importance = parseFloat(stepContent.match(/importance:\s*([\d.]+)/)?.[1] || '0.5');
+      const pruneSafe = stepContent.match(/prune_safe:\s*(\w+)/)?.[1]?.toLowerCase() === 'true';
+      const reason = stepContent.match(/reason:\s*(.+)/)?.[1]?.trim() || '';
+
+      if (pruneSafe && importance < threshold) {
+        stepsPruned++;
+        continue;  // Skip this step
+      }
+
+      keySteps.push({
+        step: parseInt(match[1]),
+        essence: reason,  // Use reason as essence
+        importance,
+        originalLength: 0,
+        compressedLength: reason.length,
+      });
+    }
+
+    const summary = `Pruned trace with ${keySteps.length} key steps retained`;
+    const compressedText = keySteps.map(s => s.essence).join(' ');
+    const compressedTokens = this.estimateTokens(compressedText);
+
+    return {
+      compressed: {
+        originalTokens,
+        compressedTokens,
+        compressionRatio: compressedTokens / originalTokens,
+        summary,
+        keySteps,
+        decisions: [],
+      },
+      stepsPruned,
+    };
+  }
+
+  /**
+   * Compress using a matched template
+   */
+  private async compressWithTemplate(
+    trace: string,
+    template: ThoughtTemplate
+  ): Promise<CompressedTrace> {
+    const originalTokens = this.estimateTokens(trace);
+
+    // Use template structure for compression
+    const keySteps: CompressedTrace['keySteps'] = template.structure.keySteps.map((step, i) => ({
+      step: i + 1,
+      essence: step,
+      importance: 0.8,
+      originalLength: 0,
+      compressedLength: step.length,
+    }));
+
+    const decisions = template.structure.criticalDecisions.map(d => ({
+      point: d,
+      choice: 'Template-guided',
+      rationale: 'Following established pattern',
+    }));
+
+    const compressedTokens = this.estimateTokens(
+      template.structure.highLevelStrategy + keySteps.map(s => s.essence).join(' ')
+    );
+
+    return {
+      originalTokens,
+      compressedTokens,
+      compressionRatio: compressedTokens / originalTokens,
+      summary: template.structure.highLevelStrategy,
+      keySteps,
+      decisions,
+      templateId: template.id,
+    };
+  }
+
+  /**
+   * Match problem to existing template
+   */
+  private async matchTemplate(problem: string): Promise<{ template: ThoughtTemplate; score: number } | null> {
+    if (this.metaBuffer.templates.length === 0) return null;
+
+    const templatesStr = this.metaBuffer.templates
+      .map(t => `ID: ${t.id}\nType: ${t.problemType}\nDescription: ${t.description}`)
+      .join('\n\n');
+
+    const prompt = TRACE_MATCH_TEMPLATE_PROMPT
+      .replace('{problem}', problem)
+      .replace('{templates}', templatesStr);
+
+    const result = await this.llm.chat(prompt);
+
+    // Parse matching result
+    const matchingMatch = result.content.match(/<matching>([\s\S]*?)<\/matching>/);
+    if (!matchingMatch) return null;
+
+    const content = matchingMatch[1];
+    const bestMatch = content.match(/best_match:\s*(.+)/)?.[1]?.trim();
+    const confidence = parseFloat(content.match(/confidence:\s*([\d.]+)/)?.[1] || '0');
+
+    if (!bestMatch || bestMatch === 'none') return null;
+
+    const template = this.metaBuffer.templates.find(t => t.id === bestMatch);
+    if (!template) return null;
+
+    return { template, score: confidence };
+  }
+
+  /**
+   * Extract template from successful trace
+   */
+  private async extractTemplate(
+    problem: string,
+    trace: string
+  ): Promise<ThoughtTemplate | undefined> {
+    const prompt = TRACE_EXTRACT_TEMPLATE_PROMPT
+      .replace('{problemType}', 'general')
+      .replace('{problem}', problem)
+      .replace('{trace}', trace)
+      .replace('{success}', 'true');
+
+    const result = await this.llm.chat(prompt);
+
+    // Parse template
+    const templateMatch = result.content.match(/<template>([\s\S]*?)<\/template>/);
+    if (!templateMatch) return undefined;
+
+    const content = templateMatch[1];
+    const id = content.match(/id:\s*(.+)/)?.[1]?.trim() || `template-${Date.now()}`;
+    const problemType = content.match(/problem_type:\s*(.+)/)?.[1]?.trim() || 'general';
+    const description = content.match(/description:\s*(.+)/)?.[1]?.trim() || '';
+
+    // Parse structure
+    const structureMatch = content.match(/<structure>([\s\S]*?)<\/structure>/);
+    const structureContent = structureMatch?.[1] || '';
+
+    const highLevelStrategy = structureContent.match(/high_level_strategy:\s*(.+)/)?.[1]?.trim() || '';
+    const keySteps = this.parseListItems(structureContent.match(/key_steps:([\s\S]*?)(?=critical_decisions:|$)/)?.[1] || '');
+    const criticalDecisions = this.parseListItems(structureContent.match(/critical_decisions:([\s\S]*?)(?=validation_points:|$)/)?.[1] || '');
+    const validationPoints = this.parseListItems(structureContent.match(/validation_points:([\s\S]*?)$/)?.[1] || '');
+
+    // Parse metadata
+    const metadataMatch = content.match(/<metadata>([\s\S]*?)<\/metadata>/);
+    const metadataContent = metadataMatch?.[1] || '';
+    const successRate = parseFloat(metadataContent.match(/success_rate:\s*([\d.]+)/)?.[1] || '0.8');
+    const avgTokenSavings = parseFloat(metadataContent.match(/avg_token_savings:\s*([\d.]+)/)?.[1] || '0.3');
+
+    return {
+      id,
+      problemType,
+      description,
+      structure: {
+        highLevelStrategy,
+        keySteps,
+        criticalDecisions,
+        validationPoints,
+      },
+      metadata: {
+        successRate,
+        avgTokenSavings,
+        usageCount: 0,
+        lastUsed: new Date(),
+        source: 'extracted',
+      },
+    };
+  }
+
+  /**
+   * Add template to meta-buffer
+   */
+  private addToMetaBuffer(template: ThoughtTemplate): void {
+    // Enforce max templates limit
+    if (this.metaBuffer.templates.length >= this.metaBuffer.maxTemplates) {
+      // Remove least recently used
+      this.metaBuffer.templates.sort((a, b) =>
+        a.metadata.lastUsed.getTime() - b.metadata.lastUsed.getTime()
+      );
+      this.metaBuffer.templates.shift();
+    }
+
+    this.metaBuffer.templates.push(template);
+    this.metaBuffer.stats.totalTemplates = this.metaBuffer.templates.length;
+  }
+
+  /**
+   * Convert compressed trace back to string
+   */
+  private compressedTraceToString(compressed: CompressedTrace): string {
+    return [
+      compressed.summary,
+      ...compressed.keySteps.map(s => `Step ${s.step}: ${s.essence}`),
+      ...compressed.decisions.map(d => `Decision: ${d.point} -> ${d.choice} (${d.rationale})`),
+    ].join('\n');
+  }
+
+  /**
+   * Create fallback compressed trace when parsing fails
+   */
+  private createFallbackCompressedTrace(trace: string, originalTokens: number): CompressedTrace {
+    const summary = trace.slice(0, 200) + (trace.length > 200 ? '...' : '');
+    return {
+      originalTokens,
+      compressedTokens: originalTokens,
+      compressionRatio: 1.0,
+      summary,
+      keySteps: [{
+        step: 1,
+        essence: trace,
+        importance: 1.0,
+        originalLength: trace.length,
+        compressedLength: trace.length,
+      }],
+      decisions: [],
+    };
+  }
+
+  /**
+   * Get meta-buffer statistics
+   */
+  getMetaBufferStats(): MetaBuffer['stats'] {
+    return { ...this.metaBuffer.stats };
+  }
+
+  /**
+   * Get all stored templates
+   */
+  getTemplates(): ThoughtTemplate[] {
+    return [...this.metaBuffer.templates];
+  }
+
+  /**
+   * Clear meta-buffer
+   */
+  clearMetaBuffer(): void {
+    this.metaBuffer.templates = [];
+    this.metaBuffer.stats = {
+      totalTemplates: 0,
+      avgCompressionRatio: 0,
+      cacheHitRate: 0,
+      totalTokensSaved: 0,
+    };
+  }
 }
 
 // ============================================================================
@@ -3218,4 +4027,163 @@ export async function thinkUltimate(
   }
 
   return { result, difficulty, strategyUsed };
+}
+
+// ============================================================================
+// v7.10: Trace Compression Convenience Functions
+// ============================================================================
+
+/**
+ * Compress a reasoning trace for efficient storage/retrieval
+ * Uses Buffer of Thoughts meta-buffer architecture
+ */
+export async function compressTrace(
+  trace: string,
+  problem?: string
+): Promise<TraceCompressionResult> {
+  const engine = getThinkingEngine({
+    enableTraceCompression: true,
+    traceCompressionConfig: DEFAULT_TRACE_COMPRESSION_CONFIG,
+  });
+  return engine.compressTrace(trace, problem);
+}
+
+/**
+ * Compress trace using summarization strategy
+ * Best for general-purpose compression
+ */
+export async function compressTraceSummarize(
+  trace: string,
+  targetRatio: number = 0.3
+): Promise<TraceCompressionResult> {
+  const engine = getThinkingEngine({
+    enableTraceCompression: true,
+    traceCompressionConfig: {
+      ...DEFAULT_TRACE_COMPRESSION_CONFIG,
+      strategy: 'summarize',
+      summarizeConfig: {
+        ...DEFAULT_TRACE_COMPRESSION_CONFIG.summarizeConfig,
+        targetRatio,
+      },
+    },
+  });
+  return engine.compressTrace(trace);
+}
+
+/**
+ * Compress trace using pruning strategy
+ * Best when you want to keep full steps but remove unimportant ones
+ */
+export async function compressTracePrune(
+  trace: string,
+  importanceThreshold: number = 0.3
+): Promise<TraceCompressionResult> {
+  const engine = getThinkingEngine({
+    enableTraceCompression: true,
+    traceCompressionConfig: {
+      ...DEFAULT_TRACE_COMPRESSION_CONFIG,
+      strategy: 'prune',
+      pruneConfig: {
+        ...DEFAULT_TRACE_COMPRESSION_CONFIG.pruneConfig,
+        importanceThreshold,
+      },
+    },
+  });
+  return engine.compressTrace(trace);
+}
+
+/**
+ * Think with automatic trace compression
+ * Compresses reasoning trace after thinking for efficient storage
+ */
+export async function thinkWithCompression(
+  problem: string,
+  context?: string
+): Promise<{
+  result: ThinkingResult;
+  compressed: TraceCompressionResult;
+}> {
+  const engine = getThinkingEngine({
+    enableTraceCompression: true,
+    traceCompressionConfig: DEFAULT_TRACE_COMPRESSION_CONFIG,
+  });
+
+  // Think first
+  const result = await engine.think(problem, context);
+
+  // Compress the thinking trace
+  const traceText = result.thinking.map(t => `[${t.type}] ${t.content}`).join('\n');
+  const compressed = await engine.compressTrace(traceText, problem);
+
+  return { result, compressed };
+}
+
+/**
+ * Get meta-buffer statistics (token savings, cache hits, etc.)
+ */
+export function getCompressionStats(): MetaBuffer['stats'] {
+  const engine = getThinkingEngine();
+  return engine.getMetaBufferStats();
+}
+
+/**
+ * Get all stored thought templates
+ */
+export function getThoughtTemplates(): ThoughtTemplate[] {
+  const engine = getThinkingEngine();
+  return engine.getTemplates();
+}
+
+/**
+ * Clear the thought template meta-buffer
+ */
+export function clearThoughtTemplates(): void {
+  const engine = getThinkingEngine();
+  engine.clearMetaBuffer();
+}
+
+/**
+ * Ultimate thinking with compression - combines best strategies with efficient storage
+ * Automatically compresses reasoning traces after execution
+ */
+export async function thinkUltimateCompressed(
+  problem: string
+): Promise<{
+  result: ThinkingResult | ToTResult | GoTResult | SuperCorrectResult;
+  difficulty: { level: string; estimatedSteps: number; reasoningType: string; budget: number };
+  strategyUsed: string;
+  compressed: TraceCompressionResult;
+}> {
+  // Use ultimate strategy selection
+  const { result, difficulty, strategyUsed } = await thinkUltimate(problem);
+
+  // Extract trace from result based on type
+  let traceText: string;
+  if ('thinking' in result) {
+    // ThinkingResult
+    traceText = (result as ThinkingResult).thinking.map(t => `[${t.type}] ${t.content}`).join('\n');
+  } else if ('solution' in result && 'template' in result) {
+    // SuperCorrectResult
+    const scResult = result as SuperCorrectResult;
+    traceText = `Solution: ${scResult.solution}\nTemplate: ${JSON.stringify(scResult.template)}`;
+  } else if ('graph' in result) {
+    // GoTResult
+    const gotResult = result as GoTResult;
+    traceText = `Solution: ${gotResult.solution}\nNodes: ${gotResult.graph.nodes.length}\nConfidence: ${gotResult.confidence}`;
+  } else if ('treeStats' in result) {
+    // ToTResult
+    const totResult = result as ToTResult;
+    traceText = `Solution: ${totResult.solution}\nMax depth: ${totResult.treeStats.maxDepthReached}\nNodes expanded: ${totResult.treeStats.nodesExpanded}`;
+  } else {
+    traceText = JSON.stringify(result);
+  }
+
+  // Compress the trace
+  const engine = getThinkingEngine({
+    enableTraceCompression: true,
+    traceCompressionConfig: DEFAULT_TRACE_COMPRESSION_CONFIG,
+  });
+  const compressed = await engine.compressTrace(traceText, problem);
+
+  return { result, difficulty, strategyUsed, compressed };
 }

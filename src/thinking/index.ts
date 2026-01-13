@@ -3453,8 +3453,12 @@ Provide a complete solution following the steps in the template.`;
     // Parse metadata
     const metadataMatch = content.match(/<metadata>([\s\S]*?)<\/metadata>/);
     const metadataContent = metadataMatch?.[1] || '';
-    const successRate = parseFloat(metadataContent.match(/success_rate:\s*([\d.]+)/)?.[1] || '0.8');
-    const avgTokenSavings = parseFloat(metadataContent.match(/avg_token_savings:\s*([\d.]+)/)?.[1] || '0.3');
+    let successRate = parseFloat(metadataContent.match(/success_rate:\s*([\d.]+)/)?.[1] || '0.8');
+    // Normalize percentage values (LLM may output 95 instead of 0.95)
+    if (successRate > 1) successRate = successRate / 100;
+    let avgTokenSavings = parseFloat(metadataContent.match(/avg_token_savings:\s*([\d.]+)/)?.[1] || '0.3');
+    // Normalize percentage values
+    if (avgTokenSavings > 1) avgTokenSavings = avgTokenSavings / 100;
 
     return {
       id,

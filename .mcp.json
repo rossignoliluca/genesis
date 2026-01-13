@@ -1,0 +1,50 @@
+{
+  "version": "1.0",
+  "servers": {
+    "filesystem": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${HOME}"],
+      "description": "Local filesystem access",
+      "enabled": true,
+      "autoConnect": true
+    },
+    "memory": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "description": "Knowledge graph memory",
+      "enabled": true
+    },
+    "context7": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"],
+      "description": "Library documentation search",
+      "enabled": true
+    },
+    "arxiv": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@iflow-mcp/arxiv-paper-mcp@latest"],
+      "description": "ArXiv paper search",
+      "enabled": true
+    },
+    "brave-search": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@brave/brave-search-mcp-server"],
+      "requiredEnv": ["BRAVE_API_KEY"],
+      "description": "Brave web search",
+      "enabled": true
+    },
+    "github": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "requiredEnv": ["GITHUB_PERSONAL_ACCESS_TOKEN", "GITHUB_TOKEN"],
+      "description": "GitHub repository operations",
+      "enabled": true
+    }
+  }
+}

@@ -1,0 +1,237 @@
+{
+  "episodic": [
+    {
+      "type": "episodic",
+      "content": {
+        "what": "Address 13 TODO items",
+        "details": {
+          "result": "TODOs logged for future work"
+        }
+      },
+      "when": {
+        "timestamp": "2026-01-12T16:56:27.907Z"
+      },
+      "feeling": {
+        "valence": 0.8,
+        "arousal": 0.5,
+        "label": "accomplishment"
+      },
+      "R0": 1,
+      "S": 1.0499999999999998,
+      "importance": 0.7,
+      "emotionalValence": 0.8,
+      "associations": [],
+      "tags": [
+        "autonomous",
+        "improvement",
+        "successful"
+      ],
+      "consolidated": false,
+      "id": "45cf1ac8-1fc2-4df7-8c48-dd40cc53a81d",
+      "created": "2026-01-12T16:56:41.820Z",
+      "lastAccessed": "2026-01-12T16:56:41.820Z",
+      "accessCount": 1
+    },
+    {
+      "type": "episodic",
+      "content": {
+        "what": "Create test",
+        "details": {
+          "result": "Created ./src/active-inference/active-inference.test.ts",
+          "filesCreated": [
+            "./src/active-inference/active-inference.test.ts"
+          ]
+        }
+      },
+      "when": {
+        "timestamp": "2026-01-12T16:56:27.907Z"
+      },
+      "feeling": {
+        "valence": 0.8,
+        "arousal": 0.5,
+        "label": "accomplishment"
+      },
+      "R0": 1,
+      "S": 1.0499999999999998,
+      "importance": 0.7,
+      "emotionalValence": 0.8,
+      "associations": [],
+      "tags": [
+        "autonomous",
+        "improvement",
+        "successful"
+      ],
+      "consolidated": false,
+      "id": "84788373-9d10-46ef-9f99-40baa742539a",
+      "created": "2026-01-12T16:56:41.820Z",
+      "lastAccessed": "2026-01-12T16:56:41.820Z",
+      "accessCount": 1
+    },
+    {
+      "type": "episodic",
+      "content": {
+        "what": "Create test",
+        "details": {
+          "result": "Created ./src/agents/agents.test.ts",
+          "filesCreated": [
+            "./src/agents/agents.test.ts"
+          ]
+        }
+      },
+      "when": {
+        "timestamp": "2026-01-12T16:56:32.684Z"
+      },
+      "feeling": {
+        "valence": 0.8,
+        "arousal": 0.5,
+        "label": "accomplishment"
+      },
+      "R0": 1,
+      "S": 1.0499999999999998,
+      "importance": 0.7,
+      "emotionalValence": 0.8,
+      "associations": [],
+      "tags": [
+        "autonomous",
+        "improvement",
+        "successful"
+      ],
+      "consolidated": false,
+      "id": "9908df58-b2e3-4cd4-b25a-7ba7576efa78",
+      "created": "2026-01-12T16:56:41.820Z",
+      "lastAccessed": "2026-01-12T16:56:41.820Z",
+      "accessCount": 1
+    },
+    {
+      "type": "episodic",
+      "content": {
+        "what": "Create test",
+        "details": {
+          "result": "Created ./src/brain/brain.test.ts",
+          "filesCreated": [
+            "./src/brain/brain.test.ts"
+          ]
+        }
+      },
+      "when": {
+        "timestamp": "2026-01-12T16:56:41.826Z"
+      },
+      "feeling": {
+        "valence": 0.8,
+        "arousal": 0.5,
+        "label": "accomplishment"
+      },
+      "R0": 1,
+      "S": 1.0499999999999998,
+      "importance": 0.7,
+      "emotionalValence": 0.8,
+      "associations": [],
+      "tags": [
+        "autonomous",
+        "improvement",
+        "successful"
+      ],
+      "consolidated": false,
+      "id": "46eec27a-7749-41e0-a208-a9dbdfd11aa9",
+      "created": "2026-01-12T16:56:41.826Z",
+      "lastAccessed": "2026-01-12T16:56:41.826Z",
+      "accessCount": 1
+    }
+  ],
+  "semantic": [
+    {
+      "type": "semantic",
+      "content": {
+        "concept": "Autonomous Improvement Pattern",
+        "definition": "Analyze → Plan → Execute → Remember cycle for self-improvement",
+        "properties": {}
+      },
+      "category": "self-improvement",
+      "superordinates": [],
+      "subordinates": [],
+      "related": [
+        "autonomous",
+        "evolution",
+        "memory"
+      ],
+      "confidence": 0.8,
+      "sources": [],
+      "contradictions": [],
+      "usageCount": 2,
+      "lastUsed": "2026-01-12T16:56:27.907Z",
+      "R0": 1,
+      "S": 187.5,
+      "importance": 0.5,
+      "emotionalValence": 0,
+      "associations": [],
+      "tags": [],
+      "consolidated": true,
+      "id": "c68244ba-4bf8-45c9-aaff-23a58fbf9b9e",
+      "created": "2026-01-12T16:56:41.820Z",
+      "lastAccessed": "2026-01-12T16:56:41.826Z",
+      "accessCount": 1
+    }
+  ],
+  "procedural": [
+    {
+      "type": "procedural",
+      "content": {
+        "name": "autonomous-file-creation",
+        "description": "Create missing files autonomously",
+        "steps": [
+          {
+            "order": 1,
+            "action": "analyze-codebase",
+            "params": {
+              "check": "missing files"
+            }
+          },
+          {
+            "order": 2,
+            "action": "generate-content",
+            "params": {
+              "template": "auto"
+            }
+          },
+          {
+            "order": 3,
+            "action": "write-file",
+            "params": {
+              "validate": true
+            }
+          },
+          {
+            "order": 4,
+            "action": "remember-action",
+            "params": {
+              "store": "episodic"
+            }
+          }
+        ]
+      },
+      "requires": [],
+      "inputs": [],
+      "outputs": [],
+      "successRate": 0.5,
+      "avgDuration": 0,
+      "executionCount": 0,
+      "version": 1,
+      "improvements": [],
+      "R0": 1,
+      "S": 43.75,
+      "importance": 0.7,
+      "emotionalValence": 0,
+      "associations": [],
+      "tags": [
+        "autonomous",
+        "file-creation"
+      ],
+      "consolidated": true,
+      "id": "31b47536-8ef2-44b2-94ca-2d5c18ceaef8",
+      "created": "2026-01-12T16:56:41.820Z",
+      "lastAccessed": "2026-01-12T16:56:41.826Z",
+      "accessCount": 1
+    }
+  ],
+  "exportedAt": "2026-01-12T16:56:41.826Z"
+}

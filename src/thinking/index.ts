@@ -1,5 +1,5 @@
 /**
- * Genesis v7.10 - Advanced Reasoning System
+ * Genesis v7.11 - Advanced Reasoning System
  *
  * Frontier-grade reasoning architecture implementing:
  * - Extended Thinking with Scratchpad (o1/Claude style)
@@ -28,12 +28,19 @@
  * - Two-stage: Template distillation → Error-driven correction
  * - 7.5% accuracy improvement on MATH benchmark
  *
- * NEW in v7.10 (Buffer of Thoughts + Reasoning-Aware Compression):
+ * v7.10 (Buffer of Thoughts + Reasoning-Aware Compression):
  * - Trace compression for efficient storage (arXiv:2406.04271)
  * - Meta-buffer storing reusable thought templates
  * - Step pruning with importance-based filtering (arXiv:2509.12464)
  * - Template matching and instantiation for fast reasoning
  * - 12% cost of multi-query methods (like ToT/GoT)
+ *
+ * NEW in v7.11 (Math-Shepherd Process Reward Model):
+ * - Completion-based step verification (arXiv:2312.08935)
+ * - Monte Carlo step scoring: complete N paths, check answer correctness
+ * - Hard/Soft estimation for process annotation without human labels
+ * - Best-of-N solution reranking with step-level scores
+ * - 77.9% → 84.1% on GSM8K (Mistral-7B with Math-Shepherd)
  *
  * Based on:
  * - OpenAI o1/o3: Test-time compute scaling, hidden CoT
@@ -529,6 +536,153 @@ export interface TraceCompressionResult {
 }
 
 // ============================================================================
+// v7.11: Math-Shepherd Process Reward Model Types
+// Based on arXiv:2312.08935 - Verify and Reinforce LLMs Step-by-step
+// ============================================================================
+
+/**
+ * Result of completing from an intermediate step
+ * Used for Monte Carlo step scoring
+ */
+export interface CompletionResult {
+  /** Completed reasoning steps from the checkpoint */
+  steps: string[];
+  /** Final answer extracted from completion */
+  answer: string;
+  /** Whether the answer matches the golden answer */
+  isCorrect: boolean;
+  /** Total tokens used for this completion */
+  tokens: number;
+}
+
+/**
+ * Step-level score from Math-Shepherd style verification
+ */
+export interface StepScore {
+  /** Step index (0-based) */
+  stepIndex: number;
+  /** The step content */
+  content: string;
+  /** Hard Estimation score: 1 if ANY completion is correct, 0 otherwise */
+  hardScore: number;
+  /** Soft Estimation score: fraction of completions that are correct */
+  softScore: number;
+  /** Number of completions attempted */
+  numCompletions: number;
+  /** Completion results for this step */
+  completions: CompletionResult[];
+  /** Whether this step has potential to reach correct answer */
+  hasPotential: boolean;
+}
+
+/**
+ * Configuration for Math-Shepherd style verification
+ */
+export interface MathShepherdConfig {
+  /** Enable completion-based verification */
+  enabled: boolean;
+  /** Number of completions per step (N in Math-Shepherd) */
+  numCompletions: number;
+  /** Temperature for completion sampling */
+  completionTemperature: number;
+  /** Max tokens per completion */
+  maxCompletionTokens: number;
+  /** Scoring method: hard (any correct) or soft (frequency) */
+  scoringMethod: 'hard' | 'soft';
+  /** Minimum score threshold for step acceptance */
+  minStepScore: number;
+  /** How to aggregate step scores for solution score */
+  aggregationMethod: 'min' | 'product' | 'mean';
+  /** Early termination if step score falls below threshold */
+  earlyTermination: boolean;
+  /** Cache completions to avoid redundant computation */
+  cacheCompletions: boolean;
+}
+
+export const DEFAULT_MATH_SHEPHERD_CONFIG: MathShepherdConfig = {
+  enabled: false,                  // Expensive, off by default
+  numCompletions: 4,               // N=4 achieves 86% accuracy
+  completionTemperature: 0.7,      // Diversity in completions
+  maxCompletionTokens: 512,        // Enough for most math problems
+  scoringMethod: 'hard',           // HE is faster, SE more precise
+  minStepScore: 0.3,               // Below this, step is likely wrong
+  aggregationMethod: 'min',        // Conservative: worst step determines solution score
+  earlyTermination: true,          // Stop if step clearly wrong
+  cacheCompletions: true,          // Reuse completions when possible
+};
+
+/**
+ * Annotated solution with step-level scores
+ */
+export interface AnnotatedSolution {
+  /** Original problem */
+  problem: string;
+  /** Golden answer (if known) */
+  goldenAnswer?: string;
+  /** Solution steps */
+  steps: string[];
+  /** Step-level scores */
+  stepScores: StepScore[];
+  /** Aggregate solution score (min/product/mean of step scores) */
+  solutionScore: number;
+  /** Final answer from the solution */
+  finalAnswer: string;
+  /** Whether the final answer is correct (if golden known) */
+  isCorrect?: boolean;
+  /** Total computation cost (tokens) */
+  totalTokens: number;
+  /** Processing time (ms) */
+  processingTime: number;
+}
+
+/**
+ * Result of Best-of-N solution ranking
+ */
+export interface SolutionRanking {
+  /** Ranked solutions from best to worst */
+  rankedSolutions: AnnotatedSolution[];
+  /** Index of selected (best) solution */
+  selectedIndex: number;
+  /** The selected solution */
+  selected: AnnotatedSolution;
+  /** Ranking method used */
+  rankingMethod: 'prm' | 'orm' | 'self_consistency' | 'combined';
+  /** Statistics */
+  stats: {
+    totalCandidates: number;
+    correctInTop1: boolean;
+    correctInTopK: number;
+    avgSolutionScore: number;
+    bestSolutionScore: number;
+    totalTokens: number;
+    processingTime: number;
+  };
+}
+
+/**
+ * Process annotation dataset entry
+ * For training PRMs without human annotation
+ */
+export interface ProcessAnnotation {
+  /** Problem text */
+  problem: string;
+  /** Golden answer */
+  goldenAnswer: string;
+  /** Solution steps */
+  steps: string[];
+  /** Hard estimation labels per step */
+  hardLabels: number[];
+  /** Soft estimation labels per step */
+  softLabels: number[];
+  /** Number of completions used for annotation */
+  numCompletions: number;
+  /** Source model that generated the solution */
+  sourceModel: string;
+  /** Timestamp */
+  timestamp: Date;
+}
+
+// ============================================================================
 // Core Types
 // ============================================================================
 
@@ -579,6 +733,10 @@ export interface ThinkingConfig {
   // v7.10: Trace Compression (Buffer of Thoughts)
   enableTraceCompression: boolean;
   traceCompressionConfig: TraceCompressionConfig;
+
+  // v7.11: Math-Shepherd Process Reward Model
+  enableMathShepherd: boolean;
+  mathShepherdConfig: MathShepherdConfig;
 }
 
 export const DEFAULT_THINKING_CONFIG: ThinkingConfig = {
@@ -623,6 +781,10 @@ export const DEFAULT_THINKING_CONFIG: ThinkingConfig = {
   // v7.10: Trace Compression (on by default - saves tokens)
   enableTraceCompression: true,
   traceCompressionConfig: DEFAULT_TRACE_COMPRESSION_CONFIG,
+
+  // v7.11: Math-Shepherd (off by default - expensive)
+  enableMathShepherd: false,
+  mathShepherdConfig: DEFAULT_MATH_SHEPHERD_CONFIG,
 };
 
 export interface ThinkingStep {
@@ -1203,6 +1365,84 @@ Apply the template by:
 <adaptation_log>
 [Note any changes made to the template for this problem]
 </adaptation_log>`;
+
+// ============================================================================
+// v7.11: Math-Shepherd Prompts
+// Based on arXiv:2312.08935 - Verify and Reinforce LLMs Step-by-step
+// ============================================================================
+
+/**
+ * Prompt to complete reasoning from an intermediate step
+ * Used for Monte Carlo scoring of steps
+ */
+const MATH_SHEPHERD_COMPLETION_PROMPT = `Continue solving this problem from the given checkpoint.
+
+Problem:
+{problem}
+
+Solution so far:
+{steps_so_far}
+
+Continue from this point and complete the solution. Show clear step-by-step reasoning.
+
+<completion>
+[Continue the solution from where it left off, show each step, end with the final answer]
+</completion>
+
+<final_answer>
+[Just the final answer, no explanation]
+</final_answer>`;
+
+/**
+ * Prompt to extract final answer from a solution
+ */
+const MATH_SHEPHERD_EXTRACT_ANSWER_PROMPT = `Extract the final numerical or symbolic answer from this solution.
+
+Solution:
+{solution}
+
+<answer>
+[Just the final answer - a number, expression, or short phrase. No explanation.]
+</answer>`;
+
+/**
+ * Prompt to split a solution into individual steps
+ */
+const MATH_SHEPHERD_SPLIT_STEPS_PROMPT = `Split this solution into individual reasoning steps.
+
+Solution:
+{solution}
+
+Output each step on its own line, numbered. Include:
+- All calculations
+- All logical deductions
+- The final answer as the last step
+
+<steps>
+1. [First step]
+2. [Second step]
+...
+N. [Final answer]
+</steps>`;
+
+/**
+ * Prompt to check if two answers are equivalent
+ */
+const MATH_SHEPHERD_COMPARE_ANSWERS_PROMPT = `Compare these two answers to determine if they are mathematically equivalent.
+
+Answer 1: {answer1}
+Answer 2: {answer2}
+
+Consider:
+- Numerical equivalence (3/2 = 1.5)
+- Algebraic equivalence (2x = x+x)
+- Simplified vs unsimplified forms
+- Different notations (%, fractions, decimals)
+
+<comparison>
+equivalent: [true or false]
+reasoning: [brief explanation]
+</comparison>`;
 
 // ============================================================================
 // ThinkingEngine Class
@@ -2298,6 +2538,405 @@ Question: ${query}`;
       aggregateScore,
       errors,
     };
+  }
+
+  // ==========================================================================
+  // v7.11: Math-Shepherd Process Reward Model
+  // Based on arXiv:2312.08935 - Verify and Reinforce LLMs Step-by-step
+  // ==========================================================================
+
+  /**
+   * Complete N reasoning paths from an intermediate step
+   * Core of Math-Shepherd: evaluate step by completing to answer
+   */
+  private async completeFromStep(
+    problem: string,
+    stepsSoFar: string[],
+    goldenAnswer: string,
+    numCompletions: number = 4
+  ): Promise<CompletionResult[]> {
+    const results: CompletionResult[] = [];
+    const stepsStr = stepsSoFar.join('\n');
+
+    for (let i = 0; i < numCompletions; i++) {
+      const prompt = MATH_SHEPHERD_COMPLETION_PROMPT
+        .replace('{problem}', problem)
+        .replace('{steps_so_far}', stepsStr || 'None');
+
+      try {
+        const response = await this.llm.chat(prompt);
+        const content = response.content;
+
+        // Extract completion
+        const completionMatch = content.match(/<completion>([\s\S]*?)<\/completion>/);
+        const answerMatch = content.match(/<final_answer>([\s\S]*?)<\/final_answer>/);
+
+        const completion = completionMatch?.[1]?.trim() || content;
+        const answer = answerMatch?.[1]?.trim() || this.extractAnswerSimple(completion);
+
+        // Check correctness
+        const isCorrect = await this.compareAnswers(answer, goldenAnswer);
+
+        results.push({
+          steps: this.splitStepsSimple(completion),
+          answer,
+          isCorrect,
+          tokens: this.estimateTokens(prompt + content),
+        });
+      } catch (error) {
+        // Count failed completions as incorrect
+        results.push({
+          steps: [],
+          answer: '',
+          isCorrect: false,
+          tokens: 0,
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Score a single step using Math-Shepherd completion-based verification
+   */
+  async scoreStepWithMathShepherd(
+    problem: string,
+    steps: string[],
+    stepIndex: number,
+    goldenAnswer: string
+  ): Promise<StepScore> {
+    const config = this.config.mathShepherdConfig;
+    const stepsSoFar = steps.slice(0, stepIndex + 1);
+    const stepContent = steps[stepIndex];
+
+    // Complete N paths from this step
+    const completions = await this.completeFromStep(
+      problem,
+      stepsSoFar,
+      goldenAnswer,
+      config.numCompletions
+    );
+
+    // Calculate scores
+    const correctCount = completions.filter(c => c.isCorrect).length;
+    const hardScore = correctCount > 0 ? 1 : 0;
+    const softScore = completions.length > 0 ? correctCount / completions.length : 0;
+
+    return {
+      stepIndex,
+      content: stepContent,
+      hardScore,
+      softScore,
+      numCompletions: completions.length,
+      completions,
+      hasPotential: hardScore === 1,
+    };
+  }
+
+  /**
+   * Score all steps in a solution using Math-Shepherd
+   * Returns annotated solution with step-level scores
+   */
+  async annotateSolutionWithMathShepherd(
+    problem: string,
+    solution: string,
+    goldenAnswer: string
+  ): Promise<AnnotatedSolution> {
+    const startTime = Date.now();
+    const config = this.config.mathShepherdConfig;
+
+    // Split solution into steps
+    const steps = await this.splitSolutionIntoSteps(solution);
+    const stepScores: StepScore[] = [];
+    let totalTokens = 0;
+
+    // Score each step
+    for (let i = 0; i < steps.length; i++) {
+      const stepScore = await this.scoreStepWithMathShepherd(
+        problem,
+        steps,
+        i,
+        goldenAnswer
+      );
+      stepScores.push(stepScore);
+      totalTokens += stepScore.completions.reduce((sum, c) => sum + c.tokens, 0);
+
+      // Early termination if step has no potential
+      if (config.earlyTermination && !stepScore.hasPotential) {
+        // Fill remaining steps with zero scores
+        for (let j = i + 1; j < steps.length; j++) {
+          stepScores.push({
+            stepIndex: j,
+            content: steps[j],
+            hardScore: 0,
+            softScore: 0,
+            numCompletions: 0,
+            completions: [],
+            hasPotential: false,
+          });
+        }
+        break;
+      }
+    }
+
+    // Aggregate solution score
+    const scores = stepScores.map(s =>
+      config.scoringMethod === 'hard' ? s.hardScore : s.softScore
+    );
+    let solutionScore: number;
+
+    switch (config.aggregationMethod) {
+      case 'min':
+        solutionScore = Math.min(...scores);
+        break;
+      case 'product':
+        solutionScore = scores.reduce((a, b) => a * b, 1);
+        break;
+      default:
+        solutionScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+    }
+
+    // Extract final answer
+    const finalAnswer = this.extractAnswerSimple(steps[steps.length - 1] || '');
+    const isCorrect = await this.compareAnswers(finalAnswer, goldenAnswer);
+
+    return {
+      problem,
+      goldenAnswer,
+      steps,
+      stepScores,
+      solutionScore,
+      finalAnswer,
+      isCorrect,
+      totalTokens,
+      processingTime: Date.now() - startTime,
+    };
+  }
+
+  /**
+   * Rank multiple solutions using Math-Shepherd PRM
+   * Best-of-N selection: return highest scoring solution
+   */
+  async rankSolutionsWithMathShepherd(
+    problem: string,
+    solutions: string[],
+    goldenAnswer?: string
+  ): Promise<SolutionRanking> {
+    const startTime = Date.now();
+    const annotatedSolutions: AnnotatedSolution[] = [];
+
+    // If no golden answer, use first extraction as reference
+    let referenceAnswer = goldenAnswer;
+    if (!referenceAnswer && solutions.length > 0) {
+      referenceAnswer = this.extractAnswerSimple(solutions[0]);
+    }
+
+    // Annotate all solutions
+    for (const solution of solutions) {
+      const annotated = await this.annotateSolutionWithMathShepherd(
+        problem,
+        solution,
+        referenceAnswer || ''
+      );
+      annotatedSolutions.push(annotated);
+    }
+
+    // Sort by solution score (descending)
+    const rankedSolutions = [...annotatedSolutions].sort(
+      (a, b) => b.solutionScore - a.solutionScore
+    );
+
+    // Statistics
+    const totalTokens = annotatedSolutions.reduce((sum, s) => sum + s.totalTokens, 0);
+    const avgScore = annotatedSolutions.reduce((sum, s) => sum + s.solutionScore, 0) / annotatedSolutions.length;
+    const correctInTopK = rankedSolutions.filter(s => s.isCorrect).length;
+
+    return {
+      rankedSolutions,
+      selectedIndex: annotatedSolutions.indexOf(rankedSolutions[0]),
+      selected: rankedSolutions[0],
+      rankingMethod: 'prm',
+      stats: {
+        totalCandidates: solutions.length,
+        correctInTop1: rankedSolutions[0]?.isCorrect || false,
+        correctInTopK,
+        avgSolutionScore: avgScore,
+        bestSolutionScore: rankedSolutions[0]?.solutionScore || 0,
+        totalTokens,
+        processingTime: Date.now() - startTime,
+      },
+    };
+  }
+
+  /**
+   * Generate automatic process annotations for training PRMs
+   * No human annotation needed - uses completion-based labeling
+   */
+  async generateProcessAnnotations(
+    problem: string,
+    solution: string,
+    goldenAnswer: string,
+    sourceModel: string = 'unknown'
+  ): Promise<ProcessAnnotation> {
+    const annotated = await this.annotateSolutionWithMathShepherd(
+      problem,
+      solution,
+      goldenAnswer
+    );
+
+    return {
+      problem,
+      goldenAnswer,
+      steps: annotated.steps,
+      hardLabels: annotated.stepScores.map(s => s.hardScore),
+      softLabels: annotated.stepScores.map(s => s.softScore),
+      numCompletions: this.config.mathShepherdConfig.numCompletions,
+      sourceModel,
+      timestamp: new Date(),
+    };
+  }
+
+  /**
+   * Simple step splitting (fallback when LLM not needed)
+   */
+  private splitStepsSimple(solution: string): string[] {
+    // Split on common step patterns
+    const lines = solution.split(/\n/);
+    const steps: string[] = [];
+    let currentStep = '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      // Check if this starts a new step
+      if (/^(Step\s*\d+|[\d]+[.):]|\*|\-|Therefore|Thus|So|Hence|Finally)/i.test(trimmed)) {
+        if (currentStep) {
+          steps.push(currentStep.trim());
+        }
+        currentStep = trimmed;
+      } else {
+        currentStep += '\n' + trimmed;
+      }
+    }
+
+    if (currentStep) {
+      steps.push(currentStep.trim());
+    }
+
+    // If no steps found, treat whole solution as one step
+    if (steps.length === 0 && solution.trim()) {
+      steps.push(solution.trim());
+    }
+
+    return steps;
+  }
+
+  /**
+   * Split solution into steps using LLM (more accurate)
+   */
+  private async splitSolutionIntoSteps(solution: string): Promise<string[]> {
+    // Try simple split first
+    const simpleSteps = this.splitStepsSimple(solution);
+    if (simpleSteps.length > 1) {
+      return simpleSteps;
+    }
+
+    // Use LLM for complex solutions
+    try {
+      const prompt = MATH_SHEPHERD_SPLIT_STEPS_PROMPT.replace('{solution}', solution);
+      const response = await this.llm.chat(prompt);
+
+      const stepsMatch = response.content.match(/<steps>([\s\S]*?)<\/steps>/);
+      if (stepsMatch) {
+        const stepsText = stepsMatch[1];
+        const steps = stepsText
+          .split(/\n/)
+          .map(line => line.replace(/^\d+[.):\s]+/, '').trim())
+          .filter(line => line.length > 0);
+        if (steps.length > 0) {
+          return steps;
+        }
+      }
+    } catch {
+      // Fallback to simple split
+    }
+
+    return simpleSteps;
+  }
+
+  /**
+   * Extract answer from text (simple heuristic)
+   */
+  private extractAnswerSimple(text: string): string {
+    // Look for common answer patterns
+    const patterns = [
+      /(?:answer|result|solution|=)\s*[:=]?\s*([^\n.]+)/i,
+      /(?:therefore|thus|so|hence)\s*[:,]?\s*([^\n.]+)/i,
+      /\*\*([^*]+)\*\*/,  // Bold text
+      /(?:^|\n)([+-]?\d+(?:\.\d+)?(?:\/\d+)?)\s*$/m,  // Number at end
+    ];
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        return match[1].trim();
+      }
+    }
+
+    // Return last line as fallback
+    const lines = text.trim().split('\n');
+    return lines[lines.length - 1].trim();
+  }
+
+  /**
+   * Compare two answers for equivalence
+   */
+  private async compareAnswers(answer1: string, answer2: string): Promise<boolean> {
+    // Quick string comparison
+    const norm1 = this.normalizeAnswer(answer1);
+    const norm2 = this.normalizeAnswer(answer2);
+    if (norm1 === norm2) return true;
+
+    // Try numeric comparison
+    const num1 = parseFloat(norm1.replace(/[^0-9.-]/g, ''));
+    const num2 = parseFloat(norm2.replace(/[^0-9.-]/g, ''));
+    if (!isNaN(num1) && !isNaN(num2) && Math.abs(num1 - num2) < 0.001) {
+      return true;
+    }
+
+    // Use LLM for complex comparisons (if answers look different)
+    if (norm1 !== norm2 && answer1.length > 2 && answer2.length > 2) {
+      try {
+        const prompt = MATH_SHEPHERD_COMPARE_ANSWERS_PROMPT
+          .replace('{answer1}', answer1)
+          .replace('{answer2}', answer2);
+        const response = await this.llm.chat(prompt);
+
+        const match = response.content.match(/equivalent:\s*(true|false)/i);
+        if (match) {
+          return match[1].toLowerCase() === 'true';
+        }
+      } catch {
+        // Fallback to string comparison
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Normalize answer for comparison
+   */
+  private normalizeAnswer(answer: string): string {
+    return answer
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .replace(/[.,;:!?]+$/, '')
+      .replace(/^the\s+/i, '')
+      .replace(/\$|\\|{|}/g, '')
+      .trim();
   }
 
   // ==========================================================================
@@ -4190,4 +4829,136 @@ export async function thinkUltimateCompressed(
   const compressed = await engine.compressTrace(traceText, problem);
 
   return { result, difficulty, strategyUsed, compressed };
+}
+
+// ============================================================================
+// v7.11: Math-Shepherd Process Reward Model Convenience Functions
+// ============================================================================
+
+/**
+ * Score a solution using Math-Shepherd completion-based verification
+ *
+ * @param problem - The problem statement
+ * @param solution - The solution to score
+ * @param correctAnswer - Optional ground truth for verification
+ * @param numCompletions - Number of completion rollouts per step (default: 4)
+ * @returns Annotated solution with step-level scores
+ */
+export async function scoreSolutionWithMathShepherd(
+  problem: string,
+  solution: string,
+  correctAnswer: string = '',
+  numCompletions: number = 4
+): Promise<AnnotatedSolution> {
+  const engine = getThinkingEngine({
+    enableMathShepherd: true,
+    mathShepherdConfig: {
+      ...DEFAULT_MATH_SHEPHERD_CONFIG,
+      enabled: true,
+      numCompletions,
+    },
+  });
+  return engine.annotateSolutionWithMathShepherd(problem, solution, correctAnswer);
+}
+
+/**
+ * Rank multiple solutions using Math-Shepherd step-level scores
+ *
+ * Best-of-N selection: generate N solutions, score each, return best
+ *
+ * @param problem - The problem statement
+ * @param solutions - Array of candidate solutions
+ * @param correctAnswer - Optional ground truth for verification
+ * @returns Ranking with solutions ordered by aggregate score
+ */
+export async function rankSolutionsWithPRM(
+  problem: string,
+  solutions: string[],
+  correctAnswer?: string
+): Promise<SolutionRanking> {
+  const engine = getThinkingEngine({
+    enableMathShepherd: true,
+    mathShepherdConfig: {
+      ...DEFAULT_MATH_SHEPHERD_CONFIG,
+      enabled: true,
+    },
+  });
+  return engine.rankSolutionsWithMathShepherd(problem, solutions, correctAnswer);
+}
+
+/**
+ * Generate process annotations for training PRM models
+ *
+ * Auto-annotates solutions without human labels using Math-Shepherd.
+ *
+ * @param problem - The problem statement
+ * @param solution - The solution to annotate
+ * @param correctAnswer - Ground truth answer
+ * @returns ProcessAnnotation with step-level labels (+ for correct, - for incorrect)
+ */
+export async function generatePRMAnnotations(
+  problem: string,
+  solution: string,
+  correctAnswer: string
+): Promise<ProcessAnnotation> {
+  const engine = getThinkingEngine({
+    enableMathShepherd: true,
+    mathShepherdConfig: {
+      ...DEFAULT_MATH_SHEPHERD_CONFIG,
+      enabled: true,
+    },
+  });
+  return engine.generateProcessAnnotations(problem, solution, correctAnswer);
+}
+
+/**
+ * Think and automatically select best solution from N attempts
+ *
+ * Combines thinking with Math-Shepherd Best-of-N selection.
+ *
+ * @param problem - The problem to solve
+ * @param n - Number of solutions to generate (default: 4)
+ * @returns Best solution with ranking information
+ */
+export async function thinkBestOfNWithPRM(
+  problem: string,
+  n: number = 4
+): Promise<{
+  best: ThinkingResult;
+  ranking: SolutionRanking;
+  allSolutions: ThinkingResult[];
+}> {
+  const engine = getThinkingEngine({
+    enableMathShepherd: true,
+    mathShepherdConfig: {
+      ...DEFAULT_MATH_SHEPHERD_CONFIG,
+      enabled: true,
+    },
+  });
+
+  // Generate N solutions
+  const solutions: ThinkingResult[] = [];
+  for (let i = 0; i < n; i++) {
+    const result = await engine.think(problem);
+    solutions.push(result);
+  }
+
+  // Extract responses for ranking
+  const responses = solutions.map(s => s.response);
+
+  // Rank using Math-Shepherd
+  const ranking = await engine.rankSolutionsWithMathShepherd(problem, responses);
+
+  // Get best solution (selectedIndex points to the best one)
+  const best = solutions[ranking.selectedIndex];
+
+  return { best, ranking, allSolutions: solutions };
+}
+
+/**
+ * Get Math-Shepherd configuration
+ */
+export function getMathShepherdConfig(): MathShepherdConfig {
+  const engine = getThinkingEngine();
+  return engine.getConfig().mathShepherdConfig;
 }

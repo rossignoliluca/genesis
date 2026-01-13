@@ -112,6 +112,10 @@ const AI_TO_WM_ACTION: Record<ActionType, WMActionType> = {
   'market.analyze': 'query',    // Market research
   'api.call': 'execute',        // HTTP API calls
   'github.deploy': 'execute',   // GitHub operations
+  // v7.15 - Code Self-Awareness
+  'code.snapshot': 'transform', // Store code state
+  'code.history': 'query',      // Recall evolution
+  'code.diff': 'query',         // Compare versions
 };
 
 // ============================================================================

@@ -1278,6 +1278,273 @@ registerAction('github.deploy', async (context) => {
 });
 
 // ============================================================================
+// CODE SELF-AWARENESS EXECUTORS (v7.15 - Autopoiesis)
+// ============================================================================
+
+/**
+ * code.snapshot: Store current code state in memory
+ * Creates a semantic memory of the codebase structure
+ */
+registerAction('code.snapshot', async (context) => {
+  const start = Date.now();
+  try {
+    const cwd = process.cwd();
+
+    // Get current git info
+    const { execSync } = await import('child_process');
+
+    // Get current commit
+    let currentCommit = 'unknown';
+    let branch = 'unknown';
+    let version = 'unknown';
+    try {
+      currentCommit = execSync('git rev-parse --short HEAD', { cwd, encoding: 'utf-8' }).trim();
+      branch = execSync('git branch --show-current', { cwd, encoding: 'utf-8' }).trim();
+    } catch { /* not a git repo */ }
+
+    // Get package version
+    try {
+      const pkgPath = `${cwd}/package.json`;
+      const fs = await import('fs');
+      if (fs.existsSync(pkgPath)) {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+        version = pkg.version || 'unknown';
+      }
+    } catch { /* no package.json */ }
+
+    // Count TypeScript files and get structure
+    let fileCount = 0;
+    let totalLines = 0;
+    const modules: string[] = [];
+
+    try {
+      const files = execSync('find src -name "*.ts" 2>/dev/null || true', { cwd, encoding: 'utf-8' })
+        .trim()
+        .split('\n')
+        .filter(Boolean);
+      fileCount = files.length;
+
+      // Get unique directories as modules
+      const dirs = new Set(files.map(f => f.split('/').slice(0, 2).join('/')));
+      modules.push(...Array.from(dirs).filter(d => d.startsWith('src/')));
+
+      // Count lines
+      if (files.length > 0) {
+        const wcOutput = execSync(`wc -l ${files.join(' ')} 2>/dev/null | tail -1 || echo "0"`, { cwd, encoding: 'utf-8' });
+        const match = wcOutput.match(/(\d+)/);
+        if (match) totalLines = parseInt(match[1], 10);
+      }
+    } catch { /* ignore */ }
+
+    // Store in memory using the MCP memory server
+    const snapshot = {
+      id: `genesis-${currentCommit}-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      commit: currentCommit,
+      branch,
+      version,
+      fileCount,
+      totalLines,
+      modules,
+      cwd,
+    };
+
+    // Store via MCP memory
+    try {
+      const mcp = getMCPClient();
+      await mcp.call('memory', 'create_entities', {
+        entities: [{
+          name: `code-snapshot-${currentCommit}`,
+          entityType: 'CodeSnapshot',
+          observations: [
+            `Version: ${version}`,
+            `Commit: ${currentCommit}`,
+            `Branch: ${branch}`,
+            `Files: ${fileCount}`,
+            `Lines: ${totalLines}`,
+            `Modules: ${modules.join(', ')}`,
+            `Timestamp: ${snapshot.timestamp}`,
+          ],
+        }],
+      });
+    } catch {
+      // Memory MCP not available, continue anyway
+    }
+
+    return {
+      success: true,
+      action: 'code.snapshot',
+      data: snapshot,
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'code.snapshot',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * code.history: Recall code evolution from git
+ * Returns commit history with changes
+ */
+registerAction('code.history', async (context) => {
+  const start = Date.now();
+  try {
+    const cwd = process.cwd();
+    const limit = (context.parameters?.limit as number) || 20;
+    const file = context.parameters?.file as string;
+
+    const { execSync } = await import('child_process');
+
+    // Get commit history - use single quotes to prevent shell interpretation
+    const format = "'%h|%s|%an|%ar|%ai'";
+    const cmd = file
+      ? `git log --pretty=format:${format} -${limit} -- ${file}`
+      : `git log --pretty=format:${format} -${limit}`;
+
+    const output = execSync(cmd, { cwd, encoding: 'utf-8' }).trim();
+    const commits = output.split('\n').filter(Boolean).map(line => {
+      const [hash, subject, author, relativeTime, isoTime] = line.split('|');
+      return { hash, subject, author, relativeTime, isoTime };
+    });
+
+    // Get current version
+    let version = 'unknown';
+    try {
+      const fs = await import('fs');
+      const pkg = JSON.parse(fs.readFileSync(`${cwd}/package.json`, 'utf-8'));
+      version = pkg.version || 'unknown';
+    } catch { /* no package.json */ }
+
+    // Get tags (versions)
+    let tags: string[] = [];
+    try {
+      tags = execSync('git tag --sort=-version:refname | head -10', { cwd, encoding: 'utf-8' })
+        .trim()
+        .split('\n')
+        .filter(Boolean);
+    } catch { /* no tags */ }
+
+    // Also retrieve from MCP memory if available
+    let memorySnapshots: unknown[] = [];
+    try {
+      const mcp = getMCPClient();
+      const result = await mcp.call('memory', 'search_nodes', {
+        query: 'CodeSnapshot',
+      });
+      if (result.data?.entities) {
+        memorySnapshots = result.data.entities;
+      }
+    } catch {
+      // Memory MCP not available
+    }
+
+    return {
+      success: true,
+      action: 'code.history',
+      data: {
+        currentVersion: version,
+        commits,
+        tags,
+        memorySnapshots,
+        total: commits.length,
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'code.history',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * code.diff: Compare code versions
+ * Shows what changed between commits
+ */
+registerAction('code.diff', async (context) => {
+  const start = Date.now();
+  try {
+    const cwd = process.cwd();
+    const from = (context.parameters?.from as string) || 'HEAD~1';
+    const to = (context.parameters?.to as string) || 'HEAD';
+    const file = context.parameters?.file as string;
+
+    const { execSync } = await import('child_process');
+
+    // Get diff stats
+    const statsCmd = file
+      ? `git diff --stat ${from}..${to} -- ${file}`
+      : `git diff --stat ${from}..${to}`;
+    const stats = execSync(statsCmd, { cwd, encoding: 'utf-8' }).trim();
+
+    // Get changed files
+    const filesCmd = file
+      ? `git diff --name-only ${from}..${to} -- ${file}`
+      : `git diff --name-only ${from}..${to}`;
+    const changedFiles = execSync(filesCmd, { cwd, encoding: 'utf-8' })
+      .trim()
+      .split('\n')
+      .filter(Boolean);
+
+    // Get additions/deletions
+    const shortStatCmd = file
+      ? `git diff --shortstat ${from}..${to} -- ${file}`
+      : `git diff --shortstat ${from}..${to}`;
+    const shortStat = execSync(shortStatCmd, { cwd, encoding: 'utf-8' }).trim();
+
+    // Parse shortstat (e.g., " 7 files changed, 569 insertions(+), 2 deletions(-)")
+    let filesChanged = 0;
+    let insertions = 0;
+    let deletions = 0;
+    const match = shortStat.match(/(\d+) file.*?(\d+) insertion.*?(\d+) deletion/);
+    if (match) {
+      filesChanged = parseInt(match[1], 10);
+      insertions = parseInt(match[2], 10);
+      deletions = parseInt(match[3], 10);
+    }
+
+    // Get commit messages between versions
+    const commitsCmd = `git log --oneline ${from}..${to}`;
+    const commitLines = execSync(commitsCmd, { cwd, encoding: 'utf-8' })
+      .trim()
+      .split('\n')
+      .filter(Boolean);
+
+    return {
+      success: true,
+      action: 'code.diff',
+      data: {
+        from,
+        to,
+        stats,
+        changedFiles,
+        filesChanged,
+        insertions,
+        deletions,
+        commits: commitLines,
+        summary: `${filesChanged} files changed, +${insertions}, -${deletions}`,
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'code.diff',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+// ============================================================================
 // Action Executor Manager
 // ============================================================================
 

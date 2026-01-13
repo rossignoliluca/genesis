@@ -111,7 +111,11 @@ export type ActionType =
   | 'content.generate'// Generate images/text via Stability AI/OpenAI
   | 'market.analyze'  // Market research and competitor analysis
   | 'api.call'        // HTTP API calls (REST/GraphQL)
-  | 'github.deploy';  // GitHub operations (repos, PRs, issues)
+  | 'github.deploy'   // GitHub operations (repos, PRs, issues)
+  // v7.15 - Code Self-Awareness (Autopoiesis)
+  | 'code.snapshot'   // Store current code state in memory
+  | 'code.history'    // Recall code evolution from git
+  | 'code.diff';      // Compare code versions
 
 export const ACTIONS: ActionType[] = [
   'sense.mcp',
@@ -138,6 +142,10 @@ export const ACTIONS: ActionType[] = [
   'market.analyze',
   'api.call',
   'github.deploy',
+  // v7.15 - Code Self-Awareness
+  'code.snapshot',
+  'code.history',
+  'code.diff',
 ];
 
 export const ACTION_COUNT = ACTIONS.length;

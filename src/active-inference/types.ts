@@ -102,7 +102,16 @@ export type ActionType =
   | 'git.push'        // Push to remote repository (requires confirmation)
   | 'dream.cycle'     // Memory consolidation
   | 'rest.idle'       // Do nothing (save energy)
-  | 'recharge';       // Restore energy
+  | 'recharge'        // Restore energy
+  // v7.14 - Web & Monetization Actions
+  | 'web.search'      // Search web via Brave/Exa MCP
+  | 'web.scrape'      // Scrape URLs via Firecrawl MCP
+  | 'web.browse'      // Browser automation via Playwright MCP
+  | 'deploy.service'  // Deploy to AWS (Lambda, EC2, S3)
+  | 'content.generate'// Generate images/text via Stability AI/OpenAI
+  | 'market.analyze'  // Market research and competitor analysis
+  | 'api.call'        // HTTP API calls (REST/GraphQL)
+  | 'github.deploy';  // GitHub operations (repos, PRs, issues)
 
 export const ACTIONS: ActionType[] = [
   'sense.mcp',
@@ -120,6 +129,15 @@ export const ACTIONS: ActionType[] = [
   'dream.cycle',
   'rest.idle',
   'recharge',
+  // v7.14 - Web & Monetization
+  'web.search',
+  'web.scrape',
+  'web.browse',
+  'deploy.service',
+  'content.generate',
+  'market.analyze',
+  'api.call',
+  'github.deploy',
 ];
 
 export const ACTION_COUNT = ACTIONS.length;

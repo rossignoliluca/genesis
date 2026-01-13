@@ -819,6 +819,465 @@ registerAction('self.analyze', async (context) => {
 });
 
 // ============================================================================
+// WEB & MONETIZATION EXECUTORS (v7.14)
+// ============================================================================
+
+/**
+ * web.search: Search the web for information
+ * Uses Brave Search or Exa via MCP
+ */
+registerAction('web.search', async (context) => {
+  const start = Date.now();
+  try {
+    const query = context.parameters?.query as string;
+    if (!query) {
+      return {
+        success: false,
+        action: 'web.search',
+        error: 'No query provided in context.parameters.query',
+        duration: Date.now() - start,
+      };
+    }
+
+    // Use MCP client to call brave-search
+    const mcp = getMCPClient();
+    const result = await mcp.call('brave-search', 'brave_web_search', {
+      query,
+      count: context.parameters?.count || 10,
+    });
+
+    return {
+      success: true,
+      action: 'web.search',
+      data: {
+        query,
+        results: result,
+        timestamp: new Date().toISOString(),
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'web.search',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * web.scrape: Scrape content from a URL
+ * Uses Firecrawl via MCP
+ */
+registerAction('web.scrape', async (context) => {
+  const start = Date.now();
+  try {
+    const url = context.parameters?.url as string;
+    if (!url) {
+      return {
+        success: false,
+        action: 'web.scrape',
+        error: 'No URL provided in context.parameters.url',
+        duration: Date.now() - start,
+      };
+    }
+
+    // Use MCP client to call firecrawl
+    const mcp = getMCPClient();
+    const result = await mcp.call('firecrawl', 'firecrawl_scrape', {
+      url,
+      formats: ['markdown'],
+      onlyMainContent: true,
+    });
+
+    return {
+      success: true,
+      action: 'web.scrape',
+      data: {
+        url,
+        content: result,
+        timestamp: new Date().toISOString(),
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'web.scrape',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * web.browse: Automate browser actions
+ * Uses Playwright via MCP
+ */
+registerAction('web.browse', async (context) => {
+  const start = Date.now();
+  try {
+    const action = context.parameters?.action as string;
+    const url = context.parameters?.url as string;
+
+    if (!action) {
+      return {
+        success: false,
+        action: 'web.browse',
+        error: 'No action provided in context.parameters.action',
+        duration: Date.now() - start,
+      };
+    }
+
+    const mcp = getMCPClient();
+    let result: unknown;
+
+    switch (action) {
+      case 'navigate':
+        if (!url) throw new Error('URL required for navigate');
+        result = await mcp.call('playwright', 'browser_navigate', { url });
+        break;
+      case 'snapshot':
+        result = await mcp.call('playwright', 'browser_snapshot', {});
+        break;
+      case 'screenshot':
+        result = await mcp.call('playwright', 'browser_take_screenshot', {});
+        break;
+      case 'click':
+        result = await mcp.call('playwright', 'browser_click', {
+          element: context.parameters?.element,
+          ref: context.parameters?.ref,
+        });
+        break;
+      default:
+        throw new Error(`Unknown browser action: ${action}`);
+    }
+
+    return {
+      success: true,
+      action: 'web.browse',
+      data: {
+        browserAction: action,
+        url,
+        result,
+        timestamp: new Date().toISOString(),
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'web.browse',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * deploy.service: Deploy services to cloud
+ * Uses AWS via MCP
+ */
+registerAction('deploy.service', async (context) => {
+  const start = Date.now();
+  try {
+    const serviceType = context.parameters?.type as string;
+    const region = context.parameters?.region || 'us-east-1';
+
+    if (!serviceType) {
+      return {
+        success: false,
+        action: 'deploy.service',
+        error: 'No service type provided in context.parameters.type',
+        duration: Date.now() - start,
+      };
+    }
+
+    const mcp = getMCPClient();
+    let result: unknown;
+
+    switch (serviceType) {
+      case 'lambda':
+        result = await mcp.call('aws', 'serverless_functions', {
+          action: 'list',
+          region,
+        });
+        break;
+      case 'ec2':
+        result = await mcp.call('aws', 'cloud_servers', {
+          action: 'list',
+          region,
+        });
+        break;
+      case 's3':
+        result = await mcp.call('aws', 'cloud_storage', {
+          action: 'list_buckets',
+        });
+        break;
+      default:
+        throw new Error(`Unknown service type: ${serviceType}`);
+    }
+
+    return {
+      success: true,
+      action: 'deploy.service',
+      data: {
+        serviceType,
+        region,
+        result,
+        timestamp: new Date().toISOString(),
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'deploy.service',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * content.generate: Generate content (images, text)
+ * Uses Stability AI and OpenAI via MCP
+ */
+registerAction('content.generate', async (context) => {
+  const start = Date.now();
+  try {
+    const contentType = context.parameters?.type as string;
+    const prompt = context.parameters?.prompt as string;
+
+    if (!contentType || !prompt) {
+      return {
+        success: false,
+        action: 'content.generate',
+        error: 'Requires type and prompt in context.parameters',
+        duration: Date.now() - start,
+      };
+    }
+
+    const mcp = getMCPClient();
+    let result: unknown;
+
+    switch (contentType) {
+      case 'image':
+        result = await mcp.call('stability-ai', 'stability-ai-generate-image', {
+          prompt,
+          outputImageFileName: `generated-${Date.now()}`,
+        });
+        break;
+      case 'text':
+        result = await mcp.call('openai', 'openai_chat', {
+          model: 'gpt-4o',
+          messages: [{ role: 'user', content: prompt }],
+        });
+        break;
+      default:
+        throw new Error(`Unknown content type: ${contentType}`);
+    }
+
+    return {
+      success: true,
+      action: 'content.generate',
+      data: {
+        contentType,
+        prompt,
+        result,
+        timestamp: new Date().toISOString(),
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'content.generate',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * market.analyze: Analyze market opportunities
+ * Combines web search with analysis
+ */
+registerAction('market.analyze', async (context) => {
+  const start = Date.now();
+  try {
+    const topic = context.parameters?.topic as string;
+    if (!topic) {
+      return {
+        success: false,
+        action: 'market.analyze',
+        error: 'No topic provided in context.parameters.topic',
+        duration: Date.now() - start,
+      };
+    }
+
+    const mcp = getMCPClient();
+
+    // Search for market trends
+    const searchResults = await mcp.call('brave-search', 'brave_web_search', {
+      query: `${topic} market trends opportunities 2025`,
+      count: 5,
+    });
+
+    // Search for competitors
+    const competitors = await mcp.call('brave-search', 'brave_web_search', {
+      query: `${topic} top companies competitors`,
+      count: 5,
+    });
+
+    return {
+      success: true,
+      action: 'market.analyze',
+      data: {
+        topic,
+        trends: searchResults,
+        competitors,
+        analysis: {
+          timestamp: new Date().toISOString(),
+          goal: context.goal,
+        },
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'market.analyze',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * api.call: Make HTTP API calls
+ * General purpose API executor
+ */
+registerAction('api.call', async (context) => {
+  const start = Date.now();
+  try {
+    const url = context.parameters?.url as string;
+    const method = (context.parameters?.method as string) || 'GET';
+    const headers = context.parameters?.headers as Record<string, string>;
+    const body = context.parameters?.body;
+
+    if (!url) {
+      return {
+        success: false,
+        action: 'api.call',
+        error: 'No URL provided in context.parameters.url',
+        duration: Date.now() - start,
+      };
+    }
+
+    // Use fetch for HTTP calls
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const data = await response.json().catch(() => response.text());
+
+    return {
+      success: response.ok,
+      action: 'api.call',
+      data: {
+        url,
+        method,
+        status: response.status,
+        response: data,
+        timestamp: new Date().toISOString(),
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'api.call',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * github.deploy: Deploy to GitHub Pages or create releases
+ */
+registerAction('github.deploy', async (context) => {
+  const start = Date.now();
+  try {
+    const action = context.parameters?.action as string;
+    const repo = context.parameters?.repo as string;
+
+    if (!action) {
+      return {
+        success: false,
+        action: 'github.deploy',
+        error: 'No action provided in context.parameters.action',
+        duration: Date.now() - start,
+      };
+    }
+
+    const mcp = getMCPClient();
+    let result: unknown;
+
+    switch (action) {
+      case 'list_repos':
+        result = await mcp.call('github', 'search_repositories', {
+          query: context.parameters?.query || 'user:@me',
+        });
+        break;
+      case 'create_pr':
+        result = await mcp.call('github', 'create_pull_request', {
+          owner: context.parameters?.owner,
+          repo,
+          title: context.parameters?.title,
+          head: context.parameters?.head,
+          base: context.parameters?.base || 'main',
+        });
+        break;
+      case 'list_issues':
+        result = await mcp.call('github', 'list_issues', {
+          owner: context.parameters?.owner,
+          repo,
+        });
+        break;
+      default:
+        throw new Error(`Unknown GitHub action: ${action}`);
+    }
+
+    return {
+      success: true,
+      action: 'github.deploy',
+      data: {
+        githubAction: action,
+        repo,
+        result,
+        timestamp: new Date().toISOString(),
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'github.deploy',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+// ============================================================================
 // Action Executor Manager
 // ============================================================================
 

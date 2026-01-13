@@ -103,6 +103,15 @@ const AI_TO_WM_ACTION: Record<ActionType, WMActionType> = {
   'dream.cycle': 'transform',
   'rest.idle': 'observe',
   'recharge': 'transform',
+  // v7.14 - Web & Monetization
+  'web.search': 'query',        // Web search via MCP
+  'web.scrape': 'query',        // Web scraping via MCP
+  'web.browse': 'execute',      // Browser automation
+  'deploy.service': 'execute',  // Cloud deployment
+  'content.generate': 'execute',// Content generation
+  'market.analyze': 'query',    // Market research
+  'api.call': 'execute',        // HTTP API calls
+  'github.deploy': 'execute',   // GitHub operations
 };
 
 // ============================================================================

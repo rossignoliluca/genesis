@@ -187,6 +187,50 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
       'move_file', 'search_files', 'get_file_info', 'list_allowed_directories'
     ],
   },
+
+  // v7.14 - WEB & AUTOMATION
+  'playwright': {
+    command: 'npx',
+    args: ['-y', '@anthropic-ai/mcp-server-playwright'],
+    tools: [
+      'browser_navigate', 'browser_snapshot', 'browser_take_screenshot', 'browser_click',
+      'browser_type', 'browser_fill_form', 'browser_evaluate', 'browser_close',
+      'browser_resize', 'browser_console_messages', 'browser_handle_dialog',
+      'browser_file_upload', 'browser_install', 'browser_press_key', 'browser_navigate_back',
+      'browser_network_requests', 'browser_run_code', 'browser_hover', 'browser_select_option',
+      'browser_tabs', 'browser_wait_for', 'browser_drag'
+    ],
+  },
+  'aws': {
+    command: 'npx',
+    args: ['-y', '@anthropic-ai/mcp-server-aws'],
+    envVars: () => ({
+      AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || '',
+      AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY || '',
+      AWS_REGION: process.env.AWS_REGION || 'us-east-1',
+    }),
+    tools: [
+      'cloud_servers', 'cloud_storage', 'logs_and_metrics', 'ai_assistant',
+      'serverless_functions', 'security_permissions', 'databases', 'network_manager',
+      'cost_optimizer', 'security_scanner', 'multi_region', 'workflow', 'runbook'
+    ],
+  },
+  'sentry': {
+    command: 'npx',
+    args: ['-y', '@sentry/mcp-server-sentry'],
+    envVars: () => ({ SENTRY_AUTH_TOKEN: process.env.SENTRY_AUTH_TOKEN || '' }),
+    tools: [
+      'whoami', 'find_organizations', 'find_teams', 'find_projects', 'find_releases',
+      'get_issue_details', 'search_issues', 'search_events', 'update_issue',
+      'create_team', 'create_project', 'create_dsn', 'find_dsns',
+      'analyze_issue_with_seer', 'search_docs', 'get_doc'
+    ],
+  },
+  'postgres': {
+    command: 'npx',
+    args: () => ['-y', '@modelcontextprotocol/server-postgres', process.env.DATABASE_URL || ''],
+    tools: ['query'],
+  },
 };
 
 // ============================================================================

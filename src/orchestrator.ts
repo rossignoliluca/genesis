@@ -118,6 +118,32 @@ export const MCP_CAPABILITIES: Record<MCPServerName, MCPCapability> = {
     tools: ['read_file', 'write_file', 'list_directory'],
     description: 'Local file operations',
   },
+
+  // v7.14 - Web & Automation MCPs
+  'playwright': {
+    server: 'playwright',
+    category: 'creation',
+    tools: ['browser_navigate', 'browser_snapshot', 'browser_click', 'browser_type'],
+    description: 'Browser automation and web testing',
+  },
+  'aws': {
+    server: 'aws',
+    category: 'creation',
+    tools: ['cloud_servers', 'serverless_functions', 'cloud_storage', 'databases'],
+    description: 'AWS cloud infrastructure management',
+  },
+  'sentry': {
+    server: 'sentry',
+    category: 'research',
+    tools: ['search_issues', 'get_issue_details', 'search_events'],
+    description: 'Error monitoring and performance tracking',
+  },
+  'postgres': {
+    server: 'postgres',
+    category: 'storage',
+    tools: ['query'],
+    description: 'PostgreSQL database queries',
+  },
 };
 
 // ============================================================================

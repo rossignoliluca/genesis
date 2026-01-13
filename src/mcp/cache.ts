@@ -87,6 +87,12 @@ const DEFAULT_SERVER_TTL: Record<MCPServerName, number> = {
   // Storage (short cache)
   'memory': 1000 * 60 * 5, // 5 minutes
   'filesystem': 1000 * 60, // 1 minute
+
+  // v7.14 - Web & Automation
+  'playwright': 0, // Don't cache browser actions
+  'aws': 1000 * 60 * 5, // 5 minutes (cloud state changes)
+  'sentry': 1000 * 60 * 5, // 5 minutes (errors can change)
+  'postgres': 1000 * 60, // 1 minute (database queries)
 };
 
 // ============================================================================

@@ -25,7 +25,12 @@ export type MCPServerName =
   | 'firecrawl'
   | 'exa'
   | 'brave-search'
-  | 'stability-ai';
+  | 'stability-ai'
+  // v7.14 - Web & Automation
+  | 'playwright'
+  | 'aws'
+  | 'sentry'
+  | 'postgres';
 
 /** @deprecated Use MCPServerName instead */
 export type MCPServer = MCPServerName;

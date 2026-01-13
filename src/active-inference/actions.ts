@@ -2,19 +2,41 @@
  * Genesis 6.1 - Action Executors
  *
  * Maps discrete actions from Active Inference to actual system operations.
+ * v7.6.0: Connected to real PhiMonitor + CognitiveWorkspace
  *
  * Actions:
  * - sense.mcp: Gather data via MCP servers
- * - recall.memory: Retrieve from memory
+ * - recall.memory: Retrieve from memory via CognitiveWorkspace
  * - plan.goals: Decompose goals
  * - verify.ethics: Ethical check
  * - execute.task: Execute planned task
- * - dream.cycle: Memory consolidation
+ * - dream.cycle: Memory consolidation via PhiMonitor
  * - rest.idle: Do nothing
  * - recharge: Restore energy
  */
 
 import { ActionType } from './types.js';
+import { createPhiMonitor, PhiMonitor } from '../consciousness/phi-monitor.js';
+import { getCognitiveWorkspace, CognitiveWorkspace } from '../memory/cognitive-workspace.js';
+import { getMCPClient } from '../mcp/index.js';
+
+// ============================================================================
+// Lazy Singleton Instances
+// ============================================================================
+
+let _phiMonitor: PhiMonitor | null = null;
+
+function getPhiMonitor(): PhiMonitor {
+  if (!_phiMonitor) {
+    _phiMonitor = createPhiMonitor({ updateIntervalMs: 5000 });
+    _phiMonitor.start();
+  }
+  return _phiMonitor;
+}
+
+function getWorkspace(): CognitiveWorkspace {
+  return getCognitiveWorkspace();
+}
 
 // ============================================================================
 // Types
@@ -94,34 +116,93 @@ export async function executeAction(
 
 /**
  * sense.mcp: Gather sensory data via MCP
+ * v7.6.0: Connected to real MCP client
  */
 registerAction('sense.mcp', async (context) => {
-  // This will be connected to SensorAgent
-  // For now, return simulated success
-  return {
-    success: true,
-    action: 'sense.mcp',
-    data: {
-      servers: ['arxiv', 'memory', 'filesystem'],
-      observations: [],
-    },
-    duration: 0,
-  };
+  try {
+    const mcp = getMCPClient();
+
+    // Discover all tools from all servers
+    const allTools = await mcp.discoverAllTools();
+    const observations: Array<{ server: string; toolCount: number }> = [];
+
+    // Build observations from discovered tools
+    for (const [server, tools] of Object.entries(allTools)) {
+      observations.push({
+        server,
+        toolCount: tools.length,
+      });
+    }
+
+    const serverNames = Object.keys(allTools);
+
+    return {
+      success: true,
+      action: 'sense.mcp',
+      data: {
+        servers: serverNames,
+        observations,
+        serverCount: serverNames.length,
+      },
+      duration: 0,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'sense.mcp',
+      error: error instanceof Error ? error.message : String(error),
+      duration: 0,
+    };
+  }
 });
 
 /**
  * recall.memory: Retrieve from memory systems
+ * v7.6.0: Connected to real CognitiveWorkspace
  */
 registerAction('recall.memory', async (context) => {
-  return {
-    success: true,
-    action: 'recall.memory',
-    data: {
-      recalled: [],
-      query: context.goal,
-    },
-    duration: 0,
-  };
+  try {
+    const workspace = getWorkspace();
+    const query = context.goal || context.parameters?.query as string || '';
+    const recalled: unknown[] = [];
+
+    // Use anticipation to retrieve relevant memories
+    if (query) {
+      const anticipated = await workspace.anticipate({
+        task: context.parameters?.task as string,
+        goal: query,
+        keywords: query.split(' ').filter(w => w.length > 2),
+      });
+      recalled.push(...anticipated.map(item => ({
+        id: item.memory.id,
+        type: item.memory.type,
+        content: item.memory.content,
+        relevance: item.relevance,
+      })));
+    }
+
+    // Get workspace metrics
+    const metrics = workspace.getMetrics();
+
+    return {
+      success: true,
+      action: 'recall.memory',
+      data: {
+        recalled,
+        query,
+        reuseRate: metrics.reuseRate,
+        anticipationAccuracy: metrics.anticipationAccuracy,
+      },
+      duration: 0,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'recall.memory',
+      error: error instanceof Error ? error.message : String(error),
+      duration: 0,
+    };
+  }
 });
 
 /**
@@ -171,17 +252,55 @@ registerAction('execute.task', async (context) => {
 
 /**
  * dream.cycle: Run memory consolidation
+ * v7.6.0: Connected to real PhiMonitor for consciousness-aware consolidation
  */
 registerAction('dream.cycle', async (context) => {
-  return {
-    success: true,
-    action: 'dream.cycle',
-    data: {
-      consolidated: 0,
-      patterns: [],
-    },
-    duration: 0,
-  };
+  try {
+    const phiMonitor = getPhiMonitor();
+    const workspace = getWorkspace();
+
+    // Get current consciousness level
+    const phiLevel = phiMonitor.getCurrentLevel();
+
+    // Only consolidate if φ is above threshold (consciousness check)
+    const consolidationThreshold = 0.3;
+    if (phiLevel.phi < consolidationThreshold) {
+      return {
+        success: false,
+        action: 'dream.cycle',
+        error: `φ too low for consolidation: ${phiLevel.phi.toFixed(3)} < ${consolidationThreshold}`,
+        data: { phi: phiLevel.phi, threshold: consolidationThreshold },
+        duration: 0,
+      };
+    }
+
+    // Run workspace curation (consolidation)
+    await workspace.curate();
+
+    // Get metrics after consolidation
+    const metrics = workspace.getMetrics();
+
+    return {
+      success: true,
+      action: 'dream.cycle',
+      data: {
+        consolidated: metrics.totalRecalls,
+        patterns: [],
+        phi: phiLevel.phi,
+        confidence: phiLevel.confidence,
+        state: phiMonitor.getState(),
+        reuseRate: metrics.reuseRate,
+      },
+      duration: 0,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'dream.cycle',
+      error: error instanceof Error ? error.message : String(error),
+      duration: 0,
+    };
+  }
 });
 
 /**
@@ -199,17 +318,37 @@ registerAction('rest.idle', async (_context) => {
 
 /**
  * recharge: Restore energy to system
+ * v7.6.0: Reports real consciousness metrics during recharge
  */
 registerAction('recharge', async (context) => {
-  return {
-    success: true,
-    action: 'recharge',
-    data: {
-      previousEnergy: 0.5,
-      newEnergy: 1.0,
-    },
-    duration: 0,
-  };
+  try {
+    const phiMonitor = getPhiMonitor();
+    const previousLevel = phiMonitor.getCurrentLevel();
+
+    // Trigger a φ update
+    phiMonitor.update();
+
+    const newLevel = phiMonitor.getCurrentLevel();
+
+    return {
+      success: true,
+      action: 'recharge',
+      data: {
+        previousPhi: previousLevel.phi,
+        newPhi: newLevel.phi,
+        trend: phiMonitor.getTrend(),
+        state: phiMonitor.getState(),
+      },
+      duration: 0,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'recharge',
+      error: error instanceof Error ? error.message : String(error),
+      duration: 0,
+    };
+  }
 });
 
 // ============================================================================

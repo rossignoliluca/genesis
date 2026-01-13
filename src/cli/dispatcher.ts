@@ -566,6 +566,8 @@ export class ToolDispatcher {
       /<tool_use\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/tool_use>/gi,
       // <invoke name="...">...</invoke>
       /<invoke\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/invoke>/gi,
+      // <invoke name="...">...</invoke> (Anthropic namespace)
+      /<invoke\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/antml:invoke>/gi,
       // ```tool\n{name: ..., params: {...}}```
       /```tool\s*\n?\{[\s\S]*?"name"\s*:\s*"([^"]+)"[\s\S]*?\}```/gi,
     ];
@@ -655,7 +657,8 @@ export class ToolDispatcher {
 
     // Parse <param name="...">value</param> OR <parameter name="...">value</parameter>
     // v7.3.2: Support both tag formats (system prompt uses <parameter>, some parsers expect <param>)
-    const paramPattern = /<param(?:eter)?\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/param(?:eter)?>/gi;
+    // v7.6.0: Support antml:parameter namespace (Anthropic XML format)
+    const paramPattern = /<(?:antml:)?param(?:eter)?\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/(?:antml:)?param(?:eter)?>/gi;
     let match;
     while ((match = paramPattern.exec(content)) !== null) {
       const name = match[1];

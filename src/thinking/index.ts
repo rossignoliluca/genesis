@@ -1,5 +1,5 @@
 /**
- * Genesis v7.8 - Advanced Reasoning System
+ * Genesis v7.9 - Advanced Reasoning System
  *
  * Frontier-grade reasoning architecture implementing:
  * - Extended Thinking with Scratchpad (o1/Claude style)
@@ -16,11 +16,17 @@
  * - Beam Search with state evaluation and pruning
  * - Dynamic compute budgeting based on problem difficulty
  *
- * NEW in v7.8 (arXiv:2308.09687 - Graph of Thoughts):
+ * v7.8 (arXiv:2308.09687 - Graph of Thoughts):
  * - Graph-of-Thoughts (GoT) with arbitrary graph structure
  * - Aggregation: Combine k thoughts into 1 (not possible in ToT!)
  * - Refinement loops: Self-improve thoughts iteratively
  * - 62% quality improvement over ToT, 31% cost reduction
+ *
+ * NEW in v7.9 (arXiv:2410.09008 - SuperCorrect):
+ * - Hierarchical Thought Templates (high-level + detailed steps)
+ * - Cross-model Self-Correction (teacher/student pattern)
+ * - Two-stage: Template distillation → Error-driven correction
+ * - 7.5% accuracy improvement on MATH benchmark
  *
  * Based on:
  * - OpenAI o1/o3: Test-time compute scaling, hidden CoT
@@ -29,12 +35,13 @@
  * - Deliberative Alignment: Explicit specification reasoning
  * - Tree of Thoughts: Deliberate Problem Solving (Yao et al. 2023)
  * - Graph of Thoughts: Besta et al. ETH Zurich 2023
+ * - SuperCorrect: Hierarchical Templates (Llama 2024)
  * - Uncertainty-aware Step-wise Verification (Oxford 2025)
  *
  * Architecture:
  * ```
  * ┌─────────────────────────────────────────────────────────────────┐
- * │                    ADVANCED REASONING v7.8                      │
+ * │                    ADVANCED REASONING v7.9                      │
  * │                                                                 │
  * │  Tree-of-Thought (ToT):                                        │
  * │  Input → [ToT Search] → [PRM Verify] → [Beam Select] → Output  │
@@ -46,9 +53,14 @@
  * │      ↓           ↓          ↓         ↓                        │
  * │  Sub-problems  Solve    Self-loop   k→1 (KEY!)                 │
  * │                                                                 │
+ * │  SuperCorrect:                                                  │
+ * │  Template → Solve → Detect Errors → Correct → Verify          │
+ * │      ↓         ↓           ↓            ↓         ↓            │
+ * │  Hierarchical Strategy  Teacher      Student   Loop            │
+ * │                                                                 │
  * │  MCTS: Selection → Expansion → Simulation → Backpropagation   │
  * │  CoT Entropy: Sample rationales → Cluster → Compute entropy    │
- * │  Dynamic Budget: Easy=fast, Hard=deep/GoT                      │
+ * │  Dynamic Budget: Easy=fast, Hard=deep/GoT/SuperCorrect         │
  * └─────────────────────────────────────────────────────────────────┘
  * ```
  */
@@ -260,6 +272,84 @@ export interface GoTResult {
 }
 
 // ============================================================================
+// v7.9: SuperCorrect Types (arXiv:2410.09008)
+// Hierarchical Thought Templates + Cross-Model Self-Correction
+// ============================================================================
+
+/**
+ * Hierarchical Thought Template
+ * Contains both high-level strategy and detailed steps
+ */
+export interface HierarchicalThoughtTemplate {
+  highLevel: {
+    strategy: string;          // Generalized solution approach
+    keyInsights: string[];     // Critical insights for similar problems
+    commonPatterns: string[];  // Patterns that apply to this problem type
+  };
+  detailed: {
+    steps: Array<{
+      step: number;
+      description: string;
+      reasoning: string;
+      validation: string;      // How to validate this step
+    }>;
+    criticalPoints: string[];  // Where errors commonly occur
+    checkpoints: string[];     // Points to verify correctness
+  };
+}
+
+/**
+ * Error identified during self-correction
+ */
+export interface IdentifiedError {
+  stepIndex: number;
+  errorType: 'logical' | 'computational' | 'assumption' | 'missing_step' | 'overcomplicated';
+  description: string;
+  severity: 'critical' | 'major' | 'minor';
+  suggestedFix: string;
+}
+
+/**
+ * Configuration for SuperCorrect
+ */
+export interface SuperCorrectConfig {
+  enableHierarchicalTemplates: boolean;
+  enableCrossModelCorrection: boolean;
+  maxCorrectionRounds: number;
+  errorDetectionThreshold: number;  // Confidence below this triggers correction
+  useTeacherGuidance: boolean;      // Simulate teacher model guidance
+}
+
+export const DEFAULT_SUPERCORRECT_CONFIG: SuperCorrectConfig = {
+  enableHierarchicalTemplates: true,
+  enableCrossModelCorrection: true,
+  maxCorrectionRounds: 3,
+  errorDetectionThreshold: 0.7,
+  useTeacherGuidance: true,
+};
+
+/**
+ * Result of SuperCorrect reasoning
+ */
+export interface SuperCorrectResult {
+  solution: string;
+  template: HierarchicalThoughtTemplate;
+  correctionHistory: Array<{
+    round: number;
+    errorsFound: IdentifiedError[];
+    correctedSolution: string;
+    improvementScore: number;
+  }>;
+  stats: {
+    totalCorrectionRounds: number;
+    errorsIdentified: number;
+    errorsCorrected: number;
+    finalConfidence: number;
+  };
+  duration: number;
+}
+
+// ============================================================================
 // Core Types
 // ============================================================================
 
@@ -302,6 +392,10 @@ export interface ThinkingConfig {
   // v7.8: Graph-of-Thoughts
   enableGraphOfThought: boolean;
   gotConfig: GoTConfig;
+
+  // v7.9: SuperCorrect
+  enableSuperCorrect: boolean;
+  superCorrectConfig: SuperCorrectConfig;
 }
 
 export const DEFAULT_THINKING_CONFIG: ThinkingConfig = {
@@ -338,6 +432,10 @@ export const DEFAULT_THINKING_CONFIG: ThinkingConfig = {
   // v7.8: Graph-of-Thoughts (off by default)
   enableGraphOfThought: false,
   gotConfig: DEFAULT_GOT_CONFIG,
+
+  // v7.9: SuperCorrect (off by default)
+  enableSuperCorrect: false,
+  superCorrectConfig: DEFAULT_SUPERCORRECT_CONFIG,
 };
 
 export interface ThinkingStep {
@@ -642,6 +740,128 @@ efficiency: [0-10]
 overall: [0-10]
 is_solution: [true/false]
 </score>`;
+
+// ============================================================================
+// v7.9: SuperCorrect Prompts (arXiv:2410.09008)
+// ============================================================================
+
+const SUPERCORRECT_HIERARCHICAL_TEMPLATE_PROMPT = `Generate a hierarchical thought template for solving this problem.
+
+Problem: {problem}
+
+Create a template with TWO levels:
+
+1. HIGH-LEVEL STRATEGY:
+   - What is the general approach to solving this type of problem?
+   - What key insights apply to similar problems?
+   - What common patterns should we recognize?
+
+2. DETAILED STEPS:
+   - What specific steps should be followed?
+   - What reasoning justifies each step?
+   - How do we validate each step?
+   - Where do errors commonly occur?
+
+<template>
+<high_level>
+strategy: [Generalized solution approach]
+insights:
+- [Key insight 1]
+- [Key insight 2]
+patterns:
+- [Common pattern 1]
+- [Common pattern 2]
+</high_level>
+
+<detailed>
+<step num="1">
+description: [What to do]
+reasoning: [Why this step]
+validation: [How to verify correctness]
+</step>
+<step num="2">
+description: [What to do]
+reasoning: [Why this step]
+validation: [How to verify correctness]
+</step>
+...
+critical_points:
+- [Where errors commonly happen]
+checkpoints:
+- [Where to verify progress]
+</detailed>
+</template>`;
+
+const SUPERCORRECT_ERROR_DETECTION_PROMPT = `Analyze this solution for errors (act as a "teacher" model).
+
+Problem: {problem}
+Student Solution: {solution}
+Hierarchical Template: {template}
+
+Compare the solution against the template and identify ANY errors:
+- Logical errors (invalid reasoning)
+- Computational errors (math mistakes)
+- Wrong assumptions
+- Missing steps
+- Overcomplicated approaches
+
+Be THOROUGH - even small errors matter!
+
+<errors>
+<error num="1">
+step_index: [which step has the error, -1 if general]
+type: [logical|computational|assumption|missing_step|overcomplicated]
+description: [What is wrong]
+severity: [critical|major|minor]
+suggested_fix: [How to fix it]
+</error>
+...
+</errors>
+
+If no errors found:
+<errors>
+none_found: true
+</errors>`;
+
+const SUPERCORRECT_CORRECTION_PROMPT = `Correct this solution based on the identified errors (cross-model correction).
+
+Problem: {problem}
+Original Solution: {solution}
+Errors Found:
+{errors}
+
+Apply the suggested fixes and produce a corrected solution.
+For each error:
+1. Understand what went wrong
+2. Apply the fix
+3. Verify the fix doesn't introduce new errors
+
+<corrected_solution>
+[Your corrected solution with all errors fixed]
+</corrected_solution>
+
+<correction_trace>
+[Explain what you changed and why]
+</correction_trace>`;
+
+const SUPERCORRECT_VERIFY_CORRECTION_PROMPT = `Verify that the corrections were applied correctly.
+
+Problem: {problem}
+Original Solution: {solution}
+Corrected Solution: {corrected}
+Errors That Were Fixed: {errors}
+
+Check:
+1. Were all errors actually fixed?
+2. Were any new errors introduced?
+3. Is the corrected solution complete?
+
+<verification>
+errors_fixed: [true/false - were all errors addressed?]
+new_errors: [list any new errors introduced, or "none"]
+completeness: [0-10 - how complete is the solution?]
+confidence: [0-1 - confidence in the corrected solution]
+</verification>`;
 
 // ============================================================================
 // ThinkingEngine Class
@@ -2183,6 +2403,345 @@ Question: ${query}`;
       },
     };
   }
+
+  // ==========================================================================
+  // v7.9: SuperCorrect (Hierarchical Templates + Cross-Model Correction)
+  // Based on arXiv:2410.09008
+  // ==========================================================================
+
+  /**
+   * SuperCorrect reasoning with hierarchical templates and self-correction
+   */
+  async superCorrect(problem: string): Promise<SuperCorrectResult> {
+    const startTime = Date.now();
+    const config = this.config.superCorrectConfig;
+
+    // Stage 1: Generate hierarchical thought template
+    const template = await this.generateHierarchicalTemplate(problem);
+
+    // Generate initial solution using template
+    let currentSolution = await this.generateSolutionFromTemplate(problem, template);
+
+    const correctionHistory: SuperCorrectResult['correctionHistory'] = [];
+    let totalErrorsIdentified = 0;
+    let totalErrorsCorrected = 0;
+
+    // Stage 2: Cross-model collaborative correction
+    if (config.enableCrossModelCorrection) {
+      for (let round = 0; round < config.maxCorrectionRounds; round++) {
+        // Detect errors (teacher role)
+        const errors = await this.detectErrors(problem, currentSolution, template);
+
+        if (errors.length === 0) {
+          // No errors found, done!
+          break;
+        }
+
+        totalErrorsIdentified += errors.length;
+
+        // Apply corrections
+        const { correctedSolution, trace } = await this.applyCorrections(
+          problem,
+          currentSolution,
+          errors
+        );
+
+        // Verify corrections
+        const verification = await this.verifyCorrections(
+          problem,
+          currentSolution,
+          correctedSolution,
+          errors
+        );
+
+        // Calculate improvement
+        const improvementScore = verification.confidence;
+        totalErrorsCorrected += verification.errorsFixed ? errors.length : 0;
+
+        correctionHistory.push({
+          round: round + 1,
+          errorsFound: errors,
+          correctedSolution,
+          improvementScore,
+        });
+
+        currentSolution = correctedSolution;
+
+        // Stop if confidence is high enough
+        if (verification.confidence >= config.errorDetectionThreshold) {
+          break;
+        }
+      }
+    }
+
+    // Final confidence estimation
+    const finalConfidence = await this.estimateSolutionConfidence(problem, currentSolution);
+
+    return {
+      solution: currentSolution,
+      template,
+      correctionHistory,
+      stats: {
+        totalCorrectionRounds: correctionHistory.length,
+        errorsIdentified: totalErrorsIdentified,
+        errorsCorrected: totalErrorsCorrected,
+        finalConfidence,
+      },
+      duration: Date.now() - startTime,
+    };
+  }
+
+  /**
+   * Generate hierarchical thought template
+   */
+  private async generateHierarchicalTemplate(problem: string): Promise<HierarchicalThoughtTemplate> {
+    const prompt = SUPERCORRECT_HIERARCHICAL_TEMPLATE_PROMPT.replace('{problem}', problem);
+    const result = await this.llm.chat(prompt);
+
+    // Parse template
+    const templateMatch = result.content.match(/<template>([\s\S]*?)<\/template>/);
+    if (!templateMatch) {
+      return this.createDefaultTemplate();
+    }
+
+    const content = templateMatch[1];
+
+    // Parse high-level
+    const highLevelMatch = content.match(/<high_level>([\s\S]*?)<\/high_level>/);
+    const strategyMatch = highLevelMatch?.[1].match(/strategy:\s*(.+)/);
+    const insightsMatches = highLevelMatch?.[1].match(/insights:\n([\s\S]*?)(?=patterns:|$)/);
+    const patternsMatches = highLevelMatch?.[1].match(/patterns:\n([\s\S]*?)$/);
+
+    const insights = this.parseListItems(insightsMatches?.[1] || '');
+    const patterns = this.parseListItems(patternsMatches?.[1] || '');
+
+    // Parse detailed
+    const detailedMatch = content.match(/<detailed>([\s\S]*?)<\/detailed>/);
+    const steps: HierarchicalThoughtTemplate['detailed']['steps'] = [];
+
+    const stepRegex = /<step[^>]*num="(\d+)"[^>]*>([\s\S]*?)<\/step>/g;
+    let stepMatch;
+    while ((stepMatch = stepRegex.exec(detailedMatch?.[1] || '')) !== null) {
+      const stepContent = stepMatch[2];
+      const descMatch = stepContent.match(/description:\s*(.+)/);
+      const reasonMatch = stepContent.match(/reasoning:\s*(.+)/);
+      const validMatch = stepContent.match(/validation:\s*(.+)/);
+
+      steps.push({
+        step: parseInt(stepMatch[1]),
+        description: descMatch?.[1]?.trim() || '',
+        reasoning: reasonMatch?.[1]?.trim() || '',
+        validation: validMatch?.[1]?.trim() || '',
+      });
+    }
+
+    const criticalMatch = detailedMatch?.[1].match(/critical_points:\n([\s\S]*?)(?=checkpoints:|$)/);
+    const checkpointsMatch = detailedMatch?.[1].match(/checkpoints:\n([\s\S]*?)$/);
+
+    return {
+      highLevel: {
+        strategy: strategyMatch?.[1]?.trim() || 'General problem-solving approach',
+        keyInsights: insights,
+        commonPatterns: patterns,
+      },
+      detailed: {
+        steps,
+        criticalPoints: this.parseListItems(criticalMatch?.[1] || ''),
+        checkpoints: this.parseListItems(checkpointsMatch?.[1] || ''),
+      },
+    };
+  }
+
+  /**
+   * Generate solution using template guidance
+   */
+  private async generateSolutionFromTemplate(
+    problem: string,
+    template: HierarchicalThoughtTemplate
+  ): Promise<string> {
+    const templateStr = `Strategy: ${template.highLevel.strategy}
+Key Insights: ${template.highLevel.keyInsights.join(', ')}
+Steps to follow:
+${template.detailed.steps.map(s => `${s.step}. ${s.description} (${s.reasoning})`).join('\n')}`;
+
+    const prompt = `Solve this problem following the template guidance.
+
+Problem: ${problem}
+
+Template:
+${templateStr}
+
+Provide a complete solution following the steps in the template.`;
+
+    const result = await this.llm.chat(prompt);
+    return result.content;
+  }
+
+  /**
+   * Detect errors in solution (teacher role)
+   */
+  private async detectErrors(
+    problem: string,
+    solution: string,
+    template: HierarchicalThoughtTemplate
+  ): Promise<IdentifiedError[]> {
+    const templateStr = JSON.stringify(template, null, 2);
+
+    const prompt = SUPERCORRECT_ERROR_DETECTION_PROMPT
+      .replace('{problem}', problem)
+      .replace('{solution}', solution)
+      .replace('{template}', templateStr);
+
+    const result = await this.llm.chat(prompt);
+
+    // Check for no errors
+    if (result.content.includes('none_found: true')) {
+      return [];
+    }
+
+    // Parse errors
+    const errors: IdentifiedError[] = [];
+    const errorRegex = /<error[^>]*>([\s\S]*?)<\/error>/g;
+    let match;
+
+    while ((match = errorRegex.exec(result.content)) !== null) {
+      const content = match[1];
+      const stepMatch = content.match(/step_index:\s*(-?\d+)/);
+      const typeMatch = content.match(/type:\s*(\w+)/);
+      const descMatch = content.match(/description:\s*(.+)/);
+      const severityMatch = content.match(/severity:\s*(\w+)/);
+      const fixMatch = content.match(/suggested_fix:\s*(.+)/);
+
+      if (typeMatch && descMatch) {
+        errors.push({
+          stepIndex: stepMatch ? parseInt(stepMatch[1]) : -1,
+          errorType: typeMatch[1] as IdentifiedError['errorType'],
+          description: descMatch[1].trim(),
+          severity: (severityMatch?.[1] || 'minor') as IdentifiedError['severity'],
+          suggestedFix: fixMatch?.[1]?.trim() || 'Review and correct',
+        });
+      }
+    }
+
+    return errors;
+  }
+
+  /**
+   * Apply corrections to solution
+   */
+  private async applyCorrections(
+    problem: string,
+    solution: string,
+    errors: IdentifiedError[]
+  ): Promise<{ correctedSolution: string; trace: string }> {
+    const errorsStr = errors.map((e, i) =>
+      `Error ${i + 1}: [${e.errorType}] ${e.description}\n  Severity: ${e.severity}\n  Fix: ${e.suggestedFix}`
+    ).join('\n\n');
+
+    const prompt = SUPERCORRECT_CORRECTION_PROMPT
+      .replace('{problem}', problem)
+      .replace('{solution}', solution)
+      .replace('{errors}', errorsStr);
+
+    const result = await this.llm.chat(prompt);
+
+    // Parse corrected solution
+    const correctedMatch = result.content.match(/<corrected_solution>([\s\S]*?)<\/corrected_solution>/);
+    const traceMatch = result.content.match(/<correction_trace>([\s\S]*?)<\/correction_trace>/);
+
+    return {
+      correctedSolution: correctedMatch?.[1]?.trim() || solution,
+      trace: traceMatch?.[1]?.trim() || '',
+    };
+  }
+
+  /**
+   * Verify that corrections were applied correctly
+   */
+  private async verifyCorrections(
+    problem: string,
+    originalSolution: string,
+    correctedSolution: string,
+    errors: IdentifiedError[]
+  ): Promise<{ errorsFixed: boolean; newErrors: string[]; confidence: number }> {
+    const errorsStr = errors.map(e => e.description).join(', ');
+
+    const prompt = SUPERCORRECT_VERIFY_CORRECTION_PROMPT
+      .replace('{problem}', problem)
+      .replace('{solution}', originalSolution)
+      .replace('{corrected}', correctedSolution)
+      .replace('{errors}', errorsStr);
+
+    const result = await this.llm.chat(prompt);
+
+    // Parse verification
+    const verifyMatch = result.content.match(/<verification>([\s\S]*?)<\/verification>/);
+    if (verifyMatch) {
+      const content = verifyMatch[1];
+      const fixedMatch = content.match(/errors_fixed:\s*(true|false)/i);
+      const newErrorsMatch = content.match(/new_errors:\s*(.+)/);
+      const confidenceMatch = content.match(/confidence:\s*([\d.]+)/);
+
+      const newErrorsStr = newErrorsMatch?.[1]?.trim() || 'none';
+      const newErrors = newErrorsStr.toLowerCase() === 'none' ? [] : [newErrorsStr];
+
+      return {
+        errorsFixed: fixedMatch?.[1]?.toLowerCase() === 'true',
+        newErrors,
+        confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5,
+      };
+    }
+
+    return { errorsFixed: false, newErrors: [], confidence: 0.5 };
+  }
+
+  /**
+   * Estimate confidence in final solution
+   */
+  private async estimateSolutionConfidence(problem: string, solution: string): Promise<number> {
+    // Use GoT scoring for confidence
+    const node = this.createGoTNode(solution, null);
+    const score = await this.gotScore(problem, node);
+    return score.overall;
+  }
+
+  /**
+   * Create default template when parsing fails
+   */
+  private createDefaultTemplate(): HierarchicalThoughtTemplate {
+    return {
+      highLevel: {
+        strategy: 'Systematic problem-solving approach',
+        keyInsights: ['Break down the problem', 'Verify each step'],
+        commonPatterns: ['Identify inputs and outputs', 'Apply relevant techniques'],
+      },
+      detailed: {
+        steps: [
+          { step: 1, description: 'Understand the problem', reasoning: 'Clarity first', validation: 'Can restate problem' },
+          { step: 2, description: 'Plan approach', reasoning: 'Strategy before execution', validation: 'Clear path to solution' },
+          { step: 3, description: 'Execute solution', reasoning: 'Follow plan', validation: 'Each step logically follows' },
+          { step: 4, description: 'Verify result', reasoning: 'Ensure correctness', validation: 'Answer makes sense' },
+        ],
+        criticalPoints: ['Step transitions', 'Assumptions'],
+        checkpoints: ['After planning', 'After execution'],
+      },
+    };
+  }
+
+  /**
+   * Parse list items from text
+   */
+  private parseListItems(text: string): string[] {
+    const items: string[] = [];
+    const lines = text.split('\n');
+    for (const line of lines) {
+      const match = line.match(/^-\s*(.+)/);
+      if (match) {
+        items.push(match[1].trim());
+      }
+    }
+    return items;
+  }
 }
 
 // ============================================================================
@@ -2496,4 +3055,167 @@ export async function thinkAdaptiveAdvanced(
   }
 
   return { thinking, difficulty, strategyUsed };
+}
+
+// ============================================================================
+// v7.9: SuperCorrect Convenience Functions
+// ============================================================================
+
+/**
+ * SuperCorrect reasoning with hierarchical templates and self-correction
+ * Based on arXiv:2410.09008 - Two-stage framework
+ */
+export async function thinkWithSuperCorrect(
+  problem: string
+): Promise<SuperCorrectResult> {
+  const engine = getThinkingEngine({
+    enableSuperCorrect: true,
+    superCorrectConfig: DEFAULT_SUPERCORRECT_CONFIG,
+  });
+  return engine.superCorrect(problem);
+}
+
+/**
+ * SuperCorrect with hierarchical templates only (no correction phase)
+ * Useful for structured problem decomposition
+ */
+export async function thinkWithHierarchicalTemplates(
+  problem: string
+): Promise<SuperCorrectResult> {
+  const engine = getThinkingEngine({
+    enableSuperCorrect: true,
+    superCorrectConfig: {
+      ...DEFAULT_SUPERCORRECT_CONFIG,
+      enableCrossModelCorrection: false,
+    },
+  });
+  return engine.superCorrect(problem);
+}
+
+/**
+ * SuperCorrect with aggressive error correction
+ * More correction rounds for complex problems
+ */
+export async function thinkWithDeepCorrection(
+  problem: string,
+  maxCorrectionRounds: number = 5
+): Promise<SuperCorrectResult> {
+  const engine = getThinkingEngine({
+    enableSuperCorrect: true,
+    superCorrectConfig: {
+      ...DEFAULT_SUPERCORRECT_CONFIG,
+      maxCorrectionRounds,
+      errorDetectionThreshold: 0.5, // More aggressive error detection
+    },
+  });
+  return engine.superCorrect(problem);
+}
+
+/**
+ * Ultimate adaptive reasoning - chooses best strategy including SuperCorrect
+ * Combines all v7.5-v7.9 techniques based on problem characteristics
+ */
+export async function thinkUltimate(
+  problem: string
+): Promise<{
+  result: ThinkingResult | ToTResult | GoTResult | SuperCorrectResult;
+  difficulty: { level: string; estimatedSteps: number; reasoningType: string; budget: number };
+  strategyUsed: string;
+}> {
+  const engine = getThinkingEngine();
+
+  // Step 1: Estimate difficulty
+  const difficulty = await engine.estimateDifficulty(problem);
+
+  // Step 2: Choose optimal strategy
+  let result: ThinkingResult | ToTResult | GoTResult | SuperCorrectResult;
+  let strategyUsed: string;
+
+  // Determine problem characteristics
+  const needsSynthesis = difficulty.reasoningType === 'multi-step' || difficulty.reasoningType === 'creative';
+  const needsCorrection = difficulty.reasoningType === 'mathematical' || difficulty.reasoningType === 'analytical';
+  const isComplex = difficulty.estimatedSteps > 5;
+
+  switch (difficulty.level) {
+    case 'easy':
+      strategyUsed = 'extended_thinking';
+      result = await engine.think(problem);
+      break;
+
+    case 'medium':
+      if (needsCorrection) {
+        // SuperCorrect for problems that benefit from verification
+        engine.updateConfig({
+          enableSuperCorrect: true,
+          superCorrectConfig: { ...DEFAULT_SUPERCORRECT_CONFIG, maxCorrectionRounds: 1 },
+        });
+        strategyUsed = 'supercorrect_light';
+        result = await engine.superCorrect(problem);
+      } else {
+        strategyUsed = 'self_critique';
+        result = await engine.think(problem);
+      }
+      break;
+
+    case 'hard':
+      if (needsCorrection) {
+        // Full SuperCorrect with correction rounds
+        engine.updateConfig({
+          enableSuperCorrect: true,
+          superCorrectConfig: DEFAULT_SUPERCORRECT_CONFIG,
+        });
+        strategyUsed = 'supercorrect';
+        result = await engine.superCorrect(problem);
+      } else if (needsSynthesis) {
+        // GoT for problems needing aggregation
+        engine.updateConfig({
+          enableGraphOfThought: true,
+          gotConfig: DEFAULT_GOT_CONFIG,
+        });
+        strategyUsed = 'got_synthesize';
+        result = await engine.graphOfThought(problem);
+      } else {
+        // ToT for structured exploration
+        strategyUsed = 'tot_bfs';
+        result = await engine.treeOfThought(problem);
+      }
+      break;
+
+    case 'very_hard':
+      if (needsCorrection && isComplex) {
+        // Deep SuperCorrect for complex analytical problems
+        engine.updateConfig({
+          enableSuperCorrect: true,
+          superCorrectConfig: {
+            ...DEFAULT_SUPERCORRECT_CONFIG,
+            maxCorrectionRounds: 5,
+            errorDetectionThreshold: 0.5,
+          },
+        });
+        strategyUsed = 'supercorrect_deep';
+        result = await engine.superCorrect(problem);
+      } else if (needsSynthesis) {
+        // Deep GoT with refinement loops
+        engine.updateConfig({
+          enableGraphOfThought: true,
+          gotConfig: { ...DEFAULT_GOT_CONFIG, decompositionDepth: 4, maxRefinements: 5, enableRefinementLoops: true },
+        });
+        strategyUsed = 'got_deep_refined';
+        result = await engine.graphOfThought(problem);
+      } else {
+        // MCTS for exhaustive search
+        engine.updateConfig({
+          totConfig: { ...DEFAULT_TOT_CONFIG, strategy: 'mcts', maxIterations: 100 },
+        });
+        strategyUsed = 'tot_mcts';
+        result = await engine.treeOfThought(problem);
+      }
+      break;
+
+    default:
+      strategyUsed = 'extended_thinking';
+      result = await engine.think(problem);
+  }
+
+  return { result, difficulty, strategyUsed };
 }

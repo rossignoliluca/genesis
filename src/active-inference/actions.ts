@@ -59,7 +59,8 @@ export interface ActionResult {
 export interface ActionContext {
   goal?: string;
   taskId?: string;
-  parameters?: Record<string, any>;
+  parameters?: Record<string, unknown>;
+  beliefs?: Record<string, unknown>;
   // Value integration (Genesis 6.2)
   valueEngine?: unknown;  // ValueAugmentedEngine from value-integration.ts
   useValueAugmentation?: boolean;
@@ -254,6 +255,42 @@ registerAction('execute.task', async (context) => {
     },
     duration: 0,
   };
+});
+
+/**
+ * execute.cycle: Run a processing cycle
+ * v7.13: Triggers brain processing iteration
+ */
+registerAction('execute.cycle', async (context) => {
+  const start = Date.now();
+  try {
+    // Get current system state
+    const phiMonitor = getPhiMonitor();
+    const workspace = getWorkspace();
+
+    const phiLevel = phiMonitor.getCurrentLevel();
+    const memoryCount = workspace.getActive().length;
+
+    return {
+      success: true,
+      action: 'execute.cycle',
+      data: {
+        cycleId: `cycle-${Date.now()}`,
+        phi: phiLevel.phi,
+        memoryItems: memoryCount,
+        goal: context.goal,
+        timestamp: new Date().toISOString(),
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'execute.cycle',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
 });
 
 /**

@@ -1,5 +1,5 @@
 /**
- * Genesis v7.6 - Extended Thinking System
+ * Genesis v7.7 - Advanced Reasoning System
  *
  * Frontier-grade reasoning architecture implementing:
  * - Extended Thinking with Scratchpad (o1/Claude style)
@@ -8,24 +8,35 @@
  * - Metacognitive Uncertainty Tracking
  * - Deliberative Alignment (explicit value reasoning)
  *
+ * NEW in v7.7 (Based on arXiv research):
+ * - Tree-of-Thought (ToT) with BFS/DFS search (arXiv:2305.10601)
+ * - Process Reward Model (PRM) for step verification
+ * - MCTS-style search with value estimation
+ * - CoT Entropy for uncertainty-aware verification (arXiv:2502.11250)
+ * - Beam Search with state evaluation and pruning
+ * - Dynamic compute budgeting based on problem difficulty
+ *
  * Based on:
  * - OpenAI o1/o3: Test-time compute scaling, hidden CoT
  * - DeepSeek R1: Transparent reasoning, GRPO
  * - Claude Extended Thinking: Interleaved reasoning
  * - Deliberative Alignment: Explicit specification reasoning
+ * - Tree of Thoughts: Deliberate Problem Solving (Yao et al. 2023)
+ * - Uncertainty-aware Step-wise Verification (Oxford 2025)
  *
  * Architecture:
  * ```
  * ┌─────────────────────────────────────────────────────────────────┐
- * │                    EXTENDED THINKING                            │
+ * │                    ADVANCED REASONING                           │
  * │                                                                 │
- * │  Input → [Scratchpad] → [Critique] → [Revise] → Output         │
- * │              ↓              ↓           ↓                       │
- * │         Think deeply    Self-check   Improve                   │
+ * │  Input → [ToT Search] → [PRM Verify] → [Beam Select] → Output  │
+ * │              ↓              ↓              ↓                    │
+ * │         BFS/DFS        Step-by-step    Keep top-k              │
+ * │         Explore        Verification    Candidates               │
  * │                                                                 │
- * │  Best-of-N: Generate N → Score → Select Best                   │
- * │  Uncertainty: Track confidence at each step                    │
- * │  Values: Reason about principles explicitly                    │
+ * │  MCTS: Selection → Expansion → Simulation → Backpropagation   │
+ * │  CoT Entropy: Sample rationales → Cluster → Compute entropy    │
+ * │  Dynamic Budget: Easy=fast, Hard=deep                          │
  * └─────────────────────────────────────────────────────────────────┘
  * ```
  */
@@ -33,7 +44,136 @@
 import { LLMBridge, getLLMBridge } from '../llm/index.js';
 
 // ============================================================================
-// Types
+// v7.7: Tree-of-Thought Types (must be declared first)
+// ============================================================================
+
+/**
+ * A node in the thought tree
+ * Represents a state in the reasoning process
+ */
+export interface ThoughtNode {
+  id: string;
+  thought: string;           // The thought/reasoning step
+  state: string;             // Current problem state after this thought
+  parent: string | null;     // Parent node ID
+  children: string[];        // Child node IDs
+  depth: number;             // Depth in tree
+  value: number;             // Estimated value (0-1)
+  visits: number;            // MCTS visit count
+  isTerminal: boolean;       // Whether this is a solution
+  isValid: boolean;          // Whether the thought is valid
+  metadata: {
+    generatedAt: number;
+    evaluatedAt?: number;
+    prmScore?: number;       // Process Reward Model score
+    entropy?: number;        // CoT entropy
+  };
+}
+
+/**
+ * Search strategy for Tree-of-Thought
+ */
+export type ToTSearchStrategy = 'bfs' | 'dfs' | 'mcts' | 'beam';
+
+/**
+ * State evaluation method
+ */
+export type StateEvalMethod = 'value' | 'vote' | 'prm' | 'entropy';
+
+/**
+ * Configuration for Tree-of-Thought search
+ */
+export interface ToTConfig {
+  strategy: ToTSearchStrategy;
+  maxDepth: number;          // Maximum tree depth
+  branchingFactor: number;   // k: thoughts to generate per state
+  beamWidth: number;         // b: states to keep at each level (for BFS/beam)
+  explorationConstant: number; // c: UCB exploration constant for MCTS
+  maxIterations: number;     // Maximum search iterations
+  evalMethod: StateEvalMethod;
+  pruneThreshold: number;    // Prune states below this value
+  enableBacktracking: boolean;
+}
+
+export const DEFAULT_TOT_CONFIG: ToTConfig = {
+  strategy: 'bfs',
+  maxDepth: 5,
+  branchingFactor: 3,
+  beamWidth: 5,
+  explorationConstant: 1.414,  // sqrt(2)
+  maxIterations: 50,
+  evalMethod: 'value',
+  pruneThreshold: 0.2,
+  enableBacktracking: true,
+};
+
+/**
+ * Process Reward Model configuration
+ */
+export interface PRMConfig {
+  enabled: boolean;
+  verifyEveryStep: boolean;
+  minStepScore: number;      // Minimum score to continue
+  aggregationMethod: 'min' | 'mean' | 'product';
+}
+
+export const DEFAULT_PRM_CONFIG: PRMConfig = {
+  enabled: true,
+  verifyEveryStep: false,    // Expensive, off by default
+  minStepScore: 0.3,
+  aggregationMethod: 'min',  // Conservative: take worst step score
+};
+
+/**
+ * CoT Entropy configuration for uncertainty
+ */
+export interface EntropyConfig {
+  enabled: boolean;
+  numSamples: number;        // Rationales to sample
+  rejectThreshold: number;   // Reject if entropy above this
+}
+
+export const DEFAULT_ENTROPY_CONFIG: EntropyConfig = {
+  enabled: true,
+  numSamples: 5,
+  rejectThreshold: 0.8,      // High entropy = uncertain
+};
+
+/**
+ * Dynamic compute budget configuration
+ */
+export interface ComputeBudgetConfig {
+  enabled: boolean;
+  minBudget: number;         // Min tokens for easy problems
+  maxBudget: number;         // Max tokens for hard problems
+  difficultyEstimation: 'heuristic' | 'classifier' | 'adaptive';
+}
+
+export const DEFAULT_COMPUTE_BUDGET_CONFIG: ComputeBudgetConfig = {
+  enabled: true,
+  minBudget: 512,
+  maxBudget: 32768,
+  difficultyEstimation: 'heuristic',
+};
+
+/**
+ * Result of Tree-of-Thought search
+ */
+export interface ToTResult {
+  solution: string;
+  solutionPath: ThoughtNode[];
+  treeStats: {
+    nodesExpanded: number;
+    maxDepthReached: number;
+    backtrackCount: number;
+    prunedCount: number;
+  };
+  confidence: number;
+  searchDuration: number;
+}
+
+// ============================================================================
+// Core Types
 // ============================================================================
 
 export interface ThinkingConfig {
@@ -58,6 +198,19 @@ export interface ThinkingConfig {
   // Deliberative alignment
   enableDeliberativeAlignment: boolean;
   principles: string[];  // Core principles to reason about
+
+  // v7.7: Tree-of-Thought
+  enableTreeOfThought: boolean;
+  totConfig: ToTConfig;
+
+  // v7.7: Process Reward Model
+  prmConfig: PRMConfig;
+
+  // v7.7: CoT Entropy
+  entropyConfig: EntropyConfig;
+
+  // v7.7: Dynamic Compute Budget
+  computeBudgetConfig: ComputeBudgetConfig;
 }
 
 export const DEFAULT_THINKING_CONFIG: ThinkingConfig = {
@@ -83,6 +236,13 @@ export const DEFAULT_THINKING_CONFIG: ThinkingConfig = {
     'Acknowledge uncertainty honestly',
     'Support human autonomy and oversight',
   ],
+
+  // v7.7: Advanced features (off by default for cost)
+  enableTreeOfThought: false,
+  totConfig: DEFAULT_TOT_CONFIG,
+  prmConfig: DEFAULT_PRM_CONFIG,
+  entropyConfig: DEFAULT_ENTROPY_CONFIG,
+  computeBudgetConfig: DEFAULT_COMPUTE_BUDGET_CONFIG,
 };
 
 export interface ThinkingStep {
@@ -195,6 +355,114 @@ reason: [why this confidence level]
 ---
 [repeat for each claim]
 </uncertainty>`;
+
+// ============================================================================
+// v7.7: Tree-of-Thought Prompts
+// ============================================================================
+
+const TOT_THOUGHT_GENERATOR_PROMPT = `Given the problem and current state, generate {k} distinct next reasoning steps.
+
+Problem: {problem}
+Current State: {state}
+
+Generate {k} different possible next thoughts/reasoning steps.
+Each thought should be:
+- A coherent, self-contained reasoning step
+- Distinct from other thoughts
+- Moving toward solving the problem
+
+Format each thought in <thought> tags:
+<thought id="1">
+[First reasoning step]
+</thought>
+<thought id="2">
+[Second reasoning step]
+</thought>
+...`;
+
+const TOT_STATE_EVALUATOR_PROMPT = `Evaluate this reasoning state for solving the problem.
+
+Problem: {problem}
+Current State: {state}
+Reasoning Path:
+{path}
+
+Rate this state on a scale of 1-10:
+- 1-3: Wrong direction, unlikely to lead to solution
+- 4-5: Unclear, might work but uncertain
+- 6-7: Promising, on the right track
+- 8-9: Very close to solution
+- 10: Complete solution found
+
+Provide your evaluation in <eval> tags:
+<eval>
+score: [1-10]
+is_terminal: [true/false - is this a complete solution?]
+is_valid: [true/false - is the reasoning logically valid?]
+reason: [brief explanation]
+</eval>`;
+
+const TOT_VOTE_PROMPT = `Compare these reasoning states and vote for the best one.
+
+Problem: {problem}
+
+{states}
+
+Vote for the state most likely to lead to the correct solution.
+Consider: logical validity, progress toward solution, clarity.
+
+<vote>
+best: [state number]
+reason: [why this state is best]
+</vote>`;
+
+const PRM_STEP_VERIFICATION_PROMPT = `Verify this reasoning step.
+
+Problem: {problem}
+Previous Steps: {previous}
+Current Step: {step}
+
+Evaluate the current step:
+1. Is the logic correct?
+2. Does it follow from previous steps?
+3. Does it move toward solving the problem?
+4. Are there any errors or invalid assumptions?
+
+<verification>
+score: [0-1, where 1 is perfectly valid]
+errors: [list any errors found]
+valid: [true/false]
+</verification>`;
+
+const COT_ENTROPY_SAMPLE_PROMPT = `Given this problem, provide your reasoning and final answer.
+
+Problem: {problem}
+
+Think step by step and arrive at an answer.
+
+<reasoning>
+[Your step-by-step reasoning]
+</reasoning>
+<answer>
+[Your final answer]
+</answer>`;
+
+const DIFFICULTY_ESTIMATION_PROMPT = `Estimate the difficulty of this problem.
+
+Problem: {problem}
+
+Consider:
+1. Number of reasoning steps required
+2. Domain knowledge needed
+3. Ambiguity level
+4. Computational complexity
+
+<difficulty>
+level: [easy/medium/hard/very_hard]
+estimated_steps: [number]
+reasoning_type: [arithmetic/logical/creative/multi-step/research]
+confidence: [0-1]
+</difficulty>`;
 
 // ============================================================================
 // ThinkingEngine Class
@@ -736,6 +1004,719 @@ Question: ${query}`;
       byType,
     };
   }
+
+  // ==========================================================================
+  // v7.7: Tree-of-Thought Search
+  // ==========================================================================
+
+  /**
+   * Tree-of-Thought reasoning with search
+   * Based on arXiv:2305.10601
+   */
+  async treeOfThought(problem: string): Promise<ToTResult> {
+    const startTime = Date.now();
+    const config = this.config.totConfig;
+
+    // Initialize tree with root node
+    const nodes = new Map<string, ThoughtNode>();
+    const root = this.createNode('', problem, null, 0);
+    nodes.set(root.id, root);
+
+    let stats = {
+      nodesExpanded: 0,
+      maxDepthReached: 0,
+      backtrackCount: 0,
+      prunedCount: 0,
+    };
+
+    let solution: ThoughtNode | null = null;
+
+    // Run search based on strategy
+    switch (config.strategy) {
+      case 'bfs':
+        solution = await this.totBFS(problem, root, nodes, config, stats);
+        break;
+      case 'dfs':
+        solution = await this.totDFS(problem, root, nodes, config, stats);
+        break;
+      case 'mcts':
+        solution = await this.totMCTS(problem, root, nodes, config, stats);
+        break;
+      case 'beam':
+        solution = await this.totBeamSearch(problem, root, nodes, config, stats);
+        break;
+    }
+
+    // Extract solution path
+    const solutionPath: ThoughtNode[] = [];
+    if (solution) {
+      let current: ThoughtNode | undefined = solution;
+      while (current) {
+        solutionPath.unshift(current);
+        current = current.parent ? nodes.get(current.parent) : undefined;
+      }
+    }
+
+    return {
+      solution: solution?.state || 'No solution found',
+      solutionPath,
+      treeStats: stats,
+      confidence: solution?.value || 0,
+      searchDuration: Date.now() - startTime,
+    };
+  }
+
+  /**
+   * BFS for Tree-of-Thought (Algorithm 1 from paper)
+   */
+  private async totBFS(
+    problem: string,
+    root: ThoughtNode,
+    nodes: Map<string, ThoughtNode>,
+    config: ToTConfig,
+    stats: { nodesExpanded: number; maxDepthReached: number; backtrackCount: number; prunedCount: number }
+  ): Promise<ThoughtNode | null> {
+    let frontier: ThoughtNode[] = [root];
+
+    for (let depth = 0; depth < config.maxDepth && frontier.length > 0; depth++) {
+      stats.maxDepthReached = Math.max(stats.maxDepthReached, depth);
+
+      // Generate thoughts for all nodes in frontier
+      const candidates: ThoughtNode[] = [];
+
+      for (const node of frontier) {
+        // Generate k candidate thoughts
+        const thoughts = await this.generateThoughts(problem, node, config.branchingFactor);
+        stats.nodesExpanded++;
+
+        for (const thought of thoughts) {
+          const childNode = this.createNode(thought, this.applyThought(node.state, thought), node.id, depth + 1);
+          nodes.set(childNode.id, childNode);
+          node.children.push(childNode.id);
+          candidates.push(childNode);
+        }
+      }
+
+      // Evaluate all candidates
+      const evaluated = await this.evaluateStates(problem, candidates, config.evalMethod);
+
+      // Check for terminal solution
+      for (const node of evaluated) {
+        if (node.isTerminal && node.isValid) {
+          return node;
+        }
+      }
+
+      // Prune and select top b states
+      const validCandidates = evaluated.filter(n => n.isValid && n.value >= config.pruneThreshold);
+      stats.prunedCount += evaluated.length - validCandidates.length;
+
+      // Sort by value and keep top b
+      validCandidates.sort((a, b) => b.value - a.value);
+      frontier = validCandidates.slice(0, config.beamWidth);
+    }
+
+    // Return best non-terminal if no solution found
+    const allNodes = Array.from(nodes.values());
+    allNodes.sort((a, b) => b.value - a.value);
+    return allNodes[0] || null;
+  }
+
+  /**
+   * DFS for Tree-of-Thought with backtracking (Algorithm 2 from paper)
+   */
+  private async totDFS(
+    problem: string,
+    root: ThoughtNode,
+    nodes: Map<string, ThoughtNode>,
+    config: ToTConfig,
+    stats: { nodesExpanded: number; maxDepthReached: number; backtrackCount: number; prunedCount: number }
+  ): Promise<ThoughtNode | null> {
+    const stack: ThoughtNode[] = [root];
+    let bestSolution: ThoughtNode | null = null;
+    let iterations = 0;
+
+    while (stack.length > 0 && iterations < config.maxIterations) {
+      iterations++;
+      const node = stack.pop()!;
+      stats.nodesExpanded++;
+      stats.maxDepthReached = Math.max(stats.maxDepthReached, node.depth);
+
+      // Evaluate current node
+      const evaluated = await this.evaluateState(problem, node, config.evalMethod);
+      node.value = evaluated.value;
+      node.isTerminal = evaluated.isTerminal;
+      node.isValid = evaluated.isValid;
+
+      // Check for terminal solution
+      if (node.isTerminal && node.isValid) {
+        if (!bestSolution || node.value > bestSolution.value) {
+          bestSolution = node;
+        }
+        continue;  // Backtrack to find potentially better solutions
+      }
+
+      // Prune invalid or low-value paths
+      if (!node.isValid || node.value < config.pruneThreshold) {
+        stats.prunedCount++;
+        if (config.enableBacktracking) {
+          stats.backtrackCount++;
+        }
+        continue;
+      }
+
+      // Depth limit
+      if (node.depth >= config.maxDepth) {
+        continue;
+      }
+
+      // Generate children
+      const thoughts = await this.generateThoughts(problem, node, config.branchingFactor);
+
+      for (const thought of thoughts) {
+        const childNode = this.createNode(thought, this.applyThought(node.state, thought), node.id, node.depth + 1);
+        nodes.set(childNode.id, childNode);
+        node.children.push(childNode.id);
+        stack.push(childNode);
+      }
+    }
+
+    return bestSolution;
+  }
+
+  /**
+   * MCTS for Tree-of-Thought
+   */
+  private async totMCTS(
+    problem: string,
+    root: ThoughtNode,
+    nodes: Map<string, ThoughtNode>,
+    config: ToTConfig,
+    stats: { nodesExpanded: number; maxDepthReached: number; backtrackCount: number; prunedCount: number }
+  ): Promise<ThoughtNode | null> {
+    for (let i = 0; i < config.maxIterations; i++) {
+      // Selection: traverse tree using UCB1
+      let current = root;
+      const path: ThoughtNode[] = [current];
+
+      while (current.children.length > 0) {
+        const children = current.children.map(id => nodes.get(id)!);
+        current = this.selectUCB(children, config.explorationConstant);
+        path.push(current);
+      }
+
+      // Expansion: add new child if not terminal
+      if (!current.isTerminal && current.depth < config.maxDepth) {
+        const thoughts = await this.generateThoughts(problem, current, 1);
+        if (thoughts.length > 0) {
+          const childNode = this.createNode(
+            thoughts[0],
+            this.applyThought(current.state, thoughts[0]),
+            current.id,
+            current.depth + 1
+          );
+          nodes.set(childNode.id, childNode);
+          current.children.push(childNode.id);
+          current = childNode;
+          path.push(current);
+          stats.nodesExpanded++;
+          stats.maxDepthReached = Math.max(stats.maxDepthReached, current.depth);
+        }
+      }
+
+      // Simulation: evaluate leaf node
+      const evaluated = await this.evaluateState(problem, current, config.evalMethod);
+      current.value = evaluated.value;
+      current.isTerminal = evaluated.isTerminal;
+      current.isValid = evaluated.isValid;
+
+      // Backpropagation: update visit counts and values
+      for (const node of path) {
+        node.visits++;
+        // Average value update
+        node.value = ((node.visits - 1) * node.value + evaluated.value) / node.visits;
+      }
+    }
+
+    // Find best terminal node
+    const allNodes = Array.from(nodes.values());
+    const terminals = allNodes.filter(n => n.isTerminal && n.isValid);
+
+    if (terminals.length > 0) {
+      terminals.sort((a, b) => b.value - a.value);
+      return terminals[0];
+    }
+
+    // Return highest value node
+    allNodes.sort((a, b) => b.value - a.value);
+    return allNodes[0] || null;
+  }
+
+  /**
+   * Beam Search for Tree-of-Thought
+   */
+  private async totBeamSearch(
+    problem: string,
+    root: ThoughtNode,
+    nodes: Map<string, ThoughtNode>,
+    config: ToTConfig,
+    stats: { nodesExpanded: number; maxDepthReached: number; backtrackCount: number; prunedCount: number }
+  ): Promise<ThoughtNode | null> {
+    let beam: ThoughtNode[] = [root];
+
+    for (let depth = 0; depth < config.maxDepth && beam.length > 0; depth++) {
+      stats.maxDepthReached = Math.max(stats.maxDepthReached, depth);
+      const candidates: ThoughtNode[] = [];
+
+      // Expand all nodes in beam
+      for (const node of beam) {
+        const thoughts = await this.generateThoughts(problem, node, config.branchingFactor);
+        stats.nodesExpanded++;
+
+        for (const thought of thoughts) {
+          const childNode = this.createNode(thought, this.applyThought(node.state, thought), node.id, depth + 1);
+          nodes.set(childNode.id, childNode);
+          node.children.push(childNode.id);
+          candidates.push(childNode);
+        }
+      }
+
+      // Evaluate and score all candidates
+      const evaluated = await this.evaluateStates(problem, candidates, config.evalMethod);
+
+      // Check for terminal
+      for (const node of evaluated) {
+        if (node.isTerminal && node.isValid) {
+          return node;
+        }
+      }
+
+      // Keep top-b by value (beam search)
+      evaluated.sort((a, b) => b.value - a.value);
+      const pruned = evaluated.length - Math.min(evaluated.length, config.beamWidth);
+      stats.prunedCount += pruned;
+      beam = evaluated.slice(0, config.beamWidth);
+    }
+
+    // Return best from final beam
+    return beam.length > 0 ? beam[0] : null;
+  }
+
+  /**
+   * Generate k candidate thoughts from a state
+   */
+  private async generateThoughts(problem: string, node: ThoughtNode, k: number): Promise<string[]> {
+    const prompt = TOT_THOUGHT_GENERATOR_PROMPT
+      .replace('{k}', k.toString())
+      .replace('{problem}', problem)
+      .replace('{state}', node.state);
+
+    const result = await this.llm.chat(prompt);
+
+    // Parse thoughts
+    const thoughts: string[] = [];
+    const thoughtRegex = /<thought[^>]*>([\s\S]*?)<\/thought>/g;
+    let match;
+    while ((match = thoughtRegex.exec(result.content)) !== null) {
+      thoughts.push(match[1].trim());
+    }
+
+    // If parsing failed, try to split by numbered list
+    if (thoughts.length === 0) {
+      const lines = result.content.split(/\n(?=\d+\.)/);
+      for (const line of lines) {
+        const cleaned = line.replace(/^\d+\.\s*/, '').trim();
+        if (cleaned) thoughts.push(cleaned);
+      }
+    }
+
+    return thoughts.slice(0, k);
+  }
+
+  /**
+   * Evaluate a single state
+   */
+  private async evaluateState(
+    problem: string,
+    node: ThoughtNode,
+    method: StateEvalMethod
+  ): Promise<{ value: number; isTerminal: boolean; isValid: boolean }> {
+    switch (method) {
+      case 'prm':
+        return this.evaluateWithPRM(problem, node);
+      case 'entropy':
+        return this.evaluateWithEntropy(problem, node);
+      case 'vote':
+        return this.evaluateWithVote(problem, [node]);
+      default:
+        return this.evaluateWithValue(problem, node);
+    }
+  }
+
+  /**
+   * Evaluate multiple states
+   */
+  private async evaluateStates(
+    problem: string,
+    nodes: ThoughtNode[],
+    method: StateEvalMethod
+  ): Promise<ThoughtNode[]> {
+    for (const node of nodes) {
+      const result = await this.evaluateState(problem, node, method);
+      node.value = result.value;
+      node.isTerminal = result.isTerminal;
+      node.isValid = result.isValid;
+    }
+    return nodes;
+  }
+
+  /**
+   * Value prompt evaluation (rate 1-10)
+   */
+  private async evaluateWithValue(
+    problem: string,
+    node: ThoughtNode
+  ): Promise<{ value: number; isTerminal: boolean; isValid: boolean }> {
+    const path = this.buildPathDescription(node);
+    const prompt = TOT_STATE_EVALUATOR_PROMPT
+      .replace('{problem}', problem)
+      .replace('{state}', node.state)
+      .replace('{path}', path);
+
+    const result = await this.llm.chat(prompt);
+
+    // Parse evaluation
+    const evalMatch = result.content.match(/<eval>([\s\S]*?)<\/eval>/);
+    if (evalMatch) {
+      const content = evalMatch[1];
+      const scoreMatch = content.match(/score:\s*(\d+)/i);
+      const terminalMatch = content.match(/is_terminal:\s*(true|false)/i);
+      const validMatch = content.match(/is_valid:\s*(true|false)/i);
+
+      return {
+        value: scoreMatch ? parseInt(scoreMatch[1]) / 10 : 0.5,
+        isTerminal: terminalMatch ? terminalMatch[1].toLowerCase() === 'true' : false,
+        isValid: validMatch ? validMatch[1].toLowerCase() === 'true' : true,
+      };
+    }
+
+    return { value: 0.5, isTerminal: false, isValid: true };
+  }
+
+  /**
+   * Vote-based evaluation
+   */
+  private async evaluateWithVote(
+    problem: string,
+    nodes: ThoughtNode[]
+  ): Promise<{ value: number; isTerminal: boolean; isValid: boolean }> {
+    if (nodes.length === 1) {
+      return this.evaluateWithValue(problem, nodes[0]);
+    }
+
+    const statesStr = nodes.map((n, i) =>
+      `State ${i + 1}:\n${n.state}`
+    ).join('\n\n');
+
+    const prompt = TOT_VOTE_PROMPT
+      .replace('{problem}', problem)
+      .replace('{states}', statesStr);
+
+    const result = await this.llm.chat(prompt);
+
+    // Parse vote
+    const voteMatch = result.content.match(/<vote>([\s\S]*?)<\/vote>/);
+    if (voteMatch) {
+      const content = voteMatch[1];
+      const bestMatch = content.match(/best:\s*(\d+)/i);
+      const bestIndex = bestMatch ? parseInt(bestMatch[1]) - 1 : 0;
+
+      // The voted node gets higher value
+      for (let i = 0; i < nodes.length; i++) {
+        nodes[i].value = i === bestIndex ? 0.9 : 0.5;
+      }
+    }
+
+    return { value: nodes[0].value, isTerminal: false, isValid: true };
+  }
+
+  // ==========================================================================
+  // v7.7: Process Reward Model (PRM)
+  // ==========================================================================
+
+  /**
+   * Evaluate state using Process Reward Model
+   */
+  private async evaluateWithPRM(
+    problem: string,
+    node: ThoughtNode
+  ): Promise<{ value: number; isTerminal: boolean; isValid: boolean }> {
+    const path = this.buildPathDescription(node);
+
+    const prompt = PRM_STEP_VERIFICATION_PROMPT
+      .replace('{problem}', problem)
+      .replace('{previous}', path)
+      .replace('{step}', node.thought);
+
+    const result = await this.llm.chat(prompt);
+
+    // Parse verification
+    const verifyMatch = result.content.match(/<verification>([\s\S]*?)<\/verification>/);
+    if (verifyMatch) {
+      const content = verifyMatch[1];
+      const scoreMatch = content.match(/score:\s*([\d.]+)/i);
+      const validMatch = content.match(/valid:\s*(true|false)/i);
+
+      const score = scoreMatch ? parseFloat(scoreMatch[1]) : 0.5;
+      const valid = validMatch ? validMatch[1].toLowerCase() === 'true' : true;
+
+      node.metadata.prmScore = score;
+
+      return {
+        value: score,
+        isTerminal: score > 0.95,  // High confidence = potentially terminal
+        isValid: valid && score >= this.config.prmConfig.minStepScore,
+      };
+    }
+
+    return { value: 0.5, isTerminal: false, isValid: true };
+  }
+
+  /**
+   * Verify a complete reasoning chain with PRM
+   */
+  async verifyChainWithPRM(problem: string, steps: string[]): Promise<{
+    valid: boolean;
+    stepScores: number[];
+    aggregateScore: number;
+    errors: string[];
+  }> {
+    const stepScores: number[] = [];
+    const errors: string[] = [];
+
+    for (let i = 0; i < steps.length; i++) {
+      const previous = steps.slice(0, i).join('\n');
+      const prompt = PRM_STEP_VERIFICATION_PROMPT
+        .replace('{problem}', problem)
+        .replace('{previous}', previous || 'None')
+        .replace('{step}', steps[i]);
+
+      const result = await this.llm.chat(prompt);
+
+      const verifyMatch = result.content.match(/<verification>([\s\S]*?)<\/verification>/);
+      if (verifyMatch) {
+        const content = verifyMatch[1];
+        const scoreMatch = content.match(/score:\s*([\d.]+)/i);
+        const errorsMatch = content.match(/errors:\s*(.+)/i);
+
+        stepScores.push(scoreMatch ? parseFloat(scoreMatch[1]) : 0.5);
+        if (errorsMatch && !errorsMatch[1].toLowerCase().includes('none')) {
+          errors.push(`Step ${i + 1}: ${errorsMatch[1]}`);
+        }
+      } else {
+        stepScores.push(0.5);
+      }
+    }
+
+    // Aggregate based on config
+    let aggregateScore: number;
+    switch (this.config.prmConfig.aggregationMethod) {
+      case 'min':
+        aggregateScore = Math.min(...stepScores);
+        break;
+      case 'product':
+        aggregateScore = stepScores.reduce((a, b) => a * b, 1);
+        break;
+      default:
+        aggregateScore = stepScores.reduce((a, b) => a + b, 0) / stepScores.length;
+    }
+
+    return {
+      valid: aggregateScore >= this.config.prmConfig.minStepScore && errors.length === 0,
+      stepScores,
+      aggregateScore,
+      errors,
+    };
+  }
+
+  // ==========================================================================
+  // v7.7: CoT Entropy (Uncertainty-aware Verification)
+  // ==========================================================================
+
+  /**
+   * Evaluate state using CoT Entropy
+   * Based on arXiv:2502.11250
+   */
+  private async evaluateWithEntropy(
+    problem: string,
+    node: ThoughtNode
+  ): Promise<{ value: number; isTerminal: boolean; isValid: boolean }> {
+    const entropy = await this.computeCoTEntropy(problem);
+    node.metadata.entropy = entropy;
+
+    // High entropy = uncertain = lower value
+    const value = 1 - entropy;
+    const valid = entropy < this.config.entropyConfig.rejectThreshold;
+
+    return {
+      value,
+      isTerminal: value > 0.9,
+      isValid: valid,
+    };
+  }
+
+  /**
+   * Compute Chain-of-Thought Entropy
+   * CoTE(x) = -Σ p(answer) log p(answer)
+   */
+  async computeCoTEntropy(problem: string): Promise<number> {
+    const numSamples = this.config.entropyConfig.numSamples;
+    const answers: string[] = [];
+
+    // Sample multiple rationales
+    for (let i = 0; i < numSamples; i++) {
+      const prompt = COT_ENTROPY_SAMPLE_PROMPT.replace('{problem}', problem);
+      const result = await this.llm.chat(prompt);
+
+      // Extract answer
+      const answerMatch = result.content.match(/<answer>([\s\S]*?)<\/answer>/);
+      if (answerMatch) {
+        answers.push(answerMatch[1].trim().toLowerCase());
+      }
+    }
+
+    if (answers.length === 0) return 1;  // Max uncertainty
+
+    // Cluster answers (simple: exact match)
+    const clusters = new Map<string, number>();
+    for (const answer of answers) {
+      clusters.set(answer, (clusters.get(answer) || 0) + 1);
+    }
+
+    // Compute entropy
+    let entropy = 0;
+    const total = answers.length;
+    for (const count of clusters.values()) {
+      const p = count / total;
+      if (p > 0) {
+        entropy -= p * Math.log2(p);
+      }
+    }
+
+    // Normalize to 0-1 (max entropy is log2(numSamples))
+    const maxEntropy = Math.log2(numSamples);
+    return maxEntropy > 0 ? entropy / maxEntropy : 0;
+  }
+
+  // ==========================================================================
+  // v7.7: Dynamic Compute Budgeting
+  // ==========================================================================
+
+  /**
+   * Estimate problem difficulty
+   */
+  async estimateDifficulty(problem: string): Promise<{
+    level: 'easy' | 'medium' | 'hard' | 'very_hard';
+    estimatedSteps: number;
+    reasoningType: string;
+    budget: number;
+  }> {
+    const prompt = DIFFICULTY_ESTIMATION_PROMPT.replace('{problem}', problem);
+    const result = await this.llm.chat(prompt);
+
+    let level: 'easy' | 'medium' | 'hard' | 'very_hard' = 'medium';
+    let estimatedSteps = 3;
+    let reasoningType = 'logical';
+
+    const diffMatch = result.content.match(/<difficulty>([\s\S]*?)<\/difficulty>/);
+    if (diffMatch) {
+      const content = diffMatch[1];
+      const levelMatch = content.match(/level:\s*(easy|medium|hard|very_hard)/i);
+      const stepsMatch = content.match(/estimated_steps:\s*(\d+)/i);
+      const typeMatch = content.match(/reasoning_type:\s*(\w+)/i);
+
+      if (levelMatch) level = levelMatch[1].toLowerCase() as typeof level;
+      if (stepsMatch) estimatedSteps = parseInt(stepsMatch[1]);
+      if (typeMatch) reasoningType = typeMatch[1];
+    }
+
+    // Calculate budget based on difficulty
+    const config = this.config.computeBudgetConfig;
+    const budgetScale = {
+      easy: 0,
+      medium: 0.33,
+      hard: 0.66,
+      very_hard: 1,
+    };
+    const budget = config.minBudget +
+      (config.maxBudget - config.minBudget) * budgetScale[level];
+
+    return { level, estimatedSteps, reasoningType, budget: Math.round(budget) };
+  }
+
+  // ==========================================================================
+  // v7.7: Helper Methods
+  // ==========================================================================
+
+  /**
+   * Create a new thought node
+   */
+  private createNode(thought: string, state: string, parent: string | null, depth: number): ThoughtNode {
+    return {
+      id: `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      thought,
+      state: state || thought,  // If no state, use thought as state
+      parent,
+      children: [],
+      depth,
+      value: 0,
+      visits: 0,
+      isTerminal: false,
+      isValid: true,
+      metadata: {
+        generatedAt: Date.now(),
+      },
+    };
+  }
+
+  /**
+   * Apply thought to state (simple concatenation for now)
+   */
+  private applyThought(state: string, thought: string): string {
+    return state ? `${state}\n\nStep: ${thought}` : thought;
+  }
+
+  /**
+   * Build path description from root to node
+   */
+  private buildPathDescription(node: ThoughtNode): string {
+    // For simplicity, just return current state
+    // In full impl, traverse parent chain
+    return node.state;
+  }
+
+  /**
+   * UCB1 selection for MCTS
+   */
+  private selectUCB(nodes: ThoughtNode[], c: number): ThoughtNode {
+    const totalVisits = nodes.reduce((sum, n) => sum + n.visits, 0);
+
+    let best: ThoughtNode | null = null;
+    let bestUCB = -Infinity;
+
+    for (const node of nodes) {
+      const ucb = node.visits === 0
+        ? Infinity  // Explore unvisited nodes first
+        : node.value + c * Math.sqrt(Math.log(totalVisits) / node.visits);
+
+      if (ucb > bestUCB) {
+        bestUCB = ucb;
+        best = node;
+      }
+    }
+
+    return best || nodes[0];
+  }
 }
 
 // ============================================================================
@@ -801,4 +1782,130 @@ export async function thinkBestOfN(
     nSamples: n,
   });
   return engine.think(query, context);
+}
+
+// ============================================================================
+// v7.7: Quick Functions for Advanced Reasoning
+// ============================================================================
+
+/**
+ * Tree-of-Thought search with BFS (default)
+ */
+export async function thinkWithToT(
+  problem: string,
+  strategy: ToTSearchStrategy = 'bfs'
+): Promise<ToTResult> {
+  const engine = getThinkingEngine({
+    enableTreeOfThought: true,
+    totConfig: { ...DEFAULT_TOT_CONFIG, strategy },
+  });
+  return engine.treeOfThought(problem);
+}
+
+/**
+ * Tree-of-Thought with MCTS (AlphaGo-style)
+ */
+export async function thinkWithMCTS(
+  problem: string,
+  iterations: number = 50
+): Promise<ToTResult> {
+  const engine = getThinkingEngine({
+    enableTreeOfThought: true,
+    totConfig: { ...DEFAULT_TOT_CONFIG, strategy: 'mcts', maxIterations: iterations },
+  });
+  return engine.treeOfThought(problem);
+}
+
+/**
+ * Tree-of-Thought with Beam Search
+ */
+export async function thinkWithBeam(
+  problem: string,
+  beamWidth: number = 5
+): Promise<ToTResult> {
+  const engine = getThinkingEngine({
+    enableTreeOfThought: true,
+    totConfig: { ...DEFAULT_TOT_CONFIG, strategy: 'beam', beamWidth },
+  });
+  return engine.treeOfThought(problem);
+}
+
+/**
+ * Verify reasoning chain with Process Reward Model
+ */
+export async function verifyWithPRM(
+  problem: string,
+  steps: string[]
+): Promise<{ valid: boolean; stepScores: number[]; aggregateScore: number; errors: string[] }> {
+  const engine = getThinkingEngine();
+  return engine.verifyChainWithPRM(problem, steps);
+}
+
+/**
+ * Compute CoT Entropy for a problem (uncertainty measure)
+ */
+export async function measureUncertainty(problem: string): Promise<number> {
+  const engine = getThinkingEngine();
+  return engine.computeCoTEntropy(problem);
+}
+
+/**
+ * Estimate problem difficulty for adaptive compute
+ */
+export async function estimateProblemDifficulty(
+  problem: string
+): Promise<{ level: string; estimatedSteps: number; reasoningType: string; budget: number }> {
+  const engine = getThinkingEngine();
+  return engine.estimateDifficulty(problem);
+}
+
+/**
+ * Full adaptive reasoning: estimate difficulty → choose strategy → solve
+ */
+export async function thinkAdaptive(
+  problem: string
+): Promise<{
+  thinking: ThinkingResult | ToTResult;
+  difficulty: { level: string; estimatedSteps: number; reasoningType: string; budget: number };
+  strategyUsed: string;
+}> {
+  const engine = getThinkingEngine();
+
+  // Step 1: Estimate difficulty
+  const difficulty = await engine.estimateDifficulty(problem);
+
+  // Step 2: Choose strategy based on difficulty
+  let thinking: ThinkingResult | ToTResult;
+  let strategyUsed: string;
+
+  switch (difficulty.level) {
+    case 'easy':
+      // Simple extended thinking
+      strategyUsed = 'extended_thinking';
+      thinking = await engine.think(problem);
+      break;
+    case 'medium':
+      // Self-critique loop
+      strategyUsed = 'self_critique';
+      thinking = await engine.think(problem);
+      break;
+    case 'hard':
+      // Tree-of-Thought with BFS
+      strategyUsed = 'tot_bfs';
+      thinking = await engine.treeOfThought(problem);
+      break;
+    case 'very_hard':
+      // MCTS with more iterations
+      engine.updateConfig({
+        totConfig: { ...DEFAULT_TOT_CONFIG, strategy: 'mcts', maxIterations: 100 },
+      });
+      strategyUsed = 'tot_mcts';
+      thinking = await engine.treeOfThought(problem);
+      break;
+    default:
+      strategyUsed = 'extended_thinking';
+      thinking = await engine.think(problem);
+  }
+
+  return { thinking, difficulty, strategyUsed };
 }

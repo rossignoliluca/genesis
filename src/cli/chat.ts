@@ -69,6 +69,11 @@ import {
   formatResponseWithThinking,
   ThinkingSettings,
   DEFAULT_THINKING_SETTINGS,
+  // v7.6: Enhanced UI components
+  StatusLine,
+  buildRichPrompt,
+  formatToolExecution,
+  formatToolSummary,
 } from './ui.js';
 
 // ============================================================================
@@ -146,6 +151,9 @@ export class ChatSession {
   // v7.4.5: Hooks System
   private hooks: HooksManager;
 
+  // v7.6: Enhanced status line
+  private statusLine: StatusLine;
+
   constructor(options: ChatOptions = {}) {
     this.llm = getLLMBridge({
       provider: options.provider,
@@ -177,6 +185,7 @@ export class ChatSession {
     this.spinner = new Spinner('Thinking');
     this.thinkingSpinner = new ThinkingSpinner();  // v7.3.8
     this.inputHistory = new InputHistory(100);
+    this.statusLine = new StatusLine();  // v7.6: Real-time status bar
 
     // v7.3.8: Subscribe to brain events for thinking visualization
     this.brainEventUnsub = this.brain.on((event) => {
@@ -406,11 +415,20 @@ export class ChatSession {
   }
 
   /**
-   * Prompt for user input (v7.0: with history support)
+   * Prompt for user input (v7.6: with rich prompt and history support)
    */
   private prompt(): Promise<string> {
     return new Promise((resolve) => {
-      this.rl?.question(c('You: ', 'green'), (answer) => {
+      // v7.6: Build context-aware rich prompt
+      const metrics = this.enableBrain ? this.brain.getMetrics() : null;
+      const promptStr = buildRichPrompt({
+        model: this.llm.getConfig?.()?.model || 'genesis',
+        phi: metrics?.avgPhi,
+        sessionName: this.sessionName,
+        toolsActive: this.enableTools,
+      });
+
+      this.rl?.question(promptStr, (answer) => {
         const trimmed = answer.trim();
         // v7.0: Add to history if not empty and not a duplicate
         if (trimmed) {
@@ -482,20 +500,27 @@ export class ChatSession {
           // Format results for re-injection
           const toolResults = this.formatToolResults(dispatchResult.results);
 
-          if (this.verbose) {
-            console.log(muted(`  Completed in ${formatDuration(dispatchResult.totalDuration)}`));
-          }
-
-          // v7.0: Show results in a cleaner format
-          console.log(c('\n  Tool Results:', 'magenta'));
+          // v7.6: Compact tool execution display (Claude Code style)
           for (const result of dispatchResult.results) {
-            const status = result.success ? success('✓') : error('✗');
-            const data = result.success
-              ? truncate(typeof result.data === 'string' ? result.data : JSON.stringify(result.data), 200)
-              : result.error;
-            console.log(`  ${status} ${result.name}: ${data}`);
+            console.log(formatToolExecution({
+              name: result.name,
+              status: result.success ? 'success' : 'error',
+              result: result.success
+                ? truncate(typeof result.data === 'string' ? result.data : JSON.stringify(result.data), 100)
+                : result.error,
+              duration: result.duration,
+            }));
           }
-          console.log();
+          // Show summary if multiple tools
+          if (dispatchResult.results.length > 1) {
+            const successCount = dispatchResult.results.filter(r => r.success).length;
+            console.log(formatToolSummary({
+              total: dispatchResult.results.length,
+              successful: successCount,
+              failed: dispatchResult.results.length - successCount,
+              totalDuration: dispatchResult.totalDuration,
+            }));
+          }
 
           // Feed results back to LLM for continued response
           this.spinner.start('Processing results');

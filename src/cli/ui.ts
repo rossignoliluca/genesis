@@ -627,6 +627,366 @@ export function banner(title: string, subtitle?: string, width: number = 63): vo
 }
 
 // ============================================================================
+// Status Line (v7.6 - Claude Code style)
+// ============================================================================
+
+export interface StatusLineConfig {
+  model?: string;
+  phi?: number;
+  tokens?: number;
+  sessionId?: string;
+  mcpServers?: number;
+  mcpStatus?: 'connected' | 'partial' | 'disconnected';
+  brainActive?: boolean;
+  toolsEnabled?: boolean;
+}
+
+/**
+ * Real-time status line at bottom of terminal
+ * Displays: model │ φ │ tokens │ session │ MCP status
+ */
+export class StatusLine {
+  private config: StatusLineConfig = {};
+  private enabled: boolean = true;
+  private lastLine: string = '';
+  private updateInterval: NodeJS.Timeout | null = null;
+
+  constructor(initialConfig?: StatusLineConfig) {
+    if (initialConfig) {
+      this.config = { ...initialConfig };
+    }
+  }
+
+  update(config: Partial<StatusLineConfig>): void {
+    this.config = { ...this.config, ...config };
+    if (this.enabled) {
+      this.render();
+    }
+  }
+
+  private render(): void {
+    const parts: string[] = [];
+
+    // Model name (shortened)
+    if (this.config.model) {
+      const shortModel = this.config.model
+        .replace('claude-', '')
+        .replace('-20250514', '')
+        .replace('sonnet-4', 'sonnet4')
+        .replace('opus-4', 'opus4');
+      parts.push(style(shortModel, 'cyan'));
+    }
+
+    // Phi (consciousness level)
+    if (this.config.phi !== undefined) {
+      const phiColor = this.config.phi > 0.5 ? 'green' : this.config.phi > 0.3 ? 'yellow' : 'red';
+      parts.push(style(`φ:${this.config.phi.toFixed(2)}`, phiColor));
+    }
+
+    // Token count
+    if (this.config.tokens !== undefined) {
+      const tokenStr = this.config.tokens > 1000
+        ? `${(this.config.tokens / 1000).toFixed(1)}k`
+        : String(this.config.tokens);
+      parts.push(style(`${tokenStr} tok`, 'dim'));
+    }
+
+    // Session ID (first 8 chars)
+    if (this.config.sessionId) {
+      parts.push(style(this.config.sessionId.slice(0, 8), 'dim'));
+    }
+
+    // MCP status
+    if (this.config.mcpServers !== undefined) {
+      const mcpIcon = this.config.mcpStatus === 'connected' ? '✓' :
+                      this.config.mcpStatus === 'partial' ? '◐' : '✗';
+      const mcpColor = this.config.mcpStatus === 'connected' ? 'green' :
+                       this.config.mcpStatus === 'partial' ? 'yellow' : 'red';
+      parts.push(style(`${this.config.mcpServers} MCP ${mcpIcon}`, mcpColor));
+    }
+
+    // Brain status
+    if (this.config.brainActive) {
+      parts.push(style('🧠', 'magenta'));
+    }
+
+    // Build the line
+    const separator = style(' │ ', 'dim');
+    const line = parts.join(separator);
+
+    // Get terminal width
+    const termWidth = process.stdout.columns || 80;
+    const paddedLine = '─'.repeat(termWidth);
+
+    // Only update if changed
+    if (line !== this.lastLine) {
+      this.lastLine = line;
+      // Save cursor, move to bottom, print, restore cursor
+      process.stdout.write(`\x1b7\x1b[${process.stdout.rows};0H\x1b[K${style(paddedLine, 'dim')}\r ${line}\x1b8`);
+    }
+  }
+
+  show(): void {
+    this.enabled = true;
+    this.render();
+  }
+
+  hide(): void {
+    this.enabled = false;
+    // Clear the status line
+    process.stdout.write(`\x1b7\x1b[${process.stdout.rows};0H\x1b[K\x1b8`);
+  }
+
+  startAutoUpdate(intervalMs: number = 1000): void {
+    if (this.updateInterval) return;
+    this.updateInterval = setInterval(() => this.render(), intervalMs);
+  }
+
+  stopAutoUpdate(): void {
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
+      this.updateInterval = null;
+    }
+  }
+
+  getConfig(): StatusLineConfig {
+    return { ...this.config };
+  }
+}
+
+// Singleton instance
+let _statusLine: StatusLine | null = null;
+
+export function getStatusLine(): StatusLine {
+  if (!_statusLine) {
+    _statusLine = new StatusLine();
+  }
+  return _statusLine;
+}
+
+// ============================================================================
+// Rich Prompt (v7.6 - Context-aware prompt)
+// ============================================================================
+
+export interface PromptContext {
+  model?: string;
+  phi?: number;
+  sessionName?: string;
+  thinking?: boolean;
+  toolsActive?: boolean;
+}
+
+/**
+ * Build a context-aware prompt string
+ * Format: genesis [model] φ:0.72 >
+ */
+export function buildRichPrompt(context: PromptContext = {}): string {
+  const parts: string[] = [];
+
+  // Base prompt
+  parts.push(style('genesis', 'green', 'bold'));
+
+  // Model indicator (shortened)
+  if (context.model) {
+    const shortModel = context.model
+      .replace('claude-', '')
+      .replace('-20250514', '')
+      .replace('sonnet-4', 's4')
+      .replace('opus-4', 'o4')
+      .replace('haiku', 'h');
+    parts.push(style(`[${shortModel}]`, 'cyan'));
+  }
+
+  // Phi indicator
+  if (context.phi !== undefined) {
+    const phiColor = context.phi > 0.5 ? 'green' : context.phi > 0.3 ? 'yellow' : 'red';
+    parts.push(style(`φ:${context.phi.toFixed(1)}`, phiColor));
+  }
+
+  // Session name
+  if (context.sessionName) {
+    parts.push(style(`@${context.sessionName}`, 'magenta'));
+  }
+
+  // Thinking indicator
+  if (context.thinking) {
+    parts.push(style('💭', 'yellow'));
+  }
+
+  // Tools indicator
+  if (context.toolsActive) {
+    parts.push(style('⚡', 'cyan'));
+  }
+
+  return parts.join(' ') + style(' > ', 'dim');
+}
+
+// ============================================================================
+// Compact Tool UI (v7.6 - Minimal tool execution display)
+// ============================================================================
+
+export interface ToolExecutionDisplay {
+  name: string;
+  params?: Record<string, unknown>;
+  status: 'pending' | 'running' | 'success' | 'error';
+  duration?: number;
+  result?: string;
+}
+
+/**
+ * Format tool execution in compact single-line format
+ * Format: ⚡ tool_name(params...) ... ✓ result (420ms)
+ */
+export function formatToolExecution(exec: ToolExecutionDisplay): string {
+  const icon = exec.status === 'running' ? style('⟳', 'yellow') :
+               exec.status === 'success' ? style('✓', 'green') :
+               exec.status === 'error' ? style('✗', 'red') :
+               style('○', 'dim');
+
+  // Format params (truncated)
+  let paramsStr = '';
+  if (exec.params && Object.keys(exec.params).length > 0) {
+    const paramParts: string[] = [];
+    for (const [key, value] of Object.entries(exec.params)) {
+      const valStr = typeof value === 'string' ? `"${truncate(value, 30)}"` :
+                     JSON.stringify(value).slice(0, 30);
+      paramParts.push(valStr);
+    }
+    paramsStr = `(${paramParts.join(', ')})`;
+  }
+
+  // Duration
+  const durationStr = exec.duration !== undefined
+    ? style(` (${exec.duration}ms)`, 'dim')
+    : '';
+
+  // Result summary
+  const resultStr = exec.result
+    ? ` ${style(truncate(exec.result, 40), 'dim')}`
+    : '';
+
+  return `${style('⚡', 'cyan')} ${style(exec.name, 'bold')}${style(paramsStr, 'dim')} ${icon}${resultStr}${durationStr}`;
+}
+
+/**
+ * Compact tool permission prompt
+ * Format: Allow tool_name? [Y/n/always]
+ */
+export function formatToolPermission(toolName: string, params?: Record<string, unknown>): string {
+  const paramHint = params && Object.keys(params).length > 0
+    ? style(` with ${Object.keys(params).join(', ')}`, 'dim')
+    : '';
+
+  return `${style('?', 'yellow')} Allow ${style(toolName, 'cyan', 'bold')}${paramHint}? ${style('[Y/n/always]', 'dim')} `;
+}
+
+// ============================================================================
+// Streaming Output (v7.6 - Token-by-token rendering)
+// ============================================================================
+
+/**
+ * Stream text token by token with optional syntax highlighting
+ */
+export class StreamingOutput {
+  private buffer: string = '';
+  private inCodeBlock: boolean = false;
+  private codeLanguage: string = '';
+  private lineBuffer: string = '';
+
+  /**
+   * Write a token to output with streaming effect
+   */
+  write(token: string): void {
+    this.buffer += token;
+    this.lineBuffer += token;
+
+    // Check for code block start/end
+    if (this.lineBuffer.includes('```')) {
+      const match = this.lineBuffer.match(/```(\w+)?/);
+      if (match && !this.inCodeBlock) {
+        this.inCodeBlock = true;
+        this.codeLanguage = match[1] || '';
+        // Print code block header
+        process.stdout.write(style(`\n[${this.codeLanguage || 'code'}]\n`, 'dim'));
+        this.lineBuffer = this.lineBuffer.replace(/```\w*/, '');
+      } else if (this.inCodeBlock) {
+        this.inCodeBlock = false;
+        this.codeLanguage = '';
+        this.lineBuffer = this.lineBuffer.replace(/```/, '');
+        process.stdout.write('\n');
+      }
+    }
+
+    // Write token with appropriate styling
+    if (this.inCodeBlock) {
+      process.stdout.write(style(token, 'cyan'));
+    } else {
+      // Apply inline code highlighting
+      const formatted = token.replace(/`([^`]+)`/g, (_, code) => style(code, 'cyan'));
+      process.stdout.write(formatted);
+    }
+  }
+
+  /**
+   * Write a complete line (for non-streaming fallback)
+   */
+  writeLine(line: string): void {
+    console.log(formatMarkdown(line));
+  }
+
+  /**
+   * Flush buffer and reset
+   */
+  flush(): void {
+    this.buffer = '';
+    this.lineBuffer = '';
+    this.inCodeBlock = false;
+    this.codeLanguage = '';
+    console.log(); // Ensure newline at end
+  }
+
+  /**
+   * Get full buffered content
+   */
+  getBuffer(): string {
+    return this.buffer;
+  }
+}
+
+// ============================================================================
+// Tool Execution Summary (v7.6)
+// ============================================================================
+
+export interface ToolSummary {
+  total: number;
+  successful: number;
+  failed: number;
+  totalDuration: number;
+}
+
+/**
+ * Format a summary of tool executions
+ */
+export function formatToolSummary(summary: ToolSummary): string {
+  const successRate = summary.total > 0
+    ? Math.round((summary.successful / summary.total) * 100)
+    : 0;
+
+  const parts = [
+    style(`${summary.total} tools`, 'bold'),
+    style(`${summary.successful}✓`, 'green'),
+  ];
+
+  if (summary.failed > 0) {
+    parts.push(style(`${summary.failed}✗`, 'red'));
+  }
+
+  parts.push(style(`${summary.totalDuration}ms`, 'dim'));
+
+  return parts.join(' ');
+}
+
+// ============================================================================
 // Extended Thinking Visualization (v7.4.4)
 // ============================================================================
 

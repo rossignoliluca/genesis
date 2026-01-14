@@ -148,6 +148,28 @@ const TOOL_ALIASES: Record<string, string> = {
   'goto': 'browser_navigate',
   'screenshot': 'browser_take_screenshot',
 
+  // v7.15.10: AWS aliases
+  'aws': 'cloud_servers',
+  'AWS': 'cloud_servers',
+  'aws.ec2': 'cloud_servers',
+  'aws.s3': 'cloud_storage',
+  'aws.listInstances': 'cloud_servers',
+  'aws.databases': 'databases',
+  'aws.lambda': 'serverless_functions',
+  'aws.logs': 'logs_and_metrics',
+  'aws.costs': 'cost_optimizer',
+  'aws.security': 'security_scanner',
+  'ec2': 'cloud_servers',
+  's3': 'cloud_storage',
+  'rds': 'databases',
+
+  // v7.15.10: Postgres aliases
+  'postgres': 'query',
+  'Postgres': 'query',
+  'postgres.query': 'query',
+  'sql': 'query',
+  'pg': 'query',
+
   // v7.15.9: Sentry aliases
   'sentry': 'sentry_find_organizations',
   'Sentry': 'sentry_find_organizations',
@@ -537,6 +559,32 @@ const MCP_TOOL_MAP: Record<string, MCPServerName> = {
   'browser_drag': 'playwright',
   'browser_install': 'playwright',
   'browser_run_code': 'playwright',
+
+  // v7.15.10: AWS MCP tools
+  'cloud_servers': 'aws',
+  'cloud_storage': 'aws',
+  'logs_and_metrics': 'aws',
+  'ai_assistant': 'aws',
+  'databases': 'aws',
+  'serverless_functions': 'aws',
+  'security_permissions': 'aws',
+  'network_manager': 'aws',
+  'cost_optimizer': 'aws',
+  'security_scanner': 'aws',
+  'multi_region': 'aws',
+  'workflow': 'aws',
+  'runbook': 'aws',
+  'route53': 'aws',
+  'secrets_manager': 'aws',
+  'cloudfront': 'aws',
+  'remote_commands': 'aws',
+  'scheduled_ops': 'aws',
+  'auto_remediation': 'aws',
+  'slack_webhook': 'aws',
+  'teams_webhook': 'aws',
+
+  // v7.15.10: Postgres MCP tools
+  'query': 'postgres',
 
   // v7.15.9: Monitoring - Sentry (using sentry_ prefix to avoid GitHub conflicts)
   'sentry_find_organizations': 'sentry',

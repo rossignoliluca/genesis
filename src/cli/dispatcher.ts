@@ -243,6 +243,22 @@ const TOOL_ALIASES: Record<string, string> = {
   'github_list_issues': 'list_issues',
   'github_create_pull_request': 'create_pull_request',
 
+  // v7.15.6: GitHub dot-separated patterns
+  'github.search_repositories': 'search_repositories',
+  'github.searchRepositories': 'search_repositories',
+  'github.list_issues': 'list_issues',
+  'github.listIssues': 'list_issues',
+  'github.create_issue': 'create_issue',
+  'github.createIssue': 'create_issue',
+  'github.get_issue': 'get_issue',
+  'github.getIssue': 'get_issue',
+  'github.create_pull_request': 'create_pull_request',
+  'github.createPullRequest': 'create_pull_request',
+  'github.list_pull_requests': 'list_pull_requests',
+  'github.listPullRequests': 'list_pull_requests',
+  'github.get_file_contents': 'get_file_contents',
+  'github.getFileContents': 'get_file_contents',
+
   // Meta-commands (handled specially)
   'mcp_list_tools': '_meta_list_tools',
   'list_tools': '_meta_list_tools',

@@ -523,9 +523,14 @@ export class ChatSession {
           }
 
           // Feed results back to LLM for continued response
+          // v7.16: Enhanced prompt with anti-confabulation instructions
           this.spinner.start('Processing results');
+          const hasErrors = dispatchResult.results.some(r => !r.success);
+          const errorInstruction = hasErrors
+            ? '\n\nIMPORTANT: Some tools failed. You MUST report these failures to the user. Do NOT fabricate results for failed tools.'
+            : '';
           const followUp = await this.llm.chat(
-            `Tool execution results:\n${toolResults}\n\nPlease provide a final response based on these results.`
+            `Tool execution results:\n${toolResults}${errorInstruction}\n\nPlease provide a final response based on these results.`
           );
 
           this.spinner.stop();
@@ -558,16 +563,29 @@ export class ChatSession {
 
   /**
    * Format tool results for LLM consumption
+   * v7.16: Enhanced error formatting to prevent confabulation
    */
   private formatToolResults(results: ToolResult[]): string {
-    return results.map(r => {
+    const formatted = results.map(r => {
       if (r.success) {
         const data = typeof r.data === 'string' ? r.data : JSON.stringify(r.data, null, 2);
         return `[${r.name}] SUCCESS:\n${data}`;
       } else {
-        return `[${r.name}] ERROR: ${r.error}`;
+        // CRITICAL: Make errors unmistakably clear to prevent confabulation
+        return `[${r.name}] ⚠️ TOOL FAILED ⚠️
+ERROR: ${r.error}
+INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess what the result might have been.`;
       }
     }).join('\n\n');
+
+    // Add summary of failures if any
+    const failures = results.filter(r => !r.success);
+    if (failures.length > 0) {
+      const failureSummary = `\n\n---\n⚠️ ${failures.length} TOOL(S) FAILED: ${failures.map(f => f.name).join(', ')}\nYou MUST acknowledge these failures in your response. Do NOT invent outputs for failed tools.`;
+      return formatted + failureSummary;
+    }
+
+    return formatted;
   }
 
   /**

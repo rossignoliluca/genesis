@@ -1015,6 +1015,7 @@ export class ToolDispatcher {
 
   /**
    * Format results for LLM context
+   * v7.16: Enhanced with anti-confabulation markers for failed tools
    */
   formatResultsForLLM(results: ToolResult[]): string {
     const lines: string[] = ['<tool_results>'];
@@ -1028,10 +1029,22 @@ export class ToolDispatcher {
           : JSON.stringify(result.data, null, 2);
         lines.push(data);
       } else {
+        // CRITICAL: Explicit failure marker to prevent confabulation
+        lines.push(`⚠️ TOOL EXECUTION FAILED ⚠️`);
         lines.push(`Error: ${result.error}`);
+        lines.push(`INSTRUCTION: Report this error to the user. Do NOT fabricate output.`);
       }
 
       lines.push('</result>');
+    }
+
+    // Add failure summary if any tools failed
+    const failures = results.filter(r => !r.success);
+    if (failures.length > 0) {
+      lines.push(`<failures count="${failures.length}">`);
+      lines.push(`Tools that failed: ${failures.map(f => f.name).join(', ')}`);
+      lines.push(`You MUST acknowledge these failures. Do NOT invent results.`);
+      lines.push(`</failures>`);
     }
 
     lines.push('</tool_results>');

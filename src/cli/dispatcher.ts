@@ -146,6 +146,60 @@ const TOOL_ALIASES: Record<string, string> = {
   // Generic MCP (can't route - mark as invalid)
   'mcp': '_invalid_generic_mcp',
   'tool': '_invalid_generic_tool',
+
+  // ============================================================================
+  // v7.15.2: Compound name aliases (LLM generates server_tool patterns)
+  // ============================================================================
+
+  // Compound filesystem aliases
+  'filesystem_list_directory': 'list_directory',
+  'filesystem_read_file': 'read_file',
+  'filesystem_write_file': 'write_file',
+  'filesystem_create_directory': 'create_directory',
+  'filesystem_directory_tree': 'directory_tree',
+  'filesystem_get_file_info': 'get_file_info',
+  'filesystem_search_files': 'search_files',
+  'filesystem_move_file': 'move_file',
+  'filesystem_edit_file': 'edit_file',
+  'filesystem_list_allowed_directories': 'list_allowed_directories',
+
+  // Compound memory/knowledge_graph aliases
+  'knowledge_graph_read_graph': 'read_graph',
+  'knowledge_graph_create_entities': 'create_entities',
+  'knowledge_graph_create_relations': 'create_relations',
+  'knowledge_graph_add_observations': 'add_observations',
+  'knowledge_graph_search_nodes': 'search_nodes',
+  'knowledge_graph_open_nodes': 'open_nodes',
+  'knowledge_graph_delete_entities': 'delete_entities',
+  'knowledge_graph_delete_relations': 'delete_relations',
+  'memory_read_graph': 'read_graph',
+  'memory_create_entities': 'create_entities',
+  'memory_create_relations': 'create_relations',
+  'memory_search_nodes': 'search_nodes',
+
+  // Compound brave search aliases
+  'brave_search_web_search': 'brave_web_search',
+  'brave_search_news_search': 'brave_news_search',
+  'brave_search_image_search': 'brave_image_search',
+  'brave_search_local_search': 'brave_local_search',
+
+  // Compound arxiv aliases
+  'arxiv_search': 'search_arxiv',
+  'arxiv_search_arxiv': 'search_arxiv',
+  'arxiv_parse_paper': 'parse_paper_content',
+  'arxiv_get_pdf': 'get_arxiv_pdf_url',
+
+  // Compound github aliases
+  'github_search_repositories': 'search_repositories',
+  'github_create_issue': 'create_issue',
+  'github_list_issues': 'list_issues',
+  'github_create_pull_request': 'create_pull_request',
+
+  // Meta-commands (handled specially)
+  'mcp_list_tools': '_meta_list_tools',
+  'list_tools': '_meta_list_tools',
+  'available_tools': '_meta_list_tools',
+  'get_tools': '_meta_list_tools',
 };
 
 /**
@@ -719,7 +773,7 @@ export class ToolDispatcher {
    */
   private routeTool(name: string): { source: 'local' | 'mcp'; mcpServer?: MCPServerName } {
     // Handle special pseudo-tools
-    if (name === '_local_time') {
+    if (name === '_local_time' || name === '_meta_list_tools') {
       return { source: 'local' };
     }
 
@@ -909,6 +963,29 @@ export class ToolDispatcher {
         unix: Math.floor(now.getTime() / 1000),
         formatted: now.toLocaleString(),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
+    }
+
+    // Meta-command: list all available tools
+    if (call.name === '_meta_list_tools') {
+      const localTools = LOCAL_TOOLS.map(name => ({
+        name,
+        source: 'local',
+        description: `Local tool: ${name}`,
+      }));
+
+      const mcpTools = Object.entries(MCP_TOOL_MAP).map(([tool, server]) => ({
+        name: tool,
+        source: 'mcp',
+        server,
+        description: STATIC_TOOL_SCHEMAS[tool]?.description || `MCP tool on ${server}`,
+      }));
+
+      return {
+        total: localTools.length + mcpTools.length,
+        local: localTools,
+        mcp: mcpTools,
+        aliases: Object.keys(TOOL_ALIASES).length,
       };
     }
 

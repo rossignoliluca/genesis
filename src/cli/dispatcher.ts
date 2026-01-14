@@ -110,6 +110,25 @@ const TOOL_ALIASES: Record<string, string> = {
   'academic_search': 'search_arxiv',
   'scholar': 'search_semantic_scholar',
 
+  // v7.15.7: Exa aliases
+  'exa': 'web_search_exa',
+  'exa_search': 'web_search_exa',
+  'exa.search': 'web_search_exa',
+  'exa.web_search': 'web_search_exa',
+  'exa.webSearch': 'web_search_exa',
+  'exa_web_search': 'web_search_exa',
+  'exa.code': 'get_code_context_exa',
+  'exa.get_code_context': 'get_code_context_exa',
+  'exa_code': 'get_code_context_exa',
+
+  // v7.15.7: Gemini aliases
+  'gemini': 'web_search',
+  'gemini_search': 'web_search',
+  'gemini.search': 'web_search',
+  'gemini.web_search': 'web_search',
+  'gemini.webSearch': 'web_search',
+  'gemini_web_search': 'web_search',
+
   // Memory/knowledge graph aliases
   'memory': 'read_graph',
   'kg': 'read_graph',

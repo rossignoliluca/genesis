@@ -95,6 +95,7 @@ import {
   getThinkingEngine,
   ThinkingConfig,
   ThinkingResult,
+  LIGHTWEIGHT_THINKING_CONFIG,
 } from '../thinking/index.js';
 
 // v7.13: Full Module Integration
@@ -182,13 +183,23 @@ export class Brain {
     this.grounding = getGroundingSystem();
 
     // v7.6: Initialize extended thinking
-    this.thinking = getThinkingEngine({
-      enableExtendedThinking: true,
-      enableSelfCritique: true,
-      enableMetacognition: true,
-      enableDeliberativeAlignment: true,
-      thinkingBudget: 4096,
-    });
+    // Auto-detect slow local LLM (Ollama) and use lightweight config
+    const llmStatus = this.llm.status();
+    const isSlowLocalLLM = llmStatus.isLocal || llmStatus.provider === 'ollama';
+
+    if (isSlowLocalLLM) {
+      // Use lightweight config for Ollama (2 LLM calls vs 8+)
+      this.thinking = getThinkingEngine(LIGHTWEIGHT_THINKING_CONFIG);
+    } else {
+      // Full thinking for fast cloud LLMs
+      this.thinking = getThinkingEngine({
+        enableExtendedThinking: true,
+        enableSelfCritique: true,
+        enableMetacognition: true,
+        enableDeliberativeAlignment: true,
+        thinkingBudget: 4096,
+      });
+    }
 
     // v7.13: Initialize full module integration (lazy - on first use)
     this.initializeV713Modules();

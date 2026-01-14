@@ -270,7 +270,7 @@ export const DEFAULT_BRAIN_CONFIG: BrainConfig = {
     phiThreshold: 0.1,
     broadcastEnabled: true,
   },
-  maxCycleTime: 300000,             // 5 minutes (MCP cold starts can be slow)
+  maxCycleTime: 600000,             // 10 minutes (Ollama + complex thinking needs time)
   maxModuleTransitions: 20,
 };
 

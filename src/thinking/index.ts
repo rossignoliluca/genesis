@@ -929,6 +929,34 @@ export const DEFAULT_THINKING_CONFIG: ThinkingConfig = {
   crmConfig: DEFAULT_CRM_CONFIG,
 };
 
+/**
+ * Lightweight thinking config for slow local LLMs (Ollama)
+ * Reduces LLM calls from 8+ to 2 by disabling expensive features
+ */
+export const LIGHTWEIGHT_THINKING_CONFIG: ThinkingConfig = {
+  ...DEFAULT_THINKING_CONFIG,
+
+  // Keep only essential thinking (1 LLM call)
+  enableExtendedThinking: true,
+  thinkingBudget: 2048,  // Reduced for faster response
+
+  // Disable expensive multi-call features
+  enableSelfCritique: false,       // Saves 2-4 LLM calls
+  enableMetacognition: false,      // Saves 1 LLM call
+  enableDeliberativeAlignment: false, // Saves 1 LLM call
+  enableBestOfN: false,            // Already off, but explicit
+
+  // Keep trace compression (saves tokens)
+  enableTraceCompression: true,
+
+  // All advanced features off
+  enableTreeOfThought: false,
+  enableGraphOfThought: false,
+  enableSuperCorrect: false,
+  enableMathShepherd: false,
+  enableCRM: false,
+};
+
 export interface ThinkingStep {
   type: 'think' | 'critique' | 'revise' | 'verify' | 'align';
   content: string;

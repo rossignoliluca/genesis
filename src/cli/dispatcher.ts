@@ -110,6 +110,28 @@ const TOOL_ALIASES: Record<string, string> = {
   'academic_search': 'search_arxiv',
   'scholar': 'search_semantic_scholar',
 
+  // v7.15.8: Semantic Scholar aliases
+  'semantic-scholar': 'search_semantic_scholar',
+  'semantic_scholar': 'search_semantic_scholar',
+  'semanticScholar': 'search_semantic_scholar',
+  'semantic-scholar.search': 'search_semantic_scholar',
+  'semantic-scholar.searchPapers': 'search_semantic_scholar',
+  'semantic_scholar_search': 'search_semantic_scholar',
+  'semanticScholar.search': 'search_semantic_scholar',
+  'semantic-scholar.getPaper': 'get_semantic_scholar_paper',
+  'semantic-scholar.citations': 'get_paper_citations',
+
+  // v7.15.8: Context7 aliases
+  'context7': 'resolve-library-id',
+  'Context7': 'resolve-library-id',
+  'context7.resolve': 'resolve-library-id',
+  'context7.resolveLibrary': 'resolve-library-id',
+  'context7.query': 'query-docs',
+  'context7.queryDocs': 'query-docs',
+  'context7.getDocs': 'query-docs',
+  'context7_resolve': 'resolve-library-id',
+  'context7_query': 'query-docs',
+
   // v7.15.7: Exa aliases
   'exa': 'web_search_exa',
   'exa_search': 'web_search_exa',

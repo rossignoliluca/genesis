@@ -298,6 +298,27 @@ export function estimateTokens(text: string): number {
 }
 
 /**
+ * Detect available cloud provider (no vendor preference)
+ */
+export function detectCloudProvider(): LLMProvider {
+  const hasOpenAI = !!process.env.OPENAI_API_KEY;
+  const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
+
+  if (hasOpenAI && hasAnthropic) {
+    // Use GENESIS_CLOUD_PROVIDER preference if set
+    const preferred = process.env.GENESIS_CLOUD_PROVIDER?.toLowerCase();
+    if (preferred === 'openai') return 'openai';
+    if (preferred === 'anthropic') return 'anthropic';
+    // No preference set: default alphabetically (a before o)
+    return 'anthropic';
+  }
+
+  if (hasAnthropic) return 'anthropic';
+  if (hasOpenAI) return 'openai';
+  return 'ollama'; // Fallback to local
+}
+
+/**
  * Estimate cost for cloud provider
  */
 export function estimateCost(
@@ -375,13 +396,14 @@ export class HybridRouter {
 
     // Force cloud if configured
     if (this.config.forceCloud) {
+      const cloudProvider = detectCloudProvider();
       return {
-        provider: process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'openai',
+        provider: cloudProvider,
         reason: 'Force cloud mode enabled',
         complexity,
         confidence: 1,
         estimatedTokens,
-        estimatedCost: estimateCost(estimatedTokens, estimatedOutputTokens, 'anthropic'),
+        estimatedCost: estimateCost(estimatedTokens, estimatedOutputTokens, cloudProvider),
         tryLocalFirst: false,
       };
     }
@@ -409,13 +431,14 @@ export class HybridRouter {
 
     // Token limit check for local
     if (estimatedTokens > this.config.localMaxTokens) {
+      const cloudProvider = detectCloudProvider();
       return {
-        provider: process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'openai',
+        provider: cloudProvider,
         reason: `Token count (${estimatedTokens}) exceeds local limit (${this.config.localMaxTokens})`,
         complexity,
         confidence,
         estimatedTokens,
-        estimatedCost: estimateCost(estimatedTokens, estimatedOutputTokens, 'anthropic'),
+        estimatedCost: estimateCost(estimatedTokens, estimatedOutputTokens, cloudProvider),
         tryLocalFirst: false,
       };
     }
@@ -433,13 +456,14 @@ export class HybridRouter {
       };
     }
 
+    const cloudProvider = detectCloudProvider();
     return {
-      provider: process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'openai',
+      provider: cloudProvider,
       reason: 'Ollama not available, using cloud',
       complexity,
       confidence,
       estimatedTokens,
-      estimatedCost: estimateCost(estimatedTokens, estimatedOutputTokens, 'anthropic'),
+      estimatedCost: estimateCost(estimatedTokens, estimatedOutputTokens, cloudProvider),
       tryLocalFirst: false,
     };
   }
@@ -468,11 +492,11 @@ export class HybridRouter {
           response.latency,
           this.stats.localRequests
         );
-        // Calculate savings vs cloud
+        // Calculate savings vs cloud (use detected cloud provider for accurate estimate)
         const cloudCost = estimateCost(
           response.usage?.inputTokens || 0,
           response.usage?.outputTokens || 0,
-          'anthropic'
+          detectCloudProvider()
         );
         this.stats.estimatedSavings += cloudCost;
       } else {
@@ -492,7 +516,7 @@ export class HybridRouter {
         console.log('[Router] Local failed, falling back to cloud...');
         this.stats.fallbacks++;
 
-        const fallbackProvider: LLMProvider = process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'openai';
+        const fallbackProvider = detectCloudProvider();
         const bridge = this.getBridge(fallbackProvider);
         const response = await bridge.chat(prompt, systemPrompt);
 
@@ -623,7 +647,7 @@ export async function cloudChat(
   prompt: string,
   systemPrompt?: string
 ): Promise<LLMResponse> {
-  const provider: LLMProvider = process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'openai';
+  const provider = detectCloudProvider();
   const bridge = new LLMBridge({ provider });
   return bridge.chat(prompt, systemPrompt);
 }

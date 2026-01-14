@@ -216,10 +216,24 @@ export class LLMBridge {
   }
 
   private detectProvider(): LLMProvider {
-    // Priority: Ollama (free) > Anthropic > OpenAI
+    // Priority: Ollama (free, local) > first available cloud provider
     if (process.env.OLLAMA_HOST || process.env.USE_OLLAMA === 'true') return 'ollama';
-    if (process.env.ANTHROPIC_API_KEY) return 'anthropic';
-    if (process.env.OPENAI_API_KEY) return 'openai';
+
+    // Cloud: use whichever key is available (no vendor preference)
+    const hasOpenAI = !!process.env.OPENAI_API_KEY;
+    const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
+
+    // If both available, check GENESIS_CLOUD_PROVIDER preference
+    if (hasOpenAI && hasAnthropic) {
+      const preferred = process.env.GENESIS_CLOUD_PROVIDER?.toLowerCase();
+      if (preferred === 'openai') return 'openai';
+      if (preferred === 'anthropic') return 'anthropic';
+      // Default: alphabetical order (no bias)
+      return 'anthropic';
+    }
+
+    if (hasAnthropic) return 'anthropic';
+    if (hasOpenAI) return 'openai';
     return 'ollama'; // Default to local (free)
   }
 

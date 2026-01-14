@@ -101,6 +101,8 @@ const TOOL_ALIASES: Record<string, string> = {
   'websearch': 'brave_web_search',
   'google': 'brave_web_search',
   'bing': 'brave_web_search',
+  'brave-search': 'brave_web_search',  // Server name -> tool name
+  'brave': 'brave_web_search',
 
   // Academic search aliases
   'arxiv': 'search_arxiv',
@@ -120,6 +122,12 @@ const TOOL_ALIASES: Record<string, string> = {
   'gh': 'search_repositories',
   'repo': 'search_repositories',
   'repositories': 'search_repositories',
+
+  // Stability AI aliases (server name -> default tool)
+  'stability-ai': 'stability-ai-generate-image',
+  'stability': 'stability-ai-generate-image',
+  'image': 'stability-ai-generate-image',
+  'generate-image': 'stability-ai-generate-image',
 
   // Generic MCP (can't route - mark as invalid)
   'mcp': '_invalid_generic_mcp',

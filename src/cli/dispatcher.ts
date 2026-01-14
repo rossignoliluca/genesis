@@ -204,6 +204,27 @@ const TOOL_ALIASES: Record<string, string> = {
   'create_relation': 'create_relations',
   'add_observation': 'add_observations',
 
+  // v7.15.5: CamelCase dot-separated patterns
+  'knowledgeGraph.readEntities': 'read_graph',
+  'knowledgeGraph.createEntities': 'create_entities',
+  'knowledgeGraph.createRelations': 'create_relations',
+  'knowledgeGraph.addObservations': 'add_observations',
+  'knowledgeGraph.searchNodes': 'search_nodes',
+  'knowledgeGraph.readGraph': 'read_graph',
+  'knowledgeGraph.getEntities': 'read_graph',
+  'knowledgeGraph.listEntities': 'read_graph',
+  'knowledgeGraph.addEntity': 'create_entities',
+  'fileSystem.listDirectory': 'list_directory',
+  'fileSystem.readFile': 'read_file',
+  'fileSystem.writeFile': 'write_file',
+  'fileSystem.createDirectory': 'create_directory',
+
+  // read_entities / get_graph variants
+  'read_entities': 'read_graph',
+  'get_entities': 'read_graph',
+  'list_entities': 'read_graph',
+  'get_graph': 'read_graph',
+
   // Compound brave search aliases
   'brave_search_web_search': 'brave_web_search',
   'brave_search_news_search': 'brave_news_search',

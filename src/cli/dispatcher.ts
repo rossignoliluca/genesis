@@ -879,6 +879,11 @@ export class ToolDispatcher {
   private validateCall(call: ToolCall): { valid: boolean; reason?: string } {
     // Check if tool exists
     if (call.source === 'local') {
+      // Allow pseudo-tools (handled directly in executeLocalTool)
+      if (call.name === '_local_time' || call.name === '_meta_list_tools') {
+        return { valid: true };
+      }
+
       const tool = toolRegistry.get(call.name);
       if (!tool) {
         return { valid: false, reason: `Unknown tool: ${call.name}` };

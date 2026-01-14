@@ -129,6 +129,20 @@ const TOOL_ALIASES: Record<string, string> = {
   'image': 'stability-ai-generate-image',
   'generate-image': 'stability-ai-generate-image',
 
+  // Shell/Bash aliases (local execution)
+  'shell': 'bash',
+  'exec': 'bash',
+  'run': 'bash',
+  'terminal': 'bash',
+  'cmd': 'bash',
+  'command': 'bash',
+
+  // Time alias (no MCP server - use local)
+  'time': '_local_time',  // Special marker for local time handling
+  'datetime': '_local_time',
+  'date': '_local_time',
+  'now': '_local_time',
+
   // Generic MCP (can't route - mark as invalid)
   'mcp': '_invalid_generic_mcp',
   'tool': '_invalid_generic_tool',
@@ -704,6 +718,11 @@ export class ToolDispatcher {
    * Route tool to local or MCP
    */
   private routeTool(name: string): { source: 'local' | 'mcp'; mcpServer?: MCPServerName } {
+    // Handle special pseudo-tools
+    if (name === '_local_time') {
+      return { source: 'local' };
+    }
+
     // Check local tools first
     if (LOCAL_TOOLS.includes(name) || toolRegistry.has(name)) {
       return { source: 'local' };
@@ -882,6 +901,17 @@ export class ToolDispatcher {
    * Execute local tool
    */
   private async executeLocalTool(call: ToolCall): Promise<unknown> {
+    // Special handling for built-in pseudo-tools
+    if (call.name === '_local_time') {
+      const now = new Date();
+      return {
+        timestamp: now.toISOString(),
+        unix: Math.floor(now.getTime() / 1000),
+        formatted: now.toLocaleString(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
+    }
+
     const tool = toolRegistry.get(call.name);
     if (!tool) {
       throw new Error(`Tool not found: ${call.name}`);

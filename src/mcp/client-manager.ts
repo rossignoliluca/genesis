@@ -177,6 +177,7 @@ const BUILTIN_SERVERS: Record<string, Omit<MCPServerConfig, 'name'>> = {
     transport: 'stdio',
     command: 'npx',
     args: ['-y', '@brave/brave-search-mcp-server'],
+    // Note: BRAVE_API_KEY is passed via environment, server reads it automatically
     requiredEnv: ['BRAVE_API_KEY'],
     description: 'Brave web search',
     enabled: true,

@@ -177,6 +177,33 @@ const TOOL_ALIASES: Record<string, string> = {
   'memory_create_relations': 'create_relations',
   'memory_search_nodes': 'search_nodes',
 
+  // v7.15.4: Dot-separated patterns (LLM generates server.tool format)
+  'memory.read_graph': 'read_graph',
+  'memory.create_entities': 'create_entities',
+  'memory.create_relations': 'create_relations',
+  'memory.add_observations': 'add_observations',
+  'memory.search_nodes': 'search_nodes',
+  'memory.open_nodes': 'open_nodes',
+  'memory.delete_entities': 'delete_entities',
+  'memory.add_entity': 'create_entities',
+  'memory.add_entities': 'create_entities',
+  'filesystem.list_directory': 'list_directory',
+  'filesystem.read_file': 'read_file',
+  'filesystem.write_file': 'write_file',
+  'filesystem.create_directory': 'create_directory',
+  'filesystem.directory_tree': 'directory_tree',
+  'filesystem.get_file_info': 'get_file_info',
+  'filesystem.search_files': 'search_files',
+
+  // Alternative verb forms
+  'add_entity': 'create_entities',
+  'add_entities': 'create_entities',
+  'create_entity': 'create_entities',
+  'add_relation': 'create_relations',
+  'add_relations': 'create_relations',
+  'create_relation': 'create_relations',
+  'add_observation': 'add_observations',
+
   // Compound brave search aliases
   'brave_search_web_search': 'brave_web_search',
   'brave_search_news_search': 'brave_news_search',

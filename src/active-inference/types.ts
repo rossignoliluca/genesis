@@ -248,7 +248,7 @@ export interface ActiveInferenceConfig {
 }
 
 export const DEFAULT_CONFIG: ActiveInferenceConfig = {
-  inferenceIterations: 16,
+  inferenceIterations: 24, // Self-improved: +50% iterations for accuracy
   policyHorizon: 3,
   actionTemperature: 1.0,
   priorWeight: 0.1,

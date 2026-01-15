@@ -89,7 +89,7 @@ export interface ResilientConfig {
 
 const DEFAULT_CONFIG: ResilientConfig = {
   defaultTimeout: 30000,
-  defaultMaxRetries: 2,
+  defaultMaxRetries: 3, // Improved by self-improvement cycle
   circuitBreakerThreshold: 5,
   circuitBreakerResetTime: 60000,
   logCalls: false,

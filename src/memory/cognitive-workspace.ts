@@ -129,7 +129,7 @@ export const DEFAULT_WORKSPACE_CONFIG: CognitiveWorkspaceConfig = {
   decayRate: 0.01,
   boostOnAccess: 0.3,
   minActivation: 0.1,
-  anticipationDepth: 5,
+  anticipationDepth: 7, // Self-improved: better context pre-loading
   associationStrength: 0.3,
   curationInterval: 5000,
   autoCurate: true,

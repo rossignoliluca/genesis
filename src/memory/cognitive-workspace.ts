@@ -126,7 +126,7 @@ export interface CognitiveWorkspaceConfig {
 export const DEFAULT_WORKSPACE_CONFIG: CognitiveWorkspaceConfig = {
   maxItems: 7,
   maxTokens: 8192,
-  decayRate: 0.01,
+  decayRate: 0.005, // Self-improved: slower decay for persistence
   boostOnAccess: 0.3,
   minActivation: 0.1,
   anticipationDepth: 7, // Self-improved: better context pre-loading

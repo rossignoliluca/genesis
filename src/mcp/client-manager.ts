@@ -242,6 +242,31 @@ const BUILTIN_SERVERS: Record<string, Omit<MCPServerConfig, 'name'>> = {
     description: 'Local filesystem access',
     enabled: true,
   },
+
+  // v7.15.10: Infrastructure servers
+  'playwright': {
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@playwright/mcp@latest'],
+    description: 'Browser automation with Playwright',
+    enabled: true,
+  },
+  'aws': {
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'awslabs-mcp'],
+    requiredEnv: ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'],
+    description: 'AWS cloud infrastructure management',
+    enabled: true,
+  },
+  'postgres': {
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-postgres'],
+    requiredEnv: ['DATABASE_URL', 'POSTGRES_URL'],
+    description: 'PostgreSQL database queries',
+    enabled: true,
+  },
 };
 
 // ============================================================================

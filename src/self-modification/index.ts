@@ -21,6 +21,19 @@ export {
   DarwinGodelConfig,
 } from './darwin-godel.js';
 
+// v7.17: Self-Improvement Cycle
+export {
+  SelfImprovementEngine,
+  getSelfImprovementEngine,
+  resetSelfImprovementEngine,
+  createSelfImprovementEngine,
+  SystemMetrics,
+  ImprovementOpportunity,
+  ImprovementResult,
+  SelfImprovementConfig,
+  DEFAULT_IMPROVEMENT_CONFIG,
+} from './self-improvement.js';
+
 // Re-export invariant types for convenience
 export {
   invariantRegistry,

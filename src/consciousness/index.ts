@@ -44,6 +44,26 @@ export { AttentionSchemaNetwork, createAttentionSchemaNetwork, type ASTConfig } 
 export { PhiMonitor, createPhiMonitor, type PhiMonitorConfig } from './phi-monitor.js';
 export { PhiDecisionMaker, createPhiDecisionMaker, createDecisionOption, type PhiDecisionConfig, type DecisionOption, type Decision } from './phi-decisions.js';
 
+// v7.16.0: Integrated conscious agent
+export {
+  PerceptionStream,
+  createPerceptionStream,
+  type Perception,
+  type PerceptionCategory,
+  type PerceptionStreamConfig,
+} from './perception-stream.js';
+
+export {
+  ConsciousAgent,
+  createConsciousAgent,
+  getConsciousAgent,
+  initializeConsciousAgent,
+  resetConsciousAgent,
+  type ActionCandidate,
+  type ActionResult,
+  type ConsciousAgentConfig,
+} from './conscious-agent.js';
+
 import {
   ConsciousnessConfig,
   ConsciousnessSnapshot,

@@ -267,6 +267,26 @@ const BUILTIN_SERVERS: Record<string, Omit<MCPServerConfig, 'name'>> = {
     description: 'PostgreSQL database queries',
     enabled: true,
   },
+
+  // v7.16.0: Vector DB for semantic memory
+  'qdrant': {
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@iflow-mcp/qdrant-mcp-server'],
+    requiredEnv: ['QDRANT_URL'],
+    description: 'Qdrant vector database for semantic search',
+    enabled: true,
+  },
+
+  // v7.16.0: Sentry error monitoring (when available)
+  'sentry': {
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@sentry/mcp-server-sentry'],
+    requiredEnv: ['SENTRY_AUTH_TOKEN'],
+    description: 'Sentry error monitoring and observability',
+    enabled: false, // Disabled: npm package not available
+  },
 };
 
 // ============================================================================

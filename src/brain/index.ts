@@ -102,6 +102,7 @@ import {
 import {
   getAutonomousLoop,
   AutonomousLoop,
+  getObservationGatherer,
 } from '../active-inference/index.js';
 import {
   SubagentExecutor,
@@ -207,11 +208,32 @@ export class Brain {
 
   /**
    * v7.13: Initialize new module integrations
+   * v7.18: Connect real PhiMonitor and dispatcher for full integration
    */
   private initializeV713Modules(): void {
     try {
       // Active Inference - Free Energy minimization
       this.activeInference = getAutonomousLoop();
+
+      // v7.18: Configure observation gatherer with real system state
+      const observationGatherer = getObservationGatherer();
+      observationGatherer.configure({
+        phiState: () => {
+          const level = this.phiMonitor.getCurrentLevel();
+          // Map phi to PhiState: dormant < 0.2, drowsy < 0.4, aware < 0.7, alert >= 0.7
+          const state: 'dormant' | 'drowsy' | 'aware' | 'alert' =
+            level.phi >= 0.7 ? 'alert'
+            : level.phi >= 0.4 ? 'aware'
+            : level.phi >= 0.2 ? 'drowsy'
+            : 'dormant';
+          return { phi: level.phi, state };
+        },
+        kernelState: () => ({
+          energy: 1.0, // Brain doesn't track energy, default to full
+          state: this.running ? 'thinking' : 'idle',
+          taskStatus: 'pending' as const,
+        }),
+      });
     } catch {
       // Module may not be configured
     }
@@ -219,6 +241,8 @@ export class Brain {
     try {
       // Subagent Executor - specialized task delegation
       this.subagentExecutor = getSubagentExecutor();
+      // v7.18: Connect dispatcher for multi-turn tool execution
+      this.subagentExecutor.setDispatcher(this.dispatcher);
     } catch {
       // Module may not be configured
     }
@@ -865,8 +889,10 @@ export class Brain {
       const stats = this.activeInference.getStats();
 
       // Route based on action type from active inference
-      // ActionType includes: 'recall.memory', 'execute.task', 'execute.code', 'sense.mcp', etc.
-      if (actionType === 'recall.memory' || actionType === 'dream.cycle') {
+      // v7.18: Comprehensive routing for all action types
+
+      // Memory-related actions
+      if (actionType === 'recall.memory' || actionType === 'dream.cycle' || actionType === 'code.history') {
         // Trigger memory anticipation based on active inference predictions
         try {
           const anticipated = await this.workspace.anticipate({
@@ -893,11 +919,35 @@ export class Brain {
         };
       }
 
-      if (actionType === 'execute.task' || actionType === 'execute.code' || actionType === 'execute.shell') {
+      // Tool execution actions (MCP, web, deployment, etc.)
+      const toolActions = [
+        'execute.task', 'execute.code', 'execute.shell', 'execute.cycle', 'adapt.code',
+        'sense.mcp', 'web.search', 'web.scrape', 'web.browse',
+        'deploy.service', 'content.generate', 'api.call', 'github.deploy',
+      ];
+      if (toolActions.includes(actionType)) {
         return {
           goto: 'tools',
           update: { phi },
-          reason: 'active_inference_tool',
+          reason: `active_inference_tool:${actionType}`,
+        };
+      }
+
+      // Self-modification actions - route to darwin-godel
+      if (actionType === 'self.modify' || actionType === 'self.analyze' || actionType === 'code.snapshot' || actionType === 'code.diff') {
+        return {
+          goto: 'self-modify',
+          update: { phi },
+          reason: 'active_inference_self_modify',
+        };
+      }
+
+      // Rest actions - skip to response (energy conservation)
+      if (actionType === 'rest.idle' || actionType === 'recharge') {
+        return {
+          goto: 'llm',
+          update: { phi },
+          reason: 'active_inference_rest',
         };
       }
 

@@ -316,6 +316,10 @@ export class ActiveInferenceEngine {
   // Event handlers
   private eventHandlers: AIEventHandler[] = [];
 
+  // Self-improved: Track action counts for UCB exploration
+  private actionCounts: number[] = new Array(ACTION_COUNT).fill(1);
+  private totalActions: number = ACTION_COUNT;
+
   // Statistics
   private stats = {
     inferenceCount: 0,
@@ -428,9 +432,16 @@ export class ActiveInferenceEngine {
       efe[a] = this.computeEFE(a);
     }
 
-    // Convert to policy via softmax (lower EFE = higher probability)
-    const negEfe = efe.map(e => -e);
-    const policy = softmax(negEfe, this.config.actionTemperature);
+    // Convert to policy via softmax with exploration bonus (UCB-style)
+    // Self-improved: adds exploration term to prevent getting stuck
+    const explorationBonus = efe.map((_, a) => {
+      const count = this.actionCounts?.[a] ?? 1;
+      const total = this.totalActions ?? ACTION_COUNT;
+      return Math.sqrt(Math.log(total + 1) / count); // UCB term
+    });
+    const beta = 0.5; // Exploration weight
+    const augmentedEfe = efe.map((e, i) => -e + beta * explorationBonus[i]);
+    const policy = softmax(augmentedEfe, this.config.actionTemperature);
 
     this.emit({
       type: 'policy_inferred',
@@ -463,6 +474,10 @@ export class ActiveInferenceEngine {
     // Track statistics
     const count = this.stats.actionsTaken.get(action) || 0;
     this.stats.actionsTaken.set(action, count + 1);
+
+    // Self-improved: Update action counts for UCB exploration
+    this.actionCounts[selectedIdx]++;
+    this.totalActions++;
 
     this.emit({
       type: 'action_selected',

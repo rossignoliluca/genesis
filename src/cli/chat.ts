@@ -1212,7 +1212,9 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
     console.log('  /history       Show conversation history');
     console.log('  /status, /s    Show LLM status');
     console.log('  /verbose, /v   Toggle verbose mode');
-    console.log('  /system        Show system prompt');
+    console.log('  /system        Show/set custom system prompt');
+    console.log('  /system <text> Set custom system prompt injection');
+    console.log('  /system clear  Clear custom system prompt');
     console.log();
     console.log(c('Tools:', 'bold'));
     console.log('  /tools         Toggle MCP tool execution');

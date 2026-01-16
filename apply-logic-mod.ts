@@ -44,8 +44,10 @@ const LOGIC_MODIFICATION: ModificationPlan = {
     description: 'Add action counting fields to track exploration',
     targetFile: 'active-inference/core.ts',
     type: 'replace',
-    search: `  private eventHandlers: Set<AIEventHandler> = new Set();`,
-    content: `  private eventHandlers: Set<AIEventHandler> = new Set();
+    search: `  // Event handlers
+  private eventHandlers: AIEventHandler[] = [];`,
+    content: `  // Event handlers
+  private eventHandlers: AIEventHandler[] = [];
 
   // Self-improved: Track action counts for UCB exploration
   private actionCounts: number[] = new Array(ACTION_COUNT).fill(1);
@@ -54,27 +56,24 @@ const LOGIC_MODIFICATION: ModificationPlan = {
     expectedImprovement: 'Enables exploration bonus calculation',
   }, {
     id: 'update-action-counts',
-    description: 'Update action counts after execution',
+    description: 'Update action counts when action is selected',
     targetFile: 'active-inference/core.ts',
     type: 'replace',
     search: `    this.emit({
-      type: 'action_executed',
+      type: 'action_selected',
       timestamp: new Date(),
-      data: { action, success, result },
+      data: { action, probability: policy[selectedIdx] },
     });`,
-    content: `    // Self-improved: Update action counts for UCB
-    const actionIdx = ACTIONS.indexOf(action);
-    if (actionIdx >= 0) {
-      this.actionCounts[actionIdx]++;
-      this.totalActions++;
-    }
+    content: `    // Self-improved: Update action counts for UCB exploration
+    this.actionCounts[selectedIdx]++;
+    this.totalActions++;
 
     this.emit({
-      type: 'action_executed',
+      type: 'action_selected',
       timestamp: new Date(),
-      data: { action, success, result },
+      data: { action, probability: policy[selectedIdx] },
     });`,
-    reason: 'Track which actions are taken to inform exploration bonus',
+    reason: 'Track which actions are selected to inform exploration bonus',
     expectedImprovement: 'Accurate UCB calculation',
   }],
   createdAt: new Date(),

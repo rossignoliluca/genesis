@@ -16,6 +16,10 @@
  * - Cache: Intelligent per-server caching with TTL
  * - DAG Executor: Parallel execution with dependency awareness
  * - Transformers: Composable result transformations
+ *
+ * New in 7.18: Web Search Fallback Chain
+ * - brave-search → exa → gemini → firecrawl
+ * - Automatic tool name mapping between providers
  */
 
 // Re-export Phase 8: Resilient MCP Wrapper
@@ -235,6 +239,90 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
     tools: ['query'],
   },
 };
+
+// ============================================================================
+// v7.18 - Web Search Fallback Chain
+// ============================================================================
+
+/**
+ * Fallback chain for web search providers.
+ * When one fails (rate limit, API key missing, error), try the next.
+ */
+const WEB_SEARCH_FALLBACK_CHAIN: MCPServerName[] = ['brave-search', 'exa', 'gemini', 'firecrawl'];
+
+/**
+ * Tool name mapping between web search providers.
+ * Maps the original tool name to equivalent tool on fallback server.
+ */
+const WEB_SEARCH_TOOL_MAP: Record<string, Record<MCPServerName, string>> = {
+  'brave_web_search': {
+    'brave-search': 'brave_web_search',
+    'exa': 'web_search_exa',
+    'gemini': 'web_search',
+    'firecrawl': 'firecrawl_search',
+  } as Record<MCPServerName, string>,
+  'brave_news_search': {
+    'brave-search': 'brave_news_search',
+    'exa': 'web_search_exa', // Exa doesn't have news-specific, use general
+    'gemini': 'web_search',
+    'firecrawl': 'firecrawl_search',
+  } as Record<MCPServerName, string>,
+};
+
+/**
+ * Check if a server requires an API key and if it's configured.
+ */
+function isServerConfigured(server: MCPServerName): boolean {
+  const requiredEnvVars: Record<string, string[]> = {
+    'brave-search': ['BRAVE_API_KEY'],
+    'exa': ['EXA_API_KEY'],
+    'gemini': ['GOOGLE_API_KEY', 'GEMINI_API_KEY'],
+    'firecrawl': ['FIRECRAWL_API_KEY'],
+  };
+
+  const vars = requiredEnvVars[server];
+  if (!vars) return true; // No API key required
+
+  return vars.some(v => !!process.env[v]);
+}
+
+/**
+ * Check if an error indicates rate limiting or quota exhaustion.
+ */
+function isRateLimitError(error: string): boolean {
+  const rateLimitPatterns = [
+    'rate limit', 'rate_limit', 'ratelimit',
+    '429', 'too many requests',
+    'quota', 'exceeded', 'exhausted',
+    'credit balance',
+  ];
+  const lowerError = error.toLowerCase();
+  return rateLimitPatterns.some(p => lowerError.includes(p));
+}
+
+/**
+ * Get next fallback server in the chain.
+ */
+function getNextFallbackServer(currentServer: MCPServerName, tool: string): { server: MCPServerName; tool: string } | null {
+  // Only handle web search tools
+  if (!WEB_SEARCH_TOOL_MAP[tool]) return null;
+
+  const currentIndex = WEB_SEARCH_FALLBACK_CHAIN.indexOf(currentServer);
+  if (currentIndex === -1) return null;
+
+  // Find next configured server in chain
+  for (let i = currentIndex + 1; i < WEB_SEARCH_FALLBACK_CHAIN.length; i++) {
+    const nextServer = WEB_SEARCH_FALLBACK_CHAIN[i];
+    if (isServerConfigured(nextServer)) {
+      const mappedTool = WEB_SEARCH_TOOL_MAP[tool][nextServer];
+      if (mappedTool) {
+        return { server: nextServer, tool: mappedTool };
+      }
+    }
+  }
+
+  return null;
+}
 
 // ============================================================================
 // MCP Connection Manager
@@ -536,7 +624,8 @@ class RealMCPClient implements IMCPClient {
     server: MCPServerName,
     tool: string,
     params: Record<string, any>,
-    options: MCPCallOptions = {}
+    options: MCPCallOptions = {},
+    _isRetry = false
   ): Promise<MCPCallResult<T>> {
     const startTime = Date.now();
 
@@ -563,9 +652,24 @@ class RealMCPClient implements IMCPClient {
 
       return result;
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // v7.18: Try fallback for web search tools
+      if (!_isRetry) {
+        const fallback = getNextFallbackServer(server, tool);
+        if (fallback) {
+          console.log(`[MCP] ${server}.${tool} failed (${isRateLimitError(errorMessage) ? 'rate limit' : 'error'}), trying ${fallback.server}.${fallback.tool}...`);
+
+          // Adapt params for the new tool if needed
+          const adaptedParams = this.adaptParamsForFallback(tool, fallback.tool, params);
+
+          return this.call<T>(fallback.server, fallback.tool, adaptedParams, options, true);
+        }
+      }
+
       const result: MCPCallResult<T> = {
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage,
         server,
         tool,
         mode: 'real',
@@ -579,6 +683,41 @@ class RealMCPClient implements IMCPClient {
 
       return result;
     }
+  }
+
+  /**
+   * Adapt parameters when falling back to a different web search provider.
+   */
+  private adaptParamsForFallback(
+    originalTool: string,
+    newTool: string,
+    params: Record<string, any>
+  ): Record<string, any> {
+    // Exa uses slightly different param names
+    if (newTool === 'web_search_exa') {
+      return {
+        query: params.query || params.q,
+        numResults: params.count || params.numResults || 10,
+      };
+    }
+
+    // Gemini web search
+    if (newTool === 'web_search') {
+      return {
+        q: params.query || params.q,
+        verbosity: 'concise',
+      };
+    }
+
+    // Firecrawl search
+    if (newTool === 'firecrawl_search') {
+      return {
+        query: params.query || params.q,
+        limit: params.count || 10,
+      };
+    }
+
+    return params;
   }
 
   async listTools(server: MCPServerName): Promise<string[]> {

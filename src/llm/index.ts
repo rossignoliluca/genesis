@@ -274,6 +274,7 @@ export class LLMBridge {
 
   /**
    * Send a message and get a response
+   * Fallback chain: Anthropic -> OpenAI -> Ollama
    */
   async chat(userMessage: string, systemPrompt?: string): Promise<LLMResponse> {
     const system = systemPrompt || GENESIS_SYSTEM_PROMPT;
@@ -300,13 +301,42 @@ export class LLMBridge {
       return response;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+      const isQuotaError = errorMessage.includes('credit balance') ||
+                           errorMessage.includes('quota') ||
+                           errorMessage.includes('rate limit') ||
+                           errorMessage.includes('insufficient_quota');
 
-      // Fallback: if Ollama fails, try cloud
+      // v7.18: Enhanced fallback chain
+      // Anthropic fails -> try OpenAI
+      if (this.config.provider === 'anthropic' && process.env.OPENAI_API_KEY) {
+        console.log(`[LLM] Anthropic failed (${isQuotaError ? 'quota' : 'error'}), falling back to OpenAI...`);
+        this.config.provider = 'openai';
+        this.config.apiKey = process.env.OPENAI_API_KEY;
+        this.config.model = 'gpt-4o';
+        // Remove the failed message from history before retry
+        this.conversationHistory.pop();
+        return this.chat(userMessage, systemPrompt);
+      }
+
+      // OpenAI fails -> try Ollama (if available)
+      if (this.config.provider === 'openai') {
+        console.log(`[LLM] OpenAI failed (${isQuotaError ? 'quota' : 'error'}), falling back to Ollama...`);
+        this.config.provider = 'ollama';
+        this.config.apiKey = 'not-needed';
+        this.config.model = OLLAMA_CONFIG.defaultModel;
+        // Remove the failed message from history before retry
+        this.conversationHistory.pop();
+        return this.chat(userMessage, systemPrompt);
+      }
+
+      // Ollama fails -> try OpenAI (original fallback)
       if (this.config.provider === 'ollama' && process.env.OPENAI_API_KEY) {
         console.log('[LLM] Ollama unavailable, falling back to OpenAI...');
         this.config.provider = 'openai';
         this.config.apiKey = process.env.OPENAI_API_KEY;
         this.config.model = 'gpt-4o';
+        // Remove the failed message from history before retry
+        this.conversationHistory.pop();
         return this.chat(userMessage, systemPrompt);
       }
 

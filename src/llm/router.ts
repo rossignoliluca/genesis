@@ -326,9 +326,10 @@ export function estimateCost(
   outputTokens: number,
   provider: LLMProvider
 ): number {
-  // Prices per 1M tokens (as of 2024)
+  // Prices per 1M tokens (as of 2025)
+  // GPT-4o-mini: { input: 0.15, output: 0.60 } - 17x cheaper for simple tasks!
   const prices: Record<LLMProvider, { input: number; output: number }> = {
-    openai: { input: 2.5, output: 10 },      // GPT-4o
+    openai: { input: 2.5, output: 10 },      // GPT-4o (default)
     anthropic: { input: 3, output: 15 },     // Claude Sonnet
     ollama: { input: 0, output: 0 },         // Free!
   };

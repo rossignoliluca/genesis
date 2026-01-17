@@ -75,6 +75,7 @@ import {
   LLMBridge,
   getLLMBridge,
   buildSystemPrompt,
+  ModelTier,
 } from '../llm/index.js';
 import {
   ToolDispatcher,
@@ -556,6 +557,34 @@ export class Brain {
   }
 
   /**
+   * v7.18: Determine optimal model tier based on task complexity
+   * - fast: Simple queries, short responses, tool formatting
+   * - balanced: Complex reasoning, creative tasks
+   */
+  private determineModelTier(query: string, hasToolResults: boolean): ModelTier {
+    const wordCount = query.split(/\s+/).length;
+    const lowerQuery = query.toLowerCase();
+
+    // Use fast tier for:
+    // - Short queries (< 50 words)
+    // - Tool result formatting
+    // - Simple questions
+    const isSimple = wordCount < 50 &&
+                     !lowerQuery.includes('explain') &&
+                     !lowerQuery.includes('analyze') &&
+                     !lowerQuery.includes('design') &&
+                     !lowerQuery.includes('implement') &&
+                     !lowerQuery.includes('create') &&
+                     !lowerQuery.includes('refactor');
+
+    if (isSimple || hasToolResults) {
+      return 'fast';
+    }
+
+    return 'balanced';
+  }
+
+  /**
    * LLM module: generate response
    */
   private async stepLLM(state: BrainState): Promise<Command> {
@@ -567,8 +596,12 @@ export class Brain {
       ? `Context:\n${contextStr}\n\nUser: ${state.query}`
       : state.query;
 
-    // Call LLM with system prompt that includes available tools
-    const response = await this.llm.chat(prompt, this.systemPrompt || undefined);
+    // v7.18: Cost optimization - use tiered models
+    const hasToolResults = state.toolResults && state.toolResults.length > 0;
+    const tier = this.determineModelTier(state.query, hasToolResults);
+
+    // Call LLM with appropriate model tier
+    const response = await this.llm.chatWithTier(prompt, tier, this.systemPrompt || undefined);
 
     this.emit({ type: 'llm_response', timestamp: new Date(), data: { length: response.content.length } });
 

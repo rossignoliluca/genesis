@@ -19,6 +19,27 @@ export * from './router.js';
 
 export type LLMProvider = 'ollama' | 'openai' | 'anthropic';
 
+// v7.18: Model tiers for cost optimization
+export type ModelTier = 'fast' | 'balanced' | 'powerful';
+
+export const MODEL_TIERS: Record<LLMProvider, Record<ModelTier, string>> = {
+  openai: {
+    fast: 'gpt-4o-mini',           // $0.15/$0.60 per 1M - 17x cheaper!
+    balanced: 'gpt-4o',             // $2.5/$10 per 1M
+    powerful: 'gpt-4o',             // Same as balanced for OpenAI
+  },
+  anthropic: {
+    fast: 'claude-3-5-haiku-20241022',  // Cheaper, faster
+    balanced: 'claude-sonnet-4-20250514',
+    powerful: 'claude-sonnet-4-20250514',
+  },
+  ollama: {
+    fast: 'qwen2.5-coder',          // Fast local
+    balanced: 'qwen2.5-coder',
+    powerful: 'mistral-small',      // Higher quality local
+  },
+};
+
 // Ollama config
 export const OLLAMA_CONFIG = {
   baseUrl: process.env.OLLAMA_HOST || 'http://localhost:11434',
@@ -205,9 +226,45 @@ export const GENESIS_SYSTEM_PROMPT = GENESIS_IDENTITY_PROMPT;
 // LLM Bridge Class
 // ============================================================================
 
+// v7.18: Simple response cache for cost optimization
+interface CacheEntry {
+  response: string;
+  timestamp: number;
+  tokens: number;
+}
+
+const responseCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_CACHE_SIZE = 100;
+
+function getCacheKey(prompt: string, model: string): string {
+  // Simple hash for cache key
+  const hash = prompt.slice(0, 100) + '|' + model;
+  return hash;
+}
+
+function cleanCache(): void {
+  const now = Date.now();
+  for (const [key, entry] of responseCache) {
+    if (now - entry.timestamp > CACHE_TTL_MS) {
+      responseCache.delete(key);
+    }
+  }
+  // Limit size
+  if (responseCache.size > MAX_CACHE_SIZE) {
+    const oldest = [...responseCache.entries()]
+      .sort((a, b) => a[1].timestamp - b[1].timestamp)
+      .slice(0, responseCache.size - MAX_CACHE_SIZE);
+    for (const [key] of oldest) {
+      responseCache.delete(key);
+    }
+  }
+}
+
 export class LLMBridge {
   private config: LLMConfig;
   private conversationHistory: LLMMessage[] = [];
+  private useCache: boolean = true; // v7.18: Enable caching by default
 
   constructor(config: Partial<LLMConfig> = {}) {
     // Detect provider first, then use it for model selection
@@ -508,6 +565,32 @@ export class LLMBridge {
   }
 
   /**
+   * v7.18: Chat with specific model tier for cost optimization
+   * - fast: GPT-4o-mini/Haiku - 17x cheaper, good for simple tasks
+   * - balanced: GPT-4o/Sonnet - default quality
+   * - powerful: Best available model
+   */
+  async chatWithTier(
+    userMessage: string,
+    tier: ModelTier = 'balanced',
+    systemPrompt?: string
+  ): Promise<LLMResponse> {
+    const originalModel = this.config.model;
+    const tierModel = MODEL_TIERS[this.config.provider][tier];
+
+    // Temporarily switch to tier model
+    this.config.model = tierModel;
+
+    try {
+      const response = await this.chat(userMessage, systemPrompt);
+      return response;
+    } finally {
+      // Restore original model
+      this.config.model = originalModel;
+    }
+  }
+
+  /**
    * Get provider status
    */
   status(): { configured: boolean; provider: LLMProvider; model: string; isLocal: boolean } {
@@ -517,6 +600,38 @@ export class LLMBridge {
       model: this.config.model,
       isLocal: this.config.provider === 'ollama',
     };
+  }
+
+  /**
+   * v7.18: Get cache statistics for cost monitoring
+   */
+  getCacheStats(): { size: number; hits: number; estimatedSavings: number } {
+    cleanCache();
+    let totalTokensSaved = 0;
+    for (const entry of responseCache.values()) {
+      totalTokensSaved += entry.tokens;
+    }
+    // Estimate savings: avg $0.01 per 1K tokens for GPT-4o
+    const estimatedSavings = (totalTokensSaved / 1000) * 0.01;
+    return {
+      size: responseCache.size,
+      hits: totalTokensSaved,
+      estimatedSavings,
+    };
+  }
+
+  /**
+   * v7.18: Enable/disable response caching
+   */
+  setCache(enabled: boolean): void {
+    this.useCache = enabled;
+  }
+
+  /**
+   * v7.18: Clear the response cache
+   */
+  clearCache(): void {
+    responseCache.clear();
   }
 
   /**

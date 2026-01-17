@@ -384,6 +384,9 @@ export class Brain {
 
     // Supervisor loop
     let transitions = 0;
+    let consecutiveErrors = 0; // v7.18: Track consecutive failures for early exit
+    const MAX_CONSECUTIVE_ERRORS = 3;
+
     while (command.goto !== 'done' && transitions < this.config.maxModuleTransitions) {
       // Update state
       state = { ...state, ...command.update };
@@ -392,6 +395,15 @@ export class Brain {
       // Check timeout
       if (Date.now() - startTime > this.config.maxCycleTime) {
         command = { goto: 'done', update: { response: 'Processing timeout. Please try again.' } };
+        break;
+      }
+
+      // v7.18: Early exit on repeated failures
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        command = {
+          goto: 'done',
+          update: { response: `Unable to complete after ${consecutiveErrors} consecutive errors. Please try again.` },
+        };
         break;
       }
 
@@ -408,9 +420,12 @@ export class Brain {
           this.broadcast(state, command.goto);
         }
 
+        consecutiveErrors = 0; // Reset on success
         transitions++;
 
       } catch (error) {
+        consecutiveErrors++; // v7.18: Track consecutive errors
+
         // Healing loop
         if (this.config.healing.enabled && this.config.healing.autoHeal) {
           command = await this.heal(error as Error, state);

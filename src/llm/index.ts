@@ -329,9 +329,13 @@ export class LLMBridge {
     }
   }
 
+  // v7.18: Track fallback attempts to prevent infinite loops
+  private fallbackAttempts = 0;
+  private static readonly MAX_FALLBACK_ATTEMPTS = 3;
+
   /**
    * Send a message and get a response
-   * Fallback chain: Anthropic -> OpenAI -> Ollama
+   * Fallback chain: Anthropic -> OpenAI -> Ollama (max 3 attempts)
    */
   async chat(userMessage: string, systemPrompt?: string): Promise<LLMResponse> {
     const system = systemPrompt || GENESIS_SYSTEM_PROMPT;
@@ -352,6 +356,9 @@ export class LLMBridge {
         response = await this.callOpenAI(system);
       }
 
+      // Reset fallback counter on success
+      this.fallbackAttempts = 0;
+
       // Add assistant response to history
       this.conversationHistory.push({ role: 'assistant', content: response.content });
 
@@ -363,40 +370,39 @@ export class LLMBridge {
                            errorMessage.includes('rate limit') ||
                            errorMessage.includes('insufficient_quota');
 
-      // v7.18: Enhanced fallback chain
+      // v7.18: Check fallback limit to prevent infinite loops
+      if (this.fallbackAttempts >= LLMBridge.MAX_FALLBACK_ATTEMPTS) {
+        this.fallbackAttempts = 0; // Reset for next call
+        this.conversationHistory.pop();
+        throw new Error(`LLM call failed after ${LLMBridge.MAX_FALLBACK_ATTEMPTS} fallback attempts: ${errorMessage}`);
+      }
+
+      this.fallbackAttempts++;
+
+      // v7.18: Enhanced fallback chain with attempt tracking
       // Anthropic fails -> try OpenAI
       if (this.config.provider === 'anthropic' && process.env.OPENAI_API_KEY) {
-        console.log(`[LLM] Anthropic failed (${isQuotaError ? 'quota' : 'error'}), falling back to OpenAI...`);
+        console.log(`[LLM] Anthropic failed (${isQuotaError ? 'quota' : 'error'}), falling back to OpenAI... (attempt ${this.fallbackAttempts}/${LLMBridge.MAX_FALLBACK_ATTEMPTS})`);
         this.config.provider = 'openai';
         this.config.apiKey = process.env.OPENAI_API_KEY;
         this.config.model = 'gpt-4o';
-        // Remove the failed message from history before retry
         this.conversationHistory.pop();
         return this.chat(userMessage, systemPrompt);
       }
 
       // OpenAI fails -> try Ollama (if available)
       if (this.config.provider === 'openai') {
-        console.log(`[LLM] OpenAI failed (${isQuotaError ? 'quota' : 'error'}), falling back to Ollama...`);
+        console.log(`[LLM] OpenAI failed (${isQuotaError ? 'quota' : 'error'}), falling back to Ollama... (attempt ${this.fallbackAttempts}/${LLMBridge.MAX_FALLBACK_ATTEMPTS})`);
         this.config.provider = 'ollama';
         this.config.apiKey = 'not-needed';
         this.config.model = OLLAMA_CONFIG.defaultModel;
-        // Remove the failed message from history before retry
         this.conversationHistory.pop();
         return this.chat(userMessage, systemPrompt);
       }
 
-      // Ollama fails -> try OpenAI (original fallback)
-      if (this.config.provider === 'ollama' && process.env.OPENAI_API_KEY) {
-        console.log('[LLM] Ollama unavailable, falling back to OpenAI...');
-        this.config.provider = 'openai';
-        this.config.apiKey = process.env.OPENAI_API_KEY;
-        this.config.model = 'gpt-4o';
-        // Remove the failed message from history before retry
-        this.conversationHistory.pop();
-        return this.chat(userMessage, systemPrompt);
-      }
-
+      // Ollama fails -> fail fast (don't loop back to OpenAI)
+      this.fallbackAttempts = 0;
+      this.conversationHistory.pop();
       throw new Error(`LLM call failed: ${errorMessage}`);
     }
   }
@@ -424,6 +430,7 @@ export class LLMBridge {
         temperature: this.config.temperature,
         max_tokens: this.config.maxTokens,
       }),
+      signal: AbortSignal.timeout(60000), // v7.18: 60s timeout for faster failure
     });
 
     if (!response.ok) {
@@ -467,6 +474,7 @@ export class LLMBridge {
           content: m.content,
         })),
       }),
+      signal: AbortSignal.timeout(60000), // v7.18: 60s timeout for faster failure
     });
 
     if (!response.ok) {
@@ -514,6 +522,7 @@ export class LLMBridge {
           num_predict: this.config.maxTokens,
         },
       }),
+      signal: AbortSignal.timeout(90000), // v7.18: 90s timeout (local can be slower)
     });
 
     if (!response.ok) {

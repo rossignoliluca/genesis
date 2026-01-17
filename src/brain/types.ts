@@ -270,8 +270,8 @@ export const DEFAULT_BRAIN_CONFIG: BrainConfig = {
     phiThreshold: 0.1,
     broadcastEnabled: true,
   },
-  maxCycleTime: 600000,             // 10 minutes (Ollama + complex thinking needs time)
-  maxModuleTransitions: 20,
+  maxCycleTime: 120000,             // v7.18: Reduced from 10min to 2min for faster responses
+  maxModuleTransitions: 10,         // v7.18: Reduced from 20 to 10 for faster convergence
 };
 
 // ============================================================================

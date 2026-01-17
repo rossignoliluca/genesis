@@ -437,6 +437,7 @@ class MCPConnectionManager {
 
   /**
    * Call a tool on an MCP server
+   * v7.18: Added timeout wrapper for faster failure
    */
   async callTool<T = any>(
     server: MCPServerName,
@@ -449,10 +450,19 @@ class MCPConnectionManager {
       console.log(`[MCP] ${server}.${tool}(${JSON.stringify(args).slice(0, 100)}...)`);
     }
 
-    const result = await connection.client.callTool({
-      name: tool,
-      arguments: args,
-    });
+    // v7.18: Wrap call in timeout for faster failure (15s default, 30s for heavy ops)
+    const isHeavyOp = ['firecrawl_crawl', 'parse_paper_content', 'web_search'].includes(tool);
+    const callTimeout = isHeavyOp ? 30000 : 15000;
+
+    const result = await Promise.race([
+      connection.client.callTool({
+        name: tool,
+        arguments: args,
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`MCP call to ${server}.${tool} timed out after ${callTimeout}ms`)), callTimeout)
+      ),
+    ]);
 
     // Parse result content
     const content = result.content as Array<{ type: string; text?: string }>;

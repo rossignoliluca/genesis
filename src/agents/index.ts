@@ -67,6 +67,25 @@ export {
 } from './coordinator.js';
 
 // ============================================================================
+// Phase 12: Efficient Agent Pool (v7.21)
+// ============================================================================
+
+export {
+  AgentPool,
+  getAgentPool,
+  resetAgentPool,
+  quickExecute,
+  parallelExecute,
+  researchBuildReview,
+  AGENT_CAPABILITIES,
+  type PooledAgent,
+  type PoolConfig,
+  type TaskRequest,
+  type TaskResult,
+  type AgentCapability,
+} from './agent-pool.js';
+
+// ============================================================================
 // Import all agents to register factories
 // ============================================================================
 
@@ -80,6 +99,7 @@ import './ethicist.js';
 import './builder.js';
 import './narrator.js';
 import './sensor.js';
+import './agent-pool.js';
 
 // ============================================================================
 // Agent Registry

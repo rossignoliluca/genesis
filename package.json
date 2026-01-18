@@ -1,7 +1,7 @@
 {
   "name": "genesis-ai-cli",
-  "version": "7.19.3",
-  "description": "Autonomous AI System Creator - Brain ON by default, Active Inference integrated, Curiosity-driven, Φ monitoring in every response",
+  "version": "7.21.0",
+  "description": "Autonomous AI System Creator - Self-aware codebase, Active Inference, Curiosity-driven, Φ monitoring",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "bin": {
@@ -27,6 +27,7 @@
     "ai",
     "autonomous",
     "active-inference",
+    "self-aware",
     "autopoiesis",
     "agents",
     "multi-agent",

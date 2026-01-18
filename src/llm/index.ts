@@ -13,6 +13,9 @@
 // Re-export Phase 8: Hybrid Router
 export * from './router.js';
 
+// Re-export Phase 11: Advanced Multi-Provider Router (v7.21)
+export * from './advanced-router.js';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -75,6 +78,42 @@ export interface LLMResponse {
     outputTokens: number;
   };
   latency: number;
+}
+
+// v7.20.1: Streaming support
+export interface StreamChunk {
+  type: 'token' | 'done' | 'error';
+  token?: string;
+  content?: string;  // Full content so far
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+  };
+  model?: string;
+  provider?: LLMProvider;
+  latency?: number;
+  error?: string;
+}
+
+// Cost per 1M tokens (USD)
+export const MODEL_COSTS: Record<string, { input: number; output: number }> = {
+  // OpenAI
+  'gpt-4o': { input: 2.5, output: 10 },
+  'gpt-4o-mini': { input: 0.15, output: 0.60 },
+  'gpt-4-turbo': { input: 10, output: 30 },
+  // Anthropic
+  'claude-sonnet-4-20250514': { input: 3, output: 15 },
+  'claude-3-5-haiku-20241022': { input: 0.8, output: 4 },
+  'claude-opus-4-20250514': { input: 15, output: 75 },
+  // Ollama (local, free)
+  'qwen2.5-coder': { input: 0, output: 0 },
+  'mistral': { input: 0, output: 0 },
+  'mistral-small': { input: 0, output: 0 },
+};
+
+export function calculateCost(model: string, inputTokens: number, outputTokens: number): number {
+  const costs = MODEL_COSTS[model] || { input: 0, output: 0 };
+  return (inputTokens * costs.input + outputTokens * costs.output) / 1_000_000;
 }
 
 // ============================================================================
@@ -540,6 +579,316 @@ export class LLMBridge {
         inputTokens: data.prompt_eval_count || 0,
         outputTokens: data.eval_count || 0,
       },
+      latency: Date.now() - startTime,
+    };
+  }
+
+  // =========================================================================
+  // v7.20.1: Streaming Support
+  // =========================================================================
+
+  /**
+   * Stream chat response token by token
+   * Yields StreamChunk objects as they arrive
+   */
+  async *chatStream(userMessage: string, systemPrompt?: string): AsyncGenerator<StreamChunk> {
+    const system = systemPrompt || GENESIS_SYSTEM_PROMPT;
+
+    // Add user message to history
+    this.conversationHistory.push({ role: 'user', content: userMessage });
+
+    const startTime = Date.now();
+
+    try {
+      if (this.config.provider === 'ollama') {
+        yield* this.streamOllama(system, startTime);
+      } else if (this.config.provider === 'anthropic') {
+        yield* this.streamAnthropic(system, startTime);
+      } else {
+        yield* this.streamOpenAI(system, startTime);
+      }
+
+      // Reset fallback counter on success
+      this.fallbackAttempts = 0;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      yield { type: 'error', error: errorMessage };
+      this.conversationHistory.pop();
+    }
+  }
+
+  /**
+   * Stream from OpenAI API
+   */
+  private async *streamOpenAI(systemPrompt: string, startTime: number): AsyncGenerator<StreamChunk> {
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...this.conversationHistory,
+    ];
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.config.model,
+        messages,
+        temperature: this.config.temperature,
+        max_tokens: this.config.maxTokens,
+        stream: true,
+      }),
+      signal: AbortSignal.timeout(120000),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`OpenAI API error: ${response.status} - ${error}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('No response body');
+
+    const decoder = new TextDecoder();
+    let fullContent = '';
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n').filter(line => line.trim().startsWith('data: '));
+
+        for (const line of lines) {
+          const data = line.slice(6); // Remove 'data: '
+          if (data === '[DONE]') continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const token = parsed.choices?.[0]?.delta?.content || '';
+
+            if (token) {
+              fullContent += token;
+              outputTokens++;
+              yield {
+                type: 'token',
+                token,
+                content: fullContent,
+                usage: { inputTokens, outputTokens },
+              };
+            }
+
+            // Check for usage in final message
+            if (parsed.usage) {
+              inputTokens = parsed.usage.prompt_tokens || inputTokens;
+              outputTokens = parsed.usage.completion_tokens || outputTokens;
+            }
+          } catch {
+            // Ignore parse errors for partial JSON
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    // Add to history
+    this.conversationHistory.push({ role: 'assistant', content: fullContent });
+
+    yield {
+      type: 'done',
+      content: fullContent,
+      model: this.config.model,
+      provider: 'openai',
+      usage: { inputTokens, outputTokens },
+      latency: Date.now() - startTime,
+    };
+  }
+
+  /**
+   * Stream from Anthropic API
+   */
+  private async *streamAnthropic(systemPrompt: string, startTime: number): AsyncGenerator<StreamChunk> {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': this.config.apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: this.config.model,
+        max_tokens: this.config.maxTokens,
+        system: systemPrompt,
+        stream: true,
+        messages: this.conversationHistory.map(m => ({
+          role: m.role === 'system' ? 'user' : m.role,
+          content: m.content,
+        })),
+      }),
+      signal: AbortSignal.timeout(120000),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Anthropic API error: ${response.status} - ${error}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('No response body');
+
+    const decoder = new TextDecoder();
+    let fullContent = '';
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    try {
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6);
+
+          try {
+            const parsed = JSON.parse(data);
+
+            // Handle different event types
+            if (parsed.type === 'content_block_delta') {
+              const token = parsed.delta?.text || '';
+              if (token) {
+                fullContent += token;
+                outputTokens++;
+                yield {
+                  type: 'token',
+                  token,
+                  content: fullContent,
+                  usage: { inputTokens, outputTokens },
+                };
+              }
+            } else if (parsed.type === 'message_start') {
+              inputTokens = parsed.message?.usage?.input_tokens || 0;
+            } else if (parsed.type === 'message_delta') {
+              outputTokens = parsed.usage?.output_tokens || outputTokens;
+            }
+          } catch {
+            // Ignore parse errors
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    // Add to history
+    this.conversationHistory.push({ role: 'assistant', content: fullContent });
+
+    yield {
+      type: 'done',
+      content: fullContent,
+      model: this.config.model,
+      provider: 'anthropic',
+      usage: { inputTokens, outputTokens },
+      latency: Date.now() - startTime,
+    };
+  }
+
+  /**
+   * Stream from Ollama API
+   */
+  private async *streamOllama(systemPrompt: string, startTime: number): AsyncGenerator<StreamChunk> {
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...this.conversationHistory,
+    ];
+
+    const response = await fetch(`${OLLAMA_CONFIG.baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: this.config.model,
+        messages,
+        stream: true,  // Enable streaming
+        options: {
+          temperature: this.config.temperature,
+          num_predict: this.config.maxTokens,
+        },
+      }),
+      signal: AbortSignal.timeout(120000),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Ollama API error: ${response.status} - ${error}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('No response body');
+
+    const decoder = new TextDecoder();
+    let fullContent = '';
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n').filter(line => line.trim());
+
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line);
+            const token = parsed.message?.content || '';
+
+            if (token) {
+              fullContent += token;
+              outputTokens++;
+              yield {
+                type: 'token',
+                token,
+                content: fullContent,
+                usage: { inputTokens, outputTokens },
+              };
+            }
+
+            // Final message contains usage stats
+            if (parsed.done) {
+              inputTokens = parsed.prompt_eval_count || inputTokens;
+              outputTokens = parsed.eval_count || outputTokens;
+            }
+          } catch {
+            // Ignore parse errors
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    // Add to history
+    this.conversationHistory.push({ role: 'assistant', content: fullContent });
+
+    yield {
+      type: 'done',
+      content: fullContent,
+      model: this.config.model,
+      provider: 'ollama',
+      usage: { inputTokens, outputTokens },
       latency: Date.now() - startTime,
     };
   }

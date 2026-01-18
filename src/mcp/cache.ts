@@ -96,6 +96,18 @@ const DEFAULT_SERVER_TTL: Record<MCPServerName, number> = {
 
   // v7.19 - HuggingFace
   'huggingface': 0, // Don't cache AI-generated content
+
+  // v7.23 - Autonomous Layer
+  'stripe': 1000 * 60 * 5, // 5 minutes (payment state)
+  'coinbase': 1000 * 60 * 5, // 5 minutes (crypto balances)
+  'supabase': 1000 * 60, // 1 minute (database)
+  'vercel': 1000 * 60 * 5, // 5 minutes (deployments)
+  'cloudflare': 1000 * 60 * 5, // 5 minutes (workers/dns)
+  'pinecone': 1000 * 60 * 5, // 5 minutes (vector queries)
+  'neo4j': 1000 * 60 * 5, // 5 minutes (graph queries)
+  'slack': 0, // Don't cache notifications
+  'puppeteer': 0, // Don't cache browser actions
+  'sequential-thinking': 0, // Don't cache reasoning
 };
 
 // ============================================================================

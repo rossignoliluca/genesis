@@ -152,6 +152,68 @@ export const MCP_CAPABILITIES: Record<MCPServerName, MCPCapability> = {
     tools: ['generate_image', 'chat', 'text_to_speech', 'speech_to_text', 'translate'],
     description: 'HuggingFace Spaces: AI models for images, speech, translation',
   },
+
+  // v7.23 - Autonomous Layer
+  'stripe': {
+    server: 'stripe',
+    category: 'creation',
+    tools: ['get_balance', 'create_payment_intent', 'create_product', 'create_price', 'create_issuing_card'],
+    description: 'Payment processing, subscriptions, virtual cards',
+  },
+  'coinbase': {
+    server: 'coinbase',
+    category: 'creation',
+    tools: ['get_wallet_balance', 'get_wallet_address', 'send_usdc', 'trade'],
+    description: 'Crypto wallet, stablecoins, on-chain actions',
+  },
+  'supabase': {
+    server: 'supabase',
+    category: 'storage',
+    tools: ['query', 'insert', 'update', 'delete', 'rpc'],
+    description: 'PostgreSQL database with realtime and auth',
+  },
+  'vercel': {
+    server: 'vercel',
+    category: 'creation',
+    tools: ['create_project', 'deploy', 'list_deployments', 'get_deployment', 'set_env'],
+    description: 'Serverless deployment and hosting',
+  },
+  'cloudflare': {
+    server: 'cloudflare',
+    category: 'creation',
+    tools: ['deploy_worker', 'list_workers', 'manage_dns', 'create_r2_bucket'],
+    description: 'Edge workers, DNS, R2 storage',
+  },
+  'pinecone': {
+    server: 'pinecone',
+    category: 'storage',
+    tools: ['upsert_vectors', 'query_vectors', 'delete_vectors', 'describe_index'],
+    description: 'Vector database for semantic search',
+  },
+  'neo4j': {
+    server: 'neo4j',
+    category: 'storage',
+    tools: ['cypher_query', 'create_node', 'create_relationship', 'find_paths'],
+    description: 'Knowledge graph database',
+  },
+  'slack': {
+    server: 'slack',
+    category: 'creation',
+    tools: ['post_message', 'list_channels', 'get_messages'],
+    description: 'Team notifications and messaging',
+  },
+  'puppeteer': {
+    server: 'puppeteer',
+    category: 'creation',
+    tools: ['navigate', 'screenshot', 'click', 'type', 'evaluate'],
+    description: 'Headless browser automation',
+  },
+  'sequential-thinking': {
+    server: 'sequential-thinking',
+    category: 'creation',
+    tools: ['think_step', 'plan', 'reflect', 'conclude'],
+    description: 'Step-by-step reasoning and planning',
+  },
 };
 
 // ============================================================================

@@ -32,7 +32,18 @@ export type MCPServerName =
   | 'sentry'
   | 'postgres'
   // v7.19 - HuggingFace Spaces
-  | 'huggingface';
+  | 'huggingface'
+  // v7.23 - Autonomous Layer
+  | 'stripe'
+  | 'coinbase'
+  | 'supabase'
+  | 'vercel'
+  | 'cloudflare'
+  | 'pinecone'
+  | 'neo4j'
+  | 'slack'
+  | 'puppeteer'
+  | 'sequential-thinking';
 
 /** @deprecated Use MCPServerName instead */
 export type MCPServer = MCPServerName;

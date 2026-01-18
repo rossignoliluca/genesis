@@ -255,6 +255,79 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
     // Tools: search-spaces, available-files, plus dynamic tools per Space (e.g. FLUX_2-dev-turbo-infer)
     tools: ['search-spaces', 'available-files'],
   },
+
+  // v7.23 - AUTONOMOUS LAYER
+  'stripe': {
+    command: 'npx',
+    args: ['-y', '@stripe/agent-toolkit'],
+    envVars: () => ({ STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || '' }),
+    tools: ['get_balance', 'create_payment_intent', 'create_product', 'create_price', 'create_issuing_card'],
+  },
+  'coinbase': {
+    command: 'npx',
+    args: ['-y', '@coinbase/agentkit-mcp'],
+    envVars: () => ({
+      CDP_API_KEY_NAME: process.env.CDP_API_KEY_NAME || '',
+      CDP_API_KEY_PRIVATE_KEY: process.env.CDP_API_KEY_PRIVATE_KEY || '',
+    }),
+    tools: ['get_wallet_balance', 'get_wallet_address', 'send_usdc', 'trade'],
+  },
+  'supabase': {
+    command: 'npx',
+    args: ['-y', '@supabase/mcp-server-supabase'],
+    envVars: () => ({
+      SUPABASE_URL: process.env.SUPABASE_URL || '',
+      SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
+    }),
+    tools: ['query', 'insert', 'update', 'delete', 'rpc'],
+  },
+  'vercel': {
+    command: 'npx',
+    args: ['-y', '@vercel/mcp'],
+    envVars: () => ({ VERCEL_TOKEN: process.env.VERCEL_TOKEN || '' }),
+    tools: ['create_project', 'deploy', 'list_deployments', 'get_deployment', 'set_env'],
+  },
+  'cloudflare': {
+    command: 'npx',
+    args: ['-y', '@cloudflare/mcp-server-cloudflare'],
+    envVars: () => ({
+      CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN || '',
+      CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID || '',
+    }),
+    tools: ['deploy_worker', 'list_workers', 'manage_dns', 'create_r2_bucket'],
+  },
+  'pinecone': {
+    command: 'npx',
+    args: ['-y', '@pinecone-database/mcp'],
+    envVars: () => ({ PINECONE_API_KEY: process.env.PINECONE_API_KEY || '' }),
+    tools: ['upsert_vectors', 'query_vectors', 'delete_vectors', 'describe_index'],
+  },
+  'neo4j': {
+    command: 'npx',
+    args: ['-y', '@neo4j/mcp-neo4j'],
+    envVars: () => ({
+      NEO4J_URI: process.env.NEO4J_URI || '',
+      NEO4J_USER: process.env.NEO4J_USER || 'neo4j',
+      NEO4J_PASSWORD: process.env.NEO4J_PASSWORD || '',
+    }),
+    tools: ['cypher_query', 'create_node', 'create_relationship', 'find_paths'],
+  },
+  'slack': {
+    command: 'npx',
+    args: ['-y', '@anthropic/mcp-slack'],
+    envVars: () => ({ SLACK_BOT_TOKEN: process.env.SLACK_BOT_TOKEN || '' }),
+    tools: ['post_message', 'list_channels', 'get_messages'],
+  },
+  'puppeteer': {
+    command: 'npx',
+    args: ['-y', '@anthropic/mcp-puppeteer'],
+    tools: ['navigate', 'screenshot', 'click', 'type', 'evaluate'],
+  },
+  'sequential-thinking': {
+    command: 'npx',
+    args: ['-y', '@anthropic/mcp-sequential-thinking'],
+    tools: ['think_step', 'plan', 'reflect', 'conclude'],
+  },
 };
 
 // ============================================================================

@@ -47,6 +47,11 @@ import { getProcessManager, LOG_FILE } from './daemon/process.js';
 import { createPipelineExecutor } from './pipeline/index.js';
 import { createAutonomousLoop, ACTIONS, integrateActiveInference, createIntegratedSystem, createMCPInferenceLoop } from './active-inference/index.js';
 import { getBrain, resetBrain } from './brain/index.js';
+import { getAutonomousSystem, AutonomousSystem } from './autonomous/index.js';
+import { getEconomicSystem } from './economy/index.js';
+import { getDeploymentSystem } from './deployment/index.js';
+import { getProductionMemory } from './memory-production/index.js';
+import { getGovernanceSystem } from './governance/index.js';
 
 // ============================================================================
 // CLI Colors
@@ -1111,6 +1116,170 @@ async function cmdBrain(subcommand: string | undefined, options: Record<string, 
   console.log('Use: status, phi, start, stop, reset, cycle');
 }
 
+// ============================================================================
+// Autonomous Command (Phase 11: Full Autonomous Mode)
+// ============================================================================
+
+async function cmdAutonomous(subcommand: string | undefined, options: Record<string, string>): Promise<void> {
+  const system = getAutonomousSystem({
+    enableEconomy: options.economy !== 'false',
+    enableDeployment: options.deployment !== 'false',
+    enableProductionMemory: options.memory !== 'false',
+    enableGovernance: options.governance !== 'false',
+    slackWebhook: options.slack || process.env.SLACK_WEBHOOK_URL,
+  });
+
+  if (!subcommand || subcommand === 'status') {
+    console.log(c('\n=== AUTONOMOUS SYSTEM STATUS (Phase 11) ===\n', 'bold'));
+
+    const status = await system.getStatus();
+
+    console.log(`  ${c('Initialized:', 'cyan')}  ${status.initialized ? c('Yes', 'green') : c('No', 'yellow')}`);
+    console.log(`  ${c('Health:', 'cyan')}       ${c(status.health.toUpperCase(), status.health === 'healthy' ? 'green' : status.health === 'degraded' ? 'yellow' : 'red')}`);
+    console.log(`  ${c('Pending:', 'cyan')}      ${status.pendingActions} actions`);
+    console.log(`  ${c('Last Activity:', 'cyan')} ${status.lastActivity}`);
+    console.log();
+
+    console.log(c('Subsystems:', 'bold'));
+    console.log(`  ${c('Economy:', 'cyan')}      ${status.subsystems.economy.enabled ? c('●', 'green') : c('○', 'dim')} ${status.subsystems.economy.enabled ? 'Enabled' : 'Disabled'}`);
+    if (status.subsystems.economy.balance) {
+      console.log(`                  Balance: $${status.subsystems.economy.balance.fiat.toFixed(2)} USD + $${status.subsystems.economy.balance.crypto.usdc.toFixed(2)} USDC`);
+    }
+    console.log(`  ${c('Deployment:', 'cyan')}   ${status.subsystems.deployment.enabled ? c('●', 'green') : c('○', 'dim')} ${status.subsystems.deployment.enabled ? 'Enabled' : 'Disabled'}`);
+    console.log(`  ${c('Memory:', 'cyan')}       ${status.subsystems.memory.enabled ? c('●', 'green') : c('○', 'dim')} ${status.subsystems.memory.enabled ? 'Enabled' : 'Disabled'}`);
+    console.log(`  ${c('Governance:', 'cyan')}   ${status.subsystems.governance.enabled ? c('●', 'green') : c('○', 'dim')} ${status.subsystems.governance.enabled ? 'Enabled' : 'Disabled'}`);
+
+    if (status.subsystems.governance.enabled) {
+      const gov = status.subsystems.governance.stats.governance;
+      console.log(`                  Rules: ${gov.enabledRules}/${gov.totalRules}, Pending: ${gov.pendingApprovals}`);
+    }
+    console.log();
+    return;
+  }
+
+  if (subcommand === 'init') {
+    console.log(c('\n=== Initializing Autonomous System ===\n', 'bold'));
+    const status = await system.initialize();
+    console.log(c('Initialization complete!', 'green'));
+    console.log(`  Health: ${c(status.health.toUpperCase(), 'green')}`);
+    console.log();
+    return;
+  }
+
+  if (subcommand === 'balance') {
+    const balance = await system.getBalance();
+    if (!balance) {
+      console.log(c('\nEconomy not initialized', 'yellow'));
+      return;
+    }
+
+    console.log(c('\n=== UNIFIED BALANCE ===\n', 'bold'));
+    console.log(`  ${c('Fiat (Stripe):', 'cyan')}  $${balance.fiat.toFixed(2)} USD`);
+    console.log(`  ${c('Crypto:', 'cyan')}         $${balance.crypto.usdc.toFixed(2)} USDC`);
+    console.log(`  ${c('Total:', 'green')}          $${(balance.fiat + balance.crypto.usdc).toFixed(2)} USD`);
+    console.log();
+    return;
+  }
+
+  if (subcommand === 'approvals') {
+    const approvals = system.getPendingApprovals();
+
+    console.log(c('\n=== PENDING APPROVALS ===\n', 'bold'));
+
+    if (approvals.length === 0) {
+      console.log(c('  No pending approvals', 'green'));
+    } else {
+      for (const approval of approvals) {
+        console.log(`  ${c('●', 'yellow')} [${approval.id}]`);
+        console.log(`      Type: ${approval.type}`);
+        console.log(`      Description: ${approval.description}`);
+        console.log(`      Amount: ${approval.amount ? `$${approval.amount}` : 'N/A'}`);
+        console.log(`      Urgency: ${approval.urgency}`);
+        console.log(`      Created: ${approval.created}`);
+        console.log();
+      }
+    }
+    return;
+  }
+
+  if (subcommand === 'approve') {
+    const id = options.id || options.approval;
+    const decision = (options.decision as 'approved' | 'rejected') || 'approved';
+    const reviewer = options.reviewer || 'cli-user';
+    const notes = options.notes;
+
+    if (!id) {
+      console.log(c('Error: --id required', 'red'));
+      return;
+    }
+
+    const result = system.submitApproval(id, decision, reviewer, notes);
+    if (result) {
+      console.log(c(`\nApproval ${id} ${decision}`, decision === 'approved' ? 'green' : 'yellow'));
+    } else {
+      console.log(c(`\nApproval not found or already processed: ${id}`, 'red'));
+    }
+    return;
+  }
+
+  if (subcommand === 'stop') {
+    const reason = options.reason || 'Manual emergency stop from CLI';
+    const result = system.emergencyStop(reason);
+    console.log(c('\n!!! EMERGENCY STOP ACTIVATED !!!', 'red'));
+    console.log(`  Stopped Approvals: ${result.stoppedApprovals}`);
+    console.log(`  Stopped Tasks: ${result.stoppedTasks}`);
+    console.log(`  Reason: ${reason}`);
+    console.log();
+    return;
+  }
+
+  if (subcommand === 'agent') {
+    const card = system.getAgentCard();
+    if (!card) {
+      console.log(c('\nGovernance not initialized', 'yellow'));
+      return;
+    }
+
+    console.log(c('\n=== AGENT CARD (A2A Protocol) ===\n', 'bold'));
+    console.log(`  ${c('ID:', 'cyan')}          ${card.id}`);
+    console.log(`  ${c('Name:', 'cyan')}        ${card.name}`);
+    console.log(`  ${c('Version:', 'cyan')}     ${card.version}`);
+    console.log(`  ${c('Description:', 'cyan')} ${card.description}`);
+    console.log();
+    console.log(c('Capabilities:', 'cyan'));
+    for (const cap of card.capabilities) {
+      console.log(`    ${c('●', 'green')} ${cap.name}: ${cap.description}`);
+    }
+    console.log();
+    console.log(c('Endpoints:', 'cyan'));
+    console.log(`    A2A:     ${card.endpoints.a2a}`);
+    console.log(`    Health:  ${card.endpoints.health}`);
+    console.log();
+    return;
+  }
+
+  if (subcommand === 'run') {
+    const cycles = parseInt(options.cycles || '0', 10);
+    const interval = parseInt(options.interval || '5000', 10);
+
+    console.log(c('\n=== STARTING AUTONOMOUS LOOP ===\n', 'bold'));
+    console.log(`  Cycles: ${cycles || 'Unlimited'}`);
+    console.log(`  Interval: ${interval}ms`);
+    console.log();
+
+    // Initialize first
+    await system.initialize();
+
+    // Run the loop
+    console.log(c('Running autonomous loop... (Ctrl+C to stop)\n', 'dim'));
+    await system.runLoop(interval, cycles || undefined);
+    return;
+  }
+
+  console.log(c(`Unknown autonomous subcommand: ${subcommand}`, 'red'));
+  console.log('Use: status, init, balance, approvals, approve, stop, agent, run');
+}
+
 async function cmdHardware(): Promise<void> {
   console.log(c('\n=== HARDWARE PROFILE ===\n', 'bold'));
 
@@ -1231,6 +1400,18 @@ ${c('Commands:', 'bold')}
     cycle --query <q>    Run a brain processing cycle
 
   ${c('phi', 'green')}                    Shortcut for 'brain phi'
+
+  ${c('autonomous', 'green')} [subcommand]  Phase 11: Full Autonomous Mode
+    status               Show autonomous system status
+    init                 Initialize all subsystems
+    balance              Show unified financial balance
+    approvals            List pending governance approvals
+    approve --id <id>    Approve/reject a pending action
+    stop --reason <r>    Emergency stop all operations
+    agent                Show A2A protocol agent card
+    run                  Start autonomous operation loop
+      --cycles <n>       Number of cycles (0=unlimited)
+      --interval <ms>    Interval between cycles (default: 5000)
 
   ${c('status', 'green')}                Show MCP servers status
   ${c('hardware', 'green')}              Show hardware profile & router config
@@ -1384,6 +1565,10 @@ async function main(): Promise<void> {
       case 'phi':
         // Shortcut for brain phi
         await cmdBrain('phi', options);
+        break;
+      case 'autonomous':
+      case 'auto':
+        await cmdAutonomous(positional, options);
         break;
       default:
         console.error(c(`Unknown command: ${command}`, 'red'));

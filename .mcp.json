@@ -1,5 +1,6 @@
 {
-  "version": "1.0",
+  "version": "2.0",
+  "description": "Genesis Autonomous System - Full Stack MCP Configuration 2026",
   "servers": {
     "filesystem": {
       "transport": "stdio",
@@ -42,7 +43,7 @@
       "transport": "stdio",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-github"],
-      "requiredEnv": ["GITHUB_PERSONAL_ACCESS_TOKEN", "GITHUB_TOKEN"],
+      "requiredEnv": ["GITHUB_PERSONAL_ACCESS_TOKEN"],
       "description": "GitHub repository operations",
       "enabled": true
     },
@@ -53,6 +54,107 @@
       "requiredEnv": ["HUGGINGFACE_API_KEY"],
       "description": "HuggingFace inference endpoints",
       "enabled": true
+    },
+
+    "stripe": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@stripe/mcp", "--tools=all"],
+      "requiredEnv": ["STRIPE_SECRET_KEY"],
+      "description": "FASE 1: Payments, billing, treasury, virtual cards",
+      "enabled": true,
+      "category": "economic"
+    },
+    "coinbase": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@coinbase/agentkit-model-context-protocol"],
+      "requiredEnv": ["CDP_API_KEY_NAME", "CDP_API_KEY_PRIVATE_KEY"],
+      "description": "FASE 1: Crypto wallet, stablecoins, on-chain actions",
+      "enabled": true,
+      "category": "economic"
+    },
+
+    "supabase": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@supabase/mcp-server-supabase"],
+      "requiredEnv": ["SUPABASE_ACCESS_TOKEN"],
+      "description": "FASE 2: Database, Auth, Storage, Edge Functions",
+      "enabled": true,
+      "category": "deployment"
+    },
+    "vercel": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@vercel/mcp"],
+      "requiredEnv": ["VERCEL_TOKEN"],
+      "description": "FASE 2: Website deployment, serverless functions",
+      "enabled": true,
+      "category": "deployment"
+    },
+    "cloudflare": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@cloudflare/mcp-server-cloudflare"],
+      "requiredEnv": ["CLOUDFLARE_API_TOKEN"],
+      "description": "FASE 2: CDN, Workers, R2 Storage, DNS",
+      "enabled": true,
+      "category": "deployment"
+    },
+
+    "pinecone": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@pinecone-database/mcp"],
+      "requiredEnv": ["PINECONE_API_KEY"],
+      "description": "FASE 3: Vector database for semantic memory",
+      "enabled": true,
+      "category": "memory"
+    },
+    "neo4j": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@jovanhsu/mcp-neo4j-memory-server"],
+      "requiredEnv": ["NEO4J_URI", "NEO4J_USER", "NEO4J_PASSWORD"],
+      "description": "FASE 3: Knowledge graph for relational memory",
+      "enabled": true,
+      "category": "memory"
+    },
+    "postgres": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres"],
+      "requiredEnv": ["POSTGRES_CONNECTION_STRING"],
+      "description": "FASE 3: PostgreSQL for structured data",
+      "enabled": true,
+      "category": "memory"
+    },
+
+    "slack": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-server-slack"],
+      "requiredEnv": ["SLACK_BOT_TOKEN"],
+      "description": "FASE 4: Team communication, notifications",
+      "enabled": true,
+      "category": "communication"
+    },
+    "puppeteer": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-server-puppeteer"],
+      "description": "FASE 4: Browser automation, web scraping",
+      "enabled": true,
+      "category": "automation"
+    },
+    "sequential-thinking": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-server-sequential-thinking"],
+      "description": "FASE 4: Enhanced reasoning capabilities",
+      "enabled": true,
+      "category": "cognition"
     }
   }
 }

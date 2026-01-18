@@ -40,14 +40,14 @@ export const PROVIDER_REGISTRY: Record<ExtendedProvider, Partial<ProviderConfig>
     name: 'ollama',
     baseUrl: process.env.OLLAMA_HOST || 'http://localhost:11434',
     models: {
-      fast: 'qwen2.5-coder:7b',
-      balanced: 'qwen2.5-coder:14b',
-      powerful: 'mistral-small',
+      fast: 'deepseek-coder:latest',      // 776MB, very fast
+      balanced: 'qwen2.5-coder:latest',   // 4.7GB, good quality
+      powerful: 'mistral:latest',         // 4.4GB, best local quality
     },
     costs: {
-      'qwen2.5-coder:7b': { input: 0, output: 0 },
-      'qwen2.5-coder:14b': { input: 0, output: 0 },
-      'mistral-small': { input: 0, output: 0 },
+      'deepseek-coder:latest': { input: 0, output: 0 },
+      'qwen2.5-coder:latest': { input: 0, output: 0 },
+      'mistral:latest': { input: 0, output: 0 },
     },
     maxTokens: 8192,
     rateLimit: 999,

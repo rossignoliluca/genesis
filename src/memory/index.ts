@@ -66,6 +66,18 @@ export { SemanticStore, createSemanticStore, type CreateSemanticOptions } from '
 export { ProceduralStore, createProceduralStore, type CreateProceduralOptions } from './procedural.js';
 export { ConsolidationService, createConsolidationService } from './consolidation.js';
 
+// Re-export v7.20 - Self-Awareness (code introspection)
+export {
+  SelfAwareness,
+  getSelfAwareness,
+  resetSelfAwareness,
+  type CodeFile,
+  type CodeModule,
+  type SelfAwarenessConfig,
+  type SyncResult,
+  type IntrospectionResult,
+} from './self-awareness.js';
+
 // Re-export Memory 2.0 - Cognitive Workspace
 export {
   CognitiveWorkspace,

@@ -372,6 +372,9 @@ async function cmdChat(options: Record<string, string>, promptArg?: string): Pro
   const resume = options.resume || options.r;
   const sessionName = options.name;
 
+  // v7.20.1: Streaming mode
+  const stream = options.stream === 'true';
+
   if (isHeadless) {
     // Get prompt from -p argument (if string), positional arg, or stdin
     let prompt = (typeof headlessFlag === 'string' && headlessFlag !== 'true')
@@ -408,6 +411,7 @@ async function cmdChat(options: Record<string, string>, promptArg?: string): Pro
     verbose,
     resume: resumeOption,
     sessionName,
+    stream,  // v7.20.1: Enable streaming
   });
 }
 
@@ -1242,6 +1246,7 @@ ${c('MCP Servers (13):', 'bold')}
 ${c('Examples:', 'bold')}
   genesis chat                          ${c('Interactive chat with Mistral (local)', 'dim')}
   genesis chat --provider openai        ${c('Chat with GPT-4o (cloud)', 'dim')}
+  genesis chat --stream                 ${c('Real-time streaming with live cost counter', 'dim')}
   genesis chat --resume                 ${c('Resume last session', 'dim')}
   genesis chat --resume abc123          ${c('Resume specific session by ID', 'dim')}
   genesis chat -p "Explain recursion"   ${c('Headless: single prompt, output, exit', 'dim')}

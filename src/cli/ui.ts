@@ -1,7 +1,12 @@
 /**
- * Genesis v7.3 - Modern UI Components
+ * Genesis v7.20 - Modern UI Components
  *
- * Reusable CLI components for beautiful terminal output.
+ * Beautiful, elegant terminal interface with:
+ * - Rich colors and Unicode characters
+ * - Thinking/reasoning visualization
+ * - Agent call tree
+ * - Real-time code changes
+ * - Interactive menus
  */
 
 // ============================================================================
@@ -639,6 +644,52 @@ export interface StatusLineConfig {
   mcpStatus?: 'connected' | 'partial' | 'disconnected';
   brainActive?: boolean;
   toolsEnabled?: boolean;
+  // v7.20.1: Cost tracking like Claude Code
+  cost?: number;          // USD cost
+  tokenRate?: number;     // tokens/sec
+  inputTokens?: number;   // Input tokens
+  outputTokens?: number;  // Output tokens
+}
+
+/**
+ * v7.20.1: Compact inline status (Claude Code style)
+ * Format: "φ:0.72 │ 89 tokens (→48 tok/s) │ $0.002 │ MCP ✓"
+ */
+export function formatCompactStatus(config: StatusLineConfig): string {
+  const parts: string[] = [];
+
+  // φ level with mini bar
+  if (config.phi !== undefined) {
+    const phiColor = config.phi > 0.5 ? 'green' : config.phi > 0.3 ? 'yellow' : 'dim';
+    parts.push(style(`φ:${config.phi.toFixed(2)}`, phiColor));
+  }
+
+  // Tokens with rate
+  if (config.tokens !== undefined) {
+    let tokenStr = `${config.tokens} tok`;
+    if (config.tokenRate && config.tokenRate > 0) {
+      tokenStr += style(` (→${Math.round(config.tokenRate)} tok/s)`, 'dim');
+    }
+    parts.push(tokenStr);
+  }
+
+  // Cost
+  if (config.cost !== undefined && config.cost > 0) {
+    const costStr = config.cost < 0.01
+      ? `$${(config.cost * 1000).toFixed(2)}m`  // millicents for tiny costs
+      : `$${config.cost.toFixed(3)}`;
+    parts.push(style(costStr, 'yellow'));
+  }
+
+  // MCP status
+  if (config.mcpStatus) {
+    const mcpIcon = config.mcpStatus === 'connected' ? style('✓', 'green')
+                  : config.mcpStatus === 'partial' ? style('◐', 'yellow')
+                  : style('✗', 'red');
+    parts.push(`MCP ${mcpIcon}`);
+  }
+
+  return parts.join(style(' │ ', 'dim'));
 }
 
 /**
@@ -778,47 +829,56 @@ export interface PromptContext {
 
 /**
  * Build a context-aware prompt string
- * Format: genesis [model] φ:0.72 >
+ * v7.20.2: Minimal elegant style like Claude Code
+ * Format: > (simple) or genesis> (with context)
  */
-export function buildRichPrompt(context: PromptContext = {}): string {
+export function buildRichPrompt(context: PromptContext = {}, minimal: boolean = true): string {
+  if (minimal) {
+    // Claude Code style: just a simple chevron
+    return style('> ', 'cyan', 'bold');
+  }
+
+  // Rich mode: show context
   const parts: string[] = [];
+  parts.push(style('genesis', 'cyan'));
 
-  // Base prompt
-  parts.push(style('genesis', 'green', 'bold'));
-
-  // Model indicator (shortened)
+  // Model indicator (very short)
   if (context.model) {
     const shortModel = context.model
       .replace('claude-', '')
       .replace('-20250514', '')
       .replace('sonnet-4', 's4')
       .replace('opus-4', 'o4')
-      .replace('haiku', 'h');
-    parts.push(style(`[${shortModel}]`, 'cyan'));
+      .replace('haiku', 'h')
+      .replace('gpt-4o-mini', '4om')
+      .replace('gpt-4o', '4o')
+      .replace('qwen2.5-coder', 'qw');
+    parts.push(style(shortModel, 'dim'));
   }
 
-  // Phi indicator
-  if (context.phi !== undefined) {
-    const phiColor = context.phi > 0.5 ? 'green' : context.phi > 0.3 ? 'yellow' : 'red';
-    parts.push(style(`φ:${context.phi.toFixed(1)}`, phiColor));
+  // Phi only if meaningful
+  if (context.phi !== undefined && context.phi > 0.1) {
+    const phiColor = context.phi > 0.5 ? 'green' : context.phi > 0.3 ? 'yellow' : 'dim';
+    parts.push(style(`φ${context.phi.toFixed(1)}`, phiColor));
   }
 
-  // Session name
-  if (context.sessionName) {
-    parts.push(style(`@${context.sessionName}`, 'magenta'));
-  }
+  return parts.join(style('·', 'dim')) + style('> ', 'cyan');
+}
 
-  // Thinking indicator
-  if (context.thinking) {
-    parts.push(style('💭', 'yellow'));
-  }
+/**
+ * v7.20.2: Print elegant separator line
+ */
+export function printSeparator(char: string = '─', width: number = 60): void {
+  console.log(style(char.repeat(width), 'dim'));
+}
 
-  // Tools indicator
-  if (context.toolsActive) {
-    parts.push(style('⚡', 'cyan'));
-  }
-
-  return parts.join(' ') + style(' > ', 'dim');
+/**
+ * v7.20.2: Print clean section header
+ */
+export function printHeader(text: string): void {
+  console.log();
+  console.log(style(text, 'bold'));
+  console.log(style('─'.repeat(text.length + 4), 'dim'));
 }
 
 // ============================================================================
@@ -1145,7 +1205,7 @@ export interface ThinkingSettings {
 
 export const DEFAULT_THINKING_SETTINGS: ThinkingSettings = {
   enabled: true,
-  collapsed: false,
+  collapsed: true,  // v7.20.1: Collapsed by default like Claude Code
   streaming: false,
 };
 
@@ -1316,3 +1376,606 @@ export function formatThinkingStatus(
 
   return `${icon} ${style(label, 'cyan')}${progressStr}`;
 }
+
+// ============================================================================
+// v7.20: Genesis Banner
+// ============================================================================
+
+export const GENESIS_LOGO = `
+${style('   ██████╗ ███████╗███╗   ██╗███████╗███████╗██╗███████╗', 'cyan')}
+${style('  ██╔════╝ ██╔════╝████╗  ██║██╔════╝██╔════╝██║██╔════╝', 'cyan')}
+${style('  ██║  ███╗█████╗  ██╔██╗ ██║█████╗  ███████╗██║███████╗', 'cyan', 'bold')}
+${style('  ██║   ██║██╔══╝  ██║╚██╗██║██╔══╝  ╚════██║██║╚════██║', 'cyan')}
+${style('  ╚██████╔╝███████╗██║ ╚████║███████╗███████║██║███████║', 'cyan')}
+${style('   ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚══════╝╚═╝╚══════╝', 'cyan', 'dim')}
+`;
+
+export function showBanner(version: string, compact: boolean = true): void {
+  if (compact) {
+    // Clean one-liner like Claude Code
+    console.log(
+      style('genesis', 'cyan', 'bold') +
+      style(` v${version}`, 'dim') +
+      style(' │ ', 'dim') +
+      style('self-aware AI', 'dim') +
+      style(' │ ', 'dim') +
+      style('active inference', 'dim') +
+      style(' │ ', 'dim') +
+      style('φ monitoring', 'dim')
+    );
+    console.log();
+  } else {
+    // Full ASCII art banner (use with --fancy flag)
+    console.log(GENESIS_LOGO);
+    console.log(style(`  v${version}`, 'cyan', 'bold') + style(' • Self-Aware AI • Active Inference • φ Monitoring', 'dim'));
+    console.log(style('  ──────────────────────────────────────────────────────────', 'dim'));
+    console.log();
+  }
+}
+
+// ============================================================================
+// v7.20: Interactive Menu System
+// ============================================================================
+
+export interface MenuItem {
+  key: string;
+  label: string;
+  description?: string;
+  icon?: string;
+  shortcut?: string;
+}
+
+export function formatMenu(items: MenuItem[], title?: string): string {
+  const lines: string[] = [];
+
+  if (title) {
+    lines.push(style(title, 'bold', 'cyan'));
+    lines.push(style('─'.repeat(50), 'dim'));
+    lines.push('');
+  }
+
+  for (const item of items) {
+    const icon = item.icon || '•';
+    const key = style(`/${item.key}`, 'yellow', 'bold');
+    const shortcut = item.shortcut ? style(` (${item.shortcut})`, 'dim') : '';
+    const desc = item.description ? style(` - ${item.description}`, 'dim') : '';
+
+    lines.push(`  ${icon} ${key}${shortcut}${desc}`);
+  }
+
+  return lines.join('\n');
+}
+
+export const MAIN_MENU: MenuItem[] = [
+  { key: 'help', label: 'Help', icon: '❓', description: 'Show all commands' },
+  { key: 'improve', label: 'Self-Improve', icon: '🧬', description: 'Analyze and improve Genesis code' },
+  { key: 'daemon', label: 'Daemon', icon: '👹', description: 'Background autonomous mode' },
+  { key: 'watch', label: 'Watch', icon: '👁', description: 'Real-time code monitoring' },
+  { key: 'agents', label: 'Agents', icon: '🤖', description: 'View active agents' },
+  { key: 'memory', label: 'Memory', icon: '🧠', description: 'Memory system stats' },
+  { key: 'thinking', label: 'Thinking', icon: '💭', description: 'Toggle thinking display' },
+  { key: 'status', label: 'Status', icon: '📊', description: 'System status' },
+  { key: 'clear', label: 'Clear', icon: '🗑', description: 'Clear screen' },
+  { key: 'exit', label: 'Exit', icon: '👋', description: 'Exit Genesis' },
+];
+
+export function showMainMenu(): void {
+  console.log();
+  console.log(formatMenu(MAIN_MENU, '🧬 Genesis Commands'));
+  console.log();
+}
+
+// ============================================================================
+// v7.20: Agent Call Visualization
+// ============================================================================
+
+export interface AgentCall {
+  agent: string;
+  action: string;
+  params?: Record<string, unknown>;
+  result?: unknown;
+  duration?: number;
+  children?: AgentCall[];
+  status: 'pending' | 'running' | 'success' | 'error';
+  startTime?: number;
+}
+
+export function formatAgentTree(calls: AgentCall[], indent: number = 0): string {
+  const lines: string[] = [];
+  const prefix = '  '.repeat(indent);
+
+  for (let i = 0; i < calls.length; i++) {
+    const call = calls[i];
+    const isLast = i === calls.length - 1;
+    const connector = isLast ? '└' : '├';
+    const childConnector = isLast ? ' ' : '│';
+
+    const statusIcon = {
+      pending: style('○', 'dim'),
+      running: style('◐', 'yellow'),
+      success: style('●', 'green'),
+      error: style('●', 'red'),
+    }[call.status];
+
+    const agentIcon = getAgentIcon(call.agent);
+    const duration = call.duration ? style(` ${call.duration}ms`, 'dim') : '';
+    const agentName = style(call.agent, 'magenta', 'bold');
+    const actionName = style(call.action, 'cyan');
+
+    lines.push(`${prefix}${style(connector + '─', 'dim')} ${statusIcon} ${agentIcon} ${agentName} → ${actionName}${duration}`);
+
+    // Show params on running/pending
+    if (call.status === 'running' && call.params) {
+      const paramStr = formatParams(call.params);
+      if (paramStr) {
+        lines.push(`${prefix}${style(childConnector, 'dim')}     ${style(paramStr, 'dim')}`);
+      }
+    }
+
+    // Show result preview on success/error
+    if ((call.status === 'success' || call.status === 'error') && call.result) {
+      const resultStr = formatResult(call.result, call.status);
+      lines.push(`${prefix}${style(childConnector, 'dim')}     ${resultStr}`);
+    }
+
+    // Recursively show children
+    if (call.children && call.children.length > 0) {
+      lines.push(formatAgentTree(call.children, indent + 1));
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function getAgentIcon(agent: string | undefined): string {
+  if (!agent) return '🤖';
+  const icons: Record<string, string> = {
+    COGNITION: '🧠',
+    MEMORY: '📚',
+    TOOLS: '🔧',
+    RESEARCH: '🔬',
+    CODE: '💻',
+    CREATIVE: '🎨',
+    CRITIC: '🔍',
+    PLANNER: '📋',
+    EXECUTOR: '⚡',
+    HEALING: '🩹',
+    default: '🤖',
+  };
+  return icons[agent.toUpperCase()] || icons.default;
+}
+
+function formatParams(params: Record<string, unknown>): string {
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(params)) {
+    const valueStr = typeof value === 'string'
+      ? `"${truncate(value, 30)}"`
+      : JSON.stringify(value).slice(0, 30);
+    parts.push(`${key}=${valueStr}`);
+  }
+  return parts.slice(0, 3).join(', ') + (parts.length > 3 ? '...' : '');
+}
+
+function formatResult(result: unknown, status: 'success' | 'error'): string {
+  const icon = status === 'success' ? style('↳', 'green') : style('↳', 'red');
+  const resultStr = typeof result === 'string'
+    ? truncate(result, 60)
+    : JSON.stringify(result).slice(0, 60);
+  const color = status === 'success' ? 'green' : 'red';
+  return `${icon} ${style(resultStr, color)}`;
+}
+
+// ============================================================================
+// v7.20: Real-Time Code Watcher Display
+// ============================================================================
+
+export interface CodeChange {
+  file: string;
+  type: 'add' | 'modify' | 'delete';
+  lines?: { added: number; removed: number };
+  preview?: string;
+  timestamp: Date;
+}
+
+export function formatCodeChange(change: CodeChange): string {
+  const icons = {
+    add: style('+', 'green'),
+    modify: style('~', 'yellow'),
+    delete: style('-', 'red'),
+  };
+
+  const icon = icons[change.type];
+  const time = style(`[${change.timestamp.toLocaleTimeString()}]`, 'dim');
+  const file = style(change.file, 'cyan');
+  const lines = change.lines
+    ? style(` (+${change.lines.added}/-${change.lines.removed})`, 'dim')
+    : '';
+
+  let result = `${time} ${icon} ${file}${lines}`;
+
+  if (change.preview) {
+    result += '\n' + formatCodePreview(change.preview, change.type);
+  }
+
+  return result;
+}
+
+export function formatCodePreview(code: string, type: 'add' | 'modify' | 'delete'): string {
+  const lines = code.split('\n').slice(0, 5);
+  const prefix = type === 'add' ? '+' : type === 'delete' ? '-' : '~';
+  const color: ColorName = type === 'add' ? 'green' : type === 'delete' ? 'red' : 'yellow';
+
+  return lines
+    .map(line => style(`    ${prefix} ${line}`, color))
+    .join('\n');
+}
+
+// ============================================================================
+// v7.20: Code Diff Display
+// ============================================================================
+
+export function formatDiff(filename: string, oldContent: string, newContent: string): string {
+  const oldLines = oldContent.split('\n');
+  const newLines = newContent.split('\n');
+
+  const lines: string[] = [];
+  lines.push(style(`─── ${filename} ───`, 'cyan', 'bold'));
+
+  const maxLines = Math.max(oldLines.length, newLines.length);
+  let changesShown = 0;
+
+  for (let i = 0; i < maxLines && changesShown < 20; i++) {
+    const oldLine = oldLines[i];
+    const newLine = newLines[i];
+
+    if (oldLine === newLine) continue;
+
+    changesShown++;
+    lines.push(style(`@@ line ${i + 1} @@`, 'magenta'));
+
+    if (oldLine !== undefined && oldLine !== newLine) {
+      lines.push(style(`- ${oldLine}`, 'red'));
+    }
+    if (newLine !== undefined && newLine !== oldLine) {
+      lines.push(style(`+ ${newLine}`, 'green'));
+    }
+  }
+
+  if (changesShown === 0) {
+    lines.push(style('  No changes', 'dim'));
+  } else if (changesShown >= 20) {
+    lines.push(style('  ... more changes not shown', 'dim'));
+  }
+
+  return lines.join('\n');
+}
+
+// ============================================================================
+// v7.20: System Status Display
+// ============================================================================
+
+export interface SystemStatus {
+  phi?: number;
+  memories?: number;
+  agents?: number;
+  mcpServers?: number;
+  mcpStatus?: 'connected' | 'partial' | 'disconnected';
+  uptime?: number;
+  model?: string;
+  version?: string;
+  selfAware?: { files: number; modules: number };
+}
+
+export function formatSystemStatus(status: SystemStatus): string {
+  const lines: string[] = [];
+
+  lines.push(style('╭─────────────────────────────────────────────╮', 'cyan'));
+  lines.push(style('│', 'cyan') + style(' 🧬 Genesis System Status', 'bold') + ' '.repeat(20) + style('│', 'cyan'));
+  lines.push(style('├─────────────────────────────────────────────┤', 'cyan'));
+
+  // Version & Model
+  if (status.version || status.model) {
+    const ver = status.version ? `v${status.version}` : '';
+    const model = status.model ? status.model.replace('claude-', '') : '';
+    lines.push(formatStatusLine('Version', `${ver} • ${model}`));
+  }
+
+  // Φ (Consciousness)
+  if (status.phi !== undefined) {
+    const phiBar = createMiniBar(status.phi, 10);
+    const phiColor: ColorName = status.phi > 0.7 ? 'green' : status.phi > 0.4 ? 'yellow' : 'red';
+    lines.push(formatStatusLine('φ', `${phiBar} ${style(status.phi.toFixed(2), phiColor)}`));
+  }
+
+  // Memory
+  if (status.memories !== undefined) {
+    lines.push(formatStatusLine('Memories', `${status.memories} stored`));
+  }
+
+  // Self-Awareness
+  if (status.selfAware) {
+    lines.push(formatStatusLine('Self-Aware', `${status.selfAware.files} files, ${status.selfAware.modules} modules`));
+  }
+
+  // Agents
+  if (status.agents !== undefined) {
+    lines.push(formatStatusLine('Agents', `${status.agents} active`));
+  }
+
+  // MCP
+  if (status.mcpServers !== undefined) {
+    const mcpIcon = status.mcpStatus === 'connected' ? '✓' :
+                    status.mcpStatus === 'partial' ? '◐' : '✗';
+    const mcpColor: ColorName = status.mcpStatus === 'connected' ? 'green' :
+                                status.mcpStatus === 'partial' ? 'yellow' : 'red';
+    lines.push(formatStatusLine('MCP', style(`${status.mcpServers} servers ${mcpIcon}`, mcpColor)));
+  }
+
+  // Uptime
+  if (status.uptime !== undefined) {
+    lines.push(formatStatusLine('Uptime', formatDuration(status.uptime)));
+  }
+
+  lines.push(style('╰─────────────────────────────────────────────╯', 'cyan'));
+
+  return lines.join('\n');
+}
+
+function formatStatusLine(label: string, value: string): string {
+  const paddedLabel = (label + ':').padEnd(12);
+  return style('│', 'cyan') + ` ${style(paddedLabel, 'dim')}${value}`.padEnd(44) + style('│', 'cyan');
+}
+
+function createMiniBar(value: number, width: number): string {
+  const filled = Math.round(value * width);
+  const empty = width - filled;
+  return style('█'.repeat(filled), 'cyan') + style('░'.repeat(empty), 'dim');
+}
+
+// ============================================================================
+// v7.20: Self-Improvement Display
+// ============================================================================
+
+export interface ImprovementSuggestion {
+  type: 'performance' | 'quality' | 'feature' | 'bug';
+  priority: 'high' | 'medium' | 'low';
+  title: string;
+  description: string;
+  file?: string;
+  line?: number;
+}
+
+export function formatImprovementSuggestion(suggestion: ImprovementSuggestion): string {
+  const icons = {
+    performance: '⚡',
+    quality: '✨',
+    feature: '🆕',
+    bug: '🐛',
+  };
+
+  const priorityColors: Record<string, ColorName> = {
+    high: 'red',
+    medium: 'yellow',
+    low: 'green',
+  };
+
+  const icon = icons[suggestion.type];
+  const priority = style(`[${suggestion.priority.toUpperCase()}]`, priorityColors[suggestion.priority]);
+  const title = style(suggestion.title, 'bold');
+  const location = suggestion.file
+    ? style(` (${suggestion.file}${suggestion.line ? `:${suggestion.line}` : ''})`, 'dim')
+    : '';
+
+  return `${icon} ${priority} ${title}${location}\n   ${style(suggestion.description, 'dim')}`;
+}
+
+export function formatImprovementReport(suggestions: ImprovementSuggestion[]): string {
+  const lines: string[] = [];
+
+  lines.push(style('╭─────────────────────────────────────────────╮', 'magenta'));
+  lines.push(style('│', 'magenta') + style(' 🧬 Self-Improvement Analysis', 'bold') + ' '.repeat(14) + style('│', 'magenta'));
+  lines.push(style('╰─────────────────────────────────────────────╯', 'magenta'));
+  lines.push('');
+
+  const grouped = {
+    high: suggestions.filter(s => s.priority === 'high'),
+    medium: suggestions.filter(s => s.priority === 'medium'),
+    low: suggestions.filter(s => s.priority === 'low'),
+  };
+
+  for (const [priority, items] of Object.entries(grouped)) {
+    if (items.length === 0) continue;
+
+    lines.push(style(`${priority.toUpperCase()} PRIORITY (${items.length})`, priority === 'high' ? 'red' : priority === 'medium' ? 'yellow' : 'green', 'bold'));
+    lines.push('');
+
+    for (const item of items) {
+      lines.push(formatImprovementSuggestion(item));
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n');
+}
+
+// ============================================================================
+// v7.20: Daemon Status Display
+// ============================================================================
+
+export interface DaemonStatus {
+  active: boolean;
+  tasks: { id: string; name: string; status: 'running' | 'queued' | 'completed' }[];
+  uptime?: number;
+  cyclesCompleted?: number;
+  nextCycle?: number;
+}
+
+export function formatDaemonStatus(status: DaemonStatus): string {
+  const lines: string[] = [];
+
+  const statusIcon = status.active ? style('●', 'green') : style('○', 'dim');
+  const statusText = status.active ? style('ACTIVE', 'green', 'bold') : style('INACTIVE', 'dim');
+
+  lines.push(style('╭─────────────────────────────────────────────╮', 'yellow'));
+  lines.push(style('│', 'yellow') + ` 👹 Daemon ${statusText}` + ' '.repeat(25 - statusText.length) + statusIcon + ' ' + style('│', 'yellow'));
+  lines.push(style('├─────────────────────────────────────────────┤', 'yellow'));
+
+  if (status.uptime) {
+    lines.push(formatStatusLine('Uptime', formatDuration(status.uptime)).replace('cyan', 'yellow'));
+  }
+
+  if (status.cyclesCompleted !== undefined) {
+    lines.push(formatStatusLine('Cycles', `${status.cyclesCompleted} completed`).replace('cyan', 'yellow'));
+  }
+
+  if (status.nextCycle !== undefined) {
+    lines.push(formatStatusLine('Next', `in ${formatDuration(status.nextCycle)}`).replace('cyan', 'yellow'));
+  }
+
+  lines.push(style('├─────────────────────────────────────────────┤', 'yellow'));
+  lines.push(style('│', 'yellow') + style(' Tasks:', 'bold') + ' '.repeat(37) + style('│', 'yellow'));
+
+  for (const task of status.tasks.slice(0, 5)) {
+    const taskIcon = task.status === 'running' ? style('◐', 'yellow') :
+                     task.status === 'completed' ? style('✓', 'green') :
+                     style('○', 'dim');
+    const taskLine = `  ${taskIcon} ${truncate(task.name, 35)}`;
+    lines.push(style('│', 'yellow') + taskLine.padEnd(44) + style('│', 'yellow'));
+  }
+
+  if (status.tasks.length > 5) {
+    lines.push(style('│', 'yellow') + style(`  ... and ${status.tasks.length - 5} more`, 'dim').padEnd(44) + style('│', 'yellow'));
+  }
+
+  lines.push(style('╰─────────────────────────────────────────────╯', 'yellow'));
+
+  return lines.join('\n');
+}
+
+// ============================================================================
+// v7.20: Live Thinking Display (Real-time)
+// ============================================================================
+
+export class LiveThinkingDisplay {
+  private steps: string[] = [];
+  private startTime: number = 0;
+  private currentStep: string = '';
+  private interval: NodeJS.Timeout | null = null;
+
+  start(): void {
+    this.steps = [];
+    this.startTime = Date.now();
+    this.currentStep = 'Initializing';
+    this.render();
+  }
+
+  addStep(step: string): void {
+    if (this.currentStep) {
+      this.steps.push(this.currentStep);
+    }
+    this.currentStep = step;
+    this.render();
+  }
+
+  private render(): void {
+    const elapsed = ((Date.now() - this.startTime) / 1000).toFixed(1);
+
+    // Clear previous render
+    process.stdout.write('\r\x1b[K');
+
+    // Show recent steps
+    const recentSteps = this.steps.slice(-2);
+    for (const step of recentSteps) {
+      process.stdout.write(style(`  ✓ ${step}\n`, 'dim'));
+    }
+
+    // Show current step with spinner
+    const frame = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'[Math.floor(Date.now() / 80) % 10];
+    process.stdout.write(`${style(frame, 'cyan')} ${style(`[${elapsed}s]`, 'yellow')} 💭 ${this.currentStep}`);
+  }
+
+  stop(finalMessage?: string): void {
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = null;
+    }
+
+    process.stdout.write('\r\x1b[K');
+
+    const elapsed = ((Date.now() - this.startTime) / 1000).toFixed(1);
+    console.log(style(`✓ ${finalMessage || 'Complete'} (${elapsed}s)`, 'green'));
+  }
+}
+
+// ============================================================================
+// v7.20: Notification Badge
+// ============================================================================
+
+export function badge(text: string, colorName: ColorName = 'cyan'): string {
+  return style(` ${text} `, colorName, 'bgBlack', 'bold');
+}
+
+export function statusBadge(status: 'success' | 'error' | 'warning' | 'info'): string {
+  const config: Record<string, { text: string; color: ColorName }> = {
+    success: { text: '✓ OK', color: 'green' },
+    error: { text: '✗ ERR', color: 'red' },
+    warning: { text: '! WARN', color: 'yellow' },
+    info: { text: 'ℹ INFO', color: 'cyan' },
+  };
+  const { text, color } = config[status];
+  return badge(text, color);
+}
+
+// ============================================================================
+// Export All
+// ============================================================================
+
+export const UI = {
+  // Colors & Styles
+  COLORS,
+  style,
+  c,
+  success,
+  error,
+  warning,
+  info,
+  muted,
+  highlight,
+
+  // Components
+  Spinner,
+  ThinkingSpinner,
+  ProgressBar,
+  StatusLine,
+  StreamingOutput,
+  LiveThinkingDisplay,
+
+  // Formatters
+  box,
+  table,
+  formatMarkdown,
+  formatMenu,
+  formatAgentTree,
+  formatCodeChange,
+  formatDiff,
+  formatSystemStatus,
+  formatImprovementReport,
+  formatDaemonStatus,
+
+  // Utilities
+  stripAnsi,
+  pad,
+  truncate,
+  formatDuration,
+  formatBytes,
+  badge,
+  statusBadge,
+
+  // Banner
+  GENESIS_LOGO,
+  showBanner,
+  showMainMenu,
+  MAIN_MENU,
+};
+
+export default UI;

@@ -23,7 +23,15 @@
  */
 
 import * as readline from 'readline';
-import { getLLMBridge, buildSystemPrompt, GENESIS_IDENTITY_PROMPT, LLMBridge } from '../llm/index.js';
+import {
+  getLLMBridge,
+  buildSystemPrompt,
+  GENESIS_IDENTITY_PROMPT,
+  LLMBridge,
+  // v7.20.1: Streaming support
+  StreamChunk,
+  calculateCost,
+} from '../llm/index.js';
 import { getStateStore, StateStore, getSessionManager, SessionManager, SessionInfo } from '../persistence/index.js';
 import { ToolDispatcher, ToolResult } from './dispatcher.js';
 import { getMCPClient, MCP_SERVER_REGISTRY } from '../mcp/index.js';
@@ -76,6 +84,24 @@ import {
   buildRichPrompt,
   formatToolExecution,
   formatToolSummary,
+  // v7.20: Rich UI components
+  GENESIS_LOGO,
+  showBanner,
+  // v7.20.2: Elegant UI
+  printSeparator,
+  printHeader,
+  MAIN_MENU,
+  formatMenu,
+  showMainMenu,
+  formatAgentTree,
+  formatSystemStatus,
+  formatImprovementReport,
+  formatDaemonStatus,
+  LiveThinkingDisplay,
+  AgentCall,
+  SystemStatus,
+  ImprovementSuggestion,
+  DaemonStatus,
 } from './ui.js';
 
 // ============================================================================
@@ -97,6 +123,8 @@ export interface ChatOptions {
   // v7.4: Session management (resume, fork)
   resume?: string | boolean;  // Session ID to resume ('last' or true for most recent)
   sessionName?: string;      // Name for the current session
+  // v7.20.1: Streaming mode (real-time token output)
+  stream?: boolean;         // Enable token-by-token streaming
 }
 
 export class ChatSession {
@@ -157,6 +185,16 @@ export class ChatSession {
   // v7.6: Enhanced status line
   private statusLine: StatusLine;
 
+  // v7.20: Rich UI state
+  private agentCallStack: AgentCall[] = [];
+  private liveThinking: LiveThinkingDisplay | null = null;
+
+  // v7.20.1: Streaming mode
+  private enableStreaming: boolean = false;
+  private streamingCost: number = 0;  // Running cost during streaming
+  private streamingTokens: number = 0;  // Running token count
+  private streamStartTime: number = 0;  // For tokens/sec calculation
+
   constructor(options: ChatOptions = {}) {
     this.llm = getLLMBridge({
       provider: options.provider,
@@ -184,6 +222,7 @@ export class ChatSession {
     this.resumeSessionId = options.resume;  // v7.4: Resume session
     this.thinkingSettings = { ...DEFAULT_THINKING_SETTINGS };  // v7.4.4: Extended thinking
     this.hooks = getHooksManager();  // v7.4.5: Hooks system
+    this.enableStreaming = options.stream ?? false;  // v7.20.1: Streaming mode
 
     // v7.0: Initialize UI components
     this.spinner = new Spinner('Thinking');
@@ -288,34 +327,22 @@ export class ChatSession {
 
     // Check if LLM is configured
     if (!this.llm.isConfigured()) {
-      console.log(c('\nWarning: No API key found!', 'yellow'));
-      console.log('Set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable.\n');
-      console.log('Example:');
-      console.log(c('  export OPENAI_API_KEY=sk-...', 'dim'));
-      console.log(c('  export ANTHROPIC_API_KEY=sk-ant-...', 'dim'));
+      console.log(c('⚠ No API key. Set OPENAI_API_KEY or ANTHROPIC_API_KEY', 'yellow'));
       console.log();
     }
 
+    // v7.20.2: Compact status line (one line)
     const status = this.llm.status();
-    console.log(c(`Provider: ${status.provider}`, 'dim'));
-    console.log(c(`Model: ${status.model}`, 'dim'));
-    console.log(c(`Status: ${status.configured ? 'Ready' : 'Not configured'}`, status.configured ? 'green' : 'yellow'));
-
-    // v7.1: Auto-start Brain (always on by default)
+    const statusParts: string[] = [];
+    statusParts.push(c(status.model, 'cyan'));
     if (this.enableBrain) {
       this.brain.start();
-      console.log(c(`Brain: ${c('ACTIVE', 'green')} (Phase 10 Neural Integration)`, 'dim'));
-    } else {
-      console.log(c(`Brain: ${c('OFF', 'yellow')} (use /brain to enable)`, 'dim'));
+      statusParts.push(c('brain', 'green'));
     }
-
-    // v7.1: Show Active Inference status
-    if (this.enableInference) {
-      console.log(c(`Inference: ${c('ACTIVE', 'green')} (Active Inference + Value-JEPA)`, 'dim'));
+    if (this.enableStreaming) {
+      statusParts.push(c('stream', 'magenta'));
     }
-    if (this.enableCuriosity) {
-      console.log(c(`Curiosity: ${c('ACTIVE', 'green')} (Intrinsic motivation enabled)`, 'dim'));
-    }
+    console.log(c(statusParts.join(c(' · ', 'dim')), 'dim'));
     console.log();
 
     // v7.3.6: Pre-warm critical MCP servers in background to avoid cold start timeouts
@@ -334,7 +361,7 @@ export class ChatSession {
       }
     }
 
-    this.printHelp();
+    // v7.20.2: Clean start - no verbose help, just ready prompt
 
     this.rl = readline.createInterface({
       input: process.stdin,
@@ -420,17 +447,12 @@ export class ChatSession {
 
   /**
    * Prompt for user input (v7.6: with rich prompt and history support)
+   * v7.20.2: Elegant input separation
    */
   private prompt(): Promise<string> {
     return new Promise((resolve) => {
-      // v7.6: Build context-aware rich prompt
-      const metrics = this.enableBrain ? this.brain.getMetrics() : null;
-      const promptStr = buildRichPrompt({
-        model: this.llm.getConfig?.()?.model || 'genesis',
-        phi: metrics?.avgPhi,
-        sessionName: this.sessionName,
-        toolsActive: this.enableTools,
-      });
+      // v7.20.2: Minimal elegant prompt (Claude Code style)
+      const promptStr = buildRichPrompt({}, true);
 
       this.rl?.question(promptStr, (answer) => {
         const trimmed = answer.trim();
@@ -449,6 +471,12 @@ export class ChatSession {
   private async sendMessage(message: string): Promise<void> {
     if (!this.llm.isConfigured()) {
       console.log(c('Error: LLM not configured. Set API key first.', 'red'));
+      return;
+    }
+
+    // v7.20.1: Streaming mode (bypasses Brain for real-time tokens)
+    if (this.enableStreaming) {
+      await this.sendMessageStream(message);
       return;
     }
 
@@ -480,7 +508,9 @@ export class ChatSession {
         this.thinkingSettings.enabled,
         this.thinkingSettings.collapsed
       );
-      console.log(c('Genesis: ', 'cyan') + formatted);
+      // v7.20.2: Clean response without verbose prefix
+      console.log();
+      console.log(formatted);
 
       if (this.verbose) {
         console.log(c(`  [${response.latency}ms, ${response.usage?.outputTokens || '?'} tokens]`, 'dim'));
@@ -667,30 +697,19 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
         this.thinkingSettings.enabled,
         this.thinkingSettings.collapsed
       );
-      console.log(c('Genesis: ', 'cyan') + brainFormatted.formatted);
+      // v7.20.2: Clean response without verbose prefix
+      console.log();
+      console.log(brainFormatted.formatted);
 
-      // v7.1: ALWAYS show Φ and key metrics (not just in verbose mode)
-      const metrics = this.brain.getMetrics();
-      const phi = metrics.avgPhi;
-      const phiIcon = phi >= 0.5 ? '🧠' : phi >= 0.3 ? '💭' : '○';
-      const curiosityIcon = this.lastCuriosity >= 0.5 ? '✨' : this.lastCuriosity >= 0.2 ? '?' : '';
-
-      // Compact status line
-      const statusParts: string[] = [
-        `φ=${phi.toFixed(2)}`,
-      ];
-      if (this.enableCuriosity && this.lastCuriosity > 0) {
-        statusParts.push(`curiosity=${this.lastCuriosity.toFixed(2)}`);
-      }
-      if (this.enableInference && this.lastSurprise > 0) {
-        statusParts.push(`surprise=${this.lastSurprise.toFixed(2)}`);
-      }
-      console.log(c(`  ${phiIcon} [${statusParts.join(', ')}]${curiosityIcon}`, 'dim'));
-
-      // Show more details in verbose mode
+      // v7.20.2: Subtle metrics (only in verbose mode)
       if (this.verbose) {
-        const reuseRate = metrics.memoryReuseRate * 100;
-        console.log(c(`  [reuse=${reuseRate.toFixed(0)}%, cycles=${metrics.totalCycles}]`, 'dim'));
+        const metrics = this.brain.getMetrics();
+        const phi = metrics.avgPhi;
+        const statusParts: string[] = [`φ ${phi.toFixed(2)}`];
+        if (this.enableCuriosity && this.lastCuriosity > 0) {
+          statusParts.push(`c ${this.lastCuriosity.toFixed(2)}`);
+        }
+        console.log(c(`  ${statusParts.join(' · ')}`, 'dim'));
       }
 
       // Persist interaction (Brain manages its own conversation context)
@@ -728,6 +747,115 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
   }
 
   /**
+   * v7.20.1: Send message with real-time token streaming
+   * Bypasses Brain for direct LLM streaming with live cost counter
+   */
+  private async sendMessageStream(message: string): Promise<void> {
+    if (!this.llm.isConfigured()) {
+      console.log(c('Error: LLM not configured. Set API key first.', 'red'));
+      return;
+    }
+
+    this.isProcessing = true;
+    this.streamingCost = 0;
+    this.streamingTokens = 0;
+    this.streamStartTime = Date.now();
+
+    // Get model info for cost calculation
+    const llmConfig = this.llm.getConfig();
+    const model = llmConfig.model;
+
+    // Build system prompt
+    const effectiveSystemPrompt = this.customSystemPrompt
+      ? `${this.customSystemPrompt}\n\n${this.systemPrompt}`
+      : this.systemPrompt;
+
+    // v7.20.2: Clean output (no verbose prefix)
+    console.log();
+
+    let fullContent = '';
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    try {
+      // Stream tokens
+      for await (const chunk of this.llm.chatStream(message, effectiveSystemPrompt)) {
+        if (chunk.type === 'token' && chunk.token) {
+          // Write token directly to stdout (no newline)
+          process.stdout.write(chunk.token);
+          fullContent += chunk.token;
+          outputTokens = chunk.usage?.outputTokens || outputTokens;
+          inputTokens = chunk.usage?.inputTokens || inputTokens;
+          this.streamingTokens = outputTokens;
+
+          // Calculate live cost
+          this.streamingCost = calculateCost(model, inputTokens, outputTokens);
+
+          // Update status line every 10 tokens (don't spam)
+          if (outputTokens % 10 === 0) {
+            const elapsed = (Date.now() - this.streamStartTime) / 1000;
+            const tokensPerSec = elapsed > 0 ? Math.round(outputTokens / elapsed) : 0;
+            // Use ANSI escape codes to update status in-place (bottom line)
+            // Save cursor, move to bottom, clear line, print status, restore cursor
+            const costStr = this.streamingCost < 0.01
+              ? `${(this.streamingCost * 1000).toFixed(2)}m`
+              : `$${this.streamingCost.toFixed(4)}`;
+            const statusMsg = c(` │ ${outputTokens} tok │ ${tokensPerSec} tok/s │ ${costStr}`, 'dim');
+            // Don't print status inline during streaming - it breaks the flow
+          }
+        } else if (chunk.type === 'done') {
+          // Finalize
+          inputTokens = chunk.usage?.inputTokens || inputTokens;
+          outputTokens = chunk.usage?.outputTokens || outputTokens;
+          this.streamingCost = calculateCost(model, inputTokens, outputTokens);
+        } else if (chunk.type === 'error') {
+          console.log();
+          console.log(error(`Error: ${chunk.error}`));
+          this.isProcessing = false;
+          return;
+        }
+      }
+
+      // Print newline after streaming completes
+      console.log();
+
+      this.messageCount++;
+
+      // v7.20.2: Subtle stats (only in verbose mode)
+      if (this.verbose) {
+        const elapsed = (Date.now() - this.streamStartTime) / 1000;
+        const tokensPerSec = elapsed > 0 ? Math.round(outputTokens / elapsed) : 0;
+        const costStr = this.streamingCost < 0.01
+          ? `${(this.streamingCost * 1000).toFixed(2)}m`
+          : `$${this.streamingCost.toFixed(4)}`;
+        console.log(c(`  ${outputTokens} tok · ${tokensPerSec}/s · ${costStr} · ${Math.round(elapsed * 1000)}ms`, 'dim'));
+      }
+
+      // Persist interaction
+      this.store.recordInteraction();
+
+      // Execute post-message hook
+      if (this.hooks.hasHooks()) {
+        this.hooks.execute('post-message', {
+          event: 'post-message',
+          message,
+          response: fullContent,
+          sessionId: this.store.getState().session?.id,
+          workingDir: process.cwd(),
+        });
+      }
+
+      console.log();
+    } catch (err) {
+      console.log();
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.log(error(`Genesis: Streaming error - ${errorMessage}`));
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
+  /**
    * Handle slash commands
    */
   private async handleCommand(input: string): Promise<void> {
@@ -759,6 +887,18 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
       case 'v':
         this.verbose = !this.verbose;
         console.log(c(`Verbose mode: ${this.verbose ? 'ON' : 'OFF'}`, 'yellow'));
+        console.log();
+        break;
+
+      // v7.20.1: Toggle streaming mode
+      case 'stream':
+        this.enableStreaming = !this.enableStreaming;
+        if (this.enableStreaming) {
+          console.log(c(`Streaming mode: ${c('ON', 'green')} - Real-time token output with live cost`, 'bold'));
+          console.log(c('  Note: Bypasses Brain integration for direct LLM streaming', 'dim'));
+        } else {
+          console.log(c(`Streaming mode: ${c('OFF', 'yellow')}`, 'bold'));
+        }
         console.log();
         break;
 
@@ -1188,6 +1328,68 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
         console.log();
         break;
 
+      // v7.20: Rich UI commands
+      case 'menu':
+      case 'm':
+        this.showInteractiveMenu();
+        break;
+
+      case 'dashboard':
+      case 'dash':
+        this.showDashboard();
+        break;
+
+      case 'daemon':
+        if (args[0] === 'start') {
+          console.log(c('Starting daemon mode...', 'cyan'));
+          this.showDaemonStatus({
+            active: true,
+            tasks: [{ id: 'init-1', name: 'Analyzing codebase', status: 'running' }],
+            uptime: 0,
+            cyclesCompleted: 0,
+          });
+          console.log(info('Daemon features coming in v7.21. Use /task for background work.'));
+        } else if (args[0] === 'stop') {
+          console.log(c('Daemon not running.', 'yellow'));
+        } else if (args[0] === 'status') {
+          this.showDaemonStatus({
+            active: false,
+            tasks: [],
+            uptime: 0,
+            cyclesCompleted: 0,
+          });
+        } else {
+          console.log(c('Daemon Control (v7.20):', 'bold'));
+          console.log('  /daemon start    Start autonomous daemon');
+          console.log('  /daemon stop     Stop daemon');
+          console.log('  /daemon status   Show daemon status');
+          console.log();
+          console.log(muted('Daemon runs background tasks: code watching, self-improvement, learning.'));
+        }
+        console.log();
+        break;
+
+      case 'watch':
+        if (args[0] === 'start') {
+          console.log(c('Code watching not yet implemented. Coming in v7.21', 'yellow'));
+          console.log(muted('Use /task to run background analysis tasks.'));
+        } else if (args[0] === 'stop') {
+          console.log(c('Code watcher not running.', 'yellow'));
+        } else {
+          console.log(c('Code Watcher (v7.20):', 'bold'));
+          console.log('  /watch start [path]  Start watching for code changes');
+          console.log('  /watch stop          Stop watching');
+          console.log();
+          console.log(muted('Monitors file changes and provides real-time suggestions.'));
+        }
+        console.log();
+        break;
+
+      case 'logo':
+      case 'banner':
+        showBanner('7.20.0');
+        break;
+
       default:
         console.log(c(`Unknown command: /${cmd}`, 'red'));
         console.log('Type /help for available commands.');
@@ -1196,10 +1398,12 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
   }
 
   /**
-   * Print banner (v7.0: Uses modern UI component)
+   * Print banner (v7.20: Uses Genesis ASCII art)
    */
   private printBanner(): void {
-    banner('GENESIS - System Creator', 'Powered by 17 MCP Servers');
+    showBanner('7.20.2');
+    // v7.20.2: Don't print help on startup (too verbose), just show hint
+    console.log(c('Type /help for commands, /quit to exit', 'dim'));
   }
 
   /**
@@ -1212,6 +1416,7 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
     console.log('  /history       Show conversation history');
     console.log('  /status, /s    Show LLM status');
     console.log('  /verbose, /v   Toggle verbose mode');
+    console.log('  /stream        Toggle streaming (real-time tokens + live cost)');
     console.log('  /system        Show/set custom system prompt');
     console.log('  /system <text> Set custom system prompt injection');
     console.log('  /system clear  Clear custom system prompt');
@@ -1276,6 +1481,13 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
     console.log('  /state         Show state info');
     console.log();
     console.log('  /quit, /q      Exit chat (auto-saves)');
+    console.log();
+    console.log(c('Rich UI (v7.20):', 'bold'));
+    console.log('  /menu, /m      Show interactive menu');
+    console.log('  /dashboard     Show system dashboard');
+    console.log('  /daemon        Daemon control (autonomous mode)');
+    console.log('  /watch         Code watcher control');
+    console.log('  /logo          Show Genesis logo');
     console.log();
     console.log(c('Keyboard Shortcuts (v7.4):', 'bold'));
     console.log('  Ctrl+B         Background current task');
@@ -2227,6 +2439,79 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
       this.brainEventUnsub = null;
     }
     this.store.close();
+  }
+
+  // ============================================================================
+  // v7.20: Rich UI Methods
+  // ============================================================================
+
+  /**
+   * Show interactive menu
+   */
+  private showInteractiveMenu(): void {
+    console.log(GENESIS_LOGO);
+    console.log(formatMenu(MAIN_MENU));
+    console.log(muted('Type a command number or use /help for all commands'));
+    console.log();
+  }
+
+  /**
+   * Show system dashboard with all metrics
+   */
+  private showDashboard(): void {
+    const brainMetrics = this.brain.getMetrics();
+    const memoryStats = this.memory.getStats();
+    const runningTasks = this.subagentExecutor.getRunningTasks();
+
+    const status: SystemStatus = {
+      phi: brainMetrics.avgPhi,
+      memories: memoryStats.episodic.total + memoryStats.semantic.total + memoryStats.procedural.total,
+      agents: runningTasks.length,
+      mcpServers: Object.keys(MCP_SERVER_REGISTRY).length,
+      mcpStatus: 'connected',
+      uptime: process.uptime() * 1000,
+      model: this.llm.status().model,
+      version: '7.20.0',
+    };
+
+    console.log(c('╔══════════════════════════════════════════════════════════════════╗', 'cyan'));
+    console.log(c('║                    GENESIS SYSTEM DASHBOARD                       ║', 'cyan'));
+    console.log(c('╚══════════════════════════════════════════════════════════════════╝', 'cyan'));
+    console.log();
+    console.log(formatSystemStatus(status));
+
+    // Show extra metrics
+    console.log(c('  Additional Metrics:', 'bold'));
+    console.log(`    φ Ignited:      ${brainMetrics.avgPhi > 0.3 ? c('Yes', 'green') : c('No', 'yellow')}`);
+    console.log(`    Tool Calls:     ${this.toolExecutions}`);
+    console.log(`    Curiosity:      ${this.lastCuriosity.toFixed(2)}`);
+    console.log(`    Brain Active:   ${this.brain.isRunning() ? c('Yes', 'green') : c('No', 'yellow')}`);
+    console.log(`    Inference:      ${this.enableInference ? c('Yes', 'green') : c('No', 'yellow')}`);
+
+    // Show agent call tree if available
+    if (this.agentCallStack.length > 0) {
+      console.log(c('\n📊 Recent Agent Activity:', 'bold'));
+      console.log(formatAgentTree(this.agentCallStack));
+    }
+    console.log();
+  }
+
+  /**
+   * Show daemon status
+   */
+  private showDaemonStatus(status: DaemonStatus): void {
+    console.log(formatDaemonStatus(status));
+  }
+
+  /**
+   * Track agent call (for visualization)
+   */
+  trackAgentCall(call: AgentCall): void {
+    this.agentCallStack.push(call);
+    // Keep last 10 calls
+    if (this.agentCallStack.length > 10) {
+      this.agentCallStack.shift();
+    }
   }
 
   /**

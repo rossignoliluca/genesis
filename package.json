@@ -1,6 +1,6 @@
 {
   "name": "genesis-ai-cli",
-  "version": "7.21.0",
+  "version": "7.22.0",
   "description": "Autonomous AI System Creator - Self-aware codebase, Active Inference, Curiosity-driven, Φ monitoring",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",

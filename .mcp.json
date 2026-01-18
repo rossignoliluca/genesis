@@ -45,6 +45,14 @@
       "requiredEnv": ["GITHUB_PERSONAL_ACCESS_TOKEN", "GITHUB_TOKEN"],
       "description": "GitHub repository operations",
       "enabled": true
+    },
+    "huggingface": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "huggingface-mcp-server", "-t", "stdio"],
+      "requiredEnv": ["HUGGINGFACE_API_KEY"],
+      "description": "HuggingFace inference endpoints",
+      "enabled": true
     }
   }
 }

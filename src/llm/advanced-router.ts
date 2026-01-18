@@ -17,7 +17,7 @@ import { LLMBridge, LLMProvider, LLMResponse, ModelTier, MODEL_TIERS, MODEL_COST
 // Extended Provider Types
 // ============================================================================
 
-export type ExtendedProvider = LLMProvider | 'groq' | 'huggingface' | 'together' | 'deepinfra';
+export type ExtendedProvider = LLMProvider | 'groq' | 'huggingface' | 'together' | 'deepinfra' | 'xai';
 
 export interface ProviderConfig {
   name: ExtendedProvider;
@@ -132,6 +132,26 @@ export const PROVIDER_REGISTRY: Record<ExtendedProvider, Partial<ProviderConfig>
     },
     maxTokens: 16384,
     rateLimit: 100,
+    latency: 'fast',
+  },
+
+  // X.AI (Grok) - HIGH QUALITY, FAST
+  xai: {
+    name: 'xai',
+    apiKey: process.env.XAI_API_KEY || '',
+    baseUrl: 'https://api.x.ai/v1',
+    models: {
+      fast: 'grok-2-1212',              // Fast, good quality
+      balanced: 'grok-2-1212',          // Balanced
+      powerful: 'grok-2-vision-1212',   // Vision capable
+    },
+    costs: {
+      'grok-2-1212': { input: 2.00, output: 10.00 },
+      'grok-2-vision-1212': { input: 2.00, output: 10.00 },
+      'grok-beta': { input: 5.00, output: 15.00 },
+    },
+    maxTokens: 131072,
+    rateLimit: 60,
     latency: 'fast',
   },
 
@@ -530,6 +550,7 @@ export class AdvancedRouter {
         case 'together':
         case 'deepinfra':
         case 'openai':
+        case 'xai':
           available = !!config.apiKey;
           break;
 
@@ -748,6 +769,7 @@ export class AdvancedRouter {
 
       case 'together':
       case 'deepinfra':
+      case 'xai':
         return this.callOpenAICompatible(provider, model, prompt, systemPrompt);
 
       case 'ollama':

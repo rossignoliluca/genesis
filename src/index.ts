@@ -1019,8 +1019,8 @@ async function cmdBrain(subcommand: string | undefined, options: Record<string, 
   }
 
   if (subcommand === 'phi') {
-    const metrics = brain.getMetrics();
-    const phi = metrics.avgPhi;
+    const status = brain.getStatus();
+    const phi = status.persisted.avgPhi;  // v8.1: Use persisted phi
 
     console.log(c('\n=== CONSCIOUSNESS LEVEL (φ) ===\n', 'bold'));
 
@@ -1042,6 +1042,15 @@ async function cmdBrain(subcommand: string | undefined, options: Record<string, 
       console.log(`  Level:        ${c(bar, 'dim')} LOW`);
       console.log(`  Status:       ${c('Local processing - no broadcasting', 'dim')}`);
     }
+
+    // v8.1: Show persisted consciousness history
+    console.log();
+    console.log(c('History (persisted):', 'cyan'));
+    console.log(`  Peak φ:       ${status.persisted.peakPhi.toFixed(3)}`);
+    console.log(`  Avg φ:        ${status.persisted.avgPhi.toFixed(3)}`);
+    console.log(`  Ignitions:    ${status.persisted.totalIgnitions} (φ > 0.3 events)`);
+    console.log(`  Broadcasts:   ${status.persisted.totalBroadcasts}`);
+    console.log(`  Sessions:     ${status.persisted.totalSessions}`);
 
     console.log();
     console.log(c('Theory:', 'dim'));

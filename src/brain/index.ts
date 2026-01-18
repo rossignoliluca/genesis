@@ -126,6 +126,12 @@ import {
   DarwinGodelEngine,
 } from '../self-modification/index.js';
 
+// v8.1: Brain State Persistence
+import {
+  BrainStatePersistence,
+  getBrainStatePersistence,
+} from './persistence.js';
+
 // ============================================================================
 // Brain Class
 // ============================================================================
@@ -149,6 +155,9 @@ export class Brain {
   private stateStore: StateStore | null = null;
   private worldModel: WorldModelSystem | null = null;
   private darwinGodel: DarwinGodelEngine | null = null;
+
+  // v8.1: State Persistence
+  private persistence: BrainStatePersistence;
 
   // State
   private running: boolean = false;
@@ -202,6 +211,10 @@ export class Brain {
         thinkingBudget: 4096,
       });
     }
+
+    // v8.1: Initialize state persistence and load persisted metrics
+    this.persistence = getBrainStatePersistence();
+    this.metrics = { ...this.metrics, ...this.persistence.getMetrics() };
 
     // v7.13: Initialize full module integration (lazy - on first use)
     this.initializeV713Modules();
@@ -1619,6 +1632,7 @@ export class Brain {
 
   /**
    * Update metrics after a cycle
+   * v8.1: Also persist metrics to disk
    */
   private updateMetrics(state: BrainState, transitions: number): void {
     const cycleTime = Date.now() - state.startTime;
@@ -1645,6 +1659,24 @@ export class Brain {
       this.metrics.moduleTransitions[module] =
         (this.metrics.moduleTransitions[module] || 0) + 1;
     }
+
+    // v8.1: Persist metrics and phi to disk
+    this.persistence.updateMetrics({
+      totalCycles: 1,
+      successfulCycles: state.error ? 0 : 1,
+      failedCycles: state.error ? 1 : 0,
+      avgCycleTime: cycleTime,
+      memoryRecalls: state.context.immediate.length + state.context.episodic.length,
+      toolExecutions: state.toolResults.length,
+      toolSuccesses: state.toolResults.filter(r => r.success).length,
+      toolFailures: state.toolResults.filter(r => !r.success).length,
+      healingAttempts: state.healingAttempts,
+    });
+    this.persistence.recordPhi(state.phi, state.query.slice(0, 50));
+    if (state.ignited) {
+      this.persistence.recordBroadcast();
+    }
+    this.persistence.save();
   }
 
   /**
@@ -1692,6 +1724,7 @@ export class Brain {
 
   /**
    * Get brain status
+   * v8.1: Includes persisted consciousness stats
    */
   getStatus(): {
     running: boolean;
@@ -1700,7 +1733,18 @@ export class Brain {
     lastState: BrainState | null;
     metrics: BrainMetrics;
     moduleStates: Record<string, boolean>;
+    persisted: {
+      peakPhi: number;
+      avgPhi: number;
+      totalIgnitions: number;
+      totalBroadcasts: number;
+      totalSessions: number;
+      totalUptime: number;
+    };
   } {
+    const consciousnessStats = this.persistence.getConsciousnessStats();
+    const persistedState = this.persistence.getState();
+
     return {
       running: this.running,
       phi: this.getCurrentPhi(),
@@ -1721,6 +1765,15 @@ export class Brain {
         persistence: this.stateStore !== null,
         worldModel: this.worldModel !== null,
         selfModify: this.darwinGodel !== null,
+      },
+      // v8.1: Persisted stats across sessions
+      persisted: {
+        peakPhi: consciousnessStats.peakPhi,
+        avgPhi: consciousnessStats.avgPhi,
+        totalIgnitions: consciousnessStats.totalIgnitions,
+        totalBroadcasts: consciousnessStats.totalBroadcasts,
+        totalSessions: persistedState.sessions.total,
+        totalUptime: persistedState.sessions.totalUptime,
       },
     };
   }

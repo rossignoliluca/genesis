@@ -244,15 +244,15 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
     command: 'npx',
     args: () => [
       '-y', '@llmindset/mcp-hfspace',
-      // Default Spaces - can be customized via HF_SPACES env var
+      // Default Space - customizable via HF_SPACES env var (comma-separated)
+      // Note: Image gen may timeout on cold start, use HF_TOKEN for priority queue
       ...(process.env.HF_SPACES?.split(',') || [
-        'black-forest-labs/FLUX.1-schnell',  // Fast image gen
-        'Qwen/Qwen2.5-72B-Instruct',         // Chat
-        'facebook/seamless-m4t-v2-large',    // Speech/translation
+        'black-forest-labs/FLUX.1-schnell',  // Fast image generation
       ])
     ],
     envVars: () => ({ HF_TOKEN: process.env.HF_TOKEN || '' }),
-    tools: ['generate_image', 'chat', 'text_to_speech', 'speech_to_text', 'translate'],
+    // Tools: search-spaces, available-files, plus dynamic tools per Space (e.g. FLUX_1-schnell-infer)
+    tools: ['search-spaces', 'available-files'],
   },
 };
 
@@ -466,9 +466,10 @@ class MCPConnectionManager {
       console.log(`[MCP] ${server}.${tool}(${JSON.stringify(args).slice(0, 100)}...)`);
     }
 
-    // v7.18: Wrap call in timeout for faster failure (15s default, 30s for heavy ops)
+    // v7.18: Wrap call in timeout for faster failure (15s default, 30s/60s for heavy ops)
     const isHeavyOp = ['firecrawl_crawl', 'parse_paper_content', 'web_search'].includes(tool);
-    const callTimeout = isHeavyOp ? 30000 : 15000;
+    const isImageGen = server === 'huggingface' || server === 'stability-ai' || tool.includes('generate') || tool.includes('infer');
+    const callTimeout = isImageGen ? 60000 : isHeavyOp ? 30000 : 15000;
 
     const result = await Promise.race([
       connection.client.callTool({

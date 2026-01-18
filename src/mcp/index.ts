@@ -260,7 +260,8 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
   'stripe': {
     command: 'npx',
     args: ['-y', '@stripe/agent-toolkit'],
-    envVars: () => ({ STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || '' }),
+    // v7.24: Accept both variable names for compatibility
+    envVars: () => ({ STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY || '' }),
     tools: ['get_balance', 'create_payment_intent', 'create_product', 'create_price', 'create_issuing_card'],
   },
   'coinbase': {
@@ -275,21 +276,24 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
   'supabase': {
     command: 'npx',
     args: ['-y', '@supabase/mcp-server-supabase'],
+    // v7.24: Accept both variable names for compatibility
     envVars: () => ({
       SUPABASE_URL: process.env.SUPABASE_URL || '',
-      SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
+      SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || '',
     }),
     tools: ['query', 'insert', 'update', 'delete', 'rpc'],
   },
   'vercel': {
     command: 'npx',
     args: ['-y', '@vercel/mcp'],
-    envVars: () => ({ VERCEL_TOKEN: process.env.VERCEL_TOKEN || '' }),
+    // v7.24: Accept both variable names for compatibility
+    envVars: () => ({ VERCEL_TOKEN: process.env.VERCEL_TOKEN || process.env.VERCEL_API_TOKEN || '' }),
     tools: ['create_project', 'deploy', 'list_deployments', 'get_deployment', 'set_env'],
   },
   'cloudflare': {
+    // v7.24: Use mcp-remote for Cloudflare's remote MCP server
     command: 'npx',
-    args: ['-y', '@cloudflare/mcp-server-cloudflare'],
+    args: ['-y', 'mcp-remote', 'https://bindings.mcp.cloudflare.com/mcp'],
     envVars: () => ({
       CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN || '',
       CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID || '',
@@ -303,19 +307,23 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
     tools: ['upsert_vectors', 'query_vectors', 'delete_vectors', 'describe_index'],
   },
   'neo4j': {
+    // v7.24: Fixed package name and env var mapping
     command: 'npx',
-    args: ['-y', '@neo4j/mcp-neo4j'],
+    args: ['-y', '@alanse/mcp-neo4j-server'],
     envVars: () => ({
       NEO4J_URI: process.env.NEO4J_URI || '',
-      NEO4J_USER: process.env.NEO4J_USER || 'neo4j',
+      NEO4J_USERNAME: process.env.NEO4J_USERNAME || process.env.NEO4J_USER || 'neo4j',
       NEO4J_PASSWORD: process.env.NEO4J_PASSWORD || '',
+      NEO4J_DATABASE: process.env.NEO4J_DATABASE || 'neo4j',
     }),
     tools: ['cypher_query', 'create_node', 'create_relationship', 'find_paths'],
   },
   'slack': {
+    // v7.24: Fixed package (korotovsky/slack-mcp-server) and env var
+    // Use SLACK_MCP_XOXP_TOKEN for user OAuth tokens (xoxe.xoxp-... format)
     command: 'npx',
-    args: ['-y', '@anthropic/mcp-slack'],
-    envVars: () => ({ SLACK_BOT_TOKEN: process.env.SLACK_BOT_TOKEN || '' }),
+    args: ['-y', 'slack-mcp-server'],
+    envVars: () => ({ SLACK_MCP_XOXP_TOKEN: process.env.SLACK_MCP_XOXP_TOKEN || process.env.SLACK_BOT_TOKEN || '' }),
     tools: ['post_message', 'list_channels', 'get_messages'],
   },
   'puppeteer': {

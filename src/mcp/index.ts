@@ -247,11 +247,12 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
       // Default Space - customizable via HF_SPACES env var (comma-separated)
       // Note: Image gen may timeout on cold start, use HF_TOKEN for priority queue
       ...(process.env.HF_SPACES?.split(',') || [
-        'black-forest-labs/FLUX.1-schnell',  // Fast image generation
+        'multimodalart/FLUX.2-dev-turbo',    // Faster 8-step turbo (recommended)
+        'black-forest-labs/FLUX.1-schnell',  // Original fast model
       ])
     ],
     envVars: () => ({ HF_TOKEN: process.env.HF_TOKEN || '' }),
-    // Tools: search-spaces, available-files, plus dynamic tools per Space (e.g. FLUX_1-schnell-infer)
+    // Tools: search-spaces, available-files, plus dynamic tools per Space (e.g. FLUX_2-dev-turbo-infer)
     tools: ['search-spaces', 'available-files'],
   },
 };

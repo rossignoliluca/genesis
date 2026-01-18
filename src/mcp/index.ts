@@ -85,7 +85,7 @@ interface MCPServerInfo {
 
 /**
  * Registry of MCP servers and how to spawn them.
- * These are the 13 MCP servers Genesis uses.
+ * These are the 18 MCP servers Genesis uses.
  *
  * Package sources (verified on npm):
  * - Official: @modelcontextprotocol/server-*
@@ -237,6 +237,22 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
     command: 'npx',
     args: () => ['-y', '@modelcontextprotocol/server-postgres', process.env.DATABASE_URL || ''],
     tools: ['query'],
+  },
+
+  // v7.19 - HUGGINGFACE SPACES
+  'huggingface': {
+    command: 'npx',
+    args: () => [
+      '-y', '@llmindset/mcp-hfspace',
+      // Default Spaces - can be customized via HF_SPACES env var
+      ...(process.env.HF_SPACES?.split(',') || [
+        'black-forest-labs/FLUX.1-schnell',  // Fast image gen
+        'Qwen/Qwen2.5-72B-Instruct',         // Chat
+        'facebook/seamless-m4t-v2-large',    // Speech/translation
+      ])
+    ],
+    envVars: () => ({ HF_TOKEN: process.env.HF_TOKEN || '' }),
+    tools: ['generate_image', 'chat', 'text_to_speech', 'speech_to_text', 'translate'],
   },
 };
 

@@ -93,6 +93,9 @@ const DEFAULT_SERVER_TTL: Record<MCPServerName, number> = {
   'aws': 1000 * 60 * 5, // 5 minutes (cloud state changes)
   'sentry': 1000 * 60 * 5, // 5 minutes (errors can change)
   'postgres': 1000 * 60, // 1 minute (database queries)
+
+  // v7.19 - HuggingFace
+  'huggingface': 0, // Don't cache AI-generated content
 };
 
 // ============================================================================

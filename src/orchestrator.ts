@@ -144,6 +144,14 @@ export const MCP_CAPABILITIES: Record<MCPServerName, MCPCapability> = {
     tools: ['query'],
     description: 'PostgreSQL database queries',
   },
+
+  // v7.19 - HuggingFace
+  'huggingface': {
+    server: 'huggingface',
+    category: 'creation',
+    tools: ['generate_image', 'chat', 'text_to_speech', 'speech_to_text', 'translate'],
+    description: 'HuggingFace Spaces: AI models for images, speech, translation',
+  },
 };
 
 // ============================================================================

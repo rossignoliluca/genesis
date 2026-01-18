@@ -9,7 +9,7 @@
 // ============================================================================
 
 /**
- * Names of all 13 MCP servers available to Genesis.
+ * Names of all 18 MCP servers available to Genesis.
  * Renamed from MCPServer to avoid conflict with MCPServerState interface.
  */
 export type MCPServerName =
@@ -30,7 +30,9 @@ export type MCPServerName =
   | 'playwright'
   | 'aws'
   | 'sentry'
-  | 'postgres';
+  | 'postgres'
+  // v7.19 - HuggingFace Spaces
+  | 'huggingface';
 
 /** @deprecated Use MCPServerName instead */
 export type MCPServer = MCPServerName;

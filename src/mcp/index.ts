@@ -99,8 +99,11 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
     tools: ['search_arxiv', 'parse_paper_content', 'get_recent_ai_papers', 'get_arxiv_pdf_url'],
   },
   'semantic-scholar': {
+    // v7.24.1: Added API key support to avoid rate limits
+    // Get free API key at: https://www.semanticscholar.org/product/api#api-key-form
     command: 'npx',
     args: ['-y', 'researchmcp', 'semantic'],
+    envVars: () => ({ SEMANTIC_SCHOLAR_API_KEY: process.env.SEMANTIC_SCHOLAR_API_KEY || '' }),
     tools: ['search_semantic_scholar', 'get_semantic_scholar_paper', 'get_paper_citations', 'semantic_scholar_to_bibtex'],
   },
   'context7': {

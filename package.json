@@ -1,12 +1,12 @@
 {
   "name": "genesis-ai-cli",
-  "version": "8.0.0",
+  "version": "8.0.1",
   "description": "Fully Autonomous AI System - Self-funding, Self-deploying, Production Memory, A2A Protocol & Governance",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "bin": {
-    "genesis": "./dist/src/index.js",
-    "genesis-ai-cli": "./dist/src/index.js"
+    "genesis": "dist/src/index.js",
+    "genesis-ai-cli": "dist/src/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -41,7 +41,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rossignoliluca/genesis.git"
+    "url": "git+https://github.com/rossignoliluca/genesis.git"
   },
   "homepage": "https://github.com/rossignoliluca/genesis#readme",
   "bugs": {

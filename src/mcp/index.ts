@@ -467,10 +467,10 @@ class MCPConnectionManager {
       console.log(`[MCP] ${server}.${tool}(${JSON.stringify(args).slice(0, 100)}...)`);
     }
 
-    // v7.18: Wrap call in timeout for faster failure (15s default, 30s/60s for heavy ops)
+    // v7.18: Wrap call in timeout for faster failure (15s default, 30s/120s for heavy ops)
     const isHeavyOp = ['firecrawl_crawl', 'parse_paper_content', 'web_search'].includes(tool);
     const isImageGen = server === 'huggingface' || server === 'stability-ai' || tool.includes('generate') || tool.includes('infer');
-    const callTimeout = isImageGen ? 60000 : isHeavyOp ? 30000 : 15000;
+    const callTimeout = isImageGen ? 120000 : isHeavyOp ? 30000 : 15000; // 120s for image gen (HF cold start)
 
     const result = await Promise.race([
       connection.client.callTool({

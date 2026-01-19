@@ -159,6 +159,11 @@ export class Brain {
   // v8.1: State Persistence
   private persistence: BrainStatePersistence;
 
+  // v8.2: Tool Results Cache (approved self-modification)
+  private toolCache: Map<string, { result: ToolResult; timestamp: number }> = new Map();
+  private readonly TOOL_CACHE_TTL = 60000; // 1 minute TTL
+  private readonly TOOL_CACHE_MAX_SIZE = 100;
+
   // State
   private running: boolean = false;
   private currentState: BrainState | null = null;
@@ -708,6 +713,7 @@ export class Brain {
 
   /**
    * Tools module: execute tool calls
+   * v8.2: Added caching for repeated tool calls
    */
   private async stepTools(state: BrainState): Promise<Command> {
     if (state.toolCalls.length === 0) {
@@ -723,22 +729,48 @@ export class Brain {
     const dispatcherCalls = this.dispatcher.parseToolCalls(state.response);
     const results: ToolResult[] = [];
 
+    // v8.2: Check cache and clean expired entries
+    this.cleanToolCache();
+
     if (dispatcherCalls.length > 0) {
-      const dispatchResult = await this.dispatcher.dispatch(dispatcherCalls);
+      const uncachedCalls: typeof dispatcherCalls = [];
 
-      for (const r of dispatchResult.results) {
-        results.push({
-          name: r.name,
-          success: r.success,
-          data: r.data,
-          error: r.error,
-          duration: r.duration,
-        });
+      // v8.2: Check cache for each call
+      for (const call of dispatcherCalls) {
+        const cacheKey = this.getToolCacheKey(call);
+        const cached = this.toolCache.get(cacheKey);
 
-        if (r.success) {
+        if (cached && (Date.now() - cached.timestamp) < this.TOOL_CACHE_TTL) {
+          // Cache hit
+          results.push({ ...cached.result, cached: true } as ToolResult);
           this.metrics.toolSuccesses++;
         } else {
-          this.metrics.toolFailures++;
+          uncachedCalls.push(call);
+        }
+      }
+
+      // Execute uncached calls
+      if (uncachedCalls.length > 0) {
+        const dispatchResult = await this.dispatcher.dispatch(uncachedCalls);
+
+        for (const r of dispatchResult.results) {
+          const result: ToolResult = {
+            name: r.name,
+            success: r.success,
+            data: r.data,
+            error: r.error,
+            duration: r.duration,
+          };
+          results.push(result);
+
+          // v8.2: Cache successful results
+          if (r.success) {
+            const cacheKey = this.getToolCacheKey({ name: r.name, arguments: {} });
+            this.toolCache.set(cacheKey, { result, timestamp: Date.now() });
+            this.metrics.toolSuccesses++;
+          } else {
+            this.metrics.toolFailures++;
+          }
         }
       }
     }
@@ -765,6 +797,39 @@ export class Brain {
       },
       reason: 'tool_results',
     };
+  }
+
+  /**
+   * v8.2: Clean expired entries from tool cache
+   */
+  private cleanToolCache(): void {
+    const now = Date.now();
+
+    // Remove expired entries
+    for (const [key, entry] of this.toolCache.entries()) {
+      if (now - entry.timestamp > this.TOOL_CACHE_TTL) {
+        this.toolCache.delete(key);
+      }
+    }
+
+    // Enforce max size (LRU-style: remove oldest entries)
+    if (this.toolCache.size > this.TOOL_CACHE_MAX_SIZE) {
+      const entries = Array.from(this.toolCache.entries())
+        .sort((a, b) => a[1].timestamp - b[1].timestamp);
+
+      const toRemove = entries.slice(0, this.toolCache.size - this.TOOL_CACHE_MAX_SIZE);
+      for (const [key] of toRemove) {
+        this.toolCache.delete(key);
+      }
+    }
+  }
+
+  /**
+   * v8.2: Generate cache key from tool call
+   */
+  private getToolCacheKey(call: { name: string; arguments?: unknown }): string {
+    const argsStr = call.arguments ? JSON.stringify(call.arguments) : '';
+    return `${call.name}:${argsStr}`;
   }
 
   /**

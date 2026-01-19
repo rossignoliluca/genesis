@@ -561,3 +561,227 @@ export async function generateSelfModel(): Promise<SelfModel> {
 export async function saveSelfModel(outputPath?: string): Promise<void> {
   return getSelfModelGenerator().save(outputPath);
 }
+
+// ============================================================================
+// MCP Memory Graph Persistence (v8.5)
+// ============================================================================
+
+/**
+ * Entity type for MCP Memory graph
+ */
+export interface MemoryEntity {
+  name: string;
+  entityType: string;
+  observations: string[];
+}
+
+/**
+ * Relation type for MCP Memory graph
+ */
+export interface MemoryRelation {
+  from: string;
+  to: string;
+  relationType: string;
+}
+
+/**
+ * Convert self-model to MCP Memory graph format
+ */
+export function selfModelToMemoryGraph(model: SelfModel): {
+  entities: MemoryEntity[];
+  relations: MemoryRelation[];
+} {
+  const entities: MemoryEntity[] = [];
+  const relations: MemoryRelation[] = [];
+
+  // Root entity: Genesis itself
+  entities.push({
+    name: 'Genesis',
+    entityType: 'System',
+    observations: [
+      `Version: ${model.version}`,
+      `Generated: ${model.generatedAt}`,
+      `Capabilities: ${model.capabilities.join(', ')}`,
+      `Limitations: ${model.limitations.join(', ')}`,
+    ],
+  });
+
+  // Architecture layers
+  for (const layer of model.architecture.layers) {
+    entities.push({
+      name: `Layer:${layer}`,
+      entityType: 'ArchitectureLayer',
+      observations: [`Part of Genesis architecture`],
+    });
+    relations.push({
+      from: 'Genesis',
+      to: `Layer:${layer}`,
+      relationType: 'has_layer',
+    });
+  }
+
+  // Modules
+  for (const mod of model.architecture.modules) {
+    entities.push({
+      name: `Module:${mod.name}`,
+      entityType: 'Module',
+      observations: [
+        mod.description,
+        `Path: ${mod.path}`,
+        `Modifiable: ${mod.modifiable}`,
+        `TCB Protected: ${mod.tcbProtected}`,
+        `Exports: ${mod.exports.slice(0, 5).join(', ')}${mod.exports.length > 5 ? '...' : ''}`,
+      ],
+    });
+
+    // Module dependencies
+    for (const dep of mod.dependencies) {
+      relations.push({
+        from: `Module:${mod.name}`,
+        to: `Module:${dep}`,
+        relationType: 'depends_on',
+      });
+    }
+  }
+
+  // Patterns
+  for (const pattern of model.architecture.patterns) {
+    entities.push({
+      name: `Pattern:${pattern.name}`,
+      entityType: 'DesignPattern',
+      observations: [
+        pattern.description,
+        pattern.purpose,
+        `Files: ${pattern.files.slice(0, 3).join(', ')}${pattern.files.length > 3 ? '...' : ''}`,
+      ],
+    });
+    relations.push({
+      from: 'Genesis',
+      to: `Pattern:${pattern.name}`,
+      relationType: 'implements',
+    });
+  }
+
+  // Metrics
+  for (const metric of model.metrics) {
+    entities.push({
+      name: `Metric:${metric.name}`,
+      entityType: 'Metric',
+      observations: [
+        `Current: ${metric.current}`,
+        metric.target !== undefined ? `Target: ${metric.target}` : '',
+        `Trend: ${metric.trend}`,
+      ].filter(Boolean),
+    });
+    relations.push({
+      from: 'Genesis',
+      to: `Metric:${metric.name}`,
+      relationType: 'tracks',
+    });
+  }
+
+  // Modification points
+  const modPoints = model.modificationPoints;
+
+  entities.push({
+    name: 'ModificationZone:Safe',
+    entityType: 'ModificationZone',
+    observations: [`Safe modification points: ${modPoints.safe.slice(0, 5).join(', ')}`],
+  });
+  entities.push({
+    name: 'ModificationZone:Restricted',
+    entityType: 'ModificationZone',
+    observations: [`Restricted points (require phi > 0.5): ${modPoints.restricted.slice(0, 5).join(', ')}`],
+  });
+  entities.push({
+    name: 'ModificationZone:Forbidden',
+    entityType: 'ModificationZone',
+    observations: [`TCB-protected (immutable): ${modPoints.forbidden.slice(0, 5).join(', ')}`],
+  });
+
+  relations.push(
+    { from: 'Genesis', to: 'ModificationZone:Safe', relationType: 'has_zone' },
+    { from: 'Genesis', to: 'ModificationZone:Restricted', relationType: 'has_zone' },
+    { from: 'Genesis', to: 'ModificationZone:Forbidden', relationType: 'has_zone' },
+  );
+
+  return { entities, relations };
+}
+
+/**
+ * Persist self-model to MCP Memory graph
+ *
+ * This allows Genesis to remember its own architecture persistently.
+ * Stores locally in .genesis/ directory. When running under Claude Code,
+ * the graph can be synced to MCP Memory server via CLI or Brain methods.
+ */
+export async function persistSelfModelToMemory(model?: SelfModel): Promise<{
+  success: boolean;
+  entitiesCreated: number;
+  relationsCreated: number;
+  graphPath: string;
+  error?: string;
+}> {
+  try {
+    // Generate model if not provided
+    const selfModel = model || await generateSelfModel();
+
+    // Convert to graph format
+    const { entities, relations } = selfModelToMemoryGraph(selfModel);
+
+    // Store locally for now
+    // MCP Memory integration happens at the Claude Code level via tools
+    const cacheDir = path.join(process.cwd(), '.genesis');
+    if (!fs.existsSync(cacheDir)) {
+      fs.mkdirSync(cacheDir, { recursive: true });
+    }
+
+    const graphPath = path.join(cacheDir, 'self-model-graph.json');
+    fs.writeFileSync(graphPath, JSON.stringify({
+      version: selfModel.version,
+      generatedAt: selfModel.generatedAt,
+      entities,
+      relations,
+      stats: {
+        entityCount: entities.length,
+        relationCount: relations.length,
+        entityTypes: [...new Set(entities.map(e => e.entityType))],
+        relationTypes: [...new Set(relations.map(r => r.relationType))],
+      },
+    }, null, 2));
+
+    return {
+      success: true,
+      entitiesCreated: entities.length,
+      relationsCreated: relations.length,
+      graphPath,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      entitiesCreated: 0,
+      relationsCreated: 0,
+      graphPath: '',
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Load self-model graph from local storage
+ */
+export function loadSelfModelGraph(): {
+  entities: MemoryEntity[];
+  relations: MemoryRelation[];
+} | null {
+  try {
+    const graphPath = path.join(process.cwd(), '.genesis', 'self-model-graph.json');
+    if (fs.existsSync(graphPath)) {
+      const data = JSON.parse(fs.readFileSync(graphPath, 'utf-8'));
+      return { entities: data.entities, relations: data.relations };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}

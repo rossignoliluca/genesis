@@ -44,7 +44,25 @@ export {
   ModuleInfo,
   MetricInfo,
   PatternInfo,
+  // v8.5: MCP Memory persistence
+  selfModelToMemoryGraph,
+  persistSelfModelToMemory,
+  loadSelfModelGraph,
+  MemoryEntity,
+  MemoryRelation,
 } from './self-model.js';
+
+// v8.5: Code RAG (Retrieval-Augmented Generation)
+export {
+  CodeRAG,
+  getCodeRAG,
+  resetCodeRAG,
+  CodeChunker,
+  CodeChunk,
+  CodeIndex,
+  QueryResult,
+  CodeRAGConfig,
+} from './code-rag.js';
 
 // Re-export invariant types for convenience
 export {

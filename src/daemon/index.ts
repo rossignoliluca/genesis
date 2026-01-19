@@ -498,6 +498,71 @@ export class Daemon {
         tags: ['system', 'memory'],
       });
     }
+
+    // v8.5: Self-improvement task
+    if (this.config.selfImprovement?.enabled) {
+      this.scheduler.schedule({
+        name: 'self-improvement',
+        description: 'Periodic self-improvement discovery and application',
+        schedule: { type: 'interval', intervalMs: this.config.selfImprovement.intervalMs },
+        priority: 'low',
+        handler: async (ctx) => {
+          ctx.logger.info('Running self-improvement cycle');
+          try {
+            // Import brain dynamically to avoid circular deps
+            const { getBrain } = await import('../brain/index.js');
+            const brain = getBrain();
+
+            // Check consciousness level first
+            const phi = brain.getMetrics().avgPhi;
+            if (phi < this.config.selfImprovement.minPhiThreshold) {
+              ctx.logger.debug(`Skipping self-improvement: phi=${phi.toFixed(3)} < ${this.config.selfImprovement.minPhiThreshold}`);
+              return {
+                success: true,
+                duration: 0,
+                output: { skipped: true, reason: 'low_phi', phi },
+              };
+            }
+
+            // Run improvement check
+            const result = await brain.checkForImprovements(this.config.selfImprovement.autoApply);
+
+            if (result.success) {
+              if (result.opportunities && result.opportunities.length > 0) {
+                ctx.logger.info(`Found ${result.opportunities.length} improvement opportunities`);
+                // Emit event for listeners
+                this.emit({
+                  type: 'maintenance_completed',
+                  timestamp: new Date(),
+                  data: {
+                    task: 'self-improvement',
+                    opportunities: result.opportunities,
+                  },
+                });
+              }
+              if (result.applied && result.applied.length > 0) {
+                ctx.logger.info(`Applied ${result.applied.length} improvements`);
+              }
+            }
+
+            return {
+              success: result.success,
+              duration: 0,
+              output: result,
+            };
+          } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            ctx.logger.error(`Self-improvement error: ${error.message}`);
+            return {
+              success: false,
+              duration: 0,
+              error,
+            };
+          }
+        },
+        tags: ['system', 'self-improvement', 'autopoiesis'],
+      });
+    }
   }
 
   private buildMaintenanceContext(): MaintenanceContext {

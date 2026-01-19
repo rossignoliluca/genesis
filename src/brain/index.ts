@@ -437,6 +437,95 @@ export class Brain {
     }
   }
 
+  /**
+   * v8.5: Query own source code with semantic search
+   *
+   * Uses RAG (Retrieval-Augmented Generation) to find relevant code
+   * for self-understanding and improvement.
+   */
+  async queryCode(query: string, options: { topK?: number; rebuild?: boolean } = {}): Promise<{
+    results: Array<{ name: string; type: string; file: string; score: number; content: string }>;
+    stats?: { files: number; chunks: number; lines: number };
+    error?: string;
+  }> {
+    try {
+      const { getCodeRAG } = await import('../self-modification/code-rag.js');
+      const rag = getCodeRAG();
+
+      // Build index if needed or requested
+      if (options.rebuild || !rag.getStats()) {
+        await rag.buildIndex();
+      }
+
+      const results = rag.query(query, options.topK || 5);
+      const stats = rag.getStats();
+
+      return {
+        results: results.map(r => ({
+          name: r.chunk.name,
+          type: r.chunk.type,
+          file: r.chunk.relativePath,
+          score: r.score,
+          content: r.chunk.content.slice(0, 500) + (r.chunk.content.length > 500 ? '...' : ''),
+        })),
+        stats: stats ? {
+          files: stats.totalFiles,
+          chunks: stats.totalChunks,
+          lines: stats.totalLines,
+        } : undefined,
+      };
+    } catch (error) {
+      return {
+        results: [],
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * v8.5: Get code summary for LLM context
+   */
+  async getCodeSummary(): Promise<string> {
+    try {
+      const { getCodeRAG } = await import('../self-modification/code-rag.js');
+      const rag = getCodeRAG();
+
+      if (!rag.getStats()) {
+        await rag.buildIndex();
+      }
+
+      return rag.getSummary();
+    } catch (error) {
+      return `Error generating code summary: ${error instanceof Error ? error.message : error}`;
+    }
+  }
+
+  /**
+   * v8.5: Persist self-model to memory graph
+   *
+   * Stores Genesis's self-understanding in persistent memory (local graph file).
+   * This enables cross-session architectural awareness.
+   */
+  async persistSelfKnowledge(): Promise<{
+    success: boolean;
+    entitiesCreated: number;
+    relationsCreated: number;
+    graphPath?: string;
+    error?: string;
+  }> {
+    try {
+      const { persistSelfModelToMemory } = await import('../self-modification/self-model.js');
+      return await persistSelfModelToMemory();
+    } catch (error) {
+      return {
+        success: false,
+        entitiesCreated: 0,
+        relationsCreated: 0,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   // ============================================================================
   // Main Processing Loop
   // ============================================================================

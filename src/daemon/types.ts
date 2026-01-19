@@ -273,6 +273,15 @@ export interface DreamMetrics {
 // Daemon Configuration
 // ============================================================================
 
+// v8.5: Self-Improvement Configuration
+export interface SelfImprovementDaemonConfig {
+  enabled: boolean;
+  intervalMs: number;               // How often to check (default: 1 hour)
+  autoApply: boolean;               // Auto-apply improvements (default: false)
+  minPhiThreshold: number;          // Min phi to run (default: 0.3)
+  maxImprovementsPerCycle: number;  // Max improvements per cycle
+}
+
 export interface DaemonConfig {
   // General
   enabled: boolean;
@@ -290,6 +299,9 @@ export interface DaemonConfig {
   maintenance: MaintenanceConfig;
 
   dream: DreamConfig;
+
+  // v8.5: Self-Improvement
+  selfImprovement: SelfImprovementDaemonConfig;
 
   // Logging
   logLevel: 'debug' | 'info' | 'warn' | 'error';
@@ -333,6 +345,15 @@ export const DEFAULT_DAEMON_CONFIG: DaemonConfig = {
     episodicConsolidationThreshold: 10,
     patternExtractionThreshold: 3,
     creativityTemperature: 0.7,
+  },
+
+  // v8.5: Self-Improvement
+  selfImprovement: {
+    enabled: true,
+    intervalMs: 3600000,                // 1 hour
+    autoApply: false,                   // Manual approval by default
+    minPhiThreshold: 0.3,               // Require consciousness
+    maxImprovementsPerCycle: 3,         // Conservative default
   },
 
   logLevel: 'info',

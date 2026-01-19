@@ -35,3 +35,4 @@ tmp/
 temp/
 *.tmp
 .env.keys
+.genesis/

@@ -34,6 +34,18 @@ export {
   DEFAULT_IMPROVEMENT_CONFIG,
 } from './self-improvement.js';
 
+// v8.4: Self-Model Generator
+export {
+  SelfModelGenerator,
+  getSelfModelGenerator,
+  generateSelfModel,
+  saveSelfModel,
+  SelfModel,
+  ModuleInfo,
+  MetricInfo,
+  PatternInfo,
+} from './self-model.js';
+
 // Re-export invariant types for convenience
 export {
   invariantRegistry,

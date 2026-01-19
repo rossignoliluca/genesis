@@ -361,6 +361,82 @@ export class Brain {
     return this.running;
   }
 
+  /**
+   * v8.4: Check for self-improvement opportunities
+   *
+   * This method can be called periodically (e.g., by daemon during idle periods)
+   * to discover and optionally apply improvements.
+   *
+   * @param autoApply - If true, automatically apply discovered improvements
+   * @returns Improvement results or opportunities
+   */
+  async checkForImprovements(autoApply: boolean = false): Promise<{
+    success: boolean;
+    opportunities?: Array<{ metric: string; description: string; priority: number }>;
+    applied?: Array<{ id: string; success: boolean }>;
+    error?: string;
+  }> {
+    try {
+      // Check consciousness level
+      const phi = this.getCurrentPhi();
+      if (phi < 0.3) {
+        return {
+          success: false,
+          error: `Consciousness level too low: φ=${phi.toFixed(3)} (need ≥0.3)`,
+        };
+      }
+
+      // Import action executor
+      const { executeAction } = await import('../active-inference/actions.js');
+
+      // Run improve.self action
+      const result = await executeAction('improve.self' as any, {
+        parameters: { autoApply },
+        beliefs: { viability: 0.5, worldState: 0.5, coupling: 0.5, goalProgress: 0.5 },
+      });
+
+      if (result.success) {
+        if (result.data?.opportunities) {
+          return {
+            success: true,
+            opportunities: result.data.opportunities,
+          };
+        }
+        if (result.data?.applied) {
+          return {
+            success: true,
+            applied: result.data.improvements,
+          };
+        }
+        return { success: true };
+      }
+
+      return {
+        success: false,
+        error: result.error || 'Unknown error',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * v8.4: Get the current self-model
+   *
+   * Returns Genesis's understanding of its own architecture
+   */
+  async getSelfModel(): Promise<any> {
+    try {
+      const { generateSelfModel } = await import('../self-modification/self-model.js');
+      return await generateSelfModel();
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
   // ============================================================================
   // Main Processing Loop
   // ============================================================================
@@ -1250,15 +1326,18 @@ export class Brain {
     }
 
     try {
-      // Self-modification should only occur with explicit request
-      // Check if query indicates a self-improvement request
+      // v8.4: Use Active Inference action executors for self-modification
       const queryLower = state.query.toLowerCase();
-      const isImprovementRequest = queryLower.includes('improve') ||
-        queryLower.includes('optimize') ||
-        queryLower.includes('self-modify') ||
-        queryLower.includes('self modify');
 
-      if (!isImprovementRequest) {
+      // Determine which action to invoke based on query
+      const isExplicitModify = queryLower.includes('self-modify') ||
+        queryLower.includes('self modify') ||
+        queryLower.includes('modifica te stesso');
+      const isImproveRequest = queryLower.includes('improve') ||
+        queryLower.includes('optimize') ||
+        queryLower.includes('miglior');
+
+      if (!isExplicitModify && !isImproveRequest) {
         // Not a self-modification request, skip
         return {
           goto: 'done',
@@ -1267,32 +1346,71 @@ export class Brain {
         };
       }
 
-      // Create a simple diagnostic checkpoint before any potential changes
-      const checkpointHash = await this.darwinGodel.createCheckpoint('brain-self-modify-checkpoint');
+      // Import action executor dynamically to avoid circular deps
+      const { executeAction } = await import('../active-inference/actions.js');
 
-      // Report current system status (no actual modification without explicit plan)
-      const failureRate = this.metrics.failedCycles / Math.max(this.metrics.totalCycles, 1);
-      const healingRate = this.metrics.healingSuccesses / Math.max(this.metrics.healingAttempts, 1);
+      // Check consciousness level first
+      const phi = this.phiMonitor?.getCurrentLevel().phi ?? 0;
+      if (phi < 0.3) {
+        return {
+          goto: 'done',
+          update: {
+            response: `[Self-modification blocked: consciousness level φ=${phi.toFixed(3)} < 0.3 required]`,
+          },
+          reason: 'self_modify_phi_too_low',
+        };
+      }
 
-      const statusReport = [
-        `System Status:`,
-        `- Total cycles: ${this.metrics.totalCycles}`,
-        `- Failure rate: ${(failureRate * 100).toFixed(1)}%`,
-        `- Healing success rate: ${(healingRate * 100).toFixed(1)}%`,
-        `- Avg cycle time: ${this.metrics.avgCycleTime.toFixed(0)}ms`,
-        `- Memory reuse: ${(this.metrics.memoryReuseRate * 100).toFixed(1)}%`,
-        `- Checkpoint: ${checkpointHash || 'none'}`,
-        ``,
-        `Note: Automatic self-modification requires explicit ModificationPlan.`,
-        `Use DarwinGodelEngine.validatePlan() and apply() for safe modifications.`,
-      ].join('\n');
+      // Default beliefs for Active Inference context
+      const defaultBeliefs = { viability: 0.5, worldState: 0.5, coupling: 0.5, goalProgress: 0.5 };
+
+      // Execute the appropriate action
+      let result;
+      if (isExplicitModify) {
+        // Direct modification - extract target metric if specified
+        const metricMatch = queryLower.match(/(?:metric|metrica)[:\s]+(\w+)/);
+        const targetMetric = metricMatch ? metricMatch[1] : undefined;
+
+        result = await executeAction('self.modify' as any, {
+          parameters: targetMetric ? { targetMetric } : {},
+          beliefs: defaultBeliefs,
+        });
+      } else {
+        // Improvement discovery
+        const autoApply = queryLower.includes('auto') || queryLower.includes('applica');
+
+        result = await executeAction('improve.self' as any, {
+          parameters: { autoApply },
+          beliefs: defaultBeliefs,
+        });
+      }
+
+      // Format response based on result
+      let response: string;
+      if (result.success) {
+        if (result.data?.message) {
+          response = result.data.message;
+        } else if (result.data?.opportunities) {
+          response = [
+            `Found ${result.data.opportunities.length} improvement opportunities:`,
+            ...result.data.opportunities.slice(0, 5).map((o: any, i: number) =>
+              `${i + 1}. [${o.category}] ${o.metric}: ${o.description} (priority: ${o.priority})`
+            ),
+            result.data.hint || '',
+          ].join('\n');
+        } else if (result.data?.applied) {
+          response = `Applied ${result.data.improvements?.length || 0} improvements.`;
+        } else {
+          response = `Self-modification completed: ${JSON.stringify(result.data)}`;
+        }
+      } else {
+        response = `Self-modification failed: ${result.error}`;
+      }
 
       return {
         goto: 'done',
-        update: {
-          response: statusReport,
-        },
-        reason: 'self_modify_status_report',
+        update: { response },
+        reason: result.success ? 'self_modify_success' : 'self_modify_failed',
       };
     } catch (error) {
       return {

@@ -23,6 +23,9 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
+// v8.3: Self-modification imports
+import { getDarwinGodelEngine, ModificationPlan, Modification } from '../self-modification/darwin-godel.js';
+import { SelfImprovementEngine, getSelfImprovementEngine } from '../self-modification/self-improvement.js';
 
 const execAsync = promisify(exec);
 
@@ -1538,6 +1541,250 @@ registerAction('code.diff', async (context) => {
     return {
       success: false,
       action: 'code.diff',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+// ============================================================================
+// SELF-MODIFICATION EXECUTOR (v8.3)
+// ============================================================================
+
+/**
+ * self.modify: Radical self-modification via Darwin-Gödel Engine
+ *
+ * This is the core action that allows Genesis to modify its own code.
+ * Requires:
+ * - φ ≥ 0.3 (consciousness threshold)
+ * - Valid modification plan
+ * - All invariants must pass after modification
+ *
+ * Flow:
+ * 1. Check consciousness level
+ * 2. Generate or use provided modification plan
+ * 3. Validate plan (syntax, safety)
+ * 4. Apply in sandbox
+ * 5. Verify (build, test, invariants)
+ * 6. Atomic apply on success
+ * 7. Store outcome in memory
+ */
+registerAction('self.modify', async (context) => {
+  const start = Date.now();
+
+  try {
+    // 1. Check consciousness level
+    const phiMonitor = getPhiMonitor();
+    const level = phiMonitor.getCurrentLevel();
+    const phi = level.phi;
+
+    if (phi < 0.3) {
+      return {
+        success: false,
+        action: 'self.modify',
+        error: `Insufficient consciousness level: φ=${phi.toFixed(3)} (need ≥0.3)`,
+        data: { phi, threshold: 0.3 },
+        duration: Date.now() - start,
+      };
+    }
+
+    // 2. Get or create modification plan
+    let plan: ModificationPlan;
+
+    if (context.parameters?.plan) {
+      // Use provided plan
+      plan = context.parameters.plan as ModificationPlan;
+    } else if (context.parameters?.targetMetric) {
+      // Use SelfImprovementEngine to find opportunity
+      const engine = getSelfImprovementEngine();
+      const cycleResult = await engine.runCycle();
+
+      // Find opportunity matching target metric
+      const targetMetric = context.parameters.targetMetric as string;
+      const opportunity = cycleResult.opportunities.find(
+        (o: { metric: string }) => o.metric === targetMetric
+      );
+
+      if (!opportunity || !opportunity.suggestedFix) {
+        return {
+          success: false,
+          action: 'self.modify',
+          error: `No improvement opportunity found for metric: ${targetMetric}`,
+          data: {
+            metrics: cycleResult.metrics,
+            availableOpportunities: cycleResult.opportunities.map(
+              (o: { metric: string }) => o.metric
+            ),
+          },
+          duration: Date.now() - start,
+        };
+      }
+
+      plan = opportunity.suggestedFix;
+    } else {
+      // Auto-detect: run full improvement cycle
+      const engine = getSelfImprovementEngine();
+      const result = await engine.runCycle();
+
+      if (result.results.length === 0) {
+        return {
+          success: true,
+          action: 'self.modify',
+          data: {
+            message: 'No improvements needed - all metrics within targets',
+            metrics: result.metrics,
+            opportunities: result.opportunities.length,
+          },
+          duration: Date.now() - start,
+        };
+      }
+
+      // Return first improvement result
+      const improvement = result.results[0];
+      return {
+        success: improvement.success,
+        action: 'self.modify',
+        data: {
+          opportunityId: improvement.opportunityId,
+          applied: improvement.applied,
+          beforeMetrics: improvement.beforeMetrics,
+          afterMetrics: improvement.afterMetrics,
+          commitHash: improvement.commitHash,
+        },
+        duration: Date.now() - start,
+      };
+    }
+
+    // 3. Apply via Darwin-Gödel Engine
+    const darwinGodel = getDarwinGodelEngine();
+    const applyResult = await darwinGodel.apply(plan);
+
+    // 4. Log outcome (memory storage removed - use event system instead)
+    console.log(
+      `[self.modify] ${applyResult.success ? 'SUCCESS' : 'FAILED'}: ${plan.name}`
+    );
+
+    return {
+      success: applyResult.success,
+      action: 'self.modify',
+      data: {
+        planId: plan.id,
+        planName: plan.name,
+        modificationsCount: plan.modifications.length,
+        verification: {
+          buildSuccess: applyResult.verificaton.buildSuccess,
+          testsSuccess: applyResult.verificaton.testsSuccess,
+          invariantsPass: applyResult.verificaton.invariantsPass,
+        },
+        commitHash: applyResult.commitHash,
+        rollbackHash: applyResult.rollbackHash,
+        canRollback: !!applyResult.rollbackHash,
+      },
+      duration: Date.now() - start,
+    };
+
+  } catch (error) {
+    return {
+      success: false,
+      action: 'self.modify',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * improve.self: High-level self-improvement action
+ *
+ * Observes metrics, identifies bottlenecks, and triggers self.modify.
+ * This is the "autonomous improvement" entry point.
+ */
+registerAction('improve.self' as ActionType, async (context) => {
+  const start = Date.now();
+
+  try {
+    const engine = getSelfImprovementEngine();
+
+    // 1. Run improvement cycle (observe + reflect + optionally apply)
+    const cycleResult = await engine.runCycle();
+    const { metrics, opportunities, results } = cycleResult;
+
+    if (opportunities.length === 0) {
+      return {
+        success: true,
+        action: 'improve.self' as ActionType,
+        data: {
+          message: 'System is operating within optimal parameters',
+          metrics: {
+            phi: metrics.phi,
+            memoryReuse: metrics.memoryReuse,
+            errorRate: metrics.errorRate,
+            taskSuccessRate: metrics.taskSuccessRate,
+          },
+        },
+        duration: Date.now() - start,
+      };
+    }
+
+    // 2. Sort by priority and pick top
+    const sorted = [...opportunities].sort(
+      (a: { priority: number }, b: { priority: number }) => b.priority - a.priority
+    );
+    const topOpportunity = sorted[0];
+
+    // 3. If autoApply and we have results, report them
+    if (context.parameters?.autoApply && results.length > 0) {
+      return {
+        success: true,
+        action: 'improve.self' as ActionType,
+        data: {
+          applied: results.length > 0,
+          improvements: results.map((i: { opportunityId: string; success: boolean }) => ({
+            id: i.opportunityId,
+            success: i.success,
+          })),
+          metrics: metrics,
+        },
+        duration: Date.now() - start,
+      };
+    }
+
+    // 4. Otherwise, just report opportunities
+    return {
+      success: true,
+      action: 'improve.self' as ActionType,
+      data: {
+        opportunities: sorted.map((o: {
+          id: string;
+          category: string;
+          metric: string;
+          currentValue: number;
+          targetValue: number;
+          priority: number;
+          description: string;
+        }) => ({
+          id: o.id,
+          category: o.category,
+          metric: o.metric,
+          current: o.currentValue,
+          target: o.targetValue,
+          priority: o.priority,
+          description: o.description,
+        })),
+        topRecommendation: {
+          metric: topOpportunity.metric,
+          description: topOpportunity.description,
+          priority: topOpportunity.priority,
+        },
+        hint: 'Use self.modify with targetMetric parameter to apply improvement',
+      },
+      duration: Date.now() - start,
+    };
+
+  } catch (error) {
+    return {
+      success: false,
+      action: 'improve.self' as ActionType,
       error: error instanceof Error ? error.message : String(error),
       duration: Date.now() - start,
     };

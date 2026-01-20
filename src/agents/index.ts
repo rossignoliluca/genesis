@@ -49,6 +49,7 @@ export { SensorAgent, createSensorAgent } from './sensor.js';
 
 export {
   AgentCoordinator,
+  AgentCoordinator as Coordinator,  // v9.0.2: Alias for backwards compatibility
   getCoordinator,
   createCoordinator,
   resetCoordinator,

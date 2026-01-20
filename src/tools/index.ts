@@ -22,6 +22,19 @@ export interface Tool {
 // Will be populated as tools are added
 export const toolRegistry: Map<string, Tool> = new Map();
 
+// v9.0.2: Helper methods for toolRegistry
+export function listTools(): string[] {
+  return Array.from(toolRegistry.keys());
+}
+
+export function getToolCount(): number {
+  return toolRegistry.size;
+}
+
+export function getTool(name: string): Tool | undefined {
+  return toolRegistry.get(name);
+}
+
 // Register bash tool
 import { getBashTool, BashOptions } from './bash.js';
 

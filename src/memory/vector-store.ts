@@ -59,6 +59,8 @@ export interface VectorStoreConfig {
   embeddings?: EmbeddingService;
   /** Default namespace */
   defaultNamespace?: string;
+  /** v9.4.0: Maximum documents to prevent unbounded growth */
+  maxDocuments?: number;
 }
 
 export interface VectorQuery {
@@ -90,6 +92,7 @@ export class VectorStore {
     this.config = {
       autoSave: true,
       defaultNamespace: 'default',
+      maxDocuments: 50000, // v9.4.0: Default limit to prevent unbounded growth
       ...config,
     };
     this.embeddings = config.embeddings || getEmbeddingService();
@@ -128,6 +131,9 @@ export class VectorStore {
 
     this.documents.set(id, doc);
     this.dirty = true;
+
+    // v9.4.0: Enforce size limits
+    this.maintainSize();
 
     if (this.config.autoSave && this.config.persistPath) {
       await this.save();
@@ -170,6 +176,9 @@ export class VectorStore {
     }
 
     this.dirty = true;
+
+    // v9.4.0: Enforce size limits
+    this.maintainSize();
 
     if (this.config.autoSave && this.config.persistPath) {
       await this.save();
@@ -339,6 +348,31 @@ export class VectorStore {
       text: query,
       ...options,
     });
+  }
+
+  // ============================================================================
+  // Size Management (v9.4.0)
+  // ============================================================================
+
+  /**
+   * Maintain size limits by removing oldest documents when over limit
+   * v9.4.0: Prevents unbounded memory growth
+   */
+  private maintainSize(): void {
+    const maxDocs = this.config.maxDocuments || 50000;
+    if (this.documents.size <= maxDocs) return;
+
+    // Convert to array and sort by creation date (oldest first)
+    const sorted = Array.from(this.documents.values())
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+    // Remove oldest documents until under limit
+    const toRemove = sorted.slice(0, this.documents.size - maxDocs);
+    for (const doc of toRemove) {
+      this.documents.delete(doc.id);
+    }
+
+    this.dirty = true;
   }
 
   // ============================================================================

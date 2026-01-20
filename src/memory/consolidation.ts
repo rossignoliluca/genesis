@@ -219,8 +219,59 @@ export class ConsolidationService {
 
   /**
    * Group similar episodes together
+   * v9.4.0: Optimized from O(n²) to O(n) using hash-based bucketing
    */
   private groupSimilarEpisodes(episodes: EpisodicMemory[]): EpisodicMemory[][] {
+    if (episodes.length === 0) return [];
+    if (episodes.length < 20) {
+      // For small sets, use simple O(n²) approach - overhead of bucketing not worth it
+      return this.groupSimilarEpisodesSimple(episodes);
+    }
+
+    // Phase 1: Hash-based bucketing O(n)
+    // Group episodes by coarse-grained similarity key
+    const buckets = new Map<string, EpisodicMemory[]>();
+
+    for (const episode of episodes) {
+      const bucketKey = this.getEpisodeBucketKey(episode);
+      if (!buckets.has(bucketKey)) {
+        buckets.set(bucketKey, []);
+      }
+      buckets.get(bucketKey)!.push(episode);
+    }
+
+    // Phase 2: Fine-grained grouping within buckets O(n*m) where m is avg bucket size
+    const groups: EpisodicMemory[][] = [];
+    const used = new Set<string>();
+
+    for (const bucket of buckets.values()) {
+      // Within each bucket, do fine-grained similarity check
+      for (const episode of bucket) {
+        if (used.has(episode.id)) continue;
+
+        const group = [episode];
+        used.add(episode.id);
+
+        // Only compare within the same bucket (much smaller n)
+        for (const other of bucket) {
+          if (used.has(other.id)) continue;
+          if (this.episodeSimilarity(episode, other) >= this.config.mergeThreshold) {
+            group.push(other);
+            used.add(other.id);
+          }
+        }
+
+        groups.push(group);
+      }
+    }
+
+    return groups;
+  }
+
+  /**
+   * Simple O(n²) grouping for small episode sets
+   */
+  private groupSimilarEpisodesSimple(episodes: EpisodicMemory[]): EpisodicMemory[][] {
     const groups: EpisodicMemory[][] = [];
     const used = new Set<string>();
 
@@ -230,7 +281,6 @@ export class ConsolidationService {
       const group = [episode];
       used.add(episode.id);
 
-      // Find similar episodes
       for (const other of episodes) {
         if (used.has(other.id)) continue;
         if (this.episodeSimilarity(episode, other) >= this.config.mergeThreshold) {
@@ -243,6 +293,23 @@ export class ConsolidationService {
     }
 
     return groups;
+  }
+
+  /**
+   * Generate bucket key for episode (coarse-grained similarity hash)
+   * Episodes with same bucket key are likely similar
+   */
+  private getEpisodeBucketKey(episode: EpisodicMemory): string {
+    // Use top 3 tags (sorted for consistency)
+    const topTags = [...episode.tags].sort().slice(0, 3).join('|') || 'no-tags';
+
+    // Use location
+    const location = episode.where?.location || 'no-location';
+
+    // Use hour of day (group by time proximity)
+    const hour = new Date(episode.when.timestamp).toISOString().slice(0, 13); // YYYY-MM-DDTHH
+
+    return `${topTags}:${location}:${hour}`;
   }
 
   /**

@@ -116,6 +116,11 @@ const AI_TO_WM_ACTION: Record<ActionType, WMActionType> = {
   'code.snapshot': 'transform', // Store code state
   'code.history': 'query',      // Recall evolution
   'code.diff': 'query',         // Compare versions
+  // v9.3 - Economic Self-Funding
+  'econ.check': 'observe',      // Check economic health
+  'econ.optimize': 'transform', // Optimize costs
+  'econ.activate': 'execute',   // Activate service
+  'econ.promote': 'execute',    // Promote services
 };
 
 // ============================================================================

@@ -58,6 +58,8 @@ export type PhiObs = 0 | 1 | 2 | 3;               // dormant, low, medium, high
 export type ToolObs = 0 | 1 | 2;                  // failed, partial, success
 export type CoherenceObs = 0 | 1 | 2;             // broken, degraded, consistent
 export type TaskObs = 0 | 1 | 2 | 3;              // none, pending, active, completed
+// v9.3 Economic observation for autopoietic self-funding
+export type EconomicObs = 0 | 1 | 2 | 3;          // critical, low, stable, growing
 
 export interface Observation {
   energy: EnergyObs;
@@ -65,6 +67,7 @@ export interface Observation {
   tool: ToolObs;
   coherence: CoherenceObs;
   task: TaskObs;
+  economic?: EconomicObs; // v9.3 - optional for backward compatibility
 }
 
 export const OBSERVATION_DIMS = {
@@ -73,6 +76,7 @@ export const OBSERVATION_DIMS = {
   tool: 3,
   coherence: 3,
   task: 4,
+  economic: 4, // v9.3
 } as const;
 
 export const OBSERVATION_LABELS = {
@@ -81,6 +85,7 @@ export const OBSERVATION_LABELS = {
   tool: ['failed', 'partial', 'success'] as const,
   coherence: ['broken', 'degraded', 'consistent'] as const,
   task: ['none', 'pending', 'active', 'completed'] as const,
+  economic: ['critical', 'low', 'stable', 'growing'] as const, // v9.3
 };
 
 // ============================================================================
@@ -115,7 +120,12 @@ export type ActionType =
   // v7.15 - Code Self-Awareness (Autopoiesis)
   | 'code.snapshot'   // Store current code state in memory
   | 'code.history'    // Recall code evolution from git
-  | 'code.diff';      // Compare code versions
+  | 'code.diff'       // Compare code versions
+  // v9.3 - Economic Self-Funding (Autopoiesis)
+  | 'econ.check'      // Check economic health (balance, costs, revenue)
+  | 'econ.optimize'   // Optimize costs (cheaper LLMs, caching)
+  | 'econ.activate'   // Activate a revenue-generating service
+  | 'econ.promote';   // Promote services to increase revenue
 
 export const ACTIONS: ActionType[] = [
   'sense.mcp',
@@ -146,6 +156,11 @@ export const ACTIONS: ActionType[] = [
   'code.snapshot',
   'code.history',
   'code.diff',
+  // v9.3 - Economic Self-Funding
+  'econ.check',
+  'econ.optimize',
+  'econ.activate',
+  'econ.promote',
 ];
 
 export const ACTION_COUNT = ACTIONS.length;

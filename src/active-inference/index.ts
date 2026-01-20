@@ -86,3 +86,19 @@ export {
   type MemoryIntegrationConfig,
   DEFAULT_MEMORY_INTEGRATION_CONFIG,
 } from './memory-integration.js';
+
+// Export Economic Integration (Genesis 9.3 - Autopoietic Self-Funding)
+export {
+  EconomicIntegration,
+  getEconomicIntegration,
+  recordLLMCost,
+  recordRevenue,
+  CostTracker,
+  RevenueTracker,
+  ServiceRegistry,
+  type EconomicObservation,
+  type CostRecord,
+  type RevenueRecord,
+  type ServiceDefinition,
+  type EconomicGoal,
+} from './economic-integration.js';

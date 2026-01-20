@@ -18,7 +18,9 @@ import {
   ToolObs,
   CoherenceObs,
   TaskObs,
+  EconomicObs,
 } from './types.js';
+import { getEconomicIntegration } from './economic-integration.js';
 
 // ============================================================================
 // Types for Agent Integration
@@ -97,6 +99,14 @@ export class ObservationGatherer {
       issues: 0,
     };
 
+    // v9.3: Get economic observation
+    let economicObs: EconomicObs = 2; // Default stable
+    try {
+      economicObs = await getEconomicIntegration().getDiscreteObservation() as EconomicObs;
+    } catch {
+      // Economic system not initialized, use default
+    }
+
     // Map to discrete observations
     return {
       energy: this.mapEnergy(kernelState.energy),
@@ -104,6 +114,7 @@ export class ObservationGatherer {
       tool: this.mapTool(sensorResult),
       coherence: this.mapCoherence(worldModelState),
       task: this.mapTask(kernelState.taskStatus),
+      economic: economicObs, // v9.3
     };
   }
 

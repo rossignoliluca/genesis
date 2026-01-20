@@ -16,6 +16,9 @@ export * from './router.js';
 // Re-export Phase 11: Advanced Multi-Provider Router (v7.21)
 export * from './advanced-router.js';
 
+// v9.3: Economic cost tracking
+import { recordLLMCost } from '../active-inference/economic-integration.js';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -418,6 +421,16 @@ export class LLMBridge {
 
       // Add assistant response to history
       this.conversationHistory.push({ role: 'assistant', content: response.content });
+
+      // v9.3: Track LLM costs for economic autopoiesis
+      if (response.usage) {
+        recordLLMCost(
+          this.config.provider,
+          response.usage.inputTokens || 0,
+          response.usage.outputTokens || 0,
+          this.config.model
+        );
+      }
 
       // v9.1.0: Store in cache for future identical queries
       if (this.useCache && response.content) {

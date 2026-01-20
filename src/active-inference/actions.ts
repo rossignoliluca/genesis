@@ -1930,6 +1930,177 @@ export class ActionExecutorManager {
 }
 
 // ============================================================================
+// v9.3: ECONOMIC SELF-FUNDING ACTIONS
+// ============================================================================
+
+import { getEconomicIntegration } from './economic-integration.js';
+
+/**
+ * econ.check: Check economic health (balance, costs, revenue, runway)
+ */
+registerAction('econ.check', async (_context) => {
+  const start = Date.now();
+  try {
+    const econ = getEconomicIntegration();
+    await econ.initialize();
+
+    const obs = await econ.getObservation();
+    const summary = await econ.getSummary();
+
+    return {
+      success: true,
+      action: 'econ.check',
+      data: {
+        balance: obs.balance,
+        monthlyCosts: obs.monthlyCosts,
+        monthlyRevenue: obs.monthlyRevenue,
+        runwayDays: obs.runwayDays,
+        health: ['critical', 'low', 'stable', 'growing'][obs.health],
+        summary,
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'econ.check',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * econ.optimize: Optimize costs (cheaper LLMs, aggressive caching)
+ */
+registerAction('econ.optimize', async (_context) => {
+  const start = Date.now();
+  try {
+    const econ = getEconomicIntegration();
+    await econ.initialize();
+
+    // Execute cost optimization actions
+    const llmResult = await econ.executeAction('economic:optimize-llm-usage');
+    const cacheResult = await econ.executeAction('economic:cache-expensive-calls');
+
+    // Get current cost breakdown
+    const breakdown = econ.getCostTracker().getCostBreakdown();
+    const dailyBurn = econ.getCostTracker().getDailyBurnRate();
+
+    return {
+      success: true,
+      action: 'econ.optimize',
+      data: {
+        llmOptimization: llmResult.success,
+        cachingEnabled: cacheResult.success,
+        currentCostBreakdown: breakdown,
+        dailyBurnRate: dailyBurn,
+        recommendation: dailyBurn > 10
+          ? 'Consider reducing LLM usage or using cheaper models'
+          : 'Cost levels acceptable',
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'econ.optimize',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * econ.activate: Activate a revenue-generating service
+ */
+registerAction('econ.activate', async (context) => {
+  const start = Date.now();
+  try {
+    const econ = getEconomicIntegration();
+    await econ.initialize();
+
+    const serviceName = (context.parameters?.service as string) || 'genesis-api';
+    const result = await econ.executeAction(`economic:activate-service:${serviceName}`);
+
+    // Get all services status
+    const services = econ.getServiceRegistry().getAll();
+    const activeServices = econ.getServiceRegistry().getActive();
+
+    return {
+      success: result.success,
+      action: 'econ.activate',
+      data: {
+        service: serviceName,
+        activated: result.success,
+        totalServices: services.length,
+        activeServices: activeServices.map(s => s.name),
+        potentialMonthlyRevenue: econ.getServiceRegistry().estimateMonthlyPotential(),
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'econ.activate',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * econ.promote: Promote services to increase revenue
+ */
+registerAction('econ.promote', async (context) => {
+  const start = Date.now();
+  try {
+    const econ = getEconomicIntegration();
+    await econ.initialize();
+
+    const serviceName = (context.parameters?.service as string) || '';
+
+    // If no specific service, promote all active services
+    const activeServices = econ.getServiceRegistry().getActive();
+    const promotedServices: string[] = [];
+
+    if (serviceName) {
+      const result = await econ.executeAction(`economic:promote-service:${serviceName}`);
+      if (result.success) promotedServices.push(serviceName);
+    } else {
+      for (const service of activeServices) {
+        const result = await econ.executeAction(`economic:promote-service:${service.name}`);
+        if (result.success) promotedServices.push(service.name);
+      }
+    }
+
+    // Enable micropayments for API endpoints
+    await econ.executeAction('economic:enable-micropayments');
+
+    return {
+      success: promotedServices.length > 0,
+      action: 'econ.promote',
+      data: {
+        promotedServices,
+        micropayentsEnabled: true,
+        activeServices: activeServices.map(s => ({
+          name: s.name,
+          pricing: s.pricing,
+        })),
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'econ.promote',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+// ============================================================================
 // Factory
 // ============================================================================
 

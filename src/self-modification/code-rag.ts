@@ -1,8 +1,13 @@
 /**
- * Genesis v8.5 - Code RAG (Retrieval-Augmented Generation)
+ * Genesis v9.0 - Code RAG (Retrieval-Augmented Generation)
  *
  * Enables Genesis to semantically query its own source code.
  * Supports self-improvement by providing contextual code understanding.
+ *
+ * v9.0 Features:
+ * - Real vector embeddings (Ollama nomic-embed-text)
+ * - Persistent vector store
+ * - Incremental indexing
  *
  * Based on:
  * - RAG patterns (Lewis et al., 2020)
@@ -13,6 +18,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { EmbeddingProvider, VectorDatabase, getEmbeddingProvider } from '../embeddings/index.js';
 
 // ============================================================================
 // Types
@@ -249,10 +255,25 @@ export class CodeRAG {
   private config: CodeRAGConfig;
   private index: CodeIndex | null = null;
   private chunker: CodeChunker;
+  private embeddingProvider: EmbeddingProvider;
+  private vectorDb: VectorDatabase;
 
   constructor(config: Partial<CodeRAGConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.chunker = new CodeChunker(this.config);
+
+    // v9.0: Real embedding provider
+    this.embeddingProvider = getEmbeddingProvider({
+      provider: 'ollama',
+      model: config.embeddingModel || 'nomic-embed-text',
+      cachePath: config.cachePath || '.genesis/vectors',
+    });
+
+    // v9.0: Vector database for persistence
+    this.vectorDb = new VectorDatabase(
+      config.cachePath || '.genesis/vectors',
+      { provider: 'ollama', model: config.embeddingModel || 'nomic-embed-text' }
+    );
   }
 
   /**
@@ -350,22 +371,32 @@ export class CodeRAG {
   }
 
   /**
-   * Create embeddings for chunks (requires API)
+   * Create embeddings for chunks using real vector embeddings (v9.0)
    */
   private async createEmbeddings(chunks: CodeChunk[]): Promise<void> {
-    // Try to use LLM router for embeddings
+    // Prepare texts for batch embedding
+    const texts = chunks.map(chunk =>
+      `${chunk.type} ${chunk.name} in ${chunk.relativePath}: ${chunk.content.slice(0, 1000)}`
+    );
+
     try {
-      const { getAdvancedRouter } = await import('../llm/index.js');
-      const router = getAdvancedRouter();
+      // Use real embeddings via Ollama
+      const results = await this.embeddingProvider.embedBatch(texts);
 
-      for (const chunk of chunks) {
-        // Create embedding text (code + metadata)
-        const embeddingText = `${chunk.type} ${chunk.name}: ${chunk.content.slice(0, 500)}`;
-
-        // Use a simple hash-based embedding if real embeddings fail
-        chunk.embedding = this.hashEmbedding(embeddingText);
+      for (let i = 0; i < chunks.length; i++) {
+        chunks[i].embedding = results[i].vector;
       }
-    } catch {
+
+      // Also add to vector database for persistence
+      const documents = chunks.map((chunk, i) => ({
+        id: chunk.id,
+        text: texts[i],
+        source: chunk.relativePath,
+      }));
+      await this.vectorDb.addBatch(documents);
+
+    } catch (error) {
+      console.warn(`Embedding creation failed, using fallback: ${error}`);
       // Fallback to hash embeddings
       for (const chunk of chunks) {
         const embeddingText = `${chunk.type} ${chunk.name}: ${chunk.content.slice(0, 500)}`;
@@ -375,26 +406,89 @@ export class CodeRAG {
   }
 
   /**
-   * Simple hash-based embedding (deterministic, no API needed)
+   * Simple hash-based embedding (deterministic fallback, no API needed)
    */
-  private hashEmbedding(text: string, dims: number = 128): number[] {
-    const hash = crypto.createHash('sha256').update(text).digest();
-    const embedding: number[] = [];
+  private hashEmbedding(text: string, dims: number = 768): number[] {
+    const hash = crypto.createHash('sha512').update(text).digest();
+    const embedding: number[] = new Array(dims);
 
     for (let i = 0; i < dims; i++) {
-      // Use hash bytes to create pseudo-random but deterministic values
       const byteIndex = i % hash.length;
-      embedding.push((hash[byteIndex] / 255) * 2 - 1); // Normalize to [-1, 1]
+      embedding[i] = (hash[byteIndex] / 255) * 2 - 1;
     }
 
-    // Add some text-based features
+    // Add word-based features
     const words = text.toLowerCase().split(/\W+/).filter(w => w.length > 2);
-    for (let i = 0; i < Math.min(words.length, 32); i++) {
-      const wordHash = crypto.createHash('md5').update(words[i]).digest()[0];
-      embedding[i % dims] = (embedding[i % dims] + wordHash / 255) / 2;
+    const wordSet = new Set(words);
+    for (const word of wordSet) {
+      const wordHash = crypto.createHash('md5').update(word).digest();
+      for (let i = 0; i < Math.min(4, wordHash.length); i++) {
+        const idx = wordHash[i] % dims;
+        embedding[idx] = (embedding[idx] + (wordHash[i + 4] || wordHash[i]) / 255) / 2;
+      }
+    }
+
+    // Normalize
+    const norm = Math.sqrt(embedding.reduce((s, v) => s + v * v, 0));
+    if (norm > 0) {
+      for (let i = 0; i < dims; i++) {
+        embedding[i] /= norm;
+      }
     }
 
     return embedding;
+  }
+
+  /**
+   * Save index to disk (v9.0)
+   */
+  async saveIndex(): Promise<void> {
+    if (!this.index) return;
+
+    const indexPath = path.join(this.config.cachePath || '.genesis/vectors', 'code-index.json');
+    const dir = path.dirname(indexPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // Save index metadata (without embeddings to save space)
+    const indexData = {
+      ...this.index,
+      chunks: this.index.chunks.map(c => ({ ...c, embedding: undefined })),
+    };
+    fs.writeFileSync(indexPath, JSON.stringify(indexData, null, 2));
+
+    // Save embeddings separately
+    await this.vectorDb.save();
+    await this.embeddingProvider.saveCache();
+  }
+
+  /**
+   * Load index from disk (v9.0)
+   */
+  async loadIndex(): Promise<boolean> {
+    const indexPath = path.join(this.config.cachePath || '.genesis/vectors', 'code-index.json');
+
+    if (!fs.existsSync(indexPath)) {
+      return false;
+    }
+
+    try {
+      const data = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+      this.index = {
+        ...data,
+        indexedAt: new Date(data.indexedAt),
+      };
+
+      // Load embeddings from vector database
+      const loaded = await this.vectorDb.load();
+      await this.embeddingProvider.loadCache();
+
+      return loaded;
+    } catch (error) {
+      console.warn(`Failed to load code index: ${error}`);
+      return false;
+    }
   }
 
   /**

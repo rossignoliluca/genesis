@@ -2341,7 +2341,7 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
     const criticalServers: MCPServerName[] = ['memory', 'filesystem', 'github'];
 
     // Fire and forget - we don't need to wait
-    Promise.all(
+    void Promise.all(
       criticalServers.map(async (server) => {
         try {
           await client.isAvailable(server);

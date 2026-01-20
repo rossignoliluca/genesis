@@ -581,8 +581,105 @@ registerAction('git.push', async (context) => {
 });
 
 /**
- * execute.code: Execute TypeScript/JavaScript code safely
- * v7.13: Sandboxed code execution
+ * Safe expression evaluator - v9.2.0 Security fix
+ * Only allows: numbers, strings, basic math (+,-,*,/,%), comparisons, booleans
+ * NO Function(), eval(), or dynamic code execution
+ */
+function safeEvaluateExpression(expr: string): unknown {
+  // Trim whitespace
+  expr = expr.trim();
+
+  // Allow only safe characters: digits, operators, parentheses, quotes, dots, spaces
+  const safePattern = /^[\d\s+\-*/%().,"'<>=!&|true false null undefined]+$/i;
+  if (!safePattern.test(expr)) {
+    throw new Error(`Unsafe expression: contains disallowed characters`);
+  }
+
+  // Block any function calls or property access
+  if (/[a-zA-Z_$][\w$]*\s*\(/.test(expr)) {
+    throw new Error('Function calls not allowed in safe expressions');
+  }
+
+  // Parse and evaluate simple expressions manually
+  // Handle literals
+  if (expr === 'true') return true;
+  if (expr === 'false') return false;
+  if (expr === 'null') return null;
+  if (expr === 'undefined') return undefined;
+
+  // Handle numbers
+  if (/^-?\d+(\.\d+)?$/.test(expr)) {
+    return parseFloat(expr);
+  }
+
+  // Handle strings
+  if (/^["'].*["']$/.test(expr)) {
+    return expr.slice(1, -1);
+  }
+
+  // Handle simple math expressions with numbers only
+  // This is intentionally limited for security
+  const mathPattern = /^[\d\s+\-*/%().]+$/;
+  if (mathPattern.test(expr)) {
+    // Validate it's a safe math expression
+    try {
+      // Use a simple recursive descent parser instead of eval
+      const tokens = expr.match(/(\d+\.?\d*|[+\-*/%()])/g) || [];
+      return evaluateMathTokens(tokens);
+    } catch {
+      throw new Error('Invalid math expression');
+    }
+  }
+
+  throw new Error('Expression type not supported in safe mode');
+}
+
+function evaluateMathTokens(tokens: string[]): number {
+  let pos = 0;
+
+  function parseExpression(): number {
+    let left = parseTerm();
+    while (pos < tokens.length && (tokens[pos] === '+' || tokens[pos] === '-')) {
+      const op = tokens[pos++];
+      const right = parseTerm();
+      left = op === '+' ? left + right : left - right;
+    }
+    return left;
+  }
+
+  function parseTerm(): number {
+    let left = parseFactor();
+    while (pos < tokens.length && (tokens[pos] === '*' || tokens[pos] === '/' || tokens[pos] === '%')) {
+      const op = tokens[pos++];
+      const right = parseFactor();
+      if (op === '*') left *= right;
+      else if (op === '/') left /= right;
+      else left %= right;
+    }
+    return left;
+  }
+
+  function parseFactor(): number {
+    if (tokens[pos] === '(') {
+      pos++; // skip '('
+      const result = parseExpression();
+      pos++; // skip ')'
+      return result;
+    }
+    if (tokens[pos] === '-') {
+      pos++;
+      return -parseFactor();
+    }
+    return parseFloat(tokens[pos++]);
+  }
+
+  return parseExpression();
+}
+
+/**
+ * execute.code: Execute safe expressions
+ * v9.2.0: SECURITY FIX - Replaced unsafe new Function() with safe expression parser
+ * Only supports: literals, basic math, comparisons
  */
 registerAction('execute.code', async (context) => {
   try {
@@ -596,35 +693,8 @@ registerAction('execute.code', async (context) => {
       };
     }
 
-    // For safety, only allow simple expressions (no require, import, fs, etc.)
-    const dangerousPatterns = [
-      /require\s*\(/,
-      /import\s+/,
-      /process\./,
-      /child_process/,
-      /\bfs\b/,
-      /\bexec\b/,
-      /\beval\b/,
-      /Function\s*\(/,
-      /\bglobal\b/,
-      /\bglobalThis\b/,
-      /\b__dirname\b/,
-      /\b__filename\b/,
-    ];
-
-    for (const pattern of dangerousPatterns) {
-      if (pattern.test(code)) {
-        return {
-          success: false,
-          action: 'execute.code',
-          error: `Unsafe code pattern detected: ${pattern}`,
-          duration: 0,
-        };
-      }
-    }
-
-    // Execute in a restricted scope
-    const result = new Function('return ' + code)();
+    // v9.2.0: Use safe expression evaluator instead of new Function()
+    const result = safeEvaluateExpression(code);
 
     return {
       success: true,

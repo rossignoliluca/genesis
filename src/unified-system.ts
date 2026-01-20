@@ -238,7 +238,7 @@ export class UnifiedSystem extends EventEmitter {
     // Start the main cycle
     this.cycleTimer = setInterval(() => {
       if (!this.paused) {
-        this.runCycle().catch(err => {
+        void this.runCycle().catch(err => {
           this.state.errors.push(err.message);
           this.emit('system:error', { error: err });
         });

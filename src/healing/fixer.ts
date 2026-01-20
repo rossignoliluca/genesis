@@ -403,6 +403,14 @@ export class AutoFixer {
         ? error.file
         : path.join(this.config.workingDirectory, error.file);
 
+      // v9.2.0 Security: Path traversal protection
+      const resolvedPath = path.resolve(filePath);
+      const workingDir = path.resolve(this.config.workingDirectory);
+      if (!resolvedPath.startsWith(workingDir + path.sep) && resolvedPath !== workingDir) {
+        console.warn(`[Fixer] Path traversal attempt blocked: ${error.file}`);
+        continue;
+      }
+
       if (!fs.existsSync(filePath)) continue;
 
       // Skip directories

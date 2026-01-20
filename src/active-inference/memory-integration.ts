@@ -232,7 +232,7 @@ function addAnticipationHook(
       );
 
       // Fire and forget - don't block the cycle
-      memory.anticipate(context).catch(() => {
+      void memory.anticipate(context).catch(() => {
         // Silently ignore anticipation errors
       });
     }

@@ -604,11 +604,60 @@ export class GovernanceEngine {
     return { allowed: true, requiresApproval: false };
   }
 
+  /**
+   * Safe condition evaluator - v9.2.0 Security fix
+   * Replaced unsafe new Function() with allowlist-based evaluation
+   * Supports: variable comparisons (>, <, >=, <=, ==, !=), boolean checks
+   */
   private evaluateCondition(condition: string, context: Record<string, unknown>): boolean {
     try {
-      // Simple expression evaluator (in production, use a proper expression parser)
-      const fn = new Function(...Object.keys(context), `return ${condition}`);
-      return fn(...Object.values(context));
+      // Parse simple conditions like "importance > 0.5" or "risk == 'high'"
+      // Pattern: variable operator value
+      const comparisonMatch = condition.match(/^\s*(\w+)\s*(>=|<=|===|!==|==|!=|>|<)\s*(.+)\s*$/);
+
+      if (comparisonMatch) {
+        const [, varName, operator, rawValue] = comparisonMatch;
+        const contextValue = context[varName];
+
+        // Parse the comparison value
+        let compareValue: unknown;
+        const trimmedValue = rawValue.trim();
+
+        if (trimmedValue === 'true') compareValue = true;
+        else if (trimmedValue === 'false') compareValue = false;
+        else if (trimmedValue === 'null') compareValue = null;
+        else if (/^-?\d+(\.\d+)?$/.test(trimmedValue)) compareValue = parseFloat(trimmedValue);
+        else if (/^["'](.*)["']$/.test(trimmedValue)) compareValue = trimmedValue.slice(1, -1);
+        else compareValue = trimmedValue;
+
+        // Perform comparison
+        switch (operator) {
+          case '>': return Number(contextValue) > Number(compareValue);
+          case '<': return Number(contextValue) < Number(compareValue);
+          case '>=': return Number(contextValue) >= Number(compareValue);
+          case '<=': return Number(contextValue) <= Number(compareValue);
+          case '==': return contextValue == compareValue;
+          case '===': return contextValue === compareValue;
+          case '!=': return contextValue != compareValue;
+          case '!==': return contextValue !== compareValue;
+        }
+      }
+
+      // Handle simple boolean variable check
+      const boolMatch = condition.match(/^\s*(\w+)\s*$/);
+      if (boolMatch) {
+        return Boolean(context[boolMatch[1]]);
+      }
+
+      // Handle negated boolean: !variable
+      const negatedMatch = condition.match(/^\s*!\s*(\w+)\s*$/);
+      if (negatedMatch) {
+        return !context[negatedMatch[1]];
+      }
+
+      // Unsupported condition format - fail closed
+      console.warn(`[Governance] Unsupported condition format: ${condition}`);
+      return false;
     } catch {
       return false;
     }

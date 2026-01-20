@@ -335,14 +335,50 @@ export class AgentCoordinator extends EventEmitter {
       this.metrics.tasksCompleted++;
       this.emit('task:complete', task);
 
+      // v9.2.0: Auto-cleanup completed tasks after 5 minutes to prevent memory leak
+      this.scheduleTaskCleanup(task.id);
+
     } catch (error) {
       task.status = 'failed';
       task.error = error instanceof Error ? error.message : String(error);
       this.metrics.tasksFailed++;
       this.emit('task:error', task, error);
+
+      // v9.2.0: Also cleanup failed tasks
+      this.scheduleTaskCleanup(task.id);
     }
 
     return task;
+  }
+
+  /**
+   * v9.2.0: Schedule task cleanup after delay to prevent memory leak
+   * Tasks are removed from the map after 5 minutes
+   */
+  private scheduleTaskCleanup(taskId: string, delayMs: number = 300000): void {
+    setTimeout(() => {
+      const task = this.tasks.get(taskId);
+      if (task && task.status !== 'running') {
+        this.tasks.delete(taskId);
+      }
+    }, delayMs);
+  }
+
+  /**
+   * v9.2.0: Manual cleanup of old tasks (call periodically for long-running systems)
+   */
+  cleanupOldTasks(maxAgeMs: number = 3600000): number {
+    const now = Date.now();
+    let removed = 0;
+
+    for (const [id, task] of this.tasks.entries()) {
+      if (task.status !== 'running' && now - task.createdAt.getTime() > maxAgeMs) {
+        this.tasks.delete(id);
+        removed++;
+      }
+    }
+
+    return removed;
   }
 
   /**

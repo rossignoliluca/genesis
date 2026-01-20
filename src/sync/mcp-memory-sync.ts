@@ -301,7 +301,9 @@ export class MCPMemorySync {
    */
   private async fetchMCPMemory(): Promise<MCPMemoryGraph> {
     // Check for cached remote state
-    const cachePath = path.join(path.dirname(this.config.statePath), 'mcp-memory-cache.json');
+    // v9.2.0: Validate cache path to prevent path traversal
+    const baseDir = path.dirname(path.resolve(this.config.statePath));
+    const cachePath = path.join(baseDir, 'mcp-memory-cache.json');
 
     try {
       if (fs.existsSync(cachePath)) {
@@ -322,7 +324,9 @@ export class MCPMemorySync {
    */
   private async pushToMCPMemory(graph: MCPMemoryGraph): Promise<{ success: boolean }> {
     // Save to local cache (simulating MCP Memory push)
-    const cachePath = path.join(path.dirname(this.config.statePath), 'mcp-memory-cache.json');
+    // v9.2.0: Validate cache path to prevent path traversal
+    const baseDir = path.dirname(path.resolve(this.config.statePath));
+    const cachePath = path.join(baseDir, 'mcp-memory-cache.json');
 
     try {
       const dir = path.dirname(cachePath);

@@ -222,7 +222,8 @@ export class VectorStore {
     if (existed) {
       this.dirty = true;
       if (this.config.autoSave && this.config.persistPath) {
-        this.save().catch(() => {});
+        // v9.1.0: Log errors instead of silently ignoring
+        this.save().catch(err => console.error('[VectorStore] Auto-save failed:', err));
       }
     }
     return existed;
@@ -526,7 +527,8 @@ export class VectorStore {
     this.dirty = true;
 
     if (this.config.autoSave && this.config.persistPath) {
-      this.save().catch(() => {});
+      // v9.1.0: Log errors instead of silently ignoring
+      this.save().catch(err => console.error('[VectorStore] Auto-save failed:', err));
     }
   }
 
@@ -545,7 +547,8 @@ export class VectorStore {
     if (count > 0) {
       this.dirty = true;
       if (this.config.autoSave && this.config.persistPath) {
-        this.save().catch(() => {});
+        // v9.1.0: Log errors instead of silently ignoring
+        this.save().catch(err => console.error('[VectorStore] Auto-save failed:', err));
       }
     }
 

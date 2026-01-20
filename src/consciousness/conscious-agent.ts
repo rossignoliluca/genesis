@@ -835,7 +835,8 @@ export async function initializeConsciousAgent(
 
 export function resetConsciousAgent(): void {
   if (agentInstance) {
-    agentInstance.stop().catch(() => {});
+    // v9.1.0: Log errors instead of silently ignoring
+    agentInstance.stop().catch(err => console.error('[ConsciousAgent] Stop failed:', err));
     agentInstance = null;
   }
 }

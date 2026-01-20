@@ -1159,7 +1159,8 @@ export function getMCPClient(config?: Partial<MCPClientConfig>): IMCPClient {
 
 export function resetMCPClient(): void {
   if (mcpClientInstance) {
-    mcpClientInstance.close().catch(() => {});
+    // v9.1.0: Log errors instead of silently ignoring
+    mcpClientInstance.close().catch(err => console.error('[MCP] Client close failed:', err));
   }
   mcpClientInstance = null;
 }

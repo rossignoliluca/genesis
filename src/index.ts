@@ -349,6 +349,51 @@ async function cmdPublish(specFile: string): Promise<void> {
 }
 
 async function cmdChat(options: Record<string, string>, promptArg?: string): Promise<void> {
+  // v9.0.1: --help support for chat command
+  if (options.help === 'true' || options.h === 'true') {
+    // ANSI codes: \x1b[36m=cyan, \x1b[32m=green, \x1b[33m=yellow, \x1b[1m=bold, \x1b[2m=dim, \x1b[0m=reset
+    console.log(`
+\x1b[36m\x1b[1mgenesis chat\x1b[0m - Interactive AI chat with Genesis
+
+\x1b[1mUsage:\x1b[0m
+  genesis chat [options]
+
+\x1b[1mOptions:\x1b[0m
+  \x1b[32m--local\x1b[0m              Use Ollama (free, local) - DEFAULT
+  \x1b[32m--provider <p>\x1b[0m       LLM provider: ollama, openai, anthropic
+  \x1b[32m--model <m>\x1b[0m          Model name (e.g., mistral, gpt-4o, claude-sonnet-4-20250514)
+  \x1b[32m--verbose\x1b[0m            Show latency and token usage
+  \x1b[32m--stream\x1b[0m             Enable real-time streaming with live cost counter
+  \x1b[32m-p, --print "text"\x1b[0m   Headless mode: process prompt and exit
+  \x1b[32m--format <f>\x1b[0m         Output format: text (default), json
+  \x1b[32m-r, --resume [id]\x1b[0m    Resume previous session (default: last)
+  \x1b[32m--name <name>\x1b[0m        Name for the current session
+  \x1b[32m-h, --help\x1b[0m           Show this help
+
+\x1b[1mChat Commands:\x1b[0m \x1b[2m(inside chat)\x1b[0m
+  \x1b[33m/help\x1b[0m               Show all available commands
+  \x1b[33m/quit\x1b[0m               Exit the chat
+  \x1b[33m/clear\x1b[0m              Clear conversation history
+  \x1b[33m/export <file>\x1b[0m      Export conversation to file
+  \x1b[33m/mode <mode>\x1b[0m        Switch mode: chat, code, research, reason
+  \x1b[33m/tools\x1b[0m              Show available MCP tools
+  \x1b[33m/call <tool>\x1b[0m        Call an MCP tool directly
+  \x1b[33m/brain\x1b[0m              Show brain status and φ level
+  \x1b[33m/model <name>\x1b[0m       Switch model mid-conversation
+
+\x1b[1mExamples:\x1b[0m
+  genesis chat                          \x1b[2mInteractive chat with Mistral (local)\x1b[0m
+  genesis chat --provider anthropic     \x1b[2mChat with Claude\x1b[0m
+  genesis chat --stream                 \x1b[2mReal-time streaming with cost counter\x1b[0m
+  genesis chat --resume                 \x1b[2mResume last session\x1b[0m
+  genesis chat --resume abc123          \x1b[2mResume specific session by ID\x1b[0m
+  genesis chat -p "Explain recursion"   \x1b[2mHeadless: single prompt, output, exit\x1b[0m
+  echo "2+2?" | genesis chat -p         \x1b[2mHeadless: read from stdin\x1b[0m
+  genesis chat -p "..." --format json   \x1b[2mHeadless: JSON output for scripting\x1b[0m
+`);
+    return;
+  }
+
   // Ollama models - if any of these is specified, use Ollama
   const ollamaModels = ['mistral', 'mistral-small', 'qwen2.5-coder', 'phi3.5', 'deepseek-coder', 'llama3', 'codellama'];
 

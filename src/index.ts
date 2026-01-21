@@ -54,6 +54,7 @@ import { getProductionMemory } from './memory-production/index.js';
 import { getGovernanceSystem } from './governance/index.js';
 import { A2AServer, A2AClient, generateA2AKeyPair } from './a2a/index.js';
 import { GenesisMCPServer } from './mcp-server/index.js';
+import { runCodeQualityAnalysis, persistCodeQualityToMemory, loadCodeQualityGraph } from './self-modification/code-quality-analyzer.js';
 
 // ============================================================================
 // CLI Colors
@@ -1469,6 +1470,14 @@ ${c('Commands:', 'bold')}
       --cycles <n>       Number of cycles (0=unlimited)
       --interval <ms>    Interval between cycles (default: 5000)
 
+  ${c('analyze', 'green')} [subcommand]   v10.1: Code Quality Self-Analysis
+    run              Run analysis & save to memory (default)
+    summary          Quick summary only
+    coverage         Test coverage report
+    types            Type safety issues
+    todos            TODO/FIXME items
+    history          Show previous analysis
+
   ${c('status', 'green')}                Show MCP servers status
   ${c('hardware', 'green')}              Show hardware profile & router config
   ${c('help', 'green')}                  Show this help
@@ -1496,6 +1505,161 @@ ${c('Examples:', 'bold')}
   GENESIS_MCP_MODE=real genesis create my-system --type agent --execute
   GENESIS_MCP_MODE=real genesis pipeline my-system.genesis.json
 `);
+}
+
+// ============================================================================
+// Analyze Command (v10.1: Code Quality Self-Analysis)
+// ============================================================================
+
+async function cmdAnalyze(subcommand: string | undefined, options: Record<string, string>): Promise<void> {
+  const verbose = options.verbose === 'true';
+  const save = options.save === 'true' || !subcommand || subcommand === 'run';
+
+  if (subcommand === 'help' || options.help === 'true') {
+    console.log(`
+${c('Code Quality Analysis - Self-Improvement Tool', 'bold')}
+
+${c('Usage:', 'cyan')}
+  genesis analyze [subcommand] [options]
+
+${c('Subcommands:', 'cyan')}
+  run          Run full analysis and save to memory (default)
+  summary      Show analysis summary only
+  coverage     Show test coverage details
+  types        Show type safety issues
+  todos        Show TODO/FIXME items
+  history      Show analysis history
+
+${c('Options:', 'cyan')}
+  --verbose    Show detailed output
+  --save       Save results to memory (default for 'run')
+
+${c('Examples:', 'cyan')}
+  genesis analyze                Run analysis and save
+  genesis analyze summary        Quick summary
+  genesis analyze coverage       Test coverage report
+  genesis analyze types          Type safety issues
+`);
+    return;
+  }
+
+  console.log(c('\n=== Genesis Code Quality Analysis (v10.1) ===\n', 'bold'));
+
+  // Load previous analysis if just checking history
+  if (subcommand === 'history') {
+    const graph = loadCodeQualityGraph();
+    if (!graph) {
+      console.log(c('No previous analysis found in .genesis/', 'yellow'));
+      return;
+    }
+    console.log(`${c('Previous Analysis:', 'cyan')}`);
+    console.log(`  Entities: ${graph.entities.length}`);
+    console.log(`  Relations: ${graph.relations.length}`);
+    if (graph.summary) {
+      console.log(`  Coverage: ${graph.summary.testCoverage.toFixed(1)}%`);
+      console.log(`  Type Safety: ${graph.summary.typeSafetyScore}/100`);
+    }
+    return;
+  }
+
+  // Run analysis
+  console.log('Analyzing codebase...');
+  const startTime = Date.now();
+  const report = await runCodeQualityAnalysis();
+  const duration = Date.now() - startTime;
+
+  console.log(`${c('Analysis completed in', 'dim')} ${duration}ms\n`);
+
+  // Summary view (default or explicit)
+  if (!subcommand || subcommand === 'run' || subcommand === 'summary') {
+    console.log(`${c('Summary:', 'cyan')}`);
+    console.log(`  Files:         ${report.summary.totalFiles}`);
+    console.log(`  Lines:         ${report.summary.totalLines.toLocaleString()}`);
+    console.log(`  Test Coverage: ${c(report.summary.testCoverage.toFixed(1) + '%', report.summary.testCoverage < 20 ? 'red' : 'yellow')}`);
+    console.log(`  Type Safety:   ${c(report.summary.typeSafetyScore + '/100', report.summary.typeSafetyScore < 70 ? 'red' : 'green')}`);
+    console.log(`  Complexity:    ${report.summary.avgComplexity.toFixed(1)}`);
+    console.log(`  TODOs:         ${report.summary.todoCount}`);
+    console.log(`  Critical:      ${c(String(report.summary.criticalIssues), report.summary.criticalIssues > 0 ? 'red' : 'green')}`);
+    console.log();
+  }
+
+  // Coverage details
+  if (subcommand === 'coverage') {
+    console.log(`${c('Test Coverage:', 'cyan')}`);
+    const untested = report.testCoverage.filter(t => !t.hasTest);
+    const tested = report.testCoverage.filter(t => t.hasTest);
+    console.log(`  ✓ Tested: ${tested.length} modules`);
+    console.log(`  ✗ Untested: ${untested.length} modules\n`);
+
+    if (verbose) {
+      console.log('Untested modules:');
+      for (const m of untested.slice(0, 20)) {
+        console.log(`  - ${m.module}`);
+      }
+      if (untested.length > 20) {
+        console.log(`  ... and ${untested.length - 20} more`);
+      }
+    }
+    console.log();
+  }
+
+  // Type issues
+  if (subcommand === 'types') {
+    console.log(`${c('Type Safety Issues:', 'cyan')}`);
+    const byType: Record<string, number> = {};
+    for (const i of report.typeSafetyIssues) {
+      byType[i.type] = (byType[i.type] || 0) + 1;
+    }
+    for (const [type, count] of Object.entries(byType).sort((a, b) => b[1] - a[1])) {
+      console.log(`  ${type}: ${count}`);
+    }
+
+    if (verbose) {
+      console.log('\nHigh severity issues:');
+      const high = report.typeSafetyIssues.filter(i => i.severity === 'high');
+      for (const i of high.slice(0, 10)) {
+        console.log(`  ${i.file}:${i.line} - ${i.type}`);
+      }
+    }
+    console.log();
+  }
+
+  // TODOs
+  if (subcommand === 'todos') {
+    console.log(`${c('TODO Items:', 'cyan')}`);
+    for (const item of report.todoItems) {
+      const color = item.priority === 'critical' ? 'red' : item.priority === 'high' ? 'yellow' : 'dim';
+      console.log(`  [${c(item.type, color)}] ${item.file}:${item.line}`);
+      console.log(`         ${item.content.slice(0, 60)}`);
+    }
+    console.log();
+  }
+
+  // Recommendations (always show for run/summary)
+  if (!subcommand || subcommand === 'run' || subcommand === 'summary') {
+    console.log(`${c('Recommendations:', 'cyan')}`);
+    for (const rec of report.recommendations.slice(0, 5)) {
+      const color = rec.priority === 'critical' ? 'red' : rec.priority === 'high' ? 'yellow' : 'dim';
+      console.log(`  ${c('•', color)} [${rec.priority.toUpperCase()}] ${rec.title}`);
+      if (verbose) {
+        console.log(`    ${rec.description.slice(0, 70)}`);
+      }
+    }
+    console.log();
+  }
+
+  // Save to memory
+  if (save) {
+    console.log('Saving to memory...');
+    const result = await persistCodeQualityToMemory(report);
+    if (result.success) {
+      console.log(`${c('✓', 'green')} Saved ${result.entitiesCreated} entities, ${result.relationsCreated} relations`);
+      console.log(`  Path: ${result.graphPath}`);
+    } else {
+      console.log(`${c('✗', 'red')} Failed to save: ${result.error}`);
+    }
+    console.log();
+  }
 }
 
 // ============================================================================
@@ -1625,6 +1789,9 @@ async function main(): Promise<void> {
       case 'autonomous':
       case 'auto':
         await cmdAutonomous(positional, options);
+        break;
+      case 'analyze':
+        await cmdAnalyze(positional, options);
         break;
       default:
         console.error(c(`Unknown command: ${command}`, 'red'));

@@ -64,6 +64,26 @@ export {
   CodeRAGConfig,
 } from './code-rag.js';
 
+// v10.1: Code Quality Analyzer
+export {
+  CodeQualityAnalyzer,
+  createCodeQualityAnalyzer,
+  runCodeQualityAnalysis,
+  storeAnalysisInMemory,
+  // MCP Memory integration
+  codeQualityToMemoryGraph,
+  persistCodeQualityToMemory,
+  loadCodeQualityGraph,
+  // Types
+  CodeQualityReport,
+  TestCoverageResult,
+  TypeSafetyIssue,
+  TodoItem,
+  FileComplexity,
+  Recommendation,
+  CodeQualityConfig,
+} from './code-quality-analyzer.js';
+
 // Re-export invariant types for convenience
 export {
   invariantRegistry,

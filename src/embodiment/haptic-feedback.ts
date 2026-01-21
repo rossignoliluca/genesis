@@ -115,6 +115,31 @@ export interface GraspState {
   objectStiffness?: number;
 }
 
+/**
+ * GraspAnalysis for SensoriMotorLoop integration
+ * Extended grasp information including slip risk
+ */
+export interface GraspAnalysis {
+  stable: boolean;
+  graspQuality: number;
+  slipRisk: number;                // 0-1, probability of slip
+  appliedForce: number;            // Current grip force (N)
+  contactPoints: number;           // Number of fingers in contact
+  forceBalance: Vec3;
+  slipMargin: number;
+}
+
+/**
+ * Haptic feedback command for sensorimotor loop
+ */
+export interface HapticFeedbackCommand {
+  type: 'vibration' | 'force' | 'thermal';
+  intensity: number;               // 0-1
+  frequency?: number;              // Hz (for vibration)
+  duration: number;                // ms
+  direction?: number[];            // Force direction vector
+}
+
 // ============================================================================
 // TACTILE SENSOR MODELS
 // ============================================================================
@@ -1270,14 +1295,103 @@ export class HapticSystem {
   }
 
   /**
-   * Get all sensor readings
+   * Get all sensor readings as Map (legacy)
    */
-  getAllReadings(): Map<string, TactileReading> {
+  getAllReadingsMap(): Map<string, TactileReading> {
     const readings = new Map<string, TactileReading>();
     for (const [id, sensor] of this.sensors) {
       readings.set(id, sensor.getReading());
     }
     return readings;
+  }
+
+  /**
+   * Get all sensor readings as array (for SensoriMotorLoop)
+   */
+  getAllReadings(): TactileReading[] {
+    const readings: TactileReading[] = [];
+    for (const sensor of this.sensors.values()) {
+      readings.push(sensor.getReading());
+    }
+    return readings;
+  }
+
+  /**
+   * Get current grasp analysis (for SensoriMotorLoop)
+   * @returns GraspAnalysis with slip risk and contact info
+   */
+  getGraspAnalysis(): GraspAnalysis | null {
+    const contacts = Array.from(this.sensors.values())
+      .map(s => s.getContactState())
+      .filter(c => c.inContact);
+
+    if (contacts.length === 0) {
+      return null;
+    }
+
+    // Use internal grasp analyzer
+    const graspState = this.graspAnalyzer.analyzeGrasp();
+
+    // Calculate slip risk from all contacts
+    const slipRisks: number[] = contacts.map(c =>
+      c.slipping ? 1.0 : c.slipVelocity.x !== 0 ? 0.5 : 0.0
+    );
+    const avgSlipRisk = slipRisks.reduce((a, b) => a + b, 0) / slipRisks.length;
+
+    // Calculate applied force
+    const appliedForce = contacts.reduce((sum, c) => sum + c.penetrationDepth * 100, 0);
+
+    return {
+      stable: graspState.stable,
+      graspQuality: graspState.graspQuality,
+      slipRisk: 1 - graspState.slipMargin,  // Convert margin to risk
+      appliedForce,
+      contactPoints: contacts.length,
+      forceBalance: graspState.forceBalance,
+      slipMargin: graspState.slipMargin,
+    };
+  }
+
+  /**
+   * Generate haptic feedback (for SensoriMotorLoop)
+   * @param feedback - Feedback parameters
+   */
+  async generateFeedback(feedback: HapticFeedbackCommand): Promise<void> {
+    // Simulate haptic actuator response
+    const { type, intensity, frequency, duration } = feedback;
+
+    if (type === 'vibration' && frequency) {
+      // Vibration feedback - would drive vibration motor
+      const pattern: VibrationPattern = {
+        frequency,
+        amplitude: intensity,
+        duration,
+        waveform: 'sine',
+      };
+      // In real hardware, this would send to haptic actuator
+      // For simulation, we just log and emit event
+      this.lastFeedback = { type, intensity, frequency, duration };
+    } else if (type === 'force' && feedback.direction) {
+      // Force feedback - would apply force vector
+      const force: Vec3 = {
+        x: (feedback.direction[0] || 0) * intensity,
+        y: (feedback.direction[1] || 0) * intensity,
+        z: (feedback.direction[2] || 0) * intensity,
+      };
+      this.lastFeedback = { type, intensity, direction: feedback.direction, duration };
+    } else if (type === 'thermal') {
+      // Thermal feedback
+      this.lastFeedback = { type, intensity, duration };
+    }
+  }
+
+  private lastFeedback?: HapticFeedbackCommand;
+
+  /**
+   * Get last generated feedback (for testing)
+   */
+  getLastFeedback(): HapticFeedbackCommand | undefined {
+    return this.lastFeedback;
   }
 
   /**

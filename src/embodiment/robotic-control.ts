@@ -143,6 +143,33 @@ export interface TrajectoryPoint {
   efforts?: number[];
 }
 
+/**
+ * JointState for SensoriMotorLoop integration
+ */
+export interface JointState {
+  name: string;
+  position: number;
+  velocity: number;
+  effort: number;
+  lowerLimit: number;
+  upperLimit: number;
+}
+
+/**
+ * CartesianPose - alias for Pose (for SensoriMotorLoop)
+ */
+export type CartesianPose = Pose;
+
+/**
+ * SafetyStatus for SensoriMotorLoop integration
+ */
+export interface SafetyStatus {
+  safe: boolean;
+  emergencyStopped: boolean;
+  violations: string[];
+  timestamp: Date;
+}
+
 // ============================================================================
 // KINEMATICS
 // ============================================================================
@@ -1189,13 +1216,131 @@ export class RoboticController {
   }
 
   /**
-   * Get safety status
+   * Get safety status (legacy format)
    */
-  getSafetyStatus(): { emergencyStopped: boolean; violations: SafetyViolation[] } {
+  getSafetyStatusLegacy(): { emergencyStopped: boolean; violations: SafetyViolation[] } {
     return {
       emergencyStopped: this.safetyMonitor.isEmergencyStopped(),
       violations: this.safetyMonitor.getViolationHistory()
     };
+  }
+
+  /**
+   * Get safety status (for SensoriMotorLoop)
+   */
+  getSafetyStatus(): SafetyStatus {
+    const violations = this.safetyMonitor.getViolationHistory();
+    return {
+      safe: violations.length === 0 && !this.safetyMonitor.isEmergencyStopped(),
+      emergencyStopped: this.safetyMonitor.isEmergencyStopped(),
+      violations: violations.map(v => `${v.type}: ${v.value} > ${v.limit}`),
+      timestamp: new Date(),
+    };
+  }
+
+  /**
+   * Get joint states (for SensoriMotorLoop)
+   * @returns Array of JointState for each joint
+   */
+  getJointStates(): JointState[] {
+    const jointStates: JointState[] = [];
+    const limits = this.config.safetyLimits;
+
+    for (let i = 0; i < this.config.numJoints; i++) {
+      jointStates.push({
+        name: `joint_${i}`,
+        position: this.currentState.jointPositions[i] || 0,
+        velocity: this.currentState.jointVelocities[i] || 0,
+        effort: this.currentState.jointTorques[i] || 0,
+        lowerLimit: limits.jointLimitsLower[i] || -Math.PI,
+        upperLimit: limits.jointLimitsUpper[i] || Math.PI,
+      });
+    }
+
+    return jointStates;
+  }
+
+  /**
+   * Get end effector pose (for SensoriMotorLoop)
+   * @returns Current Cartesian pose of end effector
+   */
+  getEndEffectorPose(): CartesianPose {
+    return { ...this.currentState.cartesianPose };
+  }
+
+  /**
+   * Get force/torque readings (for SensoriMotorLoop)
+   * @returns Forces and torques at end effector
+   */
+  getForceTorque(): { forces: number[]; torques: number[] } {
+    if (this.currentState.externalForces) {
+      return {
+        forces: [
+          this.currentState.externalForces.force.x,
+          this.currentState.externalForces.force.y,
+          this.currentState.externalForces.force.z,
+        ],
+        torques: [
+          this.currentState.externalForces.torque.x,
+          this.currentState.externalForces.torque.y,
+          this.currentState.externalForces.torque.z,
+        ],
+      };
+    }
+    // Return zeros if no external forces measured
+    return {
+      forces: [0, 0, 0],
+      torques: [0, 0, 0],
+    };
+  }
+
+  /**
+   * Execute a control command (for SensoriMotorLoop)
+   * @param command - The control command to execute
+   */
+  async executeCommand(command: ControlCommand): Promise<void> {
+    // Compute the low-level control
+    const controlOutput = this.computeControl(command);
+
+    // Apply the computed torques/forces to simulation
+    if (controlOutput.jointCommands) {
+      // Update state based on command type
+      const dt = 1 / this.config.controlFrequency;
+
+      if (command.mode === 'velocity' || controlOutput.mode === 'velocity') {
+        // Integrate velocity to get new positions
+        this.currentState.jointVelocities = controlOutput.jointCommands;
+        this.currentState.jointPositions = this.currentState.jointPositions.map(
+          (pos, i) => pos + (controlOutput.jointCommands?.[i] || 0) * dt
+        );
+      } else if (command.mode === 'position') {
+        // Move toward target position
+        if (command.jointCommands) {
+          const alpha = 0.1; // Smoothing factor
+          this.currentState.jointPositions = this.currentState.jointPositions.map(
+            (pos, i) => pos + alpha * ((command.jointCommands?.[i] || pos) - pos)
+          );
+        }
+      } else if (command.mode === 'torque' || controlOutput.mode === 'torque') {
+        // Apply torques (simplified dynamics)
+        this.currentState.jointTorques = controlOutput.jointCommands;
+        // Simple integration: F = ma -> a = F/m -> v += a*dt -> x += v*dt
+        const inertia = 1.0; // Simplified uniform inertia
+        const damping = 0.1;
+        this.currentState.jointVelocities = this.currentState.jointVelocities.map(
+          (vel, i) => vel + ((controlOutput.jointCommands?.[i] || 0) / inertia - damping * vel) * dt
+        );
+        this.currentState.jointPositions = this.currentState.jointPositions.map(
+          (pos, i) => pos + this.currentState.jointVelocities[i] * dt
+        );
+      }
+
+      // Update Cartesian pose from joint positions
+      this.currentState.cartesianPose = this.kinematics.forwardKinematics(
+        this.currentState.jointPositions
+      );
+      this.currentState.timestamp = Date.now();
+    }
   }
 
   /**

@@ -52,6 +52,8 @@ import { getEconomicSystem } from './economy/index.js';
 import { getDeploymentSystem } from './deployment/index.js';
 import { getProductionMemory } from './memory-production/index.js';
 import { getGovernanceSystem } from './governance/index.js';
+import { A2AServer, A2AClient, generateA2AKeyPair } from './a2a/index.js';
+import { GenesisMCPServer } from './mcp-server/index.js';
 
 // ============================================================================
 // CLI Colors

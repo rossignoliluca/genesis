@@ -92,6 +92,35 @@ export interface AllostasisMetrics {
 }
 
 // ============================================================================
+// Type-Safe State Access (v10.0)
+// ============================================================================
+
+/** Valid state variable keys */
+type StateKey = keyof InteroceptiveState;
+
+/** Type-safe state variable getter */
+function getStateValue(state: InteroceptiveState, key: string): number | undefined {
+  if (key in state && key !== 'timestamp') {
+    return state[key as StateKey] as number;
+  }
+  return undefined;
+}
+
+/** Type-safe state variable setter */
+function setStateValue(state: InteroceptiveState, key: string, value: number): void {
+  if (key in state && key !== 'timestamp') {
+    (state as unknown as Record<string, number>)[key] = value;
+  }
+}
+
+/** Type-safe partial state setter */
+function setPartialStateValue(state: Partial<InteroceptiveState>, key: string, value: number): void {
+  if (key !== 'timestamp') {
+    (state as unknown as Record<string, number>)[key] = value;
+  }
+}
+
+// ============================================================================
 // Interoception (Internal State Sensing)
 // ============================================================================
 
@@ -138,7 +167,7 @@ class InteroceptionSystem {
     // Update from registered sensors
     for (const [variable, callback] of this.sensorCallbacks) {
       try {
-        (newState as any)[variable] = callback();
+        setStateValue(newState, variable, callback());
       } catch {
         // Sensor failed, keep previous value
       }
@@ -341,11 +370,11 @@ class AnticipatoryModel {
     stepsAhead: number
   ): number {
     if (history.length < 3) {
-      return (history[history.length - 1] as any)[variable] || 0.5;
+      return getStateValue(history[history.length - 1], variable) ?? 0.5;
     }
 
     // Use exponential smoothing with trend
-    const values = history.slice(-10).map(s => (s as any)[variable] as number);
+    const values = history.slice(-10).map(s => getStateValue(s, variable) ?? 0);
 
     // Simple trend extrapolation
     const n = values.length;
@@ -411,7 +440,7 @@ class AnticipatoryModel {
     for (const prediction of relevantPredictions) {
       for (const [variable, predictedValue] of Object.entries(prediction.state)) {
         if (variable === 'timestamp') continue;
-        const actualValue = (actual as any)[variable];
+        const actualValue = getStateValue(actual, variable);
         if (actualValue !== undefined && predictedValue !== undefined) {
           const error = Math.abs(predictedValue as number - actualValue);
           // Store error for model improvement
@@ -480,7 +509,7 @@ class ActiveInferenceController {
     let value = 0;
 
     for (const [variable, preferred] of this.preferredStates) {
-      const current = (currentState as any)[variable] as number;
+      const current = getStateValue(currentState, variable);
       if (current === undefined) continue;
 
       const precision = this.precisionWeights.get(variable) || 1.0;
@@ -829,7 +858,10 @@ export class AllostasisSystem extends EventEmitter {
 
     const actualEffect: Partial<InteroceptiveState> = {};
     for (const key of Object.keys(predictedEffect)) {
-      (actualEffect as any)[key] = (postState as any)[key];
+      const value = getStateValue(postState, key);
+      if (value !== undefined) {
+        setPartialStateValue(actualEffect, key, value);
+      }
     }
 
     // Update anticipatory model

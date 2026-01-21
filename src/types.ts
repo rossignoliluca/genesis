@@ -43,7 +43,9 @@ export type MCPServerName =
   | 'neo4j'
   | 'slack'
   | 'puppeteer'
-  | 'sequential-thinking';
+  | 'sequential-thinking'
+  // v10.0 - Internal markers
+  | 'parallel';  // Batch/parallel operation marker
 
 /** @deprecated Use MCPServerName instead */
 export type MCPServer = MCPServerName;

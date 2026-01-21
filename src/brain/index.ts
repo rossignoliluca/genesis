@@ -390,7 +390,7 @@ export class Brain {
       const { executeAction } = await import('../active-inference/actions.js');
 
       // Run improve.self action
-      const result = await executeAction('improve.self' as any, {
+      const result = await executeAction('improve.self', {
         parameters: { autoApply },
         beliefs: { viability: 0.5, worldState: 0.5, coupling: 0.5, goalProgress: 0.5 },
       });
@@ -1460,7 +1460,7 @@ export class Brain {
         const metricMatch = queryLower.match(/(?:metric|metrica)[:\s]+(\w+)/);
         const targetMetric = metricMatch ? metricMatch[1] : undefined;
 
-        result = await executeAction('self.modify' as any, {
+        result = await executeAction('self.modify', {
           parameters: targetMetric ? { targetMetric } : {},
           beliefs: defaultBeliefs,
         });
@@ -1468,7 +1468,7 @@ export class Brain {
         // Improvement discovery
         const autoApply = queryLower.includes('auto') || queryLower.includes('applica');
 
-        result = await executeAction('improve.self' as any, {
+        result = await executeAction('improve.self', {
           parameters: { autoApply },
           beliefs: defaultBeliefs,
         });
@@ -1597,7 +1597,7 @@ export class Brain {
       // Emit thinking events
       for (const step of result.thinking) {
         this.emit({
-          type: 'thinking_step' as any,
+          type: 'thinking_step',
           timestamp: new Date(),
           data: {
             stepType: step.type,

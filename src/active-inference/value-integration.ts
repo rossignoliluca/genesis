@@ -121,6 +121,8 @@ const AI_TO_WM_ACTION: Record<ActionType, WMActionType> = {
   'econ.optimize': 'transform', // Optimize costs
   'econ.activate': 'execute',   // Activate service
   'econ.promote': 'execute',    // Promote services
+  // v10.0 - Meta-Improvement
+  'improve.self': 'transform',  // Self-improvement action
 };
 
 // ============================================================================

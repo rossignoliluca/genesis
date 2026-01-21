@@ -300,7 +300,7 @@ export class StreamingMCPWrapper extends EventEmitter {
         if (completedCount === calls.length) {
           events.emit('complete', {
             type: 'complete',
-            server: 'parallel' as any,
+            server: 'parallel',
             tool: 'batch',
             timestamp: new Date(),
             data: results,
@@ -315,7 +315,7 @@ export class StreamingMCPWrapper extends EventEmitter {
     const promise = Promise.all(streams.map((s) => s.promise)).then((allResults) => ({
       success: allResults.every((r) => r.success),
       data: allResults.map((r) => r.data) as T[],
-      server: 'parallel' as any,
+      server: 'parallel' as const,  // MCPServerName type
       tool: 'batch',
       mode: 'real' as const,
       latency: Date.now() - startTime,

@@ -1769,7 +1769,7 @@ registerAction('self.modify', async (context) => {
  * Observes metrics, identifies bottlenecks, and triggers self.modify.
  * This is the "autonomous improvement" entry point.
  */
-registerAction('improve.self' as ActionType, async (context) => {
+registerAction('improve.self', async (context) => {
   const start = Date.now();
 
   try {
@@ -1782,7 +1782,7 @@ registerAction('improve.self' as ActionType, async (context) => {
     if (opportunities.length === 0) {
       return {
         success: true,
-        action: 'improve.self' as ActionType,
+        action: 'improve.self',
         data: {
           message: 'System is operating within optimal parameters',
           metrics: {
@@ -1806,7 +1806,7 @@ registerAction('improve.self' as ActionType, async (context) => {
     if (context.parameters?.autoApply && results.length > 0) {
       return {
         success: true,
-        action: 'improve.self' as ActionType,
+        action: 'improve.self',
         data: {
           applied: results.length > 0,
           improvements: results.map((i: { opportunityId: string; success: boolean }) => ({
@@ -1822,7 +1822,7 @@ registerAction('improve.self' as ActionType, async (context) => {
     // 4. Otherwise, just report opportunities
     return {
       success: true,
-      action: 'improve.self' as ActionType,
+      action: 'improve.self',
       data: {
         opportunities: sorted.map((o: {
           id: string;
@@ -1854,7 +1854,7 @@ registerAction('improve.self' as ActionType, async (context) => {
   } catch (error) {
     return {
       success: false,
-      action: 'improve.self' as ActionType,
+      action: 'improve.self',
       error: error instanceof Error ? error.message : String(error),
       duration: Date.now() - start,
     };

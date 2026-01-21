@@ -125,7 +125,9 @@ export type ActionType =
   | 'econ.check'      // Check economic health (balance, costs, revenue)
   | 'econ.optimize'   // Optimize costs (cheaper LLMs, caching)
   | 'econ.activate'   // Activate a revenue-generating service
-  | 'econ.promote';   // Promote services to increase revenue
+  | 'econ.promote'    // Promote services to increase revenue
+  // v10.0 - Meta-Improvement
+  | 'improve.self';   // High-level self-improvement action
 
 export const ACTIONS: ActionType[] = [
   'sense.mcp',
@@ -161,6 +163,8 @@ export const ACTIONS: ActionType[] = [
   'econ.optimize',
   'econ.activate',
   'econ.promote',
+  // v10.0 - Meta-Improvement
+  'improve.self',
 ];
 
 export const ACTION_COUNT = ACTIONS.length;

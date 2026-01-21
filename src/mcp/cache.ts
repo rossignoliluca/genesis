@@ -108,6 +108,8 @@ const DEFAULT_SERVER_TTL: Record<MCPServerName, number> = {
   'slack': 0, // Don't cache notifications
   'puppeteer': 0, // Don't cache browser actions
   'sequential-thinking': 0, // Don't cache reasoning
+  // v10.0 - Internal markers
+  'parallel': 0, // Batch operation marker, no caching
 };
 
 // ============================================================================
@@ -314,7 +316,7 @@ export class MCPCache {
       entries: 0,
       totalSize: 0,
       hitRate: 0,
-      byServer: {} as any,
+      byServer: {} as CacheStats['byServer'],
     };
 
     if (this.config.persistent) {

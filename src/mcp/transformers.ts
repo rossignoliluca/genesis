@@ -356,8 +356,10 @@ export function toNumberedList(): Transformer<string[], string> {
 /**
  * Compose multiple transformers into one
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function compose<TIn, TOut>(...transformers: Transformer<any, any>[]): Transformer<TIn, TOut> {
   return (input: TIn) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return transformers.reduce((acc, transformer) => transformer(acc), input as any) as TOut;
   };
 }

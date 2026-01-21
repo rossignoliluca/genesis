@@ -61,6 +61,85 @@ export interface KnowledgeEdge {
   weight?: number;
 }
 
+// ============================================================================
+// External Service Result Types (v10.0: Type Safety)
+// ============================================================================
+
+/** Pinecone vector match result */
+interface PineconeMatch {
+  id: string;
+  score: number;
+  metadata?: {
+    content?: string;
+    type?: string;
+    source?: string;
+    importance?: number;
+    accessCount?: number;
+    timestamp?: string;
+    tags?: string[];
+  };
+}
+
+/** Neo4j node record from Cypher query */
+interface Neo4jNodeRecord {
+  id: string;
+  name: string;
+  labels?: string[];
+  [key: string]: unknown;
+}
+
+/** Neo4j relationship record */
+interface Neo4jRelRecord {
+  type: string;
+  [key: string]: unknown;
+}
+
+/** Neo4j query result with 'related' node */
+interface Neo4jRelatedResult {
+  related: Neo4jNodeRecord;
+}
+
+/** Neo4j query result with 'n' node */
+interface Neo4jNodeResult {
+  n: Neo4jNodeRecord;
+}
+
+/** Neo4j path query result */
+interface Neo4jPathResult {
+  nodes: Neo4jNodeRecord[];
+  rels: Neo4jRelRecord[];
+}
+
+/** PostgreSQL row with id field */
+interface PostgresIdRow {
+  id: string;
+}
+
+/** PostgreSQL session log row */
+interface PostgresSessionRow {
+  role: string;
+  content: string;
+  timestamp: string;
+}
+
+/** PostgreSQL memory row */
+interface PostgresMemoryRow {
+  id: string;
+  content: string;
+  type: MemoryEntry['type'];
+  importance: number;
+  access_count: number;
+  created_at: string;
+  last_accessed: string | null;
+  metadata: Record<string, unknown>;
+}
+
+/** PostgreSQL aggregation row */
+interface PostgresCountRow {
+  type: string;
+  count: string;
+}
+
 export interface MemoryStats {
   totalEntries: number;
   byType: Record<string, number>;
@@ -157,12 +236,12 @@ export class VectorMemory {
         includeMetadata: options?.includeMetadata ?? true,
       });
 
-      const matches = result.data?.matches || [];
-      return matches.map((match: any) => ({
+      const matches: PineconeMatch[] = result.data?.matches || [];
+      return matches.map((match) => ({
         id: match.id,
         content: match.metadata?.content || '',
         score: match.score,
-        type: match.metadata?.type || 'semantic',
+        type: (match.metadata?.type as MemoryEntry['type']) || 'semantic',
         metadata: {
           timestamp: match.metadata?.timestamp || '',
           source: match.metadata?.source || 'unknown',
@@ -330,8 +409,8 @@ export class KnowledgeGraph {
     `;
 
     try {
-      const results = await this.runQuery(query, { nodeId, limit });
-      return results.map((r: any) => ({
+      const results = await this.runQuery(query, { nodeId, limit }) as Neo4jRelatedResult[];
+      return results.map((r) => ({
         id: r.related.id,
         type: r.related.labels?.[0] || 'Unknown',
         name: r.related.name,
@@ -353,18 +432,18 @@ export class KnowledgeGraph {
     `;
 
     try {
-      const results = await this.runQuery(query, { from: fromId, to: toId });
+      const results = await this.runQuery(query, { from: fromId, to: toId }) as Neo4jPathResult[];
       if (results.length === 0) return null;
 
-      const result: any = results[0];
+      const result = results[0];
       return {
-        path: result.nodes.map((n: any) => ({
+        path: result.nodes.map((n) => ({
           id: n.id,
           type: n.labels?.[0] || 'Unknown',
           name: n.name,
           properties: n,
         })),
-        relations: result.rels.map((r: any) => r.type),
+        relations: result.rels.map((r) => r.type),
       };
     } catch (error) {
       console.error('[KnowledgeGraph] findPath failed:', error);
@@ -376,10 +455,10 @@ export class KnowledgeGraph {
     const query = `MATCH (n {id: $id}) RETURN n`;
 
     try {
-      const results = await this.runQuery(query, { id });
+      const results = await this.runQuery(query, { id }) as Neo4jNodeResult[];
       if (results.length === 0) return null;
 
-      const node: any = (results[0] as any).n;
+      const node = results[0].n;
       return {
         id: node.id,
         type: node.labels?.[0] || 'Unknown',
@@ -401,8 +480,8 @@ export class KnowledgeGraph {
     `;
 
     try {
-      const results = await this.runQuery(query, { term: searchTerm });
-      return results.map((r: any) => ({
+      const results = await this.runQuery(query, { term: searchTerm }) as Neo4jNodeResult[];
+      return results.map((r) => ({
         id: r.n.id,
         type: r.n.labels?.[0] || 'Unknown',
         name: r.n.name,
@@ -513,8 +592,8 @@ export class StructuredMemory {
         entry.type,
         entry.metadata.importance,
         JSON.stringify(entry.metadata),
-      ]);
-      return (results[0] as any)?.id || null;
+      ]) as PostgresIdRow[];
+      return results[0]?.id || null;
     } catch (error) {
       return null;
     }
@@ -538,8 +617,8 @@ export class StructuredMemory {
         entry.role,
         entry.content,
         JSON.stringify(entry.metadata || {}),
-      ]);
-      return (results[0] as any)?.id || null;
+      ]) as PostgresIdRow[];
+      return results[0]?.id || null;
     } catch (error) {
       return null;
     }
@@ -561,8 +640,8 @@ export class StructuredMemory {
     `;
 
     try {
-      const results = await this.query(sql, [skill.name, skill.description, skill.code || null]);
-      return { success: true, id: (results[0] as any)?.id };
+      const results = await this.query(sql, [skill.name, skill.description, skill.code || null]) as PostgresIdRow[];
+      return { success: true, id: results[0]?.id };
     } catch (error) {
       return { success: false, error: String(error) };
     }
@@ -582,8 +661,8 @@ export class StructuredMemory {
     `;
 
     try {
-      const results = await this.query(sql, [sessionId, limit]);
-      return results as any[];
+      const results = await this.query(sql, [sessionId, limit]) as PostgresSessionRow[];
+      return results;
     } catch (error) {
       return [];
     }
@@ -604,18 +683,18 @@ export class StructuredMemory {
     params.push(limit);
 
     try {
-      const results = await this.query(sql, params);
-      return results.map((r: any) => ({
+      const results = await this.query(sql, params) as PostgresMemoryRow[];
+      return results.map((r) => ({
         id: r.id,
         content: r.content,
         type: r.type,
         metadata: {
           timestamp: r.created_at,
-          source: r.metadata?.source || 'unknown',
+          source: (r.metadata as { source?: string })?.source || 'unknown',
           importance: r.importance,
           accessCount: r.access_count,
-          lastAccessed: r.last_accessed,
-          tags: r.metadata?.tags || [],
+          lastAccessed: r.last_accessed ?? undefined,
+          tags: (r.metadata as { tags?: string[] })?.tags || [],
         },
       }));
     } catch (error) {
@@ -782,15 +861,21 @@ export class ProductionMemory {
         const related = await this.graph.findRelated(node.id, { maxHops: 1, limit: 3 });
         for (const rel of related) {
           if (!results.find(r => r.id === rel.id)) {
+            const props = rel.properties as {
+              fullContent?: string;
+              memoryType?: MemoryEntry['type'];
+              source?: string;
+              importance?: number;
+            };
             results.push({
               id: rel.id,
-              content: (rel.properties as any).fullContent || rel.name,
+              content: props.fullContent || rel.name,
               score: 0.7,
-              type: (rel.properties as any).memoryType || 'relational',
+              type: props.memoryType || 'relational',
               metadata: {
                 timestamp: '',
-                source: (rel.properties as any).source || 'graph',
-                importance: (rel.properties as any).importance || 0.5,
+                source: props.source || 'graph',
+                importance: props.importance || 0.5,
                 accessCount: 0,
               },
             });
@@ -893,7 +978,7 @@ export class ProductionMemory {
     const importantMemories = await this.structured.getImportantMemories(undefined, 1);
 
     const byType: Record<string, number> = {};
-    for (const row of memories as any[]) {
+    for (const row of memories as PostgresCountRow[]) {
       byType[row.type] = parseInt(row.count);
     }
 

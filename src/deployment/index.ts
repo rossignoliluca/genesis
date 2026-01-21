@@ -764,3 +764,6 @@ export function getDeploymentSystem(): DeploymentSystem {
 }
 
 export default DeploymentSystem;
+
+// Self-Deployment (Cloud Auto-Deploy)
+export * from './self-deployment.js';

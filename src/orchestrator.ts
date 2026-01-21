@@ -214,6 +214,13 @@ export const MCP_CAPABILITIES: Record<MCPServerName, MCPCapability> = {
     tools: ['think_step', 'plan', 'reflect', 'conclude'],
     description: 'Step-by-step reasoning and planning',
   },
+  // v10.0 - Internal markers (not real servers)
+  'parallel': {
+    server: 'parallel',
+    category: 'creation',
+    tools: [],
+    description: 'Internal marker for batch/parallel operations',
+  },
 };
 
 // ============================================================================

@@ -770,7 +770,7 @@ export class SessionManager {
     for (const file of files) {
       try {
         const filePath = path.join(this.sessionsDir, file);
-        const data = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as GenesisState;
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as GenesisState & { sessionName?: string };
 
         // Extract first user message as summary
         const firstUserMsg = data.conversation?.history?.find(m => m.role === 'user');
@@ -778,7 +778,7 @@ export class SessionManager {
 
         sessions.push({
           id: data.session?.id || file.replace('.json', ''),
-          name: (data as any).sessionName,  // Optional session name
+          name: data.sessionName,  // Optional session name
           created: new Date(data.created),
           lastModified: new Date(data.lastModified),
           messageCount: data.conversation?.totalMessages || 0,

@@ -269,7 +269,8 @@ export class HooksManager {
       const errorMessage = err instanceof Error ? err.message : String(err);
 
       // Check if hook explicitly blocked (exit code 77 = blocked)
-      const blocked = err instanceof Error && 'status' in err && (err as any).status === 77;
+      const errorWithStatus = err as { status?: number };
+      const blocked = err instanceof Error && 'status' in err && errorWithStatus.status === 77;
 
       return {
         event,

@@ -186,7 +186,9 @@ class JSONCache {
       if (fs.existsSync(this.dbPath)) {
         dbSize = fs.statSync(this.dbPath).size;
       }
-    } catch {}
+    } catch {
+      // File stats unavailable, return 0
+    }
 
     return {
       totalFixes: fixes.length,

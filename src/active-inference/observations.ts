@@ -133,7 +133,7 @@ export class ObservationGatherer {
       phi: this.mapPhi({ phi: raw.phi ?? 0.5, state: 'aware' }),
       tool: raw.toolSuccess === undefined ? 1 : (raw.toolSuccess ? 2 : 0),
       coherence: raw.coherent === undefined ? 2 : (raw.coherent ? 2 : 0),
-      task: this.mapTask(raw.taskStatus as any ?? 'none'),
+      task: this.mapTask(raw.taskStatus ?? 'none'),
     };
   }
 

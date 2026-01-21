@@ -343,7 +343,8 @@ export type BrainEventType =
   | 'healing_start'
   | 'healing_complete'
   | 'broadcast'
-  | 'phi_update';
+  | 'phi_update'
+  | 'thinking_step';  // v10.0 - Extended thinking events
 
 export interface BrainEvent {
   type: BrainEventType;

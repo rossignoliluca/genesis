@@ -536,7 +536,7 @@ export class AgentPool {
 
     // Extract result from payload
     if (result?.payload) {
-      const payload = result.payload as any;
+      const payload = result.payload as { content?: string; output?: string; result?: string; cost?: number; provider?: ExtendedProvider };
       return {
         output: payload.content || payload.output || payload.result || JSON.stringify(payload),
         cost: payload.cost || 0,

@@ -339,6 +339,12 @@ const MCP_SERVER_REGISTRY: Record<MCPServerName, MCPServerInfo> = {
     args: ['-y', '@anthropic/mcp-sequential-thinking'],
     tools: ['think_step', 'plan', 'reflect', 'conclude'],
   },
+  // v10.0 - Internal markers (not real servers)
+  'parallel': {
+    command: '',  // Not a real server
+    args: [],
+    tools: [],
+  },
 };
 
 // ============================================================================
@@ -1176,7 +1182,8 @@ export function isSimulatedMode(): boolean {
 }
 
 export function isSimulatedResult(result: MCPCallResult): boolean {
-  return result.mode === 'simulated' || (result.data as any)?._simulated === true;
+  const data = result.data as { _simulated?: boolean } | null;
+  return result.mode === 'simulated' || data?._simulated === true;
 }
 
 export function logMCPMode(): void {

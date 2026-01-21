@@ -130,7 +130,7 @@ describe('Brain Module (Phase 10)', () => {
       assert.strictEqual(brain.isRunning(), false);
 
       // Start and check
-      brain.start();
+      await brain.start();
       assert.strictEqual(brain.isRunning(), true);
 
       // Stop and check
@@ -299,19 +299,19 @@ describe('Brain Module (Phase 10)', () => {
       const brain = createBrain();
 
       // Start
-      brain.start();
+      await brain.start();
       assert.strictEqual(brain.isRunning(), true);
 
       // Stop
-      brain.stop();
+      await brain.stop();
       assert.strictEqual(brain.isRunning(), false);
 
       // Start again
-      brain.start();
+      await brain.start();
       assert.strictEqual(brain.isRunning(), true);
 
       // Stop again
-      brain.stop();
+      await brain.stop();
       assert.strictEqual(brain.isRunning(), false);
     });
   });

@@ -1478,6 +1478,7 @@ ${c('Commands:', 'bold')}
     todos            TODO/FIXME items
     history          Show previous analysis
 
+  ${c('install', 'green')}               Install/update Genesis globally (npm)
   ${c('status', 'green')}                Show MCP servers status
   ${c('hardware', 'green')}              Show hardware profile & router config
   ${c('help', 'green')}                  Show this help
@@ -1663,6 +1664,73 @@ ${c('Examples:', 'cyan')}
 }
 
 // ============================================================================
+// Install Command (v10.1: Self-Installation)
+// ============================================================================
+
+async function cmdInstall(options: Record<string, string>): Promise<void> {
+  const { execSync, spawn } = await import('child_process');
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf-8'));
+  const version = pkg.version;
+
+  console.log(c(`\n=== Genesis Installation (v${version}) ===\n`, 'bold'));
+
+  // Check current installation
+  let currentVersion: string | null = null;
+  try {
+    const result = execSync('npm list -g genesis-ai-cli --depth=0 2>/dev/null', { encoding: 'utf-8' });
+    const match = result.match(/genesis-ai-cli@(\d+\.\d+\.\d+)/);
+    if (match) currentVersion = match[1];
+  } catch {
+    // Not installed globally
+  }
+
+  if (currentVersion) {
+    console.log(`  ${c('Current:', 'cyan')} v${currentVersion}`);
+    if (currentVersion === version) {
+      console.log(`  ${c('✓', 'green')} Already up to date!`);
+      return;
+    }
+    console.log(`  ${c('Latest:', 'cyan')}  v${version}`);
+    console.log();
+  } else {
+    console.log(`  ${c('Status:', 'cyan')} Not installed globally`);
+    console.log(`  ${c('Latest:', 'cyan')} v${version}`);
+    console.log();
+  }
+
+  // Install globally
+  console.log('Installing globally (may require sudo)...\n');
+
+  try {
+    // Try without sudo first
+    execSync(`npm install -g genesis-ai-cli@${version}`, {
+      stdio: 'inherit',
+      timeout: 60000
+    });
+    console.log(`\n${c('✓', 'green')} Genesis v${version} installed successfully!`);
+    console.log(`  Run ${c('genesis help', 'cyan')} to get started.`);
+  } catch (err) {
+    // Need sudo
+    console.log(`\n${c('Permission denied.', 'yellow')} Trying with sudo...\n`);
+
+    try {
+      execSync(`sudo npm install -g genesis-ai-cli@${version}`, {
+        stdio: 'inherit',
+        timeout: 120000
+      });
+      console.log(`\n${c('✓', 'green')} Genesis v${version} installed successfully!`);
+      console.log(`  Run ${c('genesis help', 'cyan')} to get started.`);
+    } catch (sudoErr) {
+      console.log(`\n${c('✗', 'red')} Installation failed.`);
+      console.log(`\nAlternative: Run manually:`);
+      console.log(`  ${c(`sudo npm install -g genesis-ai-cli@${version}`, 'dim')}`);
+      console.log(`\nOr use npx directly:`);
+      console.log(`  ${c(`npx genesis-ai-cli@${version} chat`, 'dim')}`);
+    }
+  }
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -1792,6 +1860,9 @@ async function main(): Promise<void> {
         break;
       case 'analyze':
         await cmdAnalyze(positional, options);
+        break;
+      case 'install':
+        await cmdInstall(options);
         break;
       default:
         console.error(c(`Unknown command: ${command}`, 'red'));

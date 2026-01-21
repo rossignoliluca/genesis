@@ -440,6 +440,25 @@ export class ChatSession {
         continue;
       }
 
+      // v10.2: Implicit self-referential commands (Italian + English)
+      const implicitCommands: Record<string, string> = {
+        'migliorati': '/improve',
+        'migliora': '/improve',
+        'analizzati': '/analyze',
+        'analizza': '/analyze',
+        'guarisciti': '/heal',
+        'guarisci': '/heal',
+        'improve yourself': '/improve',
+        'analyze yourself': '/analyze',
+        'heal yourself': '/heal',
+      };
+      const lower = input.toLowerCase().trim();
+      if (implicitCommands[lower]) {
+        console.log(c(`→ ${implicitCommands[lower]}`, 'dim'));
+        await this.handleCommand(implicitCommands[lower]);
+        continue;
+      }
+
       // Send to LLM
       await this.sendMessage(input);
     }
@@ -1114,15 +1133,20 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
 
       // v7.0: Darwin-Gödel self-improvement commands
       case 'heal':
+      case 'guarisci':  // Italian
         this.printHealingStatus();
         break;
 
       case 'analyze':
+      case 'analizza':   // Italian
+      case 'analizzati': // Italian reflexive
         this.runSelfAnalysis();
         break;
 
       case 'improve':
-        if (args[0] === 'confirm') {
+      case 'migliora':   // Italian
+      case 'migliorati': // Italian reflexive (improve yourself)
+        if (args[0] === 'confirm' || args[0] === 'conferma') {
           this.runSelfImprovement();
         } else {
           console.log(warning('This will trigger self-improvement. Use /improve confirm to proceed.'));

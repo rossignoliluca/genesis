@@ -668,11 +668,9 @@ export class InteractiveSession {
   }
 
   /**
-   * Show progress
+   * Show progress - always visible (v10.3: removed verbose gate)
    */
   private showProgress(status: ProgressStatus): void {
-    if (!this.config.verbose) return;
-
     const pct = Math.round((status.current / status.total) * 100);
     const bar = '█'.repeat(Math.floor(pct / 5)) + '░'.repeat(20 - Math.floor(pct / 5));
 

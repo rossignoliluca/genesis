@@ -1985,22 +1985,22 @@ Question: ${query}`;
     thinkingContext?: string,
     systemPrompt?: string
   ): Promise<{ best: string; confidence: number }> {
-    const samples: Array<{ response: string; score: number }> = [];
-
-    // Generate N samples
-    for (let i = 0; i < this.config.nSamples; i++) {
-      const result = await this.generate(
+    // v10.3: Parallel Best-of-N generation (3-5x speedup)
+    const generatePromises = Array.from({ length: this.config.nSamples }, () =>
+      this.generate(
         query,
         context,
         thinkingContext,
         systemPrompt,
         this.config.samplingTemperature
-      );
-      samples.push({
-        response: result.response,
-        score: result.confidence,
-      });
-    }
+      )
+    );
+
+    const results = await Promise.all(generatePromises);
+    const samples = results.map(result => ({
+      response: result.response,
+      score: result.confidence,
+    }));
 
     // Self-consistency: Check agreement among samples
     const consensusScore = this.calculateConsensus(samples.map(s => s.response));

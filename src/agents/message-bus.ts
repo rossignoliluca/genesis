@@ -33,7 +33,13 @@ export interface MessageFilter {
 
 export class MessageBus {
   private subscriptions: Map<string, Subscription> = new Map();
-  private messageQueue: Message[] = [];
+  // v10.3: Priority queues instead of O(n log n) sort
+  private priorityQueues: Record<MessagePriority, Message[]> = {
+    critical: [],
+    high: [],
+    normal: [],
+    low: [],
+  };
   private processing = false;
   private messageHistory: Message[] = [];
   private maxHistorySize = 1000;
@@ -85,7 +91,9 @@ export class MessageBus {
       timestamp: new Date(),
     };
 
-    this.messageQueue.push(fullMessage);
+    // v10.3: O(1) insertion into priority queue
+    const priority = fullMessage.priority || 'normal';
+    this.priorityQueues[priority].push(fullMessage);
     this.metrics.messagesSent++;
 
     // Store in history
@@ -143,15 +151,14 @@ export class MessageBus {
     this.processing = true;
 
     try {
-      // Sort by priority
-      this.messageQueue.sort((a, b) => {
-        const priorityOrder = { critical: 0, high: 1, normal: 2, low: 3 };
-        return priorityOrder[a.priority] - priorityOrder[b.priority];
-      });
+      // v10.3: O(1) extraction from priority queues (no sorting needed)
+      const priorities: MessagePriority[] = ['critical', 'high', 'normal', 'low'];
 
-      while (this.messageQueue.length > 0) {
-        const message = this.messageQueue.shift()!;
-        await this.deliverMessage(message);
+      for (const priority of priorities) {
+        while (this.priorityQueues[priority].length > 0) {
+          const message = this.priorityQueues[priority].shift()!;
+          await this.deliverMessage(message);
+        }
       }
     } finally {
       this.processing = false;
@@ -326,11 +333,13 @@ export class MessageBus {
   // ============================================================================
 
   getMetrics() {
+    // v10.3: Sum all priority queues for total queue length
+    const queueLength = Object.values(this.priorityQueues).reduce((sum, q) => sum + q.length, 0);
     return {
       ...this.metrics,
       uptime: Date.now() - this.metrics.startTime.getTime(),
       activeSubscriptions: this.subscriptions.size,
-      queueLength: this.messageQueue.length,
+      queueLength,
       historySize: this.messageHistory.length,
     };
   }
@@ -341,7 +350,8 @@ export class MessageBus {
 
   clear(): void {
     this.subscriptions.clear();
-    this.messageQueue = [];
+    // v10.3: Clear all priority queues
+    this.priorityQueues = { critical: [], high: [], normal: [], low: [] };
     this.messageHistory = [];
   }
 }

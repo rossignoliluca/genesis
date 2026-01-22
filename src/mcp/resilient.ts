@@ -213,9 +213,11 @@ export class ResilientMCP {
           console.log(`[MCP] ${server}.${tool} attempt ${attempt + 1} failed: ${lastError}`);
         }
 
-        // Exponential backoff before retry
+        // Exponential backoff with jitter before retry (v10.3: prevents retry storms)
         if (attempt < maxRetries) {
-          await this.delay(Math.pow(2, attempt) * 500);
+          const baseDelay = Math.pow(2, attempt) * 500;
+          const jitter = Math.random() * baseDelay * 0.5; // 0-50% jitter
+          await this.delay(baseDelay + jitter);
         }
       }
     }

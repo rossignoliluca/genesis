@@ -115,12 +115,17 @@ export class AutonomousLoop {
           break;
         }
 
-        // Run one cycle
+        // Run one cycle with adaptive timing
+        const cycleStart = Date.now();
         await this.cycle();
+        const cycleDuration = Date.now() - cycleStart;
 
-        // Wait for next cycle
+        // Wait for next cycle (adaptive: subtract cycle duration)
         if (this.config.cycleInterval > 0) {
-          await new Promise(r => setTimeout(r, this.config.cycleInterval));
+          const remainingTime = Math.max(0, this.config.cycleInterval - cycleDuration);
+          if (remainingTime > 0) {
+            await new Promise(r => setTimeout(r, remainingTime));
+          }
         }
       }
     } catch (error) {

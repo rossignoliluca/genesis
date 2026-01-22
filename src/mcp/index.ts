@@ -526,6 +526,8 @@ class MCPConnectionManager {
       command: serverInfo.command,
       args,
       env,
+      // v7.24: Silence MCP server stderr to avoid polluting chat output
+      stderr: 'pipe',
     });
 
     await client.connect(transport);

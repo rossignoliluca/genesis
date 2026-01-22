@@ -91,6 +91,24 @@ export {
   DEFAULT_WORKSPACE_CONFIG,
 } from './cognitive-workspace.js';
 
+// Re-export v10.4.2 - Unified Memory Query
+export {
+  UnifiedMemoryQuery,
+  createUnifiedMemoryQuery,
+  getUnifiedMemoryQuery,
+  resetUnifiedMemoryQuery,
+  createMemorySystemAdapter,
+  createMemoryAgentAdapter,
+  createMCPMemoryAdapter,
+  createWorkspaceAdapter,
+  type UnifiedMemoryResult,
+  type UnifiedQueryFilter,
+  type UnifiedSearchOptions,
+  type UnifiedSearchResult,
+  type MemorySource,
+  type IUnifiedMemorySource,
+} from './unified-query.js';
+
 import { EpisodicStore, createEpisodicStore, CreateEpisodicOptions } from './episodic.js';
 import { SemanticStore, createSemanticStore, CreateSemanticOptions } from './semantic.js';
 import { ProceduralStore, createProceduralStore, CreateProceduralOptions } from './procedural.js';

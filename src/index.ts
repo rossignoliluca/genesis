@@ -535,7 +535,37 @@ async function cmdMCP(subcommand: string | undefined, options: Record<string, st
     return;
   }
 
-  console.log(c('Unknown MCP subcommand. Use: status, test, list', 'red'));
+  if (subcommand === 'serve') {
+    // Start Genesis as an MCP server
+    console.log(c('\n=== Starting Genesis MCP Server ===\n', 'bold'));
+
+    const { GenesisMCPServer, DEFAULT_MCP_SERVER_CONFIG } = await import('./mcp-server/index.js');
+
+    // Use defaults, only override name/version
+    const server = new GenesisMCPServer({
+      name: options.name || 'genesis',
+      version: '10.4.2',
+    });
+
+    console.log(`  Name: ${options.name || 'genesis'}`);
+    console.log(`  Transport: stdio`);
+    console.log(`  Tools: genesis.think, genesis.remember, genesis.execute, genesis.analyze, genesis.create`);
+    console.log('');
+    console.log(c('Server starting... (Ctrl+C to stop)', 'dim'));
+
+    await server.start();
+
+    // Keep process alive
+    process.on('SIGINT', () => {
+      console.log('\n[GenesisMCP] Shutting down...');
+      process.exit(0);
+    });
+
+    // Don't exit - server is running
+    return;
+  }
+
+  console.log(c('Unknown MCP subcommand. Use: status, test, list, serve', 'red'));
 }
 
 // ============================================================================
@@ -548,8 +578,17 @@ async function cmdDaemon(subcommand: string | undefined, options: Record<string,
   // Special case: 'run' is called by spawned background process
   if (subcommand === 'run') {
     pm.startDaemon();
-    // Keep process alive
-    setInterval(() => {}, 1000 * 60 * 60);
+    // Keep process alive with proper cleanup
+    const keepAliveInterval = setInterval(() => {}, 1000 * 60 * 60);
+
+    // Clean up on shutdown signals
+    const cleanup = () => {
+      clearInterval(keepAliveInterval);
+      pm.stopDaemon();
+      process.exit(0);
+    };
+    process.on('SIGTERM', cleanup);
+    process.on('SIGINT', cleanup);
     return;
   }
 
@@ -1174,6 +1213,75 @@ async function cmdBrain(subcommand: string | undefined, options: Record<string, 
 }
 
 // ============================================================================
+// Memory Command (v10.4.2: Unified Memory Query)
+// ============================================================================
+
+async function cmdMemory(subcommand: string | undefined, options: Record<string, string>): Promise<void> {
+  const brain = getBrain();
+  const query = brain.getUnifiedQuery();
+
+  if (!subcommand || subcommand === 'status') {
+    const stats = query.getStats();
+    console.log(c('\n=== MEMORY STATUS (v10.4.2 Unified Query) ===\n', 'bold'));
+    console.log(`  ${c('Sources:', 'cyan')}  ${stats.sourceCount}`);
+    for (const source of stats.registeredSources) {
+      console.log(`    - ${source}`);
+    }
+    console.log();
+    return;
+  }
+
+  if (subcommand === 'search') {
+    const searchQuery = options.query || options.q;
+    if (!searchQuery) {
+      console.log(c('Usage: genesis memory search -q "your query"', 'yellow'));
+      return;
+    }
+
+    const limit = parseInt(options.limit || '10', 10);
+
+    console.log(c(`\n=== SEARCHING ALL MEMORY: "${searchQuery}" ===\n`, 'bold'));
+
+    const result = await brain.searchAllMemory(searchQuery, { limit });
+
+    console.log(`  ${c('Results:', 'cyan')} ${result.results.length} of ${result.totalCount} total`);
+    console.log(`  ${c('Took:', 'cyan')}    ${result.took}ms`);
+    console.log(`  ${c('Sources:', 'cyan')} ${result.searchedSources.join(', ')}`);
+    console.log();
+
+    for (const mem of result.results) {
+      const importance = '●'.repeat(Math.ceil(mem.importance * 5)) + '○'.repeat(5 - Math.ceil(mem.importance * 5));
+      console.log(c(`[${mem.source}/${mem.type}]`, 'dim') + ` ${mem.summary || mem.id}`);
+      console.log(`  Relevance: ${(mem.relevance * 100).toFixed(0)}%  Importance: ${importance}  Retention: ${(mem.retention * 100).toFixed(0)}%`);
+      console.log();
+    }
+    return;
+  }
+
+  if (subcommand === 'recent') {
+    const limit = parseInt(options.limit || '10', 10);
+
+    console.log(c('\n=== RECENT MEMORIES ===\n', 'bold'));
+
+    const result = await query.getRecent({ limit });
+
+    console.log(`  ${c('Results:', 'cyan')} ${result.results.length}`);
+    console.log();
+
+    for (const mem of result.results) {
+      const age = Math.round((Date.now() - mem.created.getTime()) / (1000 * 60));
+      console.log(c(`[${mem.source}/${mem.type}]`, 'dim') + ` ${mem.summary || mem.id}`);
+      console.log(`  Created: ${age < 60 ? `${age}m ago` : `${Math.round(age / 60)}h ago`}  Importance: ${(mem.importance * 100).toFixed(0)}%`);
+      console.log();
+    }
+    return;
+  }
+
+  console.log(c(`Unknown memory subcommand: ${subcommand}`, 'red'));
+  console.log('Use: status, search -q "query", recent');
+}
+
+// ============================================================================
 // Autonomous Command (Phase 11: Full Autonomous Mode)
 // ============================================================================
 
@@ -1664,6 +1772,151 @@ ${c('Examples:', 'cyan')}
 }
 
 // ============================================================================
+// Agents Command (v10.4.2: Parallel Agent Execution)
+// ============================================================================
+
+async function cmdAgents(subcommand: string | undefined, options: Record<string, string>): Promise<void> {
+  const { getAgentPool, parallelExecute, researchBuildReview } = await import('./agents/agent-pool.js');
+  const { getCoordinator } = await import('./agents/coordinator.js');
+  const pool = getAgentPool();
+  const coordinator = getCoordinator();
+
+  if (!subcommand || subcommand === 'status') {
+    console.log(c('\n=== Agent Pool Status ===\n', 'bold'));
+    const stats = pool.getStats();
+    console.log(`  ${c('Pool Size:', 'cyan')}     ${stats.poolSize}`);
+    console.log(`  ${c('Completed:', 'cyan')}     ${stats.completedTasks}`);
+    console.log(`  ${c('Total Tasks:', 'cyan')}   ${stats.totalTasks}`);
+    console.log(`  ${c('Total Cost:', 'cyan')}    $${stats.totalCost.toFixed(4)}`);
+    console.log(`  ${c('Avg Latency:', 'cyan')}   ${stats.avgLatency.toFixed(0)}ms`);
+    console.log();
+
+    const coordStats = coordinator.getMetrics();
+    console.log(c('=== Coordinator Metrics ===\n', 'bold'));
+    console.log(`  ${c('Tasks Completed:', 'cyan')} ${coordStats.tasksCompleted}`);
+    console.log(`  ${c('Total Latency:', 'cyan')}   ${coordStats.totalLatency.toFixed(0)}ms`);
+    console.log(`  ${c('Debates:', 'cyan')}         ${coordStats.debatesHeld}`);
+    console.log(`  ${c('Votes:', 'cyan')}           ${coordStats.votesHeld}`);
+    console.log();
+    return;
+  }
+
+  if (subcommand === 'parallel') {
+    // Execute multiple agents in parallel
+    // Usage: genesis agents parallel "task1" "task2" "task3" --agents explorer,builder,critic
+    const args = process.argv.slice(4).filter(a => !a.startsWith('-'));
+    const agentTypes = (options.agents || 'explorer,builder,critic').split(',') as import('./agents/types.js').AgentType[];
+
+    if (args.length === 0) {
+      console.log(c('Usage: genesis agents parallel "task1" "task2" --agents type1,type2', 'yellow'));
+      return;
+    }
+
+    console.log(c('\n=== Parallel Agent Execution ===\n', 'bold'));
+    console.log(`  Tasks: ${args.length}`);
+    console.log(`  Agents: ${agentTypes.join(', ')}`);
+    console.log();
+
+    const startTime = Date.now();
+    const results = await parallelExecute(
+      args.map((input) => ({ input, taskType: 'research' as const }))
+    );
+
+    console.log(c('Results:\n', 'bold'));
+    for (const result of results) {
+      const status = result.success ? c('✓', 'green') : c('✗', 'red');
+      console.log(`  ${status} ${result.agentType} (${result.latency}ms, $${result.cost.toFixed(4)})`);
+      if (result.output) {
+        console.log(`     ${result.output.slice(0, 150)}...`);
+      }
+      if (result.error) {
+        console.log(`     ${c(`Error: ${result.error}`, 'red')}`);
+      }
+    }
+    console.log(`\n  ${c('Total:', 'cyan')} ${Date.now() - startTime}ms`);
+    return;
+  }
+
+  if (subcommand === 'coordinate') {
+    // Use coordinator patterns
+    // Usage: genesis agents coordinate "query" --pattern parallel|debate|voting --agents type1,type2
+    const query = options.q || process.argv[4];
+    const pattern = (options.pattern || 'parallel') as import('./agents/coordinator.js').CoordinationPattern;
+    const agentTypes = (options.agents || 'explorer,builder,critic').split(',') as import('./agents/types.js').AgentType[];
+
+    if (!query) {
+      console.log(c('Usage: genesis agents coordinate -q "query" --pattern parallel|debate|voting --agents type1,type2', 'yellow'));
+      return;
+    }
+
+    console.log(c('\n=== Agent Coordination ===\n', 'bold'));
+    console.log(`  Query: ${query.slice(0, 60)}${query.length > 60 ? '...' : ''}`);
+    console.log(`  Pattern: ${pattern}`);
+    console.log(`  Agents: ${agentTypes.join(', ')}`);
+    console.log();
+
+    const startTime = Date.now();
+    const task = await coordinator.coordinate({
+      query,
+      agents: agentTypes,
+      pattern,
+      aggregation: 'all',
+    });
+
+    console.log(c('Results:\n', 'bold'));
+    console.log(`  Status: ${task.status}`);
+    console.log(`  Results: ${task.results.length}`);
+    if (task.finalResult) {
+      const resultStr = typeof task.finalResult === 'string'
+        ? task.finalResult
+        : JSON.stringify(task.finalResult);
+      console.log(`  Final: ${resultStr.slice(0, 200)}${resultStr.length > 200 ? '...' : ''}`);
+    }
+    console.log(`\n  ${c('Total:', 'cyan')} ${Date.now() - startTime}ms`);
+    return;
+  }
+
+  if (subcommand === 'pipeline') {
+    // Research-Build-Review pipeline
+    // Usage: genesis agents pipeline "input"
+    const input = options.q || process.argv[4];
+
+    if (!input) {
+      console.log(c('Usage: genesis agents pipeline -q "input"', 'yellow'));
+      return;
+    }
+
+    console.log(c('\n=== Research-Build-Review Pipeline ===\n', 'bold'));
+    console.log(`  Input: ${input.slice(0, 60)}${input.length > 60 ? '...' : ''}`);
+    console.log();
+
+    const startTime = Date.now();
+    const { research, build, review } = await researchBuildReview(input);
+
+    console.log(c('Research:', 'cyan'));
+    console.log(`  ${research.success ? c('✓', 'green') : c('✗', 'red')} ${research.agentType} (${research.latency}ms)`);
+    console.log(`  ${research.output?.slice(0, 150)}...`);
+    console.log();
+
+    console.log(c('Build:', 'cyan'));
+    console.log(`  ${build.success ? c('✓', 'green') : c('✗', 'red')} ${build.agentType} (${build.latency}ms)`);
+    console.log(`  ${build.output?.slice(0, 150)}...`);
+    console.log();
+
+    console.log(c('Review:', 'cyan'));
+    console.log(`  ${review.success ? c('✓', 'green') : c('✗', 'red')} ${review.agentType} (${review.latency}ms)`);
+    console.log(`  ${review.output?.slice(0, 150)}...`);
+    console.log();
+
+    const totalCost = research.cost + build.cost + review.cost;
+    console.log(`  ${c('Total:', 'cyan')} ${Date.now() - startTime}ms, $${totalCost.toFixed(4)}`);
+    return;
+  }
+
+  console.log(c('Unknown agents subcommand. Use: status, parallel, coordinate, pipeline', 'red'));
+}
+
+// ============================================================================
 // Install Command (v10.1: Self-Installation)
 // ============================================================================
 
@@ -1854,6 +2107,10 @@ async function main(): Promise<void> {
         // Shortcut for brain phi
         await cmdBrain('phi', options);
         break;
+      case 'memory':
+        // v10.4.2: Unified memory query
+        await cmdMemory(positional, options);
+        break;
       case 'autonomous':
       case 'auto':
         await cmdAutonomous(positional, options);
@@ -1863,6 +2120,9 @@ async function main(): Promise<void> {
         break;
       case 'install':
         await cmdInstall(options);
+        break;
+      case 'agents':
+        await cmdAgents(positional, options);
         break;
       default:
         console.error(c(`Unknown command: ${command}`, 'red'));

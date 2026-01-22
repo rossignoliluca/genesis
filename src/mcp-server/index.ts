@@ -12,3 +12,4 @@
 
 export * from './types.js';
 export { GenesisMCPServer, AuthManager, RateLimiter, MeteringService } from './server.js';
+export { DEFAULT_MCP_SERVER_CONFIG } from './types.js';

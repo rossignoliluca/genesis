@@ -264,6 +264,9 @@ export interface ActiveInferenceConfig {
   // Learning rates (for online learning)
   learningRateA: number;        // A matrix learning rate
   learningRateB: number;        // B matrix learning rate
+
+  // v10.4.1: Exploration-exploitation balance
+  explorationBonus: number;     // Weight of information gain in EFE (epistemic value)
 }
 
 export const DEFAULT_CONFIG: ActiveInferenceConfig = {
@@ -273,6 +276,7 @@ export const DEFAULT_CONFIG: ActiveInferenceConfig = {
   priorWeight: 0.1,
   learningRateA: 0.01,
   learningRateB: 0.01,
+  explorationBonus: 1.0,        // Balance exploration vs exploitation (higher = more exploration)
 };
 
 // ============================================================================

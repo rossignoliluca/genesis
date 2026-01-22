@@ -156,8 +156,62 @@ export class MemoryAgent extends BaseAgent {
     // Enforce capacity limit
     while (this.workingMemory.length > MEMORY_LIMITS.WORKING) {
       const evicted = this.workingMemory.shift()!;
-      // Move to short-term
-      this.shortTermMemory.set(evicted.id, evicted);
+      // Move to short-term (with size limit enforcement)
+      this.addToShortTermMemory(evicted);
+    }
+  }
+
+  private addToShortTermMemory(memory: MemoryItem): void {
+    // Enforce short-term capacity - evict weakest if full
+    if (this.shortTermMemory.size >= MEMORY_LIMITS.SHORT_TERM) {
+      this.evictWeakestFromShortTerm();
+    }
+    this.shortTermMemory.set(memory.id, memory);
+  }
+
+  private evictWeakestFromShortTerm(): void {
+    let weakestId: string | null = null;
+    let weakestScore = Infinity;
+
+    for (const [id, memory] of this.shortTermMemory) {
+      const score = this.calculateConsolidationScore(memory);
+      if (score < weakestScore) {
+        weakestScore = score;
+        weakestId = id;
+      }
+    }
+
+    if (weakestId) {
+      const evicted = this.shortTermMemory.get(weakestId)!;
+      this.shortTermMemory.delete(weakestId);
+      this.removeAssociations(evicted);
+    }
+  }
+
+  private addToLongTermMemory(memory: MemoryItem): void {
+    // Enforce long-term capacity - evict weakest if full
+    if (this.longTermMemory.size >= MEMORY_LIMITS.LONG_TERM) {
+      this.evictWeakestFromLongTerm();
+    }
+    this.longTermMemory.set(memory.id, memory);
+  }
+
+  private evictWeakestFromLongTerm(): void {
+    let weakestId: string | null = null;
+    let weakestRetention = Infinity;
+
+    for (const [id, memory] of this.longTermMemory) {
+      const retention = this.getRetention(memory);
+      if (retention < weakestRetention) {
+        weakestRetention = retention;
+        weakestId = id;
+      }
+    }
+
+    if (weakestId) {
+      const evicted = this.longTermMemory.get(weakestId)!;
+      this.longTermMemory.delete(weakestId);
+      this.removeAssociations(evicted);
     }
   }
 
@@ -317,8 +371,6 @@ export class MemoryAgent extends BaseAgent {
    * 5. Prune weak memories
    */
   consolidate(): void {
-    this.log('Starting consolidation cycle...');
-
     let consolidated = 0;
     let forgotten = 0;
     let kept = 0;
@@ -328,9 +380,9 @@ export class MemoryAgent extends BaseAgent {
       const score = this.calculateConsolidationScore(memory);
 
       if (score >= MEMORY_THRESHOLDS.CONSOLIDATE) {
-        // Move to long-term
+        // Move to long-term (with size limit enforcement)
         memory.consolidated = true;
-        this.longTermMemory.set(id, memory);
+        this.addToLongTermMemory(memory);
         this.shortTermMemory.delete(id);
         consolidated++;
       } else if (score < MEMORY_THRESHOLDS.KEEP_SHORT) {
@@ -354,16 +406,22 @@ export class MemoryAgent extends BaseAgent {
     }
 
     this.lastConsolidation = new Date();
-    this.log(`Consolidation complete: ${consolidated} consolidated, ${forgotten} forgotten, ${kept} kept`);
 
-    // Broadcast consolidation event
-    this.broadcast('MEMORY_STORE', {
-      event: 'consolidation',
-      consolidated,
-      forgotten,
-      kept,
-      totalMemories: this.getTotalMemoryCount(),
-    });
+    // Only log if something happened
+    if (consolidated > 0 || forgotten > 0) {
+      this.log(`Consolidation: ${consolidated} consolidated, ${forgotten} forgotten, ${kept} kept`);
+    }
+
+    // Broadcast consolidation event only if something changed
+    if (consolidated > 0 || forgotten > 0) {
+      this.broadcast('MEMORY_STORE', {
+        event: 'consolidation',
+        consolidated,
+        forgotten,
+        kept,
+        totalMemories: this.getTotalMemoryCount(),
+      });
+    }
   }
 
   private calculateConsolidationScore(memory: MemoryItem): number {

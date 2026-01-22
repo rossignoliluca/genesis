@@ -440,33 +440,44 @@ export class AgentPool {
   private async getFromPool(agentType: AgentType): Promise<PooledAgent | null> {
     const poolEntries = this.pool.get(agentType) || [];
 
-    // Find available (not busy) agent
+    // Atomically find and claim available agent
     const available = poolEntries.find(e => !e.busy && e.agent.state === 'idle');
 
     if (available) {
+      // Mark as busy immediately to prevent race conditions
+      available.busy = true;
       return available;
     }
 
     // Check if we can spawn more
     if (poolEntries.length >= this.config.maxAgentsPerType) {
       // Wait for one to become available
-      await new Promise<void>(resolve => {
+      const claimed = await new Promise<PooledAgent | null>(resolve => {
+        let resolved = false;
+
         const check = setInterval(() => {
+          if (resolved) return;
+          // Atomically claim first free agent
           const free = poolEntries.find(e => !e.busy);
           if (free) {
+            free.busy = true; // Claim it immediately
+            resolved = true;
             clearInterval(check);
-            resolve();
+            resolve(free);
           }
         }, 100);
 
         // Timeout after 5s
         setTimeout(() => {
-          clearInterval(check);
-          resolve();
+          if (!resolved) {
+            resolved = true;
+            clearInterval(check);
+            resolve(null);
+          }
         }, 5000);
       });
 
-      return poolEntries.find(e => !e.busy) || null;
+      return claimed;
     }
 
     return null;

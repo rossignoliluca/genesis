@@ -102,6 +102,12 @@ import {
   SystemStatus,
   ImprovementSuggestion,
   DaemonStatus,
+  // v7.24: User-friendly messages
+  printStatus,
+  printError,
+  printSuccess,
+  printHint,
+  printQuickHelp,
 } from './ui.js';
 
 // ============================================================================
@@ -125,6 +131,8 @@ export interface ChatOptions {
   sessionName?: string;      // Name for the current session
   // v7.20.1: Streaming mode (real-time token output)
   stream?: boolean;         // Enable token-by-token streaming
+  // v7.24: Developer mode (verbose logging for debugging)
+  dev?: boolean;            // Enable developer mode
 }
 
 export class ChatSession {
@@ -195,6 +203,9 @@ export class ChatSession {
   private streamingTokens: number = 0;  // Running token count
   private streamStartTime: number = 0;  // For tokens/sec calculation
 
+  // v7.24: Developer mode (shows extra info for debugging)
+  private devMode: boolean = false;
+
   constructor(options: ChatOptions = {}) {
     this.llm = getLLMBridge({
       provider: options.provider,
@@ -223,6 +234,7 @@ export class ChatSession {
     this.thinkingSettings = { ...DEFAULT_THINKING_SETTINGS };  // v7.4.4: Extended thinking
     this.hooks = getHooksManager();  // v7.4.5: Hooks system
     this.enableStreaming = options.stream ?? false;  // v7.20.1: Streaming mode
+    this.devMode = options.dev ?? false;  // v7.24: Developer mode
 
     // v7.0: Initialize UI components
     this.spinner = new Spinner('Thinking');
@@ -921,6 +933,23 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
         console.log();
         break;
 
+      // v7.24: Developer mode toggle
+      case 'dev':
+      case 'developer':
+        this.devMode = !this.devMode;
+        if (this.devMode) {
+          console.log(c('🔧 Developer mode: ON', 'green'));
+          console.log(c('  Extra info: MCP calls, latency, tokens, errors', 'dim'));
+          this.verbose = true;  // Also enable verbose
+          this.thinkingSettings.enabled = true;  // Show thinking
+        } else {
+          console.log(c('🔧 Developer mode: OFF', 'yellow'));
+          this.verbose = false;
+          this.thinkingSettings.enabled = false;
+        }
+        console.log();
+        break;
+
       case 'quit':
       case 'exit':
       case 'q':
@@ -1414,6 +1443,65 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
         showBanner('7.20.0');
         break;
 
+      // ============================================
+      // v10.4: QUICK ACTIONS - Power commands
+      // ============================================
+
+      case 'fix':
+      case 'fixa':
+      case 'ripara':
+        await this.quickAction('fix', args.join(' '));
+        break;
+
+      case 'explain':
+      case 'spiega':
+      case 'cos':  // Italian "cos'è questo?"
+        await this.quickAction('explain', args.join(' '));
+        break;
+
+      case 'test':
+      case 'testa':
+        await this.quickAction('test', args.join(' '));
+        break;
+
+      case 'commit':
+      case 'c':
+        await this.quickAction('commit', args.join(' '));
+        break;
+
+      case 'review':
+      case 'revisiona':
+      case 'rev':
+        await this.quickAction('review', args.join(' '));
+        break;
+
+      case 'refactor':
+      case 'ref':
+        await this.quickAction('refactor', args.join(' '));
+        break;
+
+      case 'docs':
+      case 'doc':
+      case 'documenta':
+        await this.quickAction('docs', args.join(' '));
+        break;
+
+      case 'run':
+      case 'esegui':
+        await this.quickAction('run', args.join(' '));
+        break;
+
+      case 'search':
+      case 'cerca':
+      case 'find':
+        await this.quickAction('search', args.join(' '));
+        break;
+
+      case 'ask':
+      case 'chiedi':
+        await this.quickAction('ask', args.join(' '));
+        break;
+
       default:
         console.log(c(`Unknown command: /${cmd}`, 'red'));
         console.log('Type /help for available commands.');
@@ -1421,104 +1509,310 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
     }
   }
 
+  // ============================================
+  // v10.4: QUICK ACTIONS - Power commands
+  // ============================================
+
   /**
-   * Print banner (v7.20: Uses Genesis ASCII art)
+   * Execute quick action with smart context detection
    */
-  private printBanner(): void {
-    showBanner('7.20.2');
-    // v7.20.2: Don't print help on startup (too verbose), just show hint
-    console.log(c('Type /help for commands, /quit to exit', 'dim'));
+  private async quickAction(action: string, arg: string): Promise<void> {
+    const spinner = new Spinner();
+
+    try {
+      // Get context for smart prompts
+      const context = await this.getQuickActionContext(arg);
+
+      // Build the prompt based on action type
+      let prompt = '';
+      let showAsCode = false;
+
+      switch (action) {
+        case 'fix':
+          spinner.start('Analizzo il problema...');
+          prompt = context.lastError
+            ? `Fix this error:\n\n${context.lastError}\n\n${arg ? `Additional context: ${arg}` : ''}`
+            : arg
+              ? `Fix this issue: ${arg}`
+              : 'What was the last error? Please share it so I can help fix it.';
+          break;
+
+        case 'explain':
+          spinner.start('Analizzo il codice...');
+          if (context.currentFile) {
+            prompt = `Explain this code in a clear, concise way:\n\nFile: ${context.currentFile}\n${arg ? `Focus on: ${arg}` : ''}`;
+          } else if (arg) {
+            prompt = `Explain: ${arg}`;
+          } else {
+            prompt = 'What would you like me to explain? You can specify a file, concept, or paste code.';
+          }
+          break;
+
+        case 'test':
+          spinner.start('Genero i test...');
+          showAsCode = true;
+          if (context.currentFile) {
+            prompt = `Generate comprehensive tests for: ${context.currentFile}\n${arg ? `Focus on: ${arg}` : 'Include unit tests and edge cases.'}`;
+          } else if (arg) {
+            prompt = `Generate tests for: ${arg}`;
+          } else {
+            prompt = 'Which file or function should I generate tests for?';
+          }
+          break;
+
+        case 'commit':
+          spinner.start('Analizzo le modifiche...');
+          const gitStatus = await this.execCommand('git status --porcelain');
+          const gitDiff = await this.execCommand('git diff --staged');
+          if (gitStatus.trim()) {
+            prompt = `Based on these git changes, generate a good commit message:\n\nStatus:\n${gitStatus}\n\nDiff:\n${gitDiff || '(no staged changes - run git add first)'}\n\n${arg ? `Additional context: ${arg}` : 'Follow conventional commits format.'}`;
+          } else {
+            console.log(warning('Nessuna modifica da committare.'));
+            console.log(muted('Usa: git add <files> prima di /commit'));
+            return;
+          }
+          break;
+
+        case 'review':
+          spinner.start('Revisiono il codice...');
+          const diffToReview = await this.execCommand('git diff');
+          const stagedDiff = await this.execCommand('git diff --staged');
+          const totalDiff = stagedDiff || diffToReview;
+          if (totalDiff.trim()) {
+            prompt = `Review these code changes for:\n- Bugs and potential issues\n- Code quality\n- Performance concerns\n- Security issues\n\n${arg ? `Focus on: ${arg}\n\n` : ''}Changes:\n${totalDiff}`;
+          } else {
+            console.log(warning('Nessuna modifica da revisionare.'));
+            return;
+          }
+          break;
+
+        case 'refactor':
+          spinner.start('Analizzo per refactoring...');
+          showAsCode = true;
+          if (context.currentFile) {
+            prompt = `Suggest refactoring for: ${context.currentFile}\n${arg ? `Focus on: ${arg}` : 'Improve code quality, readability, and maintainability.'}`;
+          } else if (arg) {
+            prompt = `Refactor: ${arg}`;
+          } else {
+            prompt = 'Which file or code would you like me to refactor?';
+          }
+          break;
+
+        case 'docs':
+          spinner.start('Genero documentazione...');
+          showAsCode = true;
+          if (context.currentFile) {
+            prompt = `Generate documentation for: ${context.currentFile}\n${arg ? `Style: ${arg}` : 'Include JSDoc/docstrings and README sections.'}`;
+          } else if (arg) {
+            prompt = `Generate documentation for: ${arg}`;
+          } else {
+            prompt = 'Which file or function should I document?';
+          }
+          break;
+
+        case 'run':
+          spinner.start('Eseguo...');
+          if (arg) {
+            // Execute command directly
+            const result = await this.execCommand(arg);
+            spinner.stop();
+            console.log(c('Output:', 'cyan'));
+            console.log(result || c('(no output)', 'dim'));
+            console.log();
+            return;
+          } else {
+            // Detect project type and suggest run command
+            prompt = 'What command would you like me to run? Or describe what you want to do.';
+          }
+          break;
+
+        case 'search':
+          spinner.start('Cerco...');
+          if (arg) {
+            prompt = `Search the codebase for: ${arg}\nProvide file locations and relevant code snippets.`;
+          } else {
+            prompt = 'What are you looking for in the codebase?';
+          }
+          break;
+
+        case 'ask':
+          spinner.start('Elaboro...');
+          prompt = arg || 'What would you like to know?';
+          break;
+
+        default:
+          console.log(error(`Quick action '${action}' not recognized.`));
+          return;
+      }
+
+      spinner.stop();
+
+      // Process the prompt through the chat system
+      await this.sendMessage(prompt);
+
+    } catch (err) {
+      spinner.stop();
+      console.log(error(`Quick action failed: ${err instanceof Error ? err.message : err}`));
+    }
   }
 
   /**
-   * Print help
+   * Get context for quick actions
+   */
+  private async getQuickActionContext(arg: string): Promise<{
+    currentFile?: string;
+    lastError?: string;
+    projectType?: string;
+    gitBranch?: string;
+  }> {
+    const context: {
+      currentFile?: string;
+      lastError?: string;
+      projectType?: string;
+      gitBranch?: string;
+    } = {};
+
+    // Check if arg is a file path
+    if (arg && (arg.endsWith('.ts') || arg.endsWith('.js') || arg.endsWith('.py') ||
+                arg.endsWith('.tsx') || arg.endsWith('.jsx'))) {
+      context.currentFile = arg;
+    }
+
+    // Get git branch
+    try {
+      const branch = await this.execCommand('git branch --show-current');
+      if (branch.trim()) {
+        context.gitBranch = branch.trim();
+      }
+    } catch {
+      // Not a git repo
+    }
+
+    // Detect project type
+    try {
+      const packageJson = await this.execCommand('cat package.json 2>/dev/null');
+      if (packageJson) {
+        context.projectType = 'node';
+      }
+    } catch {
+      // No package.json
+    }
+
+    // Get last error from conversation history
+    const history = this.llm.getHistory();
+    for (let i = history.length - 1; i >= 0; i--) {
+      const msg = history[i];
+      if (msg.role === 'user' || msg.role === 'assistant') {
+        const content = typeof msg.content === 'string' ? msg.content : '';
+        if (content.includes('error') || content.includes('Error') ||
+            content.includes('failed') || content.includes('exception')) {
+          context.lastError = content.slice(0, 2000);
+          break;
+        }
+      }
+    }
+
+    return context;
+  }
+
+  /**
+   * Execute a shell command and return output
+   */
+  private async execCommand(cmd: string): Promise<string> {
+    return new Promise((resolve) => {
+      const { exec } = require('child_process');
+      exec(cmd, { maxBuffer: 1024 * 1024 }, (err: any, stdout: string, stderr: string) => {
+        if (err) {
+          resolve(stderr || err.message);
+        } else {
+          resolve(stdout);
+        }
+      });
+    });
+  }
+
+  /**
+   * Print banner (v10.4: Clean user-friendly banner with Quick Actions hint)
+   */
+  private printBanner(): void {
+    const model = this.llm.getConfig?.()?.model || 'auto';
+
+    showBanner({
+      version: '10.4.0',
+      model: model,
+      compact: true,
+    });
+
+    // v10.4: Show quick actions hint
+    console.log(c('⚡ Quick: /fix /explain /test /commit /review /search', 'cyan'));
+    console.log(c('   Digita qualcosa o /help per tutti i comandi', 'dim'));
+
+    if (this.devMode) {
+      console.log(c('🔧 Developer mode ON', 'yellow'));
+    }
+    console.log();
+  }
+
+  /**
+   * Print help (v10.4: User-friendly with Quick Actions)
    */
   private printHelp(): void {
-    console.log(c('Commands:', 'bold'));
-    console.log('  /help, /h      Show this help');
-    console.log('  /clear, /c     Clear conversation history');
-    console.log('  /history       Show conversation history');
-    console.log('  /status, /s    Show LLM status');
-    console.log('  /verbose, /v   Toggle verbose mode');
-    console.log('  /stream        Toggle streaming (real-time tokens + live cost)');
-    console.log('  /system        Show/set custom system prompt');
-    console.log('  /system <text> Set custom system prompt injection');
-    console.log('  /system clear  Clear custom system prompt');
+    // Quick Actions first - the most useful commands
+    console.log(style('⚡ Quick Actions (v10.4)', 'bold', 'green'));
     console.log();
-    console.log(c('Tools:', 'bold'));
-    console.log('  /tools         Toggle MCP tool execution');
-    console.log('  /toolstatus    Show tool execution stats');
+    console.log(`  ${style('/fix', 'yellow')}        Ripara l'ultimo errore automaticamente`);
+    console.log(`  ${style('/explain', 'yellow')}    Spiega il codice o un concetto`);
+    console.log(`  ${style('/test', 'yellow')}       Genera test per un file`);
+    console.log(`  ${style('/commit', 'yellow')}     Genera messaggio commit dalle modifiche`);
+    console.log(`  ${style('/review', 'yellow')}     Revisiona le modifiche del codice`);
+    console.log(`  ${style('/refactor', 'yellow')}   Suggerisci refactoring`);
+    console.log(`  ${style('/docs', 'yellow')}       Genera documentazione`);
+    console.log(`  ${style('/search', 'yellow')}     Cerca nel codebase`);
+    console.log(`  ${style('/run', 'yellow')}        Esegui un comando`);
     console.log();
-    console.log(c('Brain (Phase 10):', 'bold'));
-    console.log('  /brain         Toggle Brain integration');
-    console.log('  /braintrace    Toggle visible thinking trace');
-    console.log('  /phi           Show consciousness level (φ)');
-    console.log('  /brainstatus   Show brain status');
-    console.log('  /brainmetrics  Show detailed brain metrics');
+
+    // Main commands
+    console.log(style('📖 Comandi Base', 'bold', 'cyan'));
     console.log();
-    console.log(c('Active Inference (v7.1):', 'bold'));
-    console.log('  /inference     Toggle Active Inference loop');
-    console.log('  /curiosity     Toggle curiosity-driven behavior');
-    console.log('  /beliefs       Show current beliefs (viability, world, coupling, goal)');
+    console.log(`  ${style('/help', 'yellow')}       Mostra questo aiuto`);
+    console.log(`  ${style('/clear', 'yellow')}      Pulisci la conversazione`);
+    console.log(`  ${style('/status', 'yellow')}     Mostra stato del sistema`);
+    console.log(`  ${style('/quit', 'yellow')}       Esci (o /q)`);
     console.log();
-    console.log(c('Memory (v7.0):', 'bold'));
-    console.log('  /memory        Show memory status');
-    console.log('  /remember <t>  Store a fact in memory');
-    console.log('  /consolidate   Run memory consolidation');
-    console.log('  /forget        Clear all memory (confirm)');
+
+    // Mode toggles
+    console.log(style('🎛️  Modalità', 'bold', 'cyan'));
     console.log();
-    console.log(c('Darwin-Gödel (v7.0):', 'bold'));
-    console.log('  /heal          Show self-healing status');
-    console.log('  /analyze       Run self-analysis');
-    console.log('  /improve       Trigger self-improvement (confirm)');
+    console.log(`  ${style('/dev', 'yellow')}        Modalità sviluppatore (verbose)`);
+    console.log(`  ${style('/stream', 'yellow')}     Streaming in tempo reale`);
+    console.log(`  ${style('/thinking', 'yellow')}   Mostra ragionamento AI`);
     console.log();
-    console.log(c('Subagents (v7.4):', 'bold'));
-    console.log('  /task <t> <p>  Run subagent task (explore, plan, code, research, general)');
-    console.log('  /tasks         List running background tasks');
-    console.log('  /taskwait <id> Wait for task completion');
-    console.log('  /taskcancel <id> Cancel running task');
-    console.log('  /agents        Show available subagents');
-    console.log();
-    console.log(c('Sessions (v7.4):', 'bold'));
-    console.log('  /sessions      List saved sessions');
-    console.log('  /session name <n>  Name current session');
-    console.log('  /session save      Save session checkpoint');
-    console.log('  /session fork      Fork session (save & continue new)');
-    console.log();
-    console.log(c('Extended Thinking (v7.4.4):', 'bold'));
-    console.log('  /thinking      Toggle thinking block visibility');
-    console.log('  /thinking on   Show thinking blocks (expanded)');
-    console.log('  /thinking off  Hide thinking blocks');
-    console.log('  /thinking collapsed  Show thinking (one-line)');
-    console.log();
-    console.log(c('Hooks (v7.4.5):', 'bold'));
-    console.log('  /hooks         Show hooks status');
-    console.log('  /hooks init    Create sample hooks config');
-    console.log('  /hooks reload  Reload hooks configuration');
-    console.log('  /hooks on/off  Enable/disable hooks');
-    console.log();
-    console.log(c('State:', 'bold'));
-    console.log('  /save          Save state to disk');
-    console.log('  /load          Load state from disk');
-    console.log('  /export <f>    Export state to file');
-    console.log('  /reset         Reset state to empty');
-    console.log('  /state         Show state info');
-    console.log();
-    console.log('  /quit, /q      Exit chat (auto-saves)');
-    console.log();
-    console.log(c('Rich UI (v7.20):', 'bold'));
-    console.log('  /menu, /m      Show interactive menu');
-    console.log('  /dashboard     Show system dashboard');
-    console.log('  /daemon        Daemon control (autonomous mode)');
-    console.log('  /watch         Code watcher control');
-    console.log('  /logo          Show Genesis logo');
-    console.log();
-    console.log(c('Keyboard Shortcuts (v7.4):', 'bold'));
-    console.log('  Ctrl+B         Background current task');
-    console.log('  Ctrl+L         Clear screen (keep conversation)');
-    console.log('  Ctrl+O         Toggle verbose output');
-    console.log('  Ctrl+R         History search hint');
-    console.log();
+
+    // Show advanced only in dev mode
+    if (this.devMode) {
+      console.log(style('🔧 Avanzati (Dev Mode)', 'bold', 'cyan'));
+      console.log();
+      console.log(`  ${style('/brain', 'yellow')}       Brain integration on/off`);
+      console.log(`  ${style('/memory', 'yellow')}      Stato memoria`);
+      console.log(`  ${style('/phi', 'yellow')}         Livello coscienza (φ)`);
+      console.log(`  ${style('/improve', 'yellow')}     Auto-miglioramento`);
+      console.log(`  ${style('/task', 'yellow')}        Esegui subagent`);
+      console.log(`  ${style('/tools', 'yellow')}       MCP tools on/off`);
+      console.log(`  ${style('/mcp', 'yellow')}         Diagnostica MCP`);
+      console.log();
+      console.log(style('📊 Debug', 'bold', 'cyan'));
+      console.log();
+      console.log(`  ${style('/brainstatus', 'yellow')}  Stato brain`);
+      console.log(`  ${style('/brainmetrics', 'yellow')} Metriche brain`);
+      console.log(`  ${style('/toolstatus', 'yellow')}   Stats tool MCP`);
+      console.log(`  ${style('/beliefs', 'yellow')}      Active inference beliefs`);
+      console.log(`  ${style('/sessions', 'yellow')}     Gestione sessioni`);
+      console.log(`  ${style('/hooks', 'yellow')}        Sistema hooks`);
+      console.log();
+    } else {
+      console.log(c('💡 Usa /dev per comandi avanzati', 'dim'));
+      console.log();
+    }
   }
 
   /**
@@ -2620,8 +2914,9 @@ export async function runHeadless(
 
 /**
  * v7.4: Read prompt from stdin (for piping)
+ * v10.4.1: Added timeout to prevent hang
  */
-export function readStdin(): Promise<string> {
+export function readStdin(timeoutMs: number = 5000): Promise<string> {
   return new Promise((resolve, reject) => {
     if (process.stdin.isTTY) {
       // No piped input
@@ -2630,9 +2925,31 @@ export function readStdin(): Promise<string> {
     }
 
     let data = '';
+    let resolved = false;
+
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        // Return whatever we have, or empty string
+        resolve(data.trim());
+      }
+    }, timeoutMs);
+
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', chunk => { data += chunk; });
-    process.stdin.on('end', () => resolve(data.trim()));
-    process.stdin.on('error', reject);
+    process.stdin.on('end', () => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        resolve(data.trim());
+      }
+    });
+    process.stdin.on('error', err => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        reject(err);
+      }
+    });
   });
 }

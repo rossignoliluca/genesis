@@ -132,6 +132,15 @@ import {
   getBrainStatePersistence,
 } from './persistence.js';
 
+// v10.4.2: Unified Memory Query
+import {
+  UnifiedMemoryQuery,
+  getUnifiedMemoryQuery,
+  createMemorySystemAdapter,
+  createWorkspaceAdapter,
+} from '../memory/unified-query.js';
+import { getMemorySystem } from '../memory/index.js';
+
 // ============================================================================
 // Brain Class
 // ============================================================================
@@ -158,6 +167,9 @@ export class Brain {
 
   // v8.1: State Persistence
   private persistence: BrainStatePersistence;
+
+  // v10.4.2: Unified Memory Query
+  private unifiedQuery!: UnifiedMemoryQuery;
 
   // v8.2: Tool Results Cache (approved self-modification)
   private toolCache: Map<string, { result: ToolResult; timestamp: number }> = new Map();
@@ -293,6 +305,302 @@ export class Brain {
     } catch {
       // Module may not be configured
     }
+
+    // v10.4.1: Wire PhiMonitor to real system state
+    this.wirePhiMonitorToRealState();
+
+    // v10.4.1: Register Brain modules in GlobalWorkspace for GWT integration
+    this.registerModulesInGlobalWorkspace();
+
+    // v10.4.2: Initialize and wire Unified Memory Query
+    this.unifiedQuery = getUnifiedMemoryQuery();
+    this.wireUnifiedMemoryQuery();
+  }
+
+  /**
+   * v10.4.2: Wire all memory sources to the unified query interface
+   */
+  private wireUnifiedMemoryQuery(): void {
+    try {
+      // Register MemorySystem stores (episodic/semantic/procedural)
+      const memorySystem = getMemorySystem();
+      const systemAdapters = createMemorySystemAdapter({
+        episodic: memorySystem.episodic,
+        semantic: memorySystem.semantic,
+        procedural: memorySystem.procedural,
+      });
+      for (const adapter of systemAdapters) {
+        this.unifiedQuery.registerSource(adapter);
+      }
+
+      // Register Cognitive Workspace (working memory)
+      const workspaceAdapter = createWorkspaceAdapter({
+        getActive: () => this.workspace.getActive?.() || [],
+        getStats: () => this.workspace.getStats?.() || { itemCount: 0 },
+      });
+      this.unifiedQuery.registerSource(workspaceAdapter);
+    } catch {
+      // Memory system may not be fully initialized yet
+    }
+  }
+
+  /**
+   * v10.4.1: Register Brain modules as GWT modules for proper cognitive broadcasting
+   */
+  private registerModulesInGlobalWorkspace(): void {
+    // Register Cognitive Workspace as memory module
+    this.globalWorkspace.registerModule(this.createMemoryModule());
+
+    // Register Thinking Engine as executive module
+    this.globalWorkspace.registerModule(this.createExecutiveModule());
+
+    // Register LLM Bridge as perceptual/motor module
+    this.globalWorkspace.registerModule(this.createLLMModule());
+  }
+
+  /**
+   * Create a GWT memory module adapter for the Cognitive Workspace
+   */
+  private createMemoryModule(): import('../consciousness/types.js').WorkspaceModule {
+    const workspace = this.workspace;
+    let contentId = 0;
+
+    return {
+      id: 'brain-memory',
+      name: 'Cognitive Workspace',
+      type: 'memory',
+      active: true,
+      load: 0.5,
+      canPropose: () => {
+        const stats = workspace.getStats?.() || { itemCount: 0 };
+        return (stats.itemCount || 0) > 0;
+      },
+      propose: () => {
+        const items = workspace.getActive?.() || [];
+        if (items.length === 0) return null;
+        // Propose most recent/relevant item
+        const item = items[0];
+        return {
+          id: `mem-${++contentId}`,
+          sourceModule: 'brain-memory',
+          type: 'memory' as const,
+          data: item,
+          salience: item.relevance || 0.5,
+          relevance: item.relevance || 0.5,
+          timestamp: new Date(),
+          ttl: 30000, // 30s TTL
+        };
+      },
+      receive: () => {
+        // Memory module receives broadcasts - could trigger recall
+      },
+      bottomUpSalience: () => {
+        const stats = workspace.getStats?.() || { itemCount: 0 };
+        return Math.min(1, (stats.itemCount || 0) / 7);
+      },
+      topDownRelevance: (goal: string) => {
+        // Check if any workspace items match the goal
+        const items = workspace.getActive?.() || [];
+        const match = items.find(i =>
+          JSON.stringify(i).toLowerCase().includes(goal.toLowerCase())
+        );
+        return match ? 0.8 : 0.3;
+      },
+    };
+  }
+
+  /**
+   * Create a GWT executive module adapter for the Thinking Engine
+   */
+  private createExecutiveModule(): import('../consciousness/types.js').WorkspaceModule {
+    const brain = this;
+    let contentId = 0;
+
+    return {
+      id: 'brain-executive',
+      name: 'Thinking Engine',
+      type: 'executive',
+      active: true,
+      load: brain.running ? 0.8 : 0.2,
+      canPropose: () => brain.running,
+      propose: () => {
+        // Executive module proposes current thinking state
+        if (!brain.running) return null;
+        return {
+          id: `exec-${++contentId}`,
+          sourceModule: 'brain-executive',
+          type: 'thought' as const,
+          data: { state: 'thinking', metrics: brain.metrics },
+          salience: 0.7,
+          relevance: 0.8,
+          timestamp: new Date(),
+          ttl: 10000, // 10s TTL
+        };
+      },
+      receive: () => {
+        // Executive module receives broadcasts (could trigger attention shift)
+      },
+      bottomUpSalience: () => brain.running ? 0.8 : 0.2,
+      topDownRelevance: (goal: string) => {
+        // Executive is always relevant when goal requires thinking
+        return goal.includes('think') || goal.includes('reason') ? 0.9 : 0.5;
+      },
+    };
+  }
+
+  /**
+   * Create a GWT perceptual/motor module adapter for the LLM Bridge
+   */
+  private createLLMModule(): import('../consciousness/types.js').WorkspaceModule {
+    const llm = this.llm;
+    let contentId = 0;
+
+    return {
+      id: 'brain-llm',
+      name: 'LLM Bridge',
+      type: 'perceptual', // Input from external intelligence
+      active: true,
+      load: 0.5,
+      canPropose: () => true,
+      propose: () => {
+        // LLM module proposes its current status
+        const status = llm.status();
+        return {
+          id: `llm-${++contentId}`,
+          sourceModule: 'brain-llm',
+          type: 'percept' as const,
+          data: { provider: status.provider, model: status.model, ready: true },
+          salience: 0.3,
+          relevance: 0.4,
+          timestamp: new Date(),
+          ttl: 60000, // 60s TTL
+        };
+      },
+      receive: () => {
+        // LLM receives broadcasts (could be prompts to process)
+      },
+      bottomUpSalience: () => 0.4,
+      topDownRelevance: (goal: string) => {
+        // LLM is relevant for generation/response tasks
+        return goal.includes('generate') || goal.includes('respond') ? 0.9 : 0.4;
+      },
+    };
+  }
+
+  /**
+   * v10.4.1: Wire PhiMonitor to real system state for actual φ calculation
+   * Without this, PhiMonitor just simulates random values
+   */
+  private wirePhiMonitorToRealState(): void {
+    // Provide real system state to PhiMonitor
+    this.phiMonitor.setSystemStateProvider(() => this.buildSystemState());
+  }
+
+  /**
+   * Build SystemState from actual Brain components for φ calculation
+   */
+  private buildSystemState(): import('../consciousness/types.js').SystemState {
+    const components: import('../consciousness/types.js').ComponentState[] = [];
+    const connections: import('../consciousness/types.js').Connection[] = [];
+    const now = new Date();
+
+    // Add workspace as component
+    const workspaceStats = this.workspace.getStats?.() || { itemCount: 0, maxItems: 7 };
+    components.push({
+      id: 'workspace',
+      type: 'cognitive_workspace',
+      active: true,
+      state: workspaceStats,
+      entropy: Math.min(1, (workspaceStats.itemCount || 0) / 7), // Higher entropy with more items
+      lastUpdate: now,
+    });
+
+    // Add global workspace
+    const gwStats = this.globalWorkspace.stats?.() || { modules: 0, isIgnited: false };
+    components.push({
+      id: 'global_workspace',
+      type: 'global_workspace',
+      active: this.globalWorkspace.isRunning?.() || false,
+      state: gwStats,
+      entropy: Math.min(1, (gwStats.modules || 0) * 0.2),
+      lastUpdate: now,
+    });
+
+    // Add thinking engine
+    components.push({
+      id: 'thinking',
+      type: 'thinking_engine',
+      active: this.running,
+      state: { running: this.running },
+      entropy: this.running ? 0.8 : 0.2,
+      lastUpdate: now,
+    });
+
+    // Add LLM bridge
+    const llmStatus = this.llm.status();
+    components.push({
+      id: 'llm',
+      type: 'llm_bridge',
+      active: true,
+      state: { provider: llmStatus.provider, model: llmStatus.model },
+      entropy: 0.5,
+      lastUpdate: now,
+    });
+
+    // Add kernel if available
+    if (this.kernel) {
+      const kernelState = this.kernel.getState?.() || 'idle';
+      components.push({
+        id: 'kernel',
+        type: 'orchestrator',
+        active: kernelState !== 'idle',
+        state: { kernelState },
+        entropy: kernelState === 'thinking' ? 0.8 : 0.4,
+        lastUpdate: now,
+      });
+    }
+
+    // Build connections between components
+    // Workspace ↔ Thinking
+    connections.push({
+      from: 'workspace',
+      to: 'thinking',
+      strength: 0.9,
+      informationFlow: (workspaceStats.itemCount || 0) * 100,
+      bidirectional: true,
+    });
+
+    // Thinking ↔ LLM
+    connections.push({
+      from: 'thinking',
+      to: 'llm',
+      strength: 0.95,
+      informationFlow: 500,
+      bidirectional: true,
+    });
+
+    // Global Workspace ↔ All components (broadcasting)
+    for (const comp of components) {
+      if (comp.id !== 'global_workspace') {
+        connections.push({
+          from: 'global_workspace',
+          to: comp.id,
+          strength: 0.7,
+          informationFlow: 50,
+          bidirectional: true,
+        });
+      }
+    }
+
+    // Build state hash
+    const stateHash = `brain-${components.length}-${connections.length}-${now.getTime()}`;
+
+    return {
+      components,
+      connections,
+      stateHash,
+      timestamp: now,
+    };
   }
 
   // ============================================================================
@@ -1963,6 +2271,29 @@ export class Brain {
    */
   resetMetrics(): void {
     this.metrics = this.createInitialMetrics();
+  }
+
+  /**
+   * v10.4.2: Get unified memory query for cross-store searches
+   */
+  getUnifiedQuery(): UnifiedMemoryQuery {
+    return this.unifiedQuery;
+  }
+
+  /**
+   * v10.4.2: Search all memory sources with a single query
+   */
+  async searchAllMemory(query: string, options: {
+    limit?: number;
+    types?: ('episodic' | 'semantic' | 'procedural' | 'item')[];
+    minImportance?: number;
+  } = {}): Promise<import('../memory/unified-query.js').UnifiedSearchResult> {
+    return this.unifiedQuery.search({
+      query,
+      limit: options.limit || 20,
+      types: options.types,
+      minImportance: options.minImportance,
+    });
   }
 
   // ============================================================================

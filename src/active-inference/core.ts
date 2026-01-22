@@ -71,9 +71,9 @@ function entropy(probs: number[]): number {
 
 /**
  * KL divergence: D_KL(P || Q)
- * Reserved for future variational free energy computation
+ * Used for information gain and variational free energy computation
  */
-function _klDivergence(p: number[], q: number[]): number {
+function klDivergence(p: number[], q: number[]): number {
   return p.reduce((acc, pi, i) => {
     if (pi > 1e-10 && q[i] > 1e-10) {
       return acc + pi * Math.log(pi / q[i]);
@@ -546,6 +546,11 @@ export class ActiveInferenceEngine {
 
   private computeEFE(actionIdx: number): number {
     // Expected Free Energy for a single action
+    // EFE = Ambiguity + Risk - Information Gain (Friston 2017)
+    //
+    // - Ambiguity: H(o|s,π) - observational uncertainty
+    // - Risk: D_KL[Q(s|π) || P(s)] - divergence from preferred outcomes
+    // - Information Gain: E[D_KL[Q(s|o,π) || Q(s|π)]] - epistemic value (SUBTRACTED!)
 
     // 1. Predicted next state distribution Q(s'|a)
     const predictedViability = this.predictNextState(this.beliefs.viability, this.B.viability, actionIdx);
@@ -553,28 +558,101 @@ export class ActiveInferenceEngine {
     const predictedCoupling = this.predictNextState(this.beliefs.coupling, this.B.coupling, actionIdx);
     const predictedGoalProgress = this.predictNextState(this.beliefs.goalProgress, this.B.goalProgress, actionIdx);
 
-    // 2. Expected observations under predicted states
+    // 2. Expected observations under predicted states P(o|s')
     const expectedEnergy = matVec(this.A.energy, predictedViability);
     const expectedPhi = matVec(this.A.phi, predictedWorldState);
     const expectedTool = matVec(this.A.tool, predictedCoupling);
     const expectedTask = matVec(this.A.task, predictedGoalProgress);
 
-    // 3. Ambiguity: entropy of predicted observations
+    // 3. Ambiguity: H(o|s,π) - entropy of predicted observations
+    //    High ambiguity = uncertain what we'll observe = BAD
     const ambiguity =
       entropy(expectedEnergy) +
       entropy(expectedPhi) +
       entropy(expectedTool) +
       entropy(expectedTask);
 
-    // 4. Risk: negative expected utility (preferences)
+    // 4. Risk: negative expected utility (pragmatic value)
+    //    High risk = far from preferred outcomes = BAD
     const risk =
       -dot(expectedEnergy, this.C.energy) +
       -dot(expectedPhi, this.C.phi) +
       -dot(expectedTool, this.C.tool) +
       -dot(expectedTask, this.C.task);
 
-    // EFE = ambiguity + risk
-    return ambiguity + risk;
+    // 5. Information Gain (epistemic value): E[D_KL[Q(s|o,π) || Q(s|π)]]
+    //    Approximated as mutual information between states and observations
+    //    High info gain = action will teach us something = GOOD (subtract from EFE)
+    const infoGain = this.computeInformationGain(
+      actionIdx,
+      predictedViability,
+      predictedWorldState,
+      predictedCoupling,
+      predictedGoalProgress
+    );
+
+    // EFE = ambiguity + risk - infoGain
+    // Lower is better: reduce ambiguity, reduce risk, increase information gain
+    return ambiguity + risk - this.config.explorationBonus * infoGain;
+  }
+
+  /**
+   * Compute expected information gain for an action
+   * This is the epistemic value - how much the action teaches us about the world
+   */
+  private computeInformationGain(
+    actionIdx: number,
+    predViability: number[],
+    predWorld: number[],
+    predCoupling: number[],
+    predGoal: number[]
+  ): number {
+    // Information gain ≈ I(S'; O|a) = H(O|a) - H(O|S',a)
+    // = entropy of predicted observations - expected conditional entropy
+
+    // Predicted observation distributions
+    const predObs = {
+      energy: matVec(this.A.energy, predViability),
+      phi: matVec(this.A.phi, predWorld),
+      tool: matVec(this.A.tool, predCoupling),
+      task: matVec(this.A.task, predGoal),
+    };
+
+    // Marginal entropy of observations H(O|a)
+    const marginalEntropy =
+      entropy(predObs.energy) +
+      entropy(predObs.phi) +
+      entropy(predObs.tool) +
+      entropy(predObs.task);
+
+    // Conditional entropy H(O|S',a) - weighted average of observation entropy per state
+    // This is lower when the A matrices are more deterministic (less ambiguous)
+    let conditionalEntropy = 0;
+
+    // For each state, compute weighted entropy of observations
+    for (let s = 0; s < predViability.length; s++) {
+      if (predViability[s] > 1e-10) {
+        conditionalEntropy += predViability[s] * entropy(this.A.energy[s] || []);
+      }
+    }
+    for (let s = 0; s < predWorld.length; s++) {
+      if (predWorld[s] > 1e-10) {
+        conditionalEntropy += predWorld[s] * entropy(this.A.phi[s] || []);
+      }
+    }
+    for (let s = 0; s < predCoupling.length; s++) {
+      if (predCoupling[s] > 1e-10) {
+        conditionalEntropy += predCoupling[s] * entropy(this.A.tool[s] || []);
+      }
+    }
+    for (let s = 0; s < predGoal.length; s++) {
+      if (predGoal[s] > 1e-10) {
+        conditionalEntropy += predGoal[s] * entropy(this.A.task[s] || []);
+      }
+    }
+
+    // Information gain = marginal - conditional (always >= 0 by data processing inequality)
+    return Math.max(0, marginalEntropy - conditionalEntropy);
   }
 
   private predictNextState(

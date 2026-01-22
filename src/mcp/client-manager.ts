@@ -474,6 +474,9 @@ export class MCPClientManager extends EventEmitter {
         command: config.command,
         args,
         env,
+        // v7.24: Silence MCP server stderr to avoid polluting chat output
+        // MCP servers often print "running on stdio" messages that clutter the UI
+        stderr: 'pipe',
       });
     } else {
       // HTTP and WebSocket support via stdio wrapper (MCP SDK limitation)

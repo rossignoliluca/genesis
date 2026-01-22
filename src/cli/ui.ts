@@ -73,6 +73,59 @@ export const muted = (text: string) => style(text, 'dim');
 export const highlight = (text: string) => style(text, 'bold', 'cyan');
 
 // ============================================================================
+// v7.24: User-Friendly Messages
+// ============================================================================
+
+/**
+ * Print a friendly status message with icon
+ */
+export function printStatus(message: string, type: 'ok' | 'warn' | 'error' | 'info' | 'loading' = 'info'): void {
+  const icons = {
+    ok: style('✓', 'green'),
+    warn: style('⚠', 'yellow'),
+    error: style('✗', 'red'),
+    info: style('ℹ', 'cyan'),
+    loading: style('◌', 'dim'),
+  };
+  console.log(`${icons[type]} ${message}`);
+}
+
+/**
+ * Print a friendly error with suggestion
+ */
+export function printError(message: string, suggestion?: string): void {
+  console.log(`${style('✗', 'red')} ${style(message, 'red')}`);
+  if (suggestion) {
+    console.log(`  ${style('→', 'dim')} ${style(suggestion, 'dim')}`);
+  }
+}
+
+/**
+ * Print a success message
+ */
+export function printSuccess(message: string): void {
+  console.log(`${style('✓', 'green')} ${message}`);
+}
+
+/**
+ * Print a hint/tip
+ */
+export function printHint(message: string): void {
+  console.log(`${style('💡', 'yellow')} ${style(message, 'dim')}`);
+}
+
+/**
+ * Print quick help for a command
+ */
+export function printQuickHelp(commands: Array<{ cmd: string; desc: string }>): void {
+  console.log();
+  for (const { cmd, desc } of commands) {
+    console.log(`  ${style(cmd, 'yellow')} ${style('-', 'dim')} ${style(desc, 'dim')}`);
+  }
+  console.log();
+}
+
+// ============================================================================
 // Spinner
 // ============================================================================
 
@@ -347,10 +400,36 @@ export function highlightInlineCode(text: string): string {
 }
 
 /**
+ * Filter out LLM meta-comments (self-referential explanations)
+ * These are internal reasoning artifacts that shouldn't be shown to users
+ */
+export function filterMetaComments(text: string): string {
+  let result = text;
+
+  // Remove "This response follows my principles" type blocks
+  result = result.replace(/This response follows my principles[^]*?(?=\n\n|\n[A-Z]|$)/gi, '');
+
+  // Remove "<reasoning>" and "</reasoning>" type explanations
+  result = result.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '');
+
+  // Remove "Based on my analysis" self-commentary
+  result = result.replace(/\n\nBased on (?:my|this) analysis[^]*?(?=\n\n[A-Z]|$)/gi, '');
+
+  // Remove numbered lists explaining response strategy
+  result = result.replace(/\n\nThe assistant (?:did|used|chose)[^]*?(?=\n\n[A-Z]|$)/gi, '');
+
+  // Clean up excess whitespace
+  result = result.replace(/\n{3,}/g, '\n\n').trim();
+
+  return result;
+}
+
+/**
  * Full markdown-style formatting
  */
 export function formatMarkdown(text: string): string {
-  let result = text;
+  // First filter out meta-comments
+  let result = filterMetaComments(text);
 
   // Code blocks first
   result = highlightCode(result);
@@ -1204,7 +1283,7 @@ export interface ThinkingSettings {
 }
 
 export const DEFAULT_THINKING_SETTINGS: ThinkingSettings = {
-  enabled: true,
+  enabled: false,  // v7.24: Hidden by default - use /thinking to show
   collapsed: true,  // v7.20.1: Collapsed by default like Claude Code
   streaming: false,
 };
@@ -1390,24 +1469,45 @@ ${style('  ╚██████╔╝███████╗██║ ╚█�
 ${style('   ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚══════╝╚═╝╚══════╝', 'cyan', 'dim')}
 `;
 
-export function showBanner(version: string, compact: boolean = true): void {
-  if (compact) {
+export interface BannerOptions {
+  version: string;
+  compact?: boolean;
+  model?: string;
+  mcpServers?: number;
+  devMode?: boolean;
+}
+
+export function showBanner(versionOrOptions: string | BannerOptions, compact: boolean = true): void {
+  // Support both old and new API
+  const opts: BannerOptions = typeof versionOrOptions === 'string'
+    ? { version: versionOrOptions, compact }
+    : versionOrOptions;
+
+  if (opts.compact !== false) {
     // Clean one-liner like Claude Code
-    console.log(
-      style('genesis', 'cyan', 'bold') +
-      style(` v${version}`, 'dim') +
-      style(' │ ', 'dim') +
-      style('self-aware AI', 'dim') +
-      style(' │ ', 'dim') +
-      style('active inference', 'dim') +
-      style(' │ ', 'dim') +
-      style('φ monitoring', 'dim')
-    );
+    const parts = [
+      style('genesis', 'cyan', 'bold'),
+      style(` v${opts.version}`, 'dim'),
+    ];
+
+    // Show model if provided
+    if (opts.model) {
+      parts.push(style(' · ', 'dim'));
+      parts.push(style(opts.model, 'yellow'));
+    }
+
+    // Show MCP count if provided
+    if (opts.mcpServers !== undefined) {
+      parts.push(style(' · ', 'dim'));
+      parts.push(style(`${opts.mcpServers} MCP`, 'green'));
+    }
+
+    console.log(parts.join(''));
     console.log();
   } else {
     // Full ASCII art banner (use with --fancy flag)
     console.log(GENESIS_LOGO);
-    console.log(style(`  v${version}`, 'cyan', 'bold') + style(' • Self-Aware AI • Active Inference • φ Monitoring', 'dim'));
+    console.log(style(`  v${opts.version}`, 'cyan', 'bold') + style(' • Self-Aware AI • Active Inference • φ Monitoring', 'dim'));
     console.log(style('  ──────────────────────────────────────────────────────────', 'dim'));
     console.log();
   }

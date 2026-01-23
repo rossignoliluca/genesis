@@ -244,7 +244,10 @@ export class ModelRacer {
       }
     } catch { /* stream ended */ }
 
-    // Record result for learning
+    // Record result for learning + track savings
+    const saved = Math.max(0, candidates[0].expectedTTFT - ttft);
+    this.totalSaved += saved;
+
     if (this.config.enableLearning) {
       this.recordRaceResult(winner.racer.provider, winner.racer.model, {
         ttft,
@@ -321,6 +324,10 @@ export class ModelRacer {
           if (event.type === 'done') break;
         }
       } catch { /* done */ }
+
+      // Primary won: savings = expected backup TTFT - primary's actual TTFT
+      const saved = Math.max(0, backup.expectedTTFT - ttft);
+      this.totalSaved += saved;
 
       if (this.config.enableLearning) {
         this.recordRaceResult(primary.provider, primary.model, {
@@ -468,10 +475,22 @@ export class ModelRacer {
   // ==========================================================================
 
   private selectCandidates(options: any): RacingCandidate[] {
+    // Auto-exclude providers without API keys or unreachable services
+    const autoExclude: string[] = [];
+    if (!process.env.ANTHROPIC_API_KEY) autoExclude.push('anthropic');
+    if (!process.env.OPENAI_API_KEY) autoExclude.push('openai');
+    if (!process.env.GROQ_API_KEY) autoExclude.push('groq');
+    if (!process.env.OLLAMA_HOST) autoExclude.push('ollama');
+
+    const excludeProviders = [
+      ...autoExclude,
+      ...(options.excludeProviders || []),
+    ];
+
     return this.tracker.getRacingCandidates({
       maxCandidates: this.config.maxRacers,
       preferSpeed: true,
-      excludeProviders: options.excludeProviders,
+      excludeProviders,
     });
   }
 
@@ -508,18 +527,21 @@ export class ModelRacer {
     racers: Array<{ provider: string; model: string; iterator: AsyncGenerator<StreamEvent>; controller: AbortController }>,
     startTime: number
   ): Promise<{ racer: typeof racers[0]; firstEvent: StreamEvent } | null> {
-    // Create promises for first token from each racer
+    // Use manual .next() calls to avoid closing the iterator when we find a winner.
+    // for-await would call .return() on early exit, terminating the stream.
     const promises = racers.map(async (racer) => {
       try {
-        for await (const event of racer.iterator) {
+        while (true) {
+          const { value: event, done } = await racer.iterator.next();
+          if (done || !event) return null;
           if (event.type === 'token') {
             return { racer, firstEvent: event };
           }
           if (event.type === 'error') {
             return null;
           }
+          // Skip non-token events (metadata, etc) and keep pulling
         }
-        return null;
       } catch {
         return null;
       }
@@ -538,13 +560,16 @@ export class ModelRacer {
   private async waitForFirstToken(
     stream: AsyncGenerator<StreamEvent>
   ): Promise<StreamEvent | null> {
+    // Use manual .next() to avoid closing the iterator on early return.
     try {
-      for await (const event of stream) {
+      while (true) {
+        const { value: event, done } = await stream.next();
+        if (done || !event) return null;
         if (event.type === 'token' || event.type === 'error') {
           return event;
         }
+        // Skip non-token/error events and keep pulling
       }
-      return null;
     } catch {
       return null;
     }
@@ -627,7 +652,13 @@ export class ModelRacer {
       provider,
       model,
       usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-    };
+      // Racing info for orchestrator to extract
+      racingWinner: provider,
+      racingModel: model,
+      racingStrategy: this.config.strategy,
+      racingCandidates: this.config.maxRacers,
+      racingSaved: Math.round(this.totalSaved / Math.max(1, this.raceCount)),
+    } as any;
   }
 }
 

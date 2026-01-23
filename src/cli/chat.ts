@@ -32,6 +32,9 @@ import {
   StreamChunk,
   calculateCost,
 } from '../llm/index.js';
+// v10.5: Next-gen streaming with orchestrator
+import { StreamChatHandler, createStreamChatHandler } from './chat-stream-v2.js';
+import { ProviderName } from '../streaming/provider-adapter.js';
 import { getStateStore, StateStore, getSessionManager, SessionManager, SessionInfo } from '../persistence/index.js';
 import { ToolDispatcher, ToolResult } from './dispatcher.js';
 import { getMCPClient, MCP_SERVER_REGISTRY } from '../mcp/index.js';
@@ -203,6 +206,9 @@ export class ChatSession {
   private streamingTokens: number = 0;  // Running token count
   private streamStartTime: number = 0;  // For tokens/sec calculation
 
+  // v10.5: Next-gen streaming handler
+  private streamHandler: StreamChatHandler;
+
   // v7.24: Developer mode (shows extra info for debugging)
   private devMode: boolean = false;
 
@@ -234,6 +240,7 @@ export class ChatSession {
     this.thinkingSettings = { ...DEFAULT_THINKING_SETTINGS };  // v7.4.4: Extended thinking
     this.hooks = getHooksManager();  // v7.4.5: Hooks system
     this.enableStreaming = options.stream ?? false;  // v7.20.1: Streaming mode
+    this.streamHandler = createStreamChatHandler();  // v10.5: Next-gen streaming
     this.devMode = options.dev ?? false;  // v7.24: Developer mode
 
     // v7.0: Initialize UI components
@@ -788,12 +795,11 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
     }
 
     this.isProcessing = true;
-    this.streamingCost = 0;
-    this.streamingTokens = 0;
     this.streamStartTime = Date.now();
 
-    // Get model info for cost calculation
+    // Get model info
     const llmConfig = this.llm.getConfig();
+    const provider = (llmConfig.provider || 'anthropic') as ProviderName;
     const model = llmConfig.model;
 
     // Build system prompt
@@ -801,66 +807,24 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
       ? `${this.customSystemPrompt}\n\n${this.systemPrompt}`
       : this.systemPrompt;
 
-    // v7.20.2: Clean output (no verbose prefix)
-    console.log();
-
-    let fullContent = '';
-    let inputTokens = 0;
-    let outputTokens = 0;
-
     try {
-      // Stream tokens
-      for await (const chunk of this.llm.chatStream(message, effectiveSystemPrompt)) {
-        if (chunk.type === 'token' && chunk.token) {
-          // Write token directly to stdout (no newline)
-          process.stdout.write(chunk.token);
-          fullContent += chunk.token;
-          outputTokens = chunk.usage?.outputTokens || outputTokens;
-          inputTokens = chunk.usage?.inputTokens || inputTokens;
-          this.streamingTokens = outputTokens;
-
-          // Calculate live cost
-          this.streamingCost = calculateCost(model, inputTokens, outputTokens);
-
-          // Update status line every 10 tokens (don't spam)
-          if (outputTokens % 10 === 0) {
-            const elapsed = (Date.now() - this.streamStartTime) / 1000;
-            const tokensPerSec = elapsed > 0 ? Math.round(outputTokens / elapsed) : 0;
-            // Use ANSI escape codes to update status in-place (bottom line)
-            // Save cursor, move to bottom, clear line, print status, restore cursor
-            const costStr = this.streamingCost < 0.01
-              ? `${(this.streamingCost * 1000).toFixed(2)}m`
-              : `$${this.streamingCost.toFixed(4)}`;
-            const statusMsg = c(` │ ${outputTokens} tok │ ${tokensPerSec} tok/s │ ${costStr}`, 'dim');
-            // Don't print status inline during streaming - it breaks the flow
-          }
-        } else if (chunk.type === 'done') {
-          // Finalize
-          inputTokens = chunk.usage?.inputTokens || inputTokens;
-          outputTokens = chunk.usage?.outputTokens || outputTokens;
-          this.streamingCost = calculateCost(model, inputTokens, outputTokens);
-        } else if (chunk.type === 'error') {
-          console.log();
-          console.log(error(`Error: ${chunk.error}`));
-          this.isProcessing = false;
-          return;
-        }
-      }
-
-      // Print newline after streaming completes
-      console.log();
+      // v10.5: Use the new StreamChatHandler with full orchestration
+      const result = await this.streamHandler.execute({
+        provider,
+        model,
+        systemPrompt: effectiveSystemPrompt,
+        userMessage: message,
+        enableThinking: this.thinkingSettings.enabled,
+        temperature: undefined,
+        maxTokens: undefined,
+        verbose: this.verbose,
+        onComplete: (res) => {
+          this.streamingCost = res.metrics.cost;
+          this.streamingTokens = res.metrics.outputTokens;
+        },
+      });
 
       this.messageCount++;
-
-      // v7.20.2: Subtle stats (only in verbose mode)
-      if (this.verbose) {
-        const elapsed = (Date.now() - this.streamStartTime) / 1000;
-        const tokensPerSec = elapsed > 0 ? Math.round(outputTokens / elapsed) : 0;
-        const costStr = this.streamingCost < 0.01
-          ? `${(this.streamingCost * 1000).toFixed(2)}m`
-          : `$${this.streamingCost.toFixed(4)}`;
-        console.log(c(`  ${outputTokens} tok · ${tokensPerSec}/s · ${costStr} · ${Math.round(elapsed * 1000)}ms`, 'dim'));
-      }
 
       // Persist interaction
       this.store.recordInteraction();
@@ -870,13 +834,11 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
         this.hooks.execute('post-message', {
           event: 'post-message',
           message,
-          response: fullContent,
+          response: result.content,
           sessionId: this.store.getState().session?.id,
           workingDir: process.cwd(),
         });
       }
-
-      console.log();
     } catch (err) {
       console.log();
       const errorMessage = err instanceof Error ? err.message : String(err);

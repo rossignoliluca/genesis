@@ -73,3 +73,30 @@ export {
   type ErrorContext,
   type MemoryContext,
 } from './context-grounder.js';
+
+// Latency Tracker (v10.6)
+export {
+  LatencyTracker,
+  getLatencyTracker,
+  type LatencyRecord,
+  type ProviderStats,
+  type RacingCandidate,
+} from './latency-tracker.js';
+
+// Model Racer (v10.6)
+export {
+  ModelRacer,
+  type RacingStrategy,
+  type RacingConfig,
+  type RaceResult,
+} from './model-racer.js';
+
+// MCP Streaming Bridge (v10.6)
+export {
+  MCPBridge,
+  type MCPServerName,
+  type MCPToolCall,
+  type MCPToolResult,
+  type PrefetchRule,
+  type MCPBridgeConfig,
+} from './mcp-bridge.js';

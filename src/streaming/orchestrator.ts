@@ -1,11 +1,14 @@
 /**
- * Genesis v10.5 - Stream Orchestrator
+ * Genesis v10.6 - Stream Orchestrator (Racing Edition)
  *
  * Master orchestrator that coordinates:
+ * - Model Racing (fire multiple providers, fastest wins)
+ * - Parallel MCP tool execution via DAG
+ * - Speculative prefetch (predict & pre-fire tools)
+ * - Adaptive latency learning
  * - Hybrid streaming (tokens + tool calls)
- * - Adaptive quality (model escalation)
- * - Provider selection
- * - Metrics collection
+ * - Provider selection with confidence-based routing
+ * - Metrics collection with racing stats
  * - Stream lifecycle management
  */
 
@@ -20,6 +23,9 @@ import {
   StateTransition,
 } from './types.js';
 import { getStreamAdapter, ProviderName } from './provider-adapter.js';
+import { ModelRacer, RacingStrategy, RaceResult } from './model-racer.js';
+import { MCPBridge, MCPToolCall, MCPToolResult, MCPServerName } from './mcp-bridge.js';
+import { getLatencyTracker, LatencyRecord } from './latency-tracker.js';
 
 // ============================================================================
 // Event Helpers
@@ -36,7 +42,7 @@ function isoNow(): string {
 }
 
 // ============================================================================
-// Stream Orchestrator
+// Stream Orchestrator (v10.6 - Racing Edition)
 // ============================================================================
 
 export class StreamOrchestrator {
@@ -48,12 +54,34 @@ export class StreamOrchestrator {
   private eventLog: StreamEvent[] = [];
   private stateTransitions: StateTransition[] = [];
 
+  // v10.6: Racing & Optimization
+  private racer: ModelRacer;
+  private mcpBridge: MCPBridge;
+  private prefetchPromise: Promise<string[]> | null = null;
+
   constructor(private defaultOptions?: Partial<HybridStreamOptions>) {
     this.metrics = this.createEmptyMetrics();
+    this.racer = new ModelRacer({
+      strategy: (defaultOptions?.racingStrategy as RacingStrategy) || 'hedged',
+      maxRaceCost: defaultOptions?.maxRaceCost || 0.01,
+    });
+    this.mcpBridge = new MCPBridge({
+      enablePrefetch: defaultOptions?.enablePrefetch !== false,
+      enableCache: true,
+    });
   }
 
   /**
-   * Execute a streaming request with full orchestration
+   * Trigger speculative prefetch for a user query.
+   * Call this BEFORE execute() to hide MCP latency behind LLM TTFT.
+   */
+  triggerPrefetch(userQuery: string): void {
+    this.prefetchPromise = this.mcpBridge.prefetch(userQuery);
+  }
+
+  /**
+   * Execute a streaming request with full orchestration.
+   * Uses ModelRacer when racing enabled, parallel tools via MCPBridge.
    */
   async *execute(options: HybridStreamOptions): AsyncGenerator<StreamEvent> {
     this.transitionState('streaming');
@@ -63,22 +91,34 @@ export class StreamOrchestrator {
     this.eventLog = [];
 
     const merged = { ...this.defaultOptions, ...options };
-    const provider = (merged.provider || 'anthropic') as ProviderName;
-    const adapter = getStreamAdapter(provider);
+    const useRacing = merged.enableRacing !== false && !merged.forceProvider;
+    const useParallelTools = merged.enableParallelTools !== false;
 
-    const streamOptions = {
-      model: merged.model || 'claude-sonnet-4-20250514',
-      apiKey: this.getApiKey(provider),
-      temperature: merged.temperature,
-      maxTokens: merged.maxTokens,
-      tools: merged.tools?.map(t => ({
-        name: t.name,
-        description: t.description,
-        inputSchema: t.parameters,
-      })),
-      signal: this.abortController.signal,
-      enableThinking: merged.enableThinking,
-    };
+    // Wait for any pending prefetch to resolve (non-blocking - just sets cache)
+    if (this.prefetchPromise) {
+      const prefetched = await this.prefetchPromise;
+      if (prefetched.length > 0) {
+        this.metrics.prefetchHits = prefetched.length;
+        yield {
+          id: eid(),
+          timestamp: isoNow(),
+          type: 'metadata',
+          usage: { inputTokens: 0, outputTokens: 0 },
+          model: '',
+          provider: '',
+          prefetched,
+        } as any;
+      }
+      this.prefetchPromise = null;
+    }
+
+    // Track tool handlers
+    const toolHandlers = new Map<string, ToolDefinition['handler']>();
+    if (merged.tools) {
+      for (const tool of merged.tools) {
+        if (tool.handler) toolHandlers.set(tool.name, tool.handler);
+      }
+    }
 
     let toolCallCount = 0;
     const maxToolCalls = merged.maxToolCalls || 10;
@@ -88,20 +128,23 @@ export class StreamOrchestrator {
     }));
     let continueLoop = true;
 
-    // Track tool handlers from ToolDefinition
-    const toolHandlers = new Map<string, ToolDefinition['handler']>();
-    if (merged.tools) {
-      for (const tool of merged.tools) {
-        if (tool.handler) toolHandlers.set(tool.name, tool.handler);
-      }
-    }
-
     while (continueLoop) {
       continueLoop = false;
       const pendingToolCalls: Array<{ name: string; args: Record<string, unknown>; id: string }> = [];
 
       try {
-        const stream = adapter.stream(messages, streamOptions);
+        // === Choose streaming path: Racing vs Direct ===
+        const stream = useRacing
+          ? this.racer.race({
+              messages: messages as any,
+              tools: merged.tools,
+              enableThinking: merged.enableThinking,
+              maxTokens: merged.maxTokens,
+              temperature: merged.temperature,
+              forceProvider: merged.forceProvider,
+              forceModel: merged.forceModel,
+            })
+          : this.streamDirect(merged, messages);
 
         for await (const event of stream) {
           if (this.abortController?.signal.aborted) {
@@ -118,7 +161,6 @@ export class StreamOrchestrator {
               this.metrics.outputTokens++;
               this.updateTokensPerSecond();
 
-              // Track time to first token
               if (this.metrics.timeToFirstToken === undefined) {
                 const startMs = new Date(this.metrics.startTime).getTime();
                 this.metrics.timeToFirstToken = Date.now() - startMs;
@@ -174,18 +216,27 @@ export class StreamOrchestrator {
             }
 
             case 'metadata': {
-              if (event.usage) {
-                this.metrics.inputTokens = event.usage.inputTokens || this.metrics.inputTokens;
+              const metaEvent = event as any;
+              if (metaEvent.usage) {
+                this.metrics.inputTokens = metaEvent.usage.inputTokens || this.metrics.inputTokens;
                 this.metrics.outputTokens = Math.max(
                   this.metrics.outputTokens,
-                  event.usage.outputTokens || 0
+                  metaEvent.usage.outputTokens || 0
                 );
                 this.metrics.totalTokens = this.metrics.inputTokens + this.metrics.outputTokens;
                 this.metrics.cost = this.calculateCost(
-                  streamOptions.model,
+                  metaEvent.model || merged.model,
                   this.metrics.inputTokens,
                   this.metrics.outputTokens
                 );
+              }
+              // Track racing winner from metadata
+              if (metaEvent.racingWinner) {
+                this.metrics.racingWinner = metaEvent.racingWinner;
+                this.metrics.racingModel = metaEvent.racingModel;
+                this.metrics.racingStrategy = metaEvent.racingStrategy;
+                this.metrics.racingCandidates = metaEvent.racingCandidates;
+                this.metrics.racingSaved = metaEvent.racingSaved;
               }
               yield event;
               break;
@@ -198,36 +249,12 @@ export class StreamOrchestrator {
             }
 
             case 'done': {
-              // If there are pending tool calls, execute them and continue
               if (pendingToolCalls.length > 0) {
-                for (const tc of pendingToolCalls) {
-                  const handler = toolHandlers.get(tc.name);
-                  if (!handler) {
-                    yield this.makeToolResult(tc.id, tc.name, `No handler for tool: ${tc.name}`, false, 0);
-                    continue;
-                  }
-
-                  const toolStart = Date.now();
-                  try {
-                    const result = await handler(tc.args);
-                    const duration = Date.now() - toolStart;
-                    this.metrics.toolLatencyTotal += duration;
-                    this.metrics.toolLatencyAverage = this.metrics.toolLatencyTotal / this.metrics.toolCallCount;
-
-                    const resultContent = typeof result === 'string' ? result : JSON.stringify(result);
-                    yield this.makeToolResult(tc.id, tc.name, resultContent, true, duration);
-
-                    // Add tool result to messages for continuation
-                    messages = [
-                      ...messages,
-                      { role: 'assistant', content: this.contentBuffer },
-                      { role: 'user', content: `[Tool Result: ${tc.name}]\n${resultContent}` },
-                    ];
-                  } catch (err: any) {
-                    const duration = Date.now() - toolStart;
-                    this.metrics.toolLatencyTotal += duration;
-                    yield this.makeToolResult(tc.id, tc.name, err?.message || 'Unknown error', false, duration);
-                  }
+                // === Parallel Tool Execution via MCPBridge ===
+                if (useParallelTools && pendingToolCalls.length > 1) {
+                  yield* this.executeToolsParallel(pendingToolCalls, toolHandlers, messages);
+                } else {
+                  yield* this.executeToolsSequential(pendingToolCalls, toolHandlers, messages);
                 }
 
                 // Continue streaming with tool results
@@ -237,6 +264,10 @@ export class StreamOrchestrator {
               } else {
                 this.transitionState('completed');
                 this.updateElapsed();
+
+                // Record latency to tracker
+                this.recordLatency(merged);
+
                 yield this.makeDoneEvent();
               }
               break;
@@ -283,7 +314,7 @@ export class StreamOrchestrator {
   }
 
   /**
-   * Get current metrics
+   * Get current metrics (includes racing stats)
    */
   getMetrics(): StreamMetrics {
     this.updateElapsed();
@@ -303,6 +334,20 @@ export class StreamOrchestrator {
   abort(): void {
     this.abortController?.abort();
     this.transitionState('completed');
+  }
+
+  /**
+   * Get race statistics
+   */
+  getRaceStats() {
+    return this.racer.getStats();
+  }
+
+  /**
+   * Get MCP bridge cache stats
+   */
+  getMCPStats() {
+    return this.mcpBridge.getStats();
   }
 
   /**
@@ -335,8 +380,155 @@ export class StreamOrchestrator {
       ...(options.messages || []),
       { role: 'assistant' as const, content: checkpoint.contentSoFar },
     ];
-
     yield* this.execute({ ...options, messages });
+  }
+
+  // ============================================================================
+  // Private: Direct Streaming (no racing)
+  // ============================================================================
+
+  private async *streamDirect(
+    merged: Partial<HybridStreamOptions>,
+    messages: Array<{ role: string; content: string }>
+  ): AsyncGenerator<StreamEvent> {
+    const provider = (merged.forceProvider || merged.provider || 'anthropic') as ProviderName;
+    const adapter = getStreamAdapter(provider);
+
+    const streamOptions = {
+      model: merged.forceModel || merged.model || 'claude-sonnet-4-20250514',
+      apiKey: this.getApiKey(provider),
+      temperature: merged.temperature,
+      maxTokens: merged.maxTokens,
+      tools: merged.tools?.map(t => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.parameters,
+      })),
+      signal: this.abortController?.signal,
+      enableThinking: merged.enableThinking,
+    };
+
+    yield* adapter.stream(messages, streamOptions);
+  }
+
+  // ============================================================================
+  // Private: Parallel Tool Execution
+  // ============================================================================
+
+  /**
+   * Execute multiple tool calls in parallel via MCPBridge.
+   * Yields tool_result events as they complete.
+   */
+  private async *executeToolsParallel(
+    pendingCalls: Array<{ name: string; args: Record<string, unknown>; id: string }>,
+    toolHandlers: Map<string, ToolDefinition['handler']>,
+    messages: Array<{ role: string; content: string }>
+  ): AsyncGenerator<StreamEvent> {
+    const sequentialStart = Date.now();
+
+    // Execute all tools in parallel
+    const results = await Promise.allSettled(
+      pendingCalls.map(async (tc) => {
+        const handler = toolHandlers.get(tc.name);
+        if (!handler) {
+          return { id: tc.id, name: tc.name, success: false, content: `No handler for tool: ${tc.name}`, duration: 0 };
+        }
+        const start = Date.now();
+        try {
+          const result = await handler(tc.args);
+          return {
+            id: tc.id,
+            name: tc.name,
+            success: true,
+            content: typeof result === 'string' ? result : JSON.stringify(result),
+            duration: Date.now() - start,
+          };
+        } catch (err: any) {
+          return { id: tc.id, name: tc.name, success: false, content: err?.message || 'Error', duration: Date.now() - start };
+        }
+      })
+    );
+
+    const parallelDuration = Date.now() - sequentialStart;
+    let totalSequentialEstimate = 0;
+
+    // Yield results and update messages
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        const r = result.value;
+        totalSequentialEstimate += r.duration;
+        this.metrics.toolLatencyTotal += r.duration;
+        this.metrics.toolLatencyAverage = this.metrics.toolLatencyTotal / this.metrics.toolCallCount;
+
+        yield this.makeToolResult(r.id, r.name, r.content, r.success, r.duration);
+
+        messages.push(
+          { role: 'assistant', content: this.contentBuffer },
+          { role: 'user', content: `[Tool Result: ${r.name}]\n${r.content}` },
+        );
+      }
+    }
+
+    // Track parallel savings
+    this.metrics.parallelToolSaved = Math.max(0, totalSequentialEstimate - parallelDuration);
+  }
+
+  /**
+   * Execute tool calls sequentially (fallback)
+   */
+  private async *executeToolsSequential(
+    pendingCalls: Array<{ name: string; args: Record<string, unknown>; id: string }>,
+    toolHandlers: Map<string, ToolDefinition['handler']>,
+    messages: Array<{ role: string; content: string }>
+  ): AsyncGenerator<StreamEvent> {
+    for (const tc of pendingCalls) {
+      const handler = toolHandlers.get(tc.name);
+      if (!handler) {
+        yield this.makeToolResult(tc.id, tc.name, `No handler for tool: ${tc.name}`, false, 0);
+        continue;
+      }
+
+      const toolStart = Date.now();
+      try {
+        const result = await handler(tc.args);
+        const duration = Date.now() - toolStart;
+        this.metrics.toolLatencyTotal += duration;
+        this.metrics.toolLatencyAverage = this.metrics.toolLatencyTotal / this.metrics.toolCallCount;
+
+        const resultContent = typeof result === 'string' ? result : JSON.stringify(result);
+        yield this.makeToolResult(tc.id, tc.name, resultContent, true, duration);
+
+        messages.push(
+          { role: 'assistant', content: this.contentBuffer },
+          { role: 'user', content: `[Tool Result: ${tc.name}]\n${resultContent}` },
+        );
+      } catch (err: any) {
+        const duration = Date.now() - toolStart;
+        this.metrics.toolLatencyTotal += duration;
+        yield this.makeToolResult(tc.id, tc.name, err?.message || 'Unknown error', false, duration);
+      }
+    }
+  }
+
+  // ============================================================================
+  // Private: Latency Recording
+  // ============================================================================
+
+  private recordLatency(options: Partial<HybridStreamOptions>): void {
+    const provider = this.metrics.racingWinner || options.provider || 'anthropic';
+    const model = this.metrics.racingModel || options.model || 'unknown';
+    const tracker = getLatencyTracker();
+
+    tracker.record({
+      provider,
+      model,
+      ttft: this.metrics.timeToFirstToken || 0,
+      tokensPerSec: this.metrics.tokensPerSecond,
+      totalLatency: this.metrics.elapsed,
+      timestamp: Date.now(),
+      success: this.state !== 'error',
+      tokenCount: this.metrics.outputTokens,
+    });
   }
 
   // ============================================================================
@@ -348,11 +540,7 @@ export class StreamOrchestrator {
     if (from === to) return;
     this.state = to;
     this.metrics.state = to;
-    this.stateTransitions.push({
-      from,
-      to,
-      timestamp: isoNow(),
-    });
+    this.stateTransitions.push({ from, to, timestamp: isoNow() });
   }
 
   private createEmptyMetrics(): StreamMetrics {
@@ -427,6 +615,7 @@ export class StreamOrchestrator {
       'claude-3-5-haiku-20241022': { input: 0.8, output: 4 },
       'claude-opus-4-20250514': { input: 15, output: 75 },
       'llama-3.3-70b-versatile': { input: 0.59, output: 0.79 },
+      'mixtral-8x7b-32768': { input: 0.24, output: 0.24 },
     };
     const c = costs[model] || { input: 0, output: 0 };
     return (inputTokens * c.input + outputTokens * c.output) / 1_000_000;

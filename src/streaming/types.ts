@@ -298,6 +298,29 @@ export interface HybridStreamOptions {
 
   /** Additional provider-specific options */
   providerOptions?: Record<string, unknown>;
+
+  // ===== Racing & Optimization (v10.6) =====
+
+  /** Enable model racing (fire multiple providers, first wins) */
+  enableRacing?: boolean;
+
+  /** Racing strategy: 'ttft' | 'hedged' | 'speculative' | 'quality' */
+  racingStrategy?: 'ttft' | 'hedged' | 'speculative' | 'quality';
+
+  /** Maximum cost for racing (all candidates combined) */
+  maxRaceCost?: number;
+
+  /** Enable speculative MCP prefetch based on query patterns */
+  enablePrefetch?: boolean;
+
+  /** Enable parallel MCP tool execution */
+  enableParallelTools?: boolean;
+
+  /** Force a specific provider (bypasses racing) */
+  forceProvider?: string;
+
+  /** Force a specific model (bypasses racing) */
+  forceModel?: string;
 }
 
 // ============================================================================
@@ -355,6 +378,29 @@ export interface StreamMetrics {
 
   /** Time to first token (TTFT) in milliseconds */
   timeToFirstToken?: number;
+
+  // ===== Racing Metrics (v10.6) =====
+
+  /** Provider that won the race */
+  racingWinner?: string;
+
+  /** Model that won the race */
+  racingModel?: string;
+
+  /** Racing strategy used */
+  racingStrategy?: string;
+
+  /** Number of candidates raced */
+  racingCandidates?: number;
+
+  /** Latency saved by racing vs default (ms) */
+  racingSaved?: number;
+
+  /** Number of prefetched tool results used */
+  prefetchHits?: number;
+
+  /** Parallel tool execution time savings (ms) */
+  parallelToolSaved?: number;
 }
 
 // ============================================================================

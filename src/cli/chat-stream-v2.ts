@@ -64,6 +64,14 @@ export interface StreamChatOptions {
   temperature?: number;
   maxTokens?: number;
   verbose?: boolean;
+  /** Enable model racing (fire multiple providers, fastest wins) */
+  enableRacing?: boolean;
+  /** Racing strategy: 'ttft' | 'hedged' | 'speculative' | 'quality' */
+  racingStrategy?: 'ttft' | 'hedged' | 'speculative' | 'quality';
+  /** Enable speculative MCP prefetch */
+  enablePrefetch?: boolean;
+  /** Enable parallel tool execution */
+  enableParallelTools?: boolean;
   onComplete?: (result: StreamChatResult) => void;
 }
 
@@ -95,8 +103,16 @@ export class StreamChatHandler {
   private isThinking = false;
   private thinkingContent = '';
 
-  constructor() {
-    this.orchestrator = createStreamOrchestrator();
+  constructor(options?: { enableRacing?: boolean; racingStrategy?: string; enablePrefetch?: boolean }) {
+    this.orchestrator = createStreamOrchestrator({
+      enableRacing: options?.enableRacing,
+      racingStrategy: options?.racingStrategy as any,
+      enablePrefetch: options?.enablePrefetch,
+      enableParallelTools: true,
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-20250514',
+      messages: [],
+    });
     this.grounder = new ContextGrounder();
     this.reasoning = new ReasoningDisplay();
     this.renderer = new BlockRenderer();
@@ -135,7 +151,16 @@ export class StreamChatHandler {
       maxToolCalls: options.maxToolCalls || 10,
       temperature: options.temperature,
       maxTokens: options.maxTokens,
+      enableRacing: options.enableRacing,
+      racingStrategy: options.racingStrategy,
+      enablePrefetch: options.enablePrefetch,
+      enableParallelTools: options.enableParallelTools,
     };
+
+    // Trigger speculative prefetch (hides MCP latency behind LLM TTFT)
+    if (options.enablePrefetch !== false) {
+      this.orchestrator.triggerPrefetch(options.userMessage);
+    }
 
     // Print spacing before response
     console.log();
@@ -402,6 +427,24 @@ export class StreamChatHandler {
       parts.push(`${metrics.thinkingTokens} thinking`);
     }
 
+    // Racing info
+    if (metrics.racingWinner) {
+      parts.push(`${metrics.racingWinner}/${metrics.racingModel}`);
+      if (metrics.racingSaved && metrics.racingSaved > 0) {
+        parts.push(`-${metrics.racingSaved}ms`);
+      }
+    }
+
+    // Parallel tool savings
+    if (metrics.parallelToolSaved && metrics.parallelToolSaved > 0) {
+      parts.push(`${metrics.parallelToolSaved}ms saved`);
+    }
+
+    // Prefetch hits
+    if (metrics.prefetchHits && metrics.prefetchHits > 0) {
+      parts.push(`${metrics.prefetchHits} prefetched`);
+    }
+
     // Token rate sparkline
     if (this.tokenHistory.length > 3) {
       const spark = sparkline(this.tokenHistory, { width: 8 });
@@ -454,6 +497,10 @@ export class StreamChatHandler {
 // Factory
 // ============================================================================
 
-export function createStreamChatHandler(): StreamChatHandler {
-  return new StreamChatHandler();
+export function createStreamChatHandler(options?: {
+  enableRacing?: boolean;
+  racingStrategy?: string;
+  enablePrefetch?: boolean;
+}): StreamChatHandler {
+  return new StreamChatHandler(options);
 }

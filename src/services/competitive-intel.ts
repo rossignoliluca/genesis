@@ -283,6 +283,47 @@ export class CompetitiveIntelService {
   }
 
   /**
+   * Call LLM with MCP fallback to direct HTTP.
+   */
+  private async callLLM(messages: Array<{ role: string; content: string }>, maxTokens = 200): Promise<string> {
+    // Try MCP first
+    try {
+      const mcp = getMCPClient();
+      const result = await mcp.call('openai' as any, 'openai_chat', {
+        model: this.config.llmModel,
+        messages,
+        temperature: 0.3,
+        max_tokens: maxTokens,
+      });
+      const r = result as any;
+      const content = r?.data?.choices?.[0]?.message?.content || r?.choices?.[0]?.message?.content;
+      if (content) return content;
+    } catch { /* fall through to direct */ }
+
+    // Fallback: direct OpenAI HTTP call
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return '{}';
+
+    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.config.llmModel,
+        messages,
+        temperature: 0.3,
+        max_tokens: maxTokens,
+      }),
+    });
+
+    if (!resp.ok) return '{}';
+    const data = await resp.json() as any;
+    return data?.choices?.[0]?.message?.content || '{}';
+  }
+
+  /**
    * Analyze a detected change using LLM.
    */
   private async analyzeChange(
@@ -293,25 +334,17 @@ export class CompetitiveIntelService {
     newContent: string
   ): Promise<{ significance: ChangeEvent['significance']; analysis: string }> {
     try {
-      const mcp = getMCPClient();
-      const result = await mcp.call('openai' as any, 'openai_chat', {
-        model: this.config.llmModel,
-        messages: [
-          {
-            role: 'system',
-            content: `You are a competitive intelligence analyst. Analyze changes on competitor websites and determine their business significance. Respond with JSON: {"significance": "low|medium|high|critical", "analysis": "brief analysis"}`
-          },
-          {
-            role: 'user',
-            content: `Competitor: ${competitorName}\nPage type: ${page.type}\nURL: ${page.url}\n\nChange detected: ${diffSummary}\n\nOld content (first 1000 chars): ${oldContent.slice(0, 1000)}\n\nNew content (first 1000 chars): ${newContent.slice(0, 1000)}\n\nWhat is the business significance of this change?`
-          }
-        ],
-        temperature: 0.3,
-        max_tokens: 200,
-      });
+      const content = await this.callLLM([
+        {
+          role: 'system',
+          content: `You are a competitive intelligence analyst. Analyze changes on competitor websites and determine their business significance. Respond with JSON: {"significance": "low|medium|high|critical", "analysis": "brief analysis"}`
+        },
+        {
+          role: 'user',
+          content: `Competitor: ${competitorName}\nPage type: ${page.type}\nURL: ${page.url}\n\nChange detected: ${diffSummary}\n\nOld content (first 1000 chars): ${oldContent.slice(0, 1000)}\n\nNew content (first 1000 chars): ${newContent.slice(0, 1000)}\n\nWhat is the business significance of this change?`
+        }
+      ]);
 
-      const r = result as any;
-      const content = r?.data?.choices?.[0]?.message?.content || r?.choices?.[0]?.message?.content || '{}';
       const parsed = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] || '{}');
       return {
         significance: parsed.significance || 'medium',
@@ -333,29 +366,21 @@ export class CompetitiveIntelService {
     }
 
     try {
-      const mcp = getMCPClient();
       const changesSummary = competitorData.map(c =>
         `${c.name}: ${c.changes.map(ch => `[${ch.significance}] ${ch.summary}`).join('; ')}`
       ).join('\n');
 
-      const result = await mcp.call('openai' as any, 'openai_chat', {
-        model: this.config.llmModel,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a strategic analyst. Given competitor changes, produce key insights and recommendations. Respond with JSON: {"insights": ["..."], "recommendations": ["..."]}'
-          },
-          {
-            role: 'user',
-            content: `Recent competitor changes:\n${changesSummary}\n\nProvide 2-4 key insights and 1-3 actionable recommendations.`
-          }
-        ],
-        temperature: 0.5,
-        max_tokens: 500,
-      });
+      const content = await this.callLLM([
+        {
+          role: 'system',
+          content: 'You are a strategic analyst. Given competitor changes, produce key insights and recommendations. Respond with JSON: {"insights": ["..."], "recommendations": ["..."]}'
+        },
+        {
+          role: 'user',
+          content: `Recent competitor changes:\n${changesSummary}\n\nProvide 2-4 key insights and 1-3 actionable recommendations.`
+        }
+      ], 500);
 
-      const r = result as any;
-      const content = r?.data?.choices?.[0]?.message?.content || r?.choices?.[0]?.message?.content || '{}';
       const parsed = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] || '{}');
       return {
         insights: parsed.insights || ['Analysis unavailable.'],

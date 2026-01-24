@@ -126,6 +126,14 @@ import {
   DarwinGodelEngine,
 } from '../self-modification/index.js';
 
+// v11.5: Metacognitive Controller - EFE-driven reasoning strategy selection
+import {
+  MetacognitiveController,
+  getMetacognitiveController,
+  MetacognitiveResult,
+} from '../reasoning/metacognitive-controller.js';
+import { createStrategyExecutor } from '../reasoning/strategy-executor.js';
+
 // v8.1: Brain State Persistence
 import {
   BrainStatePersistence,
@@ -164,6 +172,9 @@ export class Brain {
   private stateStore: StateStore | null = null;
   private worldModel: WorldModelSystem | null = null;
   private darwinGodel: DarwinGodelEngine | null = null;
+
+  // v11.5: Metacognitive Controller
+  private metacognition: MetacognitiveController | null = null;
 
   // v8.1: State Persistence
   private persistence: BrainStatePersistence;
@@ -306,6 +317,21 @@ export class Brain {
       // Module may not be configured
     }
 
+    // v11.5: Metacognitive Controller - EFE-driven reasoning strategy selection
+    try {
+      this.metacognition = getMetacognitiveController();
+
+      // Wire phi provider for consciousness-gated strategy selection
+      this.metacognition.setPhiProvider(() => this.getCurrentPhi());
+
+      // Wire strategy executor (bridges to ThinkingEngine)
+      this.metacognition.setStrategyExecutor(
+        createStrategyExecutor(this.thinking)
+      );
+    } catch {
+      // Metacognition initialization is non-fatal
+    }
+
     // v10.4.1: Wire PhiMonitor to real system state
     this.wirePhiMonitorToRealState();
 
@@ -356,6 +382,11 @@ export class Brain {
 
     // Register LLM Bridge as perceptual/motor module
     this.globalWorkspace.registerModule(this.createLLMModule());
+
+    // v11.5: Register Metacognition as executive/meta module
+    if (this.metacognition) {
+      this.globalWorkspace.registerModule(this.createMetacognitionModule());
+    }
   }
 
   /**
@@ -488,6 +519,58 @@ export class Brain {
   }
 
   /**
+   * v11.5: Create a GWT module adapter for the Metacognitive Controller
+   * Metacognition proposes strategy decisions to the global workspace
+   */
+  private createMetacognitionModule(): import('../consciousness/types.js').WorkspaceModule {
+    const metacognition = this.metacognition!;
+    let contentId = 0;
+
+    return {
+      id: 'brain-metacognition',
+      name: 'Metacognitive Controller',
+      type: 'executive',
+      active: true,
+      load: 0.3,
+      canPropose: () => {
+        const stats = metacognition.getStats();
+        return stats.totalReasoning > 0;
+      },
+      propose: () => {
+        const stats = metacognition.getStats();
+        if (stats.totalReasoning === 0) return null;
+        return {
+          id: `meta-${++contentId}`,
+          sourceModule: 'brain-metacognition',
+          type: 'thought' as const,
+          data: {
+            type: 'strategy_decision',
+            precision: stats.beliefsPrecision,
+            totalReasoning: stats.totalReasoning,
+            knowledgeGraph: stats.knowledgeGraph,
+          },
+          salience: stats.beliefsPrecision * 0.6,
+          relevance: 0.7,
+          timestamp: new Date(),
+          ttl: 15000,
+        };
+      },
+      receive: () => {
+        // Metacognition could update beliefs based on broadcasts
+      },
+      bottomUpSalience: () => {
+        const stats = metacognition.getStats();
+        return Math.min(1, stats.beliefsPrecision * 0.7);
+      },
+      topDownRelevance: (goal: string) => {
+        // Metacognition is relevant for reasoning/thinking tasks
+        return goal.includes('think') || goal.includes('reason') ||
+               goal.includes('solve') || goal.includes('analyze') ? 0.9 : 0.4;
+      },
+    };
+  }
+
+  /**
    * v10.4.1: Wire PhiMonitor to real system state for actual φ calculation
    * Without this, PhiMonitor just simulates random values
    */
@@ -547,6 +630,23 @@ export class Brain {
       lastUpdate: now,
     });
 
+    // Add metacognition if available
+    if (this.metacognition) {
+      const metaStats = this.metacognition.getStats();
+      components.push({
+        id: 'metacognition',
+        type: 'metacognitive_controller',
+        active: true,
+        state: {
+          precision: metaStats.beliefsPrecision,
+          totalReasoning: metaStats.totalReasoning,
+          knowledgeEntities: metaStats.knowledgeGraph.entities,
+        },
+        entropy: 1 - metaStats.beliefsPrecision, // Low precision = high entropy
+        lastUpdate: now,
+      });
+    }
+
     // Add kernel if available
     if (this.kernel) {
       const kernelState = this.kernel.getState?.() || 'idle';
@@ -578,6 +678,26 @@ export class Brain {
       informationFlow: 500,
       bidirectional: true,
     });
+
+    // Metacognition ↔ Thinking (metacognition controls thinking strategy)
+    if (this.metacognition) {
+      connections.push({
+        from: 'metacognition',
+        to: 'thinking',
+        strength: 0.85,
+        informationFlow: 300,
+        bidirectional: true,
+      });
+
+      // Metacognition ↔ Workspace (reads context for complexity estimation)
+      connections.push({
+        from: 'metacognition',
+        to: 'workspace',
+        strength: 0.7,
+        informationFlow: 200,
+        bidirectional: true,
+      });
+    }
 
     // Global Workspace ↔ All components (broadcasting)
     for (const comp of components) {
@@ -1018,6 +1138,9 @@ export class Brain {
       case 'organism':
         return this.stepOrganism(state);
 
+      case 'metacognition':
+        return this.stepMetacognition(state);
+
       default:
         return { goto: 'done', update: {} };
     }
@@ -1054,9 +1177,10 @@ export class Brain {
     const wsMetrics = this.workspace.getMetrics();
     this.metrics.memoryReuseRate = wsMetrics.reuseRate;
 
-    // v7.6: Route through thinking module for extended reasoning
+    // v11.5: Route through metacognition if available (EFE strategy selection)
+    // Falls back to thinking module for direct extended reasoning
     return {
-      goto: 'thinking',
+      goto: this.metacognition ? 'metacognition' : 'thinking',
       update: { context },
       reason: 'context_retrieved',
     };
@@ -1972,6 +2096,130 @@ export class Brain {
     }
   }
 
+  /**
+   * v11.5: Metacognition module - EFE-driven reasoning strategy selection
+   *
+   * Uses Active Inference to select the optimal cognitive strategy:
+   * 1. Estimates problem complexity
+   * 2. Enriches context with NeurosymbolicReasoner knowledge graph
+   * 3. Computes EFE for each strategy (sequential/ToT/GoT/SuperCorrect/ultimate)
+   * 4. Executes selected strategy with escalation if confidence too low
+   * 5. Learns from outcomes for future strategy selection
+   */
+  private async stepMetacognition(state: BrainState): Promise<Command> {
+    if (!this.metacognition) {
+      // Fallback to direct thinking
+      return {
+        goto: 'thinking',
+        update: {},
+        reason: 'metacognition_not_available',
+      };
+    }
+
+    this.emit({
+      type: 'module_enter',
+      timestamp: new Date(),
+      data: { module: 'metacognition' },
+      module: 'metacognition' as BrainModule,
+    });
+
+    try {
+      const contextStr = state.context.formatted || '';
+
+      // Run metacognitive reasoning (EFE strategy selection + execution)
+      const result: MetacognitiveResult = await this.metacognition.reason(
+        state.query,
+        contextStr
+      );
+
+      // Track metrics
+      this.metrics.thinkingSteps = (this.metrics.thinkingSteps || 0) + result.trace.length;
+      this.metrics.avgConfidence = result.confidence;
+
+      // Emit metacognitive trace events
+      for (const step of result.trace) {
+        this.emit({
+          type: 'thinking_step',
+          timestamp: new Date(),
+          data: {
+            stepType: step.phase,
+            strategy: step.strategy,
+            confidence: step.confidence,
+            detail: step.detail,
+          },
+        });
+      }
+
+      // Broadcast to global workspace: strategy selection is a conscious event
+      if (this.config.consciousness.broadcastEnabled) {
+        const content = createWorkspaceContent(
+          'brain-metacognition',
+          'thought',
+          {
+            strategy: result.strategy,
+            complexity: result.complexity.level,
+            confidence: result.confidence,
+            escalations: result.escalations,
+            efe: result.efe.efe,
+          },
+          {
+            salience: result.confidence,
+            relevance: 0.9, // Metacognition is always highly relevant
+          }
+        );
+        this.metrics.broadcasts++;
+      }
+
+      // Build uncertainty note
+      const uncertaintyNote = result.confidence < 0.5
+        ? `\n\n[Metacognition: strategy=${result.strategy}, complexity=${result.complexity.level}, confidence=${(result.confidence * 100).toFixed(0)}%, escalations=${result.escalations}]`
+        : '';
+
+      // Check for tool calls in response
+      const toolCalls = this.parseToolCalls(result.response);
+
+      if (toolCalls.length > 0 && this.config.tools.enabled) {
+        return {
+          goto: 'tools',
+          update: {
+            response: result.response + uncertaintyNote,
+            toolCalls,
+          },
+          reason: `metacognition_tool_calls:${result.strategy}`,
+        };
+      }
+
+      // If grounding needed
+      if (this.config.grounding.verifyAllResponses && this.config.grounding.enabled) {
+        return {
+          goto: 'grounding',
+          update: { response: result.response + uncertaintyNote },
+          reason: `metacognition_verify:${result.strategy}`,
+        };
+      }
+
+      return {
+        goto: 'done',
+        update: { response: result.response + uncertaintyNote },
+        reason: `metacognition_complete:${result.strategy}(conf=${result.confidence.toFixed(2)},esc=${result.escalations})`,
+      };
+    } catch (error) {
+      // Fallback to direct thinking if metacognition fails
+      this.emit({
+        type: 'module_exit',
+        timestamp: new Date(),
+        data: { error: error instanceof Error ? error.message : String(error) },
+        module: 'metacognition' as BrainModule,
+      });
+
+      return {
+        goto: 'thinking',
+        update: {},
+        reason: 'metacognition_fallback',
+      };
+    }
+  }
+
   // ============================================================================
   // Healing Loop
   // ============================================================================
@@ -2415,6 +2663,7 @@ export class Brain {
         persistence: this.stateStore !== null,
         worldModel: this.worldModel !== null,
         selfModify: this.darwinGodel !== null,
+        metacognition: this.metacognition !== null,
       },
       // v8.1: Persisted stats across sessions
       persisted: {

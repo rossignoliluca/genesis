@@ -176,12 +176,24 @@ export class ConsolidationService {
       // Extract patterns from group
       if (group.length >= 2) {
         // Multiple similar episodes -> extract semantic fact
-        const fact = this.extractFact(group);
-        if (fact) {
-          const created = this.semanticStore.createFact(fact);
-          result.semanticCreated++;
-          result.newFacts.push(created.id);
-          this.logEvent('CONSOLIDATE', created.id, 'semantic');
+        // v12.0: Try LLM extraction first, fallback to keyword-based
+        const facts = await this.extractFactWithLLM(group);
+        if (facts.length > 0) {
+          for (const fact of facts) {
+            const created = this.semanticStore.createFact(fact);
+            result.semanticCreated++;
+            result.newFacts.push(created.id);
+            this.logEvent('CONSOLIDATE', created.id, 'semantic');
+          }
+        } else {
+          // Fallback: keyword-based extraction
+          const fact = this.extractFact(group);
+          if (fact) {
+            const created = this.semanticStore.createFact(fact);
+            result.semanticCreated++;
+            result.newFacts.push(created.id);
+            this.logEvent('CONSOLIDATE', created.id, 'semantic');
+          }
         }
 
         // Check for procedural patterns
@@ -364,6 +376,80 @@ export class ConsolidationService {
     }
 
     return factors > 0 ? score / factors : 0;
+  }
+
+  // ============================================================================
+  // LLM-Powered Fact Extraction (v12.0)
+  // ============================================================================
+
+  /**
+   * Extract atomic facts from episodes using LLM.
+   * Returns structured facts with concept, definition, confidence, and relations.
+   * Falls back to empty array if LLM unavailable.
+   */
+  private async extractFactWithLLM(episodes: EpisodicMemory[]): Promise<Array<{
+    concept: string;
+    definition: string;
+    category: string;
+    confidence: number;
+    sources: string[];
+    importance: number;
+    tags: string[];
+  }>> {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return [];
+
+    try {
+      const summaries = episodes.map(e =>
+        `[${e.when.timestamp.toISOString().slice(0, 10)}] ${e.content.what}`
+      ).join('\n');
+
+      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [{
+            role: 'system',
+            content: `Extract atomic factual knowledge from these experiences.
+Return JSON: {"facts": [{"concept": "short_name", "definition": "one sentence factual statement", "confidence": 0.0-1.0, "category": "topic_category", "relations": [{"to": "other_concept", "type": "is_a|part_of|causes|related_to"}]}]}
+Rules:
+- Extract ONLY factual knowledge, not events
+- Each fact should be a general truth learned from the episodes
+- Confidence reflects how certain the fact is (more episodes = higher confidence)
+- Maximum 5 facts per batch
+- Categories should be descriptive (e.g., "programming", "system_design", "user_behavior")`
+          }, {
+            role: 'user',
+            content: summaries
+          }],
+          temperature: 0.2,
+          max_tokens: 800,
+          response_format: { type: 'json_object' },
+        }),
+      });
+
+      if (!resp.ok) return [];
+
+      const data = await resp.json() as any;
+      const content = data?.choices?.[0]?.message?.content;
+      if (!content) return [];
+
+      const parsed = JSON.parse(content);
+      if (!parsed?.facts || !Array.isArray(parsed.facts)) return [];
+
+      return parsed.facts.slice(0, 5).map((f: any) => ({
+        concept: String(f.concept || '').slice(0, 100),
+        definition: String(f.definition || '').slice(0, 500),
+        category: String(f.category || 'extracted'),
+        confidence: Math.min(1, Math.max(0, Number(f.confidence) || 0.6)),
+        sources: episodes.map(e => e.id),
+        importance: episodes.reduce((s, e) => s + e.importance, 0) / episodes.length,
+        tags: episodes.flatMap(e => e.tags).filter((t, i, arr) => arr.indexOf(t) === i).slice(0, 5),
+      }));
+    } catch {
+      return []; // LLM unavailable, caller will use keyword fallback
+    }
   }
 
   /**

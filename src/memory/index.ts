@@ -109,6 +109,43 @@ export {
   type IUnifiedMemorySource,
 } from './unified-query.js';
 
+// Re-export v12.0 - Persistence Layer
+export {
+  MemoryPersistence,
+  getMemoryPersistence,
+  createMemoryPersistence,
+  resetMemoryPersistence,
+  type PersistenceConfig,
+  type PersistenceStats,
+  DEFAULT_PERSISTENCE_CONFIG,
+} from './persistence.js';
+
+// Re-export v12.0 - Hybrid Retriever (RRF Fusion)
+export {
+  HybridRetriever,
+  getHybridRetriever,
+  createHybridRetriever,
+  resetHybridRetriever,
+  type HybridRetrieverConfig,
+  type RetrievalResult,
+  type RetrievalStats,
+  DEFAULT_RETRIEVER_CONFIG,
+} from './hybrid-retriever.js';
+
+// Re-export v12.0 - Meta-Memory Layer
+export {
+  MetaMemory,
+  getMetaMemory,
+  createMetaMemory,
+  resetMetaMemory,
+  type MetaEntry,
+  type Contradiction,
+  type ProvenanceRecord,
+  type MetaMemoryConfig,
+  type KnowledgeAssessment,
+  DEFAULT_META_CONFIG,
+} from './meta-memory.js';
+
 import { EpisodicStore, createEpisodicStore, CreateEpisodicOptions } from './episodic.js';
 import { SemanticStore, createSemanticStore, CreateSemanticOptions } from './semantic.js';
 import { ProceduralStore, createProceduralStore, CreateProceduralOptions } from './procedural.js';

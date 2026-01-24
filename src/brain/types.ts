@@ -37,6 +37,7 @@ export type BrainModule =
   | 'world-model'      // v7.13: Predictive modeling + simulation
   | 'self-modify'      // v7.13: Darwin-Gödel self-improvement
   | 'organism'         // v7.13: Autopoietic lifecycle management
+  | 'metacognition'   // v11.5: EFE-driven reasoning strategy selection
   | 'done';            // End processing
 
 /**

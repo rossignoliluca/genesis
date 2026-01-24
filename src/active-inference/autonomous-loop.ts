@@ -118,6 +118,12 @@ export class AutonomousLoop {
   private conformal: ConformalPredictor;
   private lastPredictedSurprise: number = 0;
 
+  // v12.0: Non-blocking observations (cache + background refresh)
+  private cachedObservation: Observation | null = null;
+  private observationRefreshPromise: Promise<void> | null = null;
+  private lastObservationTime: number = 0;
+  private observationCacheTTL: number = 2000; // Refresh every 2s max
+
   constructor(config: Partial<AutonomousLoopConfig> = {}) {
     this.config = { ...DEFAULT_LOOP_CONFIG, ...config };
 
@@ -221,9 +227,13 @@ export class AutonomousLoop {
         await this.cycle();
         const cycleDuration = Date.now() - cycleStart;
 
-        // Wait for next cycle (adaptive: subtract cycle duration)
+        // Wait for next cycle (v12.0: adaptive based on surprise level)
         if (this.config.cycleInterval > 0) {
-          const remainingTime = Math.max(0, this.config.cycleInterval - cycleDuration);
+          const surprise = this.engine.getStats().averageSurprise;
+          // High surprise → faster cycles; Low surprise → slower cycles
+          const adaptiveFactor = surprise > 3 ? 0.5 : surprise < 1 ? 2.0 : 1.0;
+          const adaptiveInterval = this.config.cycleInterval * adaptiveFactor;
+          const remainingTime = Math.max(0, adaptiveInterval - cycleDuration);
           if (remainingTime > 0) {
             await new Promise(r => setTimeout(r, remainingTime));
           }
@@ -264,8 +274,8 @@ export class AutonomousLoop {
   async cycle(): Promise<ActionType> {
     this.cycleCount++;
 
-    // 1. Gather observations
-    const obs = await this.observations.gather();
+    // 1. Gather observations (v12.0: non-blocking with cache)
+    const obs = await this.gatherNonBlocking();
 
     if (this.config.verbose) {
       console.log(`[AI Loop] Cycle ${this.cycleCount} - Observation:`, obs);
@@ -464,6 +474,48 @@ export class AutonomousLoop {
     if (event.type === 'goal_achieved' && this.config.stopOnGoalAchieved) {
       this.stop('goal_achieved');
     }
+  }
+
+  // ============================================================================
+  // v12.0: Non-Blocking Observation Gathering
+  // ============================================================================
+
+  /**
+   * Get observations without blocking. Uses cached value if fresh,
+   * triggers background refresh if stale.
+   * First call awaits to bootstrap, subsequent calls return cached.
+   */
+  private async gatherNonBlocking(): Promise<Observation> {
+    const now = Date.now();
+
+    // First call: must await to get initial observation
+    if (!this.cachedObservation) {
+      this.cachedObservation = await this.observations.gather();
+      this.lastObservationTime = now;
+      return this.cachedObservation;
+    }
+
+    // If cache is fresh enough, return immediately
+    if (now - this.lastObservationTime < this.observationCacheTTL) {
+      return this.cachedObservation;
+    }
+
+    // Cache is stale: trigger background refresh (non-blocking)
+    if (!this.observationRefreshPromise) {
+      this.observationRefreshPromise = this.observations.gather()
+        .then(obs => {
+          this.cachedObservation = obs;
+          this.lastObservationTime = Date.now();
+          this.observationRefreshPromise = null;
+        })
+        .catch(() => {
+          this.observationRefreshPromise = null;
+          // Keep cached observation on error
+        });
+    }
+
+    // Return cached (possibly slightly stale) observation immediately
+    return this.cachedObservation;
   }
 
   /**

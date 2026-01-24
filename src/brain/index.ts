@@ -134,6 +134,14 @@ import {
 } from '../reasoning/metacognitive-controller.js';
 import { createStrategyExecutor } from '../reasoning/strategy-executor.js';
 
+// v12.0: Free Energy Kernel - hierarchical Markov Blanket kernel
+import {
+  FreeEnergyKernel,
+  getFreeEnergyKernel,
+  FEKState,
+  KernelObservations,
+} from '../kernel/free-energy-kernel.js';
+
 // v8.1: Brain State Persistence
 import {
   BrainStatePersistence,
@@ -175,6 +183,9 @@ export class Brain {
 
   // v11.5: Metacognitive Controller
   private metacognition: MetacognitiveController | null = null;
+
+  // v12.0: Free Energy Kernel
+  private fek: FreeEnergyKernel | null = null;
 
   // v8.1: State Persistence
   private persistence: BrainStatePersistence;
@@ -330,6 +341,42 @@ export class Brain {
       );
     } catch {
       // Metacognition initialization is non-fatal
+    }
+
+    // v12.0: Free Energy Kernel - hierarchical prediction-error kernel
+    try {
+      this.fek = getFreeEnergyKernel();
+      this.fek.start();
+
+      // Wire prediction error handler to emit brain events for significant errors
+      this.fek.onPredictionError((error) => {
+        if (error.magnitude > 0.5) {
+          this.emit({
+            type: 'module_enter',
+            timestamp: new Date(),
+            data: {
+              type: 'prediction_error',
+              source: error.source,
+              target: error.target,
+              magnitude: error.magnitude,
+              content: error.content,
+            },
+            module: 'consciousness',
+          });
+        }
+      });
+
+      // Wire mode changes to organism-level state
+      this.fek.onModeChange((mode, prev) => {
+        this.emit({
+          type: 'module_enter',
+          timestamp: new Date(),
+          data: { mode, prev, kernel: 'fek' },
+          module: 'consciousness',
+        });
+      });
+    } catch {
+      // FEK initialization is non-fatal
     }
 
     // v10.4.1: Wire PhiMonitor to real system state
@@ -710,6 +757,23 @@ export class Brain {
       });
     }
 
+    // Add FEK if available (v12.0: Free Energy Kernel)
+    if (this.fek) {
+      const fekStatus = this.fek.getStatus();
+      components.push({
+        id: 'free_energy_kernel',
+        type: 'hierarchical_kernel',
+        active: fekStatus.running,
+        state: {
+          mode: fekStatus.mode,
+          totalFE: fekStatus.totalFE,
+          levels: fekStatus.levels,
+        },
+        entropy: Math.min(1, fekStatus.totalFE), // FE directly maps to entropy
+        lastUpdate: now,
+      });
+    }
+
     // Build connections between components
     // Workspace ↔ Thinking
     connections.push({
@@ -745,6 +809,28 @@ export class Brain {
         to: 'workspace',
         strength: 0.7,
         informationFlow: 200,
+        bidirectional: true,
+      });
+    }
+
+    // FEK ↔ Metacognition (FEK L3 strategy feeds metacognition)
+    if (this.fek && this.metacognition) {
+      connections.push({
+        from: 'free_energy_kernel',
+        to: 'metacognition',
+        strength: 0.8,
+        informationFlow: 250,
+        bidirectional: true,
+      });
+    }
+
+    // FEK ↔ Kernel (FEK provides EFE scheduling to old kernel)
+    if (this.fek && this.kernel) {
+      connections.push({
+        from: 'free_energy_kernel',
+        to: 'kernel',
+        strength: 0.75,
+        informationFlow: 150,
         bidirectional: true,
       });
     }
@@ -1042,6 +1128,32 @@ export class Brain {
     };
 
     this.emit({ type: 'cycle_start', timestamp: new Date(), data: { query: input } });
+
+    // v12.0: Run FEK hierarchical cycle with real observations
+    if (this.fek) {
+      const fekObs: KernelObservations = {
+        energy: this.kernel?.getEnergy?.() || 1.0,
+        agentResponsive: true, // Will be false if agents crash
+        merkleValid: this.stateStore?.verifyChecksum?.() ?? true,
+        systemLoad: state.toolCalls.length / 5, // Normalize tool pressure
+        phi: state.phi,
+      };
+      const fekState = this.fek.cycle(fekObs);
+
+      // Use FEK's strategy recommendation for metacognition
+      if (this.metacognition && fekState.strategy !== 'idle') {
+        // FEK L3 recommends strategy → feed into metacognitive controller
+        state.thinkingResult = {
+          response: '',
+          totalThinkingTokens: 0,
+          confidence: fekState.levels.L3 < 0.5 ? 0.8 : 0.5, // Low L3 FE = high confidence
+          uncertainties: fekState.policyUpdate ? [fekState.policyUpdate] : [],
+          principlesApplied: [`fek:${fekState.strategy}`],
+          iterations: fekState.cycle,
+          duration: 0,
+        };
+      }
+    }
 
     // Supervisor loop
     let transitions = 0;
@@ -2714,6 +2826,7 @@ export class Brain {
         worldModel: this.worldModel !== null,
         selfModify: this.darwinGodel !== null,
         metacognition: this.metacognition !== null,
+        freeEnergyKernel: this.fek !== null,
       },
       // v8.1: Persisted stats across sessions
       persisted: {

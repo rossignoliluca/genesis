@@ -1124,3 +1124,25 @@ export {
   INV_007_BUDGET,
   INV_008_WORLD_MODEL,
 } from './invariants.js';
+
+// ============================================================================
+// Re-export Free Energy Kernel (v12.0)
+// ============================================================================
+
+export {
+  FreeEnergyKernel,
+  createFreeEnergyKernel,
+  getFreeEnergyKernel,
+  resetFreeEnergyKernel,
+  type KernelMode,
+  type KernelLevel,
+  type MarkovBlanket,
+  type PredictionError,
+  type SupervisionNode,
+  type FEKTask,
+  type FEKState,
+  type FEKStatus,
+  type KernelObservations,
+  type LevelFreeEnergy,
+  type AllostaticSetpoint,
+} from './free-energy-kernel.js';

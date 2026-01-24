@@ -60,6 +60,14 @@ export {
   type ToolSelectionResult,
 } from './efe-tool-selector.js';
 
+// Export Consciousness Bridge (v11.5: φ-gated actions + attention-driven tools + autopoiesis)
+export {
+  ConsciousnessBridge,
+  createConsciousnessBridge,
+  type ConsciousBridgeConfig,
+  type ConsciousnessState as BridgeConsciousnessState,
+} from './consciousness-bridge.js';
+
 // Export integration with Kernel/Daemon
 export {
   integrateActiveInference,

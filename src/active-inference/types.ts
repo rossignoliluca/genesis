@@ -127,7 +127,12 @@ export type ActionType =
   | 'econ.activate'   // Activate a revenue-generating service
   | 'econ.promote'    // Promote services to increase revenue
   // v10.0 - Meta-Improvement
-  | 'improve.self';   // High-level self-improvement action
+  | 'improve.self'    // High-level self-improvement action
+  // v10.8 - Autonomous Revenue (opportunity discovery & execution)
+  | 'opportunity.scan'     // Scan web for revenue opportunities
+  | 'opportunity.evaluate' // Evaluate feasibility/risk/reward of opportunity
+  | 'opportunity.build'    // Build & deploy the opportunity (code/content/service)
+  | 'opportunity.monetize';// Wire payments and go live
 
 export const ACTIONS: ActionType[] = [
   'sense.mcp',
@@ -165,6 +170,11 @@ export const ACTIONS: ActionType[] = [
   'econ.promote',
   // v10.0 - Meta-Improvement
   'improve.self',
+  // v10.8 - Autonomous Revenue
+  'opportunity.scan',
+  'opportunity.evaluate',
+  'opportunity.build',
+  'opportunity.monetize',
 ];
 
 export const ACTION_COUNT = ACTIONS.length;

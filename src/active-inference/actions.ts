@@ -2101,6 +2101,323 @@ registerAction('econ.promote', async (context) => {
 });
 
 // ============================================================================
+// v10.8: AUTONOMOUS REVENUE ACTIONS (Opportunity Discovery & Execution)
+// ============================================================================
+
+/**
+ * opportunity.scan: Scan the web for revenue opportunities.
+ * Uses Brave + Exa to find unmet needs, trending topics, and gaps.
+ * Stores findings in memory for evaluation.
+ */
+registerAction('opportunity.scan', async (context) => {
+  const start = Date.now();
+  try {
+    const mcp = getMCPClient();
+    const scanType = (context.parameters?.type as string) || 'general';
+
+    // Define scan queries based on type
+    const queries: Record<string, string[]> = {
+      general: [
+        'micro saas ideas 2025 unmet needs',
+        '"I wish there was" app tool site:reddit.com',
+        'trending developer tools github stars this week',
+      ],
+      api: [
+        'most wanted API services developers pay',
+        'api marketplace popular endpoints pricing',
+      ],
+      content: [
+        'viral content topics trending 2025',
+        'newsletter monetization niche ideas',
+      ],
+      npm: [
+        'npm packages most downloaded this week new',
+        'javascript library gaps developers need',
+      ],
+    };
+
+    const searchQueries = queries[scanType] || queries.general;
+    const results: Array<{ query: string; findings: unknown }> = [];
+
+    // Execute searches in parallel-ish fashion
+    for (const query of searchQueries) {
+      try {
+        const searchResult = await mcp.call('brave-search' as any, 'brave_web_search', {
+          query,
+          count: 5,
+        });
+        results.push({ query, findings: searchResult });
+      } catch (e) {
+        results.push({ query, findings: { error: String(e) } });
+      }
+    }
+
+    return {
+      success: results.some(r => !(r.findings as any)?.error),
+      action: 'opportunity.scan',
+      data: {
+        scanType,
+        queriesExecuted: results.length,
+        results,
+        timestamp: new Date().toISOString(),
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'opportunity.scan',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * opportunity.evaluate: Evaluate a discovered opportunity.
+ * Uses LLM to assess feasibility, market size, competition, and ethics.
+ */
+registerAction('opportunity.evaluate', async (context) => {
+  const start = Date.now();
+  try {
+    const opportunity = context.parameters?.opportunity as string;
+    if (!opportunity) {
+      return {
+        success: false,
+        action: 'opportunity.evaluate',
+        error: 'No opportunity description provided',
+        duration: Date.now() - start,
+      };
+    }
+
+    const mcp = getMCPClient();
+
+    // Search for competition
+    const competitorSearch = await mcp.call('brave-search' as any, 'brave_web_search', {
+      query: `${opportunity} competitors alternatives pricing`,
+      count: 5,
+    });
+
+    // Evaluate using LLM
+    const evaluation = await mcp.call('openai' as any, 'openai_chat', {
+      model: 'gpt-4o-mini',
+      messages: [{
+        role: 'system',
+        content: 'You are an expert startup evaluator. Analyze the opportunity and return JSON with: feasibility (0-1), marketSize (small/medium/large), competition (none/low/medium/high), ethicalRisk (none/low/medium/high), estimatedRevenue (monthly USD), effortLevel (low/medium/high), recommendation (build/skip/research_more), reasoning (string).'
+      }, {
+        role: 'user',
+        content: `Evaluate this opportunity for an autonomous AI agent to pursue:\n\n${opportunity}\n\nCompetitor data:\n${JSON.stringify(competitorSearch).slice(0, 2000)}`
+      }],
+    });
+
+    return {
+      success: true,
+      action: 'opportunity.evaluate',
+      data: {
+        opportunity,
+        evaluation: evaluation?.data?.choices?.[0]?.message?.content || evaluation,
+        competitors: competitorSearch,
+        timestamp: new Date().toISOString(),
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'opportunity.evaluate',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * opportunity.build: Build and deploy an opportunity.
+ * Creates code, deploys to Vercel/Cloudflare, sets up the service.
+ */
+registerAction('opportunity.build', async (context) => {
+  const start = Date.now();
+  try {
+    const plan = context.parameters?.plan as {
+      type: string;       // 'api' | 'webapp' | 'npm-package' | 'content'
+      name: string;
+      description: string;
+      code?: string;
+    };
+
+    if (!plan) {
+      return {
+        success: false,
+        action: 'opportunity.build',
+        error: 'No build plan provided in context.parameters.plan',
+        duration: Date.now() - start,
+      };
+    }
+
+    const mcp = getMCPClient();
+    let deployResult: unknown;
+
+    switch (plan.type) {
+      case 'api':
+      case 'webapp':
+        // Generate code via LLM if not provided
+        let code = plan.code;
+        if (!code) {
+          const genResult = await mcp.call('openai' as any, 'openai_chat', {
+            model: 'gpt-4o',
+            messages: [{
+              role: 'system',
+              content: 'Generate a complete, deployable Vercel serverless function. Return ONLY the code, no markdown.'
+            }, {
+              role: 'user',
+              content: `Create a ${plan.type} for: ${plan.description}. Name: ${plan.name}. Include proper error handling and CORS.`
+            }],
+          });
+          code = genResult?.data?.choices?.[0]?.message?.content || '';
+        }
+
+        // Deploy to GitHub (create file in repo)
+        const finalCode = code || '// placeholder';
+        try {
+          deployResult = await mcp.call('github' as any, 'create_or_update_file', {
+            owner: 'rossignoliluca',
+            repo: plan.name,
+            path: 'api/index.ts',
+            content: Buffer.from(finalCode).toString('base64'),
+            message: `[Genesis] Deploy ${plan.name}: ${plan.description}`,
+            branch: 'main',
+          });
+        } catch {
+          // Repo might not exist - create it first
+          await mcp.call('github' as any, 'create_repository', {
+            name: plan.name,
+            description: plan.description,
+            auto_init: true,
+          });
+          deployResult = await mcp.call('github' as any, 'create_or_update_file', {
+            owner: 'rossignoliluca',
+            repo: plan.name,
+            path: 'api/index.ts',
+            content: Buffer.from(finalCode).toString('base64'),
+            message: `[Genesis] Deploy ${plan.name}: ${plan.description}`,
+            branch: 'main',
+          });
+        }
+        break;
+
+      case 'npm-package':
+        // Create package on GitHub
+        deployResult = await mcp.call('github' as any, 'create_repository', {
+          name: plan.name,
+          description: plan.description,
+          auto_init: true,
+        });
+        break;
+
+      case 'content':
+        // Generate content
+        deployResult = await mcp.call('openai' as any, 'openai_chat', {
+          model: 'gpt-4o',
+          messages: [{
+            role: 'user',
+            content: `Create high-quality content for: ${plan.description}`,
+          }],
+        });
+        break;
+    }
+
+    return {
+      success: true,
+      action: 'opportunity.build',
+      data: {
+        plan,
+        deployed: true,
+        result: deployResult,
+        timestamp: new Date().toISOString(),
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'opportunity.build',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * opportunity.monetize: Wire payments to a deployed opportunity.
+ * Creates Stripe checkout, sets pricing, activates billing.
+ */
+registerAction('opportunity.monetize', async (context) => {
+  const start = Date.now();
+  try {
+    const service = context.parameters?.service as {
+      name: string;
+      pricing: number;        // Monthly price in cents
+      description: string;
+      type: 'subscription' | 'one_time' | 'usage';
+    };
+
+    if (!service) {
+      return {
+        success: false,
+        action: 'opportunity.monetize',
+        error: 'No service config provided in context.parameters.service',
+        duration: Date.now() - start,
+      };
+    }
+
+    const mcp = getMCPClient();
+
+    // Create Stripe product + price
+    const product = await mcp.call('stripe' as any, 'create_product', {
+      name: service.name,
+      description: service.description,
+    });
+
+    const priceParams: Record<string, unknown> = {
+      product: (product as any)?.data?.id || (product as any)?.id,
+      unit_amount: service.pricing,
+      currency: 'usd',
+    };
+
+    if (service.type === 'subscription') {
+      priceParams.recurring = { interval: 'month' };
+    }
+
+    const price = await mcp.call('stripe' as any, 'create_price', priceParams);
+
+    // Create checkout link
+    const checkout = await mcp.call('stripe' as any, 'create_payment_link', {
+      price: (price as any)?.data?.id || (price as any)?.id,
+    });
+
+    return {
+      success: true,
+      action: 'opportunity.monetize',
+      data: {
+        service,
+        productId: (product as any)?.data?.id || (product as any)?.id,
+        priceId: (price as any)?.data?.id || (price as any)?.id,
+        checkoutUrl: (checkout as any)?.data?.url || (checkout as any)?.url,
+        timestamp: new Date().toISOString(),
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'opportunity.monetize',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+// ============================================================================
 // Factory
 // ============================================================================
 

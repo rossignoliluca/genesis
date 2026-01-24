@@ -123,6 +123,11 @@ const AI_TO_WM_ACTION: Record<ActionType, WMActionType> = {
   'econ.promote': 'execute',    // Promote services
   // v10.0 - Meta-Improvement
   'improve.self': 'transform',  // Self-improvement action
+  // v10.8 - Autonomous Revenue
+  'opportunity.scan': 'query',      // Scan for opportunities
+  'opportunity.evaluate': 'query',  // Evaluate feasibility
+  'opportunity.build': 'execute',   // Build & deploy
+  'opportunity.monetize': 'execute',// Wire payments
 };
 
 // ============================================================================

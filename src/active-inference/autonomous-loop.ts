@@ -7,8 +7,10 @@
 
 import { ActiveInferenceEngine, createActiveInferenceEngine } from './core.js';
 import { ObservationGatherer, createObservationGatherer } from './observations.js';
-import { ActionExecutorManager, createActionExecutorManager } from './actions.js';
+import { ActionExecutorManager, createActionExecutorManager, ActionResult } from './actions.js';
 import { Observation, Beliefs, ActionType, AIEvent } from './types.js';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // ============================================================================
 // Configuration & Types
@@ -25,6 +27,11 @@ export interface AutonomousLoopConfig {
   stopOnHighSurprise: boolean;
   surpriseThreshold: number;
 
+  // v10.8: Learning & persistence
+  persistModelPath: string;  // Where to save learned matrices
+  persistEveryN: number;     // Save every N cycles (0 = never)
+  loadOnStart: boolean;      // Load saved model on startup
+
   // Logging
   verbose: boolean;
 }
@@ -36,6 +43,9 @@ export const DEFAULT_LOOP_CONFIG: AutonomousLoopConfig = {
   stopOnEnergyCritical: true,
   stopOnHighSurprise: false,
   surpriseThreshold: 10,
+  persistModelPath: '.genesis/learned-model.json',
+  persistEveryN: 10,   // Save every 10 cycles
+  loadOnStart: true,    // Resume learning from previous session
   verbose: false,
 };
 
@@ -103,8 +113,17 @@ export class AutonomousLoop {
 
     const limit = maxCycles ?? this.config.maxCycles;
 
+    // v10.8: Load previously learned model
+    if (this.config.loadOnStart) {
+      this.loadModel();
+    }
+
+    // v10.8: Initialize real observation sources
+    this.observations.initRealSources();
+
     if (this.config.verbose) {
       console.log(`[AI Loop] Starting autonomous loop (max cycles: ${limit || 'unlimited'})`);
+      console.log(`[AI Loop] Model persistence: ${this.config.persistModelPath}`);
     }
 
     try {
@@ -136,6 +155,12 @@ export class AutonomousLoop {
     }
 
     this.running = false;
+
+    // v10.8: Save learned model on shutdown
+    if (this.config.persistEveryN > 0) {
+      this.saveModel();
+    }
+
     const stats = this.getStats();
 
     // Notify stop handlers
@@ -192,10 +217,26 @@ export class AutonomousLoop {
       console.log(`[AI Loop] Cycle ${this.cycleCount} - Result:`, result.success ? 'success' : result.error);
     }
 
-    // 4. Check stopping conditions
+    // 4. v10.8: Feed action outcome back to observations
+    this.observations.recordToolResult(result.success, result.duration);
+
+    // 5. v10.8: Record learning event
+    const surprise = this.engine.getStats().averageSurprise;
+    this.engine.recordLearningEvent(
+      action,
+      surprise,
+      result.success ? 'positive' : 'negative'
+    );
+
+    // 6. v10.8: Persist model periodically
+    if (this.config.persistEveryN > 0 && this.cycleCount % this.config.persistEveryN === 0) {
+      this.saveModel();
+    }
+
+    // 7. Check stopping conditions
     this.checkStoppingConditions(obs);
 
-    // 5. Notify cycle handlers
+    // 8. Notify cycle handlers
     for (const handler of this.onCycleHandlers) {
       handler(this.cycleCount, action, beliefs);
     }
@@ -272,6 +313,55 @@ export class AutonomousLoop {
       const idx = this.onStopHandlers.indexOf(handler);
       if (idx >= 0) this.onStopHandlers.splice(idx, 1);
     };
+  }
+
+  // ============================================================================
+  // v10.8: Model Persistence (save/load learned matrices)
+  // ============================================================================
+
+  /**
+   * Save learned model to disk.
+   * Persists A/B matrices, beliefs, and action counts between sessions.
+   */
+  private saveModel(): void {
+    try {
+      const modelData = this.engine.exportLearnedModel();
+      const modelPath = path.resolve(this.config.persistModelPath);
+      const dir = path.dirname(modelPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(modelPath, JSON.stringify(modelData, null, 2));
+      if (this.config.verbose) {
+        console.log(`[AI Loop] Model saved to ${modelPath}`);
+      }
+    } catch (error) {
+      if (this.config.verbose) {
+        console.error(`[AI Loop] Failed to save model:`, error);
+      }
+    }
+  }
+
+  /**
+   * Load previously learned model from disk.
+   * Resumes learning from where it left off.
+   */
+  private loadModel(): void {
+    try {
+      const modelPath = path.resolve(this.config.persistModelPath);
+      if (fs.existsSync(modelPath)) {
+        const data = JSON.parse(fs.readFileSync(modelPath, 'utf-8'));
+        this.engine.importLearnedModel(data);
+        if (this.config.verbose) {
+          console.log(`[AI Loop] Model loaded from ${modelPath}`);
+          console.log(`[AI Loop] Resuming with ${data.totalActions || 0} prior actions`);
+        }
+      }
+    } catch (error) {
+      if (this.config.verbose) {
+        console.error(`[AI Loop] Failed to load model:`, error);
+      }
+    }
   }
 
   // ============================================================================

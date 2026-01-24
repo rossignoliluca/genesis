@@ -281,9 +281,22 @@ function createDefaultCMatrix(): CMatrix {
     coherence: [-4, 0, 2],
 
     // Strongly prefer task completion
+    // v10.8: Balanced with economic goals
     task: [-2, 0, 1, 5],
   };
 }
+
+/**
+ * v10.8: Economic preferences for autonomous revenue.
+ * Separate from main C matrix to avoid breaking existing EFE computation.
+ * Used by the autonomous loop to bias action selection toward revenue actions
+ * when economic health is low.
+ */
+export const ECONOMIC_PREFERENCES = {
+  // economic observation: [critical, low, stable, growing]
+  // Strongly prefer growing revenue, penalize critical
+  economic: [-8, -3, 1, 6],
+} as const;
 
 function createDefaultDMatrix(): DMatrix {
   // D matrix: Prior beliefs about initial state
@@ -327,6 +340,15 @@ export class ActiveInferenceEngine {
     actionsTaken: new Map<ActionType, number>(),
   };
 
+  // Learning state: track previous step for B matrix updates
+  private previousState: Beliefs | null = null;
+  private previousAction: number = -1;
+  private previousObservation: Observation | null = null;
+
+  // Dirichlet concentration parameters (proper Bayesian learning)
+  private aDirichlet: { [key: string]: number[][] } = {};
+  private bDirichlet: { [key: string]: number[][][] } = {};
+
   // 🧬 Evolution: Learning history for meta-learning
   private learningHistory: Array<{
     timestamp: number;
@@ -353,6 +375,43 @@ export class ActiveInferenceEngine {
       worldState: [...this.D.worldState],
       coupling: [...this.D.coupling],
       goalProgress: [...this.D.goalProgress],
+    };
+
+    // Initialize Dirichlet concentration parameters from A/B matrices
+    // These accumulate evidence over time (proper Bayesian parameter learning)
+    this.initDirichletParams();
+  }
+
+  /**
+   * Initialize Dirichlet concentration parameters from current matrices.
+   * Concentration = initial_matrix * prior_scale (higher = more confident prior)
+   */
+  private initDirichletParams(): void {
+    const priorScale = 10; // How much to trust initial priors
+
+    // A Dirichlet: one per observation modality
+    this.aDirichlet = {
+      energy: this.A.energy.map(row => row.map(p => p * priorScale)),
+      phi: this.A.phi.map(row => row.map(p => p * priorScale)),
+      tool: this.A.tool.map(row => row.map(p => p * priorScale)),
+      coherence: this.A.coherence.map(row => row.map(p => p * priorScale)),
+      task: this.A.task.map(row => row.map(p => p * priorScale)),
+    };
+
+    // B Dirichlet: one per state factor
+    this.bDirichlet = {
+      viability: this.B.viability.map(next =>
+        next.map(curr => curr.map(act => act * priorScale))
+      ),
+      worldState: this.B.worldState.map(next =>
+        next.map(curr => curr.map(act => act * priorScale))
+      ),
+      coupling: this.B.coupling.map(next =>
+        next.map(curr => curr.map(act => act * priorScale))
+      ),
+      goalProgress: this.B.goalProgress.map(next =>
+        next.map(curr => curr.map(act => act * priorScale))
+      ),
     };
   }
 
@@ -489,19 +548,163 @@ export class ActiveInferenceEngine {
   }
 
   /**
-   * Full inference cycle: observe → infer → act
+   * Full inference cycle: observe → infer → act → LEARN
+   * v10.8: Now calls updateA/updateB after each step (online learning)
    */
   step(observation: Observation): ActionType {
-    // 1. Update beliefs
+    // 0. LEARN from previous step (if we have a previous state)
+    if (this.previousState && this.previousAction >= 0 && this.previousObservation) {
+      this.learn(this.previousObservation, observation, this.previousState, this.previousAction);
+    }
+
+    // 1. Save current state BEFORE update (for next learning step)
+    const preUpdateBeliefs: Beliefs = {
+      viability: [...this.beliefs.viability],
+      worldState: [...this.beliefs.worldState],
+      coupling: [...this.beliefs.coupling],
+      goalProgress: [...this.beliefs.goalProgress],
+    };
+
+    // 2. Update beliefs
     this.inferStates(observation);
 
-    // 2. Infer policy
+    // 3. Infer policy
     const policy = this.inferPolicies();
 
-    // 3. Sample action
+    // 4. Sample action
     const action = this.sampleAction(policy);
 
+    // 5. Store for next learning step
+    this.previousState = preUpdateBeliefs;
+    this.previousAction = ACTIONS.indexOf(action);
+    this.previousObservation = observation;
+
     return action;
+  }
+
+  /**
+   * Online learning: update A and B matrices from experience.
+   * Called automatically after each step.
+   *
+   * A update: "I observed O when I believed I was in state S"
+   *   → strengthen A[observation][believed_state]
+   *
+   * B update: "I did action A in state S and ended up in state S'"
+   *   → strengthen B[new_state][old_state][action]
+   */
+  private learn(
+    prevObs: Observation,
+    currentObs: Observation,
+    prevBeliefs: Beliefs,
+    actionIdx: number
+  ): void {
+    const lr = this.config.learningRateA;
+
+    // === Update A matrix (likelihood mapping) ===
+    // For each modality, update the row corresponding to the observation
+    // weighted by current beliefs about the state
+
+    // Energy observation → viability state
+    for (let s = 0; s < HIDDEN_STATE_DIMS.viability; s++) {
+      this.aDirichlet.energy[currentObs.energy][s] += lr * this.beliefs.viability[s];
+    }
+    // Recompute A.energy from Dirichlet
+    for (let o = 0; o < 5; o++) {
+      const row = this.aDirichlet.energy[o];
+      const sum = row.reduce((a, b) => a + b, 0);
+      this.A.energy[o] = row.map(v => v / sum);
+    }
+
+    // Phi observation → worldState
+    for (let s = 0; s < HIDDEN_STATE_DIMS.worldState; s++) {
+      this.aDirichlet.phi[currentObs.phi][s] += lr * this.beliefs.worldState[s];
+    }
+    for (let o = 0; o < 4; o++) {
+      const row = this.aDirichlet.phi[o];
+      const sum = row.reduce((a, b) => a + b, 0);
+      this.A.phi[o] = row.map(v => v / sum);
+    }
+
+    // Tool observation → coupling
+    for (let s = 0; s < HIDDEN_STATE_DIMS.coupling; s++) {
+      this.aDirichlet.tool[currentObs.tool][s] += lr * this.beliefs.coupling[s];
+    }
+    for (let o = 0; o < 3; o++) {
+      const row = this.aDirichlet.tool[o];
+      const sum = row.reduce((a, b) => a + b, 0);
+      this.A.tool[o] = row.map(v => v / sum);
+    }
+
+    // Task observation → goalProgress
+    for (let s = 0; s < HIDDEN_STATE_DIMS.goalProgress; s++) {
+      this.aDirichlet.task[currentObs.task][s] += lr * this.beliefs.goalProgress[s];
+    }
+    for (let o = 0; o < 4; o++) {
+      const row = this.aDirichlet.task[o];
+      const sum = row.reduce((a, b) => a + b, 0);
+      this.A.task[o] = row.map(v => v / sum);
+    }
+
+    // === Update B matrix (transition model) ===
+    // "I was in state S, did action A, now I'm in state S'"
+    const lrB = this.config.learningRateB;
+
+    // Viability transitions
+    for (let next = 0; next < HIDDEN_STATE_DIMS.viability; next++) {
+      for (let prev = 0; prev < HIDDEN_STATE_DIMS.viability; prev++) {
+        this.bDirichlet.viability[next][prev][actionIdx] +=
+          lrB * prevBeliefs.viability[prev] * this.beliefs.viability[next];
+      }
+    }
+    this.recomputeB('viability', HIDDEN_STATE_DIMS.viability, actionIdx);
+
+    // WorldState transitions
+    for (let next = 0; next < HIDDEN_STATE_DIMS.worldState; next++) {
+      for (let prev = 0; prev < HIDDEN_STATE_DIMS.worldState; prev++) {
+        this.bDirichlet.worldState[next][prev][actionIdx] +=
+          lrB * prevBeliefs.worldState[prev] * this.beliefs.worldState[next];
+      }
+    }
+    this.recomputeB('worldState', HIDDEN_STATE_DIMS.worldState, actionIdx);
+
+    // Coupling transitions
+    for (let next = 0; next < HIDDEN_STATE_DIMS.coupling; next++) {
+      for (let prev = 0; prev < HIDDEN_STATE_DIMS.coupling; prev++) {
+        this.bDirichlet.coupling[next][prev][actionIdx] +=
+          lrB * prevBeliefs.coupling[prev] * this.beliefs.coupling[next];
+      }
+    }
+    this.recomputeB('coupling', HIDDEN_STATE_DIMS.coupling, actionIdx);
+
+    // GoalProgress transitions
+    for (let next = 0; next < HIDDEN_STATE_DIMS.goalProgress; next++) {
+      for (let prev = 0; prev < HIDDEN_STATE_DIMS.goalProgress; prev++) {
+        this.bDirichlet.goalProgress[next][prev][actionIdx] +=
+          lrB * prevBeliefs.goalProgress[prev] * this.beliefs.goalProgress[next];
+      }
+    }
+    this.recomputeB('goalProgress', HIDDEN_STATE_DIMS.goalProgress, actionIdx);
+
+    this.emit({
+      type: 'beliefs_updated',
+      timestamp: new Date(),
+      data: { learning: true, actionIdx, prevObs, currentObs },
+    });
+  }
+
+  /**
+   * Recompute B matrix column from Dirichlet parameters
+   */
+  private recomputeB(factor: keyof BMatrix, dim: number, actionIdx: number): void {
+    for (let prev = 0; prev < dim; prev++) {
+      const col = (this.bDirichlet as any)[factor].map((next: number[][]) => next[prev][actionIdx]);
+      const sum = col.reduce((a: number, b: number) => a + b, 0);
+      if (sum > 0) {
+        for (let next = 0; next < dim; next++) {
+          (this.B[factor] as number[][][])[next][prev][actionIdx] = col[next] / sum;
+        }
+      }
+    }
   }
 
   // ============================================================================
@@ -845,6 +1048,34 @@ export class ActiveInferenceEngine {
       coupling: ['none', 'weak', 'medium', 'strong', 'synced'][argmax(this.beliefs.coupling)],
       goalProgress: ['blocked', 'slow', 'onTrack', 'achieved'][argmax(this.beliefs.goalProgress)],
     };
+  }
+
+  /**
+   * Export learned matrices for persistence between sessions.
+   * Call this before shutdown to save learning progress.
+   */
+  exportLearnedModel(): { A: AMatrix; B: BMatrix; beliefs: Beliefs; actionCounts: number[]; totalActions: number } {
+    return {
+      A: JSON.parse(JSON.stringify(this.A)),
+      B: JSON.parse(JSON.stringify(this.B)),
+      beliefs: JSON.parse(JSON.stringify(this.beliefs)),
+      actionCounts: [...this.actionCounts],
+      totalActions: this.totalActions,
+    };
+  }
+
+  /**
+   * Import previously learned matrices.
+   * Call at startup to resume from previous learning.
+   */
+  importLearnedModel(model: { A?: AMatrix; B?: BMatrix; beliefs?: Beliefs; actionCounts?: number[]; totalActions?: number }): void {
+    if (model.A) this.A = model.A;
+    if (model.B) this.B = model.B;
+    if (model.beliefs) this.beliefs = model.beliefs;
+    if (model.actionCounts) this.actionCounts = model.actionCounts;
+    if (model.totalActions) this.totalActions = model.totalActions;
+    // Reinit Dirichlet from imported matrices
+    this.initDirichletParams();
   }
 
   // ============================================================================

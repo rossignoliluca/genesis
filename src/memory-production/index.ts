@@ -189,10 +189,15 @@ export class VectorMemory {
     }
   }
 
+  /**
+   * Store a memory entry using Pinecone's integrated inference.
+   * v10.8: Uses upsert-records with text (Pinecone handles embedding internally).
+   * No need for pre-computed embeddings - simpler and more reliable.
+   */
   async store(entry: {
     id: string;
     content: string;
-    embedding: number[];
+    embedding?: number[]; // Optional: ignored in integrated inference mode
     metadata?: Record<string, unknown>;
   }): Promise<{ success: boolean; error?: string }> {
     if (!this.connected) {
@@ -201,25 +206,48 @@ export class VectorMemory {
 
     try {
       const client = getMCPClient();
-      await client.call('pinecone' as MCPServerName, 'upsert_vectors', {
+      // v10.8: Use upsert-records with text for integrated inference
+      await client.call('pinecone' as MCPServerName, 'upsert-records', {
         indexName: this.indexName,
-        vectors: [{
-          id: entry.id,
-          values: entry.embedding,
-          metadata: {
-            content: entry.content,
-            ...entry.metadata,
-            timestamp: new Date().toISOString(),
-          },
+        records: [{
+          _id: entry.id,
+          text: entry.content,
+          ...entry.metadata,
+          timestamp: new Date().toISOString(),
         }],
       });
       return { success: true };
     } catch (error) {
+      // Fallback: try legacy upsert_vectors if upsert-records not supported
+      if (entry.embedding) {
+        try {
+          const client = getMCPClient();
+          await client.call('pinecone' as MCPServerName, 'upsert_vectors', {
+            indexName: this.indexName,
+            vectors: [{
+              id: entry.id,
+              values: entry.embedding,
+              metadata: {
+                content: entry.content,
+                ...entry.metadata,
+                timestamp: new Date().toISOString(),
+              },
+            }],
+          });
+          return { success: true };
+        } catch (fallbackError) {
+          return { success: false, error: String(fallbackError) };
+        }
+      }
       return { success: false, error: String(error) };
     }
   }
 
-  async search(queryEmbedding: number[], options?: {
+  /**
+   * Search memory using Pinecone's integrated inference.
+   * v10.8: Uses search-records with text query (no pre-computed embeddings needed).
+   */
+  async search(query: string | number[], options?: {
     topK?: number;
     filter?: Record<string, unknown>;
     includeMetadata?: boolean;
@@ -228,13 +256,25 @@ export class VectorMemory {
 
     try {
       const client = getMCPClient();
-      const result = await client.call('pinecone' as MCPServerName, 'query_vectors', {
-        indexName: this.indexName,
-        vector: queryEmbedding,
-        topK: options?.topK || 10,
-        filter: options?.filter,
-        includeMetadata: options?.includeMetadata ?? true,
-      });
+      let result: any;
+
+      if (typeof query === 'string') {
+        // v10.8: Use search-records with text query (integrated inference)
+        result = await client.call('pinecone' as MCPServerName, 'search-records', {
+          indexName: this.indexName,
+          query,
+          topK: options?.topK || 10,
+        });
+      } else {
+        // Legacy: vector-based query
+        result = await client.call('pinecone' as MCPServerName, 'query_vectors', {
+          indexName: this.indexName,
+          vector: query,
+          topK: options?.topK || 10,
+          filter: options?.filter,
+          includeMetadata: options?.includeMetadata ?? true,
+        });
+      }
 
       const matches: PineconeMatch[] = result.data?.matches || [];
       return matches.map((match) => ({
@@ -366,15 +406,25 @@ export class KnowledgeGraph {
     }
   }
 
+  /**
+   * Add an edge with temporal properties.
+   * v10.8: All edges now have valid_from (creation time).
+   * Set valid_to to mark facts as expired (temporal knowledge).
+   */
   async addEdge(edge: KnowledgeEdge): Promise<{ success: boolean; error?: string }> {
-    const propsString = edge.properties
-      ? ', ' + Object.entries(edge.properties).map(([k, v]) => `r.${k} = $${k}`).join(', ')
-      : '';
+    const now = new Date().toISOString();
+    const temporalProps = {
+      valid_from: now,
+      ...(edge.properties || {}),
+    };
+    const propsString = Object.entries(temporalProps)
+      .map(([k]) => `r.${k} = $${k}`)
+      .join(', ');
 
     const query = `
       MATCH (a {id: $from}), (b {id: $to})
       MERGE (a)-[r:${edge.type}]->(b)
-      SET r.weight = $weight ${propsString}
+      SET r.weight = $weight, ${propsString}
       RETURN r
     `;
 
@@ -383,11 +433,66 @@ export class KnowledgeGraph {
         from: edge.from,
         to: edge.to,
         weight: edge.weight || 1.0,
-        ...edge.properties,
+        ...temporalProps,
       });
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * v10.8: Expire a relationship (mark as no longer valid).
+   * This preserves history while indicating current state.
+   */
+  async expireEdge(from: string, to: string, type: string): Promise<{ success: boolean }> {
+    const now = new Date().toISOString();
+    const query = `
+      MATCH (a {id: $from})-[r:${type}]->(b {id: $to})
+      WHERE r.valid_to IS NULL
+      SET r.valid_to = $now
+      RETURN r
+    `;
+    try {
+      await this.runQuery(query, { from, to, now });
+      return { success: true };
+    } catch {
+      return { success: false };
+    }
+  }
+
+  /**
+   * v10.8: Find only currently valid relationships.
+   * Filters out expired edges (valid_to IS NOT NULL).
+   */
+  async findCurrentRelated(nodeId: string, options?: {
+    maxHops?: number;
+    relationTypes?: string[];
+    limit?: number;
+  }): Promise<KnowledgeNode[]> {
+    const hops = options?.maxHops || 2;
+    const limit = options?.limit || 20;
+    const relationFilter = options?.relationTypes?.length
+      ? `:${options.relationTypes.join('|')}`
+      : '';
+
+    const query = `
+      MATCH (n {id: $nodeId})-[r${relationFilter}*1..${hops}]-(related)
+      WHERE ALL(rel IN r WHERE rel.valid_to IS NULL)
+      RETURN DISTINCT related
+      LIMIT $limit
+    `;
+
+    try {
+      const results = await this.runQuery(query, { nodeId, limit }) as Neo4jRelatedResult[];
+      return results.map((r) => ({
+        id: r.related.id,
+        type: r.related.labels?.[0] || 'Unknown',
+        name: r.related.name,
+        properties: r.related,
+      }));
+    } catch {
+      return [];
     }
   }
 

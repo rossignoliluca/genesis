@@ -27,12 +27,13 @@
  */
 
 import { getEconomicFiber, type GlobalSection } from './fiber.js';
-import { getNESSMonitor, type NESSState, type NESSObservation } from './ness.js';
+import { getNESSMonitor, type NESSState } from './ness.js';
 import { getCapitalAllocator, type ActivityProfile, type AllocationState } from './capital-allocator.js';
-import { getKeeperExecutor, type KeeperStats } from './generators/keeper.js';
-import { getBountyHunter, type BountyHunterStats } from './generators/bounty-hunter.js';
-import { getMCPMarketplace, type MarketplaceStats } from './infrastructure/mcp-marketplace.js';
-import { getX402Facilitator, type FacilitatorStats } from './infrastructure/x402-facilitator.js';
+import { getAutonomousNESS, getEconomicEFE, getEconomicContraction } from './economic-intelligence.js';
+import { getKeeperExecutor } from './generators/keeper.js';
+import { getBountyHunter } from './generators/bounty-hunter.js';
+import { getMCPMarketplace } from './infrastructure/mcp-marketplace.js';
+import { getX402Facilitator } from './infrastructure/x402-facilitator.js';
 import { getContentEngine } from './generators/content-engine.js';
 import { getSmartContractAuditor } from './generators/auditor.js';
 import { getMemoryService } from './infrastructure/memory-service.js';
@@ -102,6 +103,8 @@ export interface CycleResult {
   costsIncurred: number;
   nessDeviation: number;
   phaseChanged: boolean;
+  contractionStable: boolean;
+  dampingApplied: number;
   errors: string[];
 }
 
@@ -418,22 +421,33 @@ export class AutonomousController {
       costsIncurred: 0,
       nessDeviation: 0,
       phaseChanged: false,
+      contractionStable: true,
+      dampingApplied: 1.0,
       errors: [],
     };
 
     try {
       // 1. OBSERVE: Gather current state
       const fiber = getEconomicFiber();
-      const global = fiber.getGlobalSection();
-
-      // 2. ALLOCATE: Rebalance portfolio
       const allocator = getCapitalAllocator();
-      let allocation: AllocationState | undefined;
+      const contraction = getEconomicContraction();
+
+      // 2. CONTRACTION CHECK: Feed damping from previous cycle's stability
+      const currentAllocations = this.getAllocationVector(allocator);
+      const currentROIs = this.getROIVector(allocator);
+      const contractionState = contraction.observe(currentAllocations, currentROIs);
+      result.contractionStable = contractionState.stable;
+      result.dampingApplied = contractionState.dampingRecommended;
+
+      // Apply contraction-informed damping to allocator
+      allocator.setDamping(contractionState.dampingRecommended);
+
+      // 3. ALLOCATE: Leapfrog step with stability-adjusted damping
       if (allocator.needsRebalance()) {
-        allocation = allocator.step();
+        allocator.step();
       }
 
-      // 3. EXECUTE: Run activities in priority order
+      // 4. EXECUTE: EFE-based action selection (Active Inference)
       const executed = await this.executeActivities();
       result.activitiesExecuted = executed.map(e => e.id);
       result.revenueGenerated = executed.reduce((s, e) => s + e.revenue, 0);
@@ -442,12 +456,28 @@ export class AutonomousController {
       this.totalRevenue += result.revenueGenerated;
       this.totalCosts += result.costsIncurred;
 
-      // 4. MONITOR: Update NESS
-      const ness = getNESSMonitor();
-      const nessState = ness.observe(this.buildNESSObservation());
+      // 5. NESS MONITOR: Activity-based steady state (not customer-based)
+      const autonomousNESS = getAutonomousNESS({
+        targetMonthlyRevenue: this.config.nessTarget.monthlyRevenue,
+        targetMonthlyCosts: this.config.nessTarget.monthlyCosts,
+        activityCount: allocator.getActivities().filter(a => a.active).length,
+      });
+      const nessState = autonomousNESS.observe({
+        monthlyRevenue: this.estimateMonthlyRevenue(),
+        monthlyCosts: this.estimateMonthlyCosts(),
+        roiPerActivity: currentROIs,
+        allocations: currentAllocations,
+      });
       result.nessDeviation = nessState.deviation;
 
-      // 5. PHASE CHECK: Upgrade if threshold met
+      // 6. RECORD EFE RESULTS: Update intelligence history
+      const efe = getEconomicEFE();
+      for (const exec of executed) {
+        const roi = exec.cost > 0 ? exec.revenue / exec.cost : exec.revenue > 0 ? 10 : 0;
+        efe.recordExecution(exec.id, roi);
+      }
+
+      // 7. PHASE CHECK: Upgrade if threshold met
       const monthlyRevenue = this.estimateMonthlyRevenue();
       const newPhase = this.checkPhaseTransition(monthlyRevenue);
       if (newPhase !== this.currentPhase) {
@@ -456,8 +486,13 @@ export class AutonomousController {
         result.phaseChanged = true;
       }
 
-      // 6. MAINTENANCE: Process escrows, check bounty payouts
+      // 8. MAINTENANCE: Process escrows, check bounty payouts
       await this.maintenance();
+
+      // Log contraction warnings
+      if (contractionState.warnings.length > 0) {
+        result.errors.push(...contractionState.warnings);
+      }
 
     } catch (error) {
       result.errors.push(String(error));
@@ -494,13 +529,36 @@ export class AutonomousController {
    */
   getState(): ControllerState {
     const fiber = getEconomicFiber();
-    const ness = getNESSMonitor();
     const allocator = getCapitalAllocator();
+    const autonomousNESS = getAutonomousNESS();
 
     const global = fiber.getGlobalSection();
-    const nessState = ness.observe(this.buildNESSObservation());
+    const currentAllocations = this.getAllocationVector(allocator);
+    const currentROIs = this.getROIVector(allocator);
+    const autonomousState = autonomousNESS.observe({
+      monthlyRevenue: this.estimateMonthlyRevenue(),
+      monthlyCosts: this.estimateMonthlyCosts(),
+      roiPerActivity: currentROIs,
+      allocations: currentAllocations,
+    });
+
+    // Map AutonomousNESSState to legacy NESSState interface
+    const balance = this.config.seedCapital + this.totalRevenue - this.totalCosts;
+    const monthlyCosts = this.estimateMonthlyCosts();
+    const runway = monthlyCosts > 0 ? balance / (monthlyCosts / 30) : Infinity;
+    const nessState: NESSState = {
+      deviation: autonomousState.deviation,
+      solenoidalMagnitude: autonomousState.qGammaRatio,
+      dissipativeMagnitude: 1.0 / Math.max(autonomousState.qGammaRatio, 0.01),
+      qGammaRatio: autonomousState.qGammaRatio,
+      convergenceRate: autonomousState.convergenceRate,
+      estimatedCyclesToNESS: autonomousState.estimatedCyclesToNESS,
+      atSteadyState: autonomousState.atSteadyState,
+      runway,
+    };
+
     const allocation = {
-      hamiltonian: { q: [] as number[], p: [] as number[] },
+      hamiltonian: { q: currentAllocations, p: currentAllocations.map(() => 0) },
       allocations: allocator.getAllocations(),
       rois: new Map<string, number>(),
       totalBudget: allocator.getTotalBudget(),
@@ -537,8 +595,15 @@ export class AutonomousController {
    * Check if the system is at NESS (self-sustaining).
    */
   isAtNESS(): boolean {
-    const ness = getNESSMonitor();
-    return ness.observe(this.buildNESSObservation()).atSteadyState;
+    const allocator = getCapitalAllocator();
+    const autonomousNESS = getAutonomousNESS();
+    const state = autonomousNESS.observe({
+      monthlyRevenue: this.estimateMonthlyRevenue(),
+      monthlyCosts: this.estimateMonthlyCosts(),
+      roiPerActivity: this.getROIVector(allocator),
+      allocations: this.getAllocationVector(allocator),
+    });
+    return state.atSteadyState;
   }
 
   /**
@@ -549,6 +614,32 @@ export class AutonomousController {
     return this.totalRevenue / uptimeMonths;
   }
 
+  /**
+   * Get monthly cost estimate (extrapolated from recent data).
+   */
+  private estimateMonthlyCosts(): number {
+    const uptimeMonths = Math.max((Date.now() - this.startedAt) / (30 * 86400000), 0.001);
+    return this.totalCosts / uptimeMonths;
+  }
+
+  /**
+   * Get allocation vector for contraction monitoring.
+   */
+  private getAllocationVector(allocator: ReturnType<typeof getCapitalAllocator>): number[] {
+    const activities = allocator.getActivities().filter(a => a.active);
+    const allocMap = allocator.getAllocations();
+    return activities.map(a => allocMap.get(a.id) ?? 0);
+  }
+
+  /**
+   * Get ROI vector for contraction monitoring.
+   */
+  private getROIVector(allocator: ReturnType<typeof getCapitalAllocator>): number[] {
+    const activities = allocator.getActivities().filter(a => a.active);
+    const fiber = getEconomicFiber();
+    return activities.map(a => fiber.getFiber(a.id)?.roi ?? a.estimatedROI);
+  }
+
   // ============================================================================
   // Private
   // ============================================================================
@@ -556,27 +647,35 @@ export class AutonomousController {
   private async executeActivities(): Promise<{ id: string; revenue: number; cost: number }[]> {
     const results: { id: string; revenue: number; cost: number }[] = [];
     const allocator = getCapitalAllocator();
-    const activities = allocator.getActivities()
-      .filter(a => a.active)
-      .sort((a, b) => {
-        // Priority: tier S > A > B > C > D, then by ROI
-        const tierOrder = { S: 0, A: 1, B: 2, C: 3, D: 4 };
-        const tierDiff = (tierOrder[a.tier] ?? 5) - (tierOrder[b.tier] ?? 5);
-        return tierDiff !== 0 ? tierDiff : b.estimatedROI - a.estimatedROI;
-      });
+    const efe = getEconomicEFE();
 
+    const activeActivities = allocator.getActivities().filter(a => a.active);
+    const allocations = allocator.getAllocations();
+
+    // Score all activities using Expected Free Energy
+    const scores = efe.scoreActivities(activeActivities, allocations);
+
+    // Select activities via Boltzmann sampling (Active Inference)
+    const selected = new Set<string>();
     let executed = 0;
-    for (const activity of activities) {
-      if (executed >= this.config.maxConcurrentActivities) break;
+
+    while (executed < this.config.maxConcurrentActivities && selected.size < activeActivities.length) {
+      const remainingScores = scores.filter(s => !selected.has(s.activityId));
+      if (remainingScores.length === 0) break;
+
+      const activityId = efe.selectAction(remainingScores);
+      if (!activityId || selected.has(activityId)) break;
+
+      selected.add(activityId);
 
       try {
-        const result = await this.executeActivity(activity.id);
+        const result = await this.executeActivity(activityId);
         if (result) {
           results.push(result);
           executed++;
         }
       } catch (error) {
-        this.errors.push(`${activity.id}: ${error}`);
+        this.errors.push(`${activityId}: ${error}`);
       }
     }
 
@@ -784,34 +883,6 @@ export class AutonomousController {
     for (const activityId of phaseConfig.activitiesUnlocked) {
       allocator.setActivityActive(activityId, true);
     }
-  }
-
-  private buildNESSObservation(): NESSObservation {
-    const monthlyRevenue = this.estimateMonthlyRevenue();
-    const uptimeMonths = Math.max((Date.now() - this.startedAt) / (30 * 86400000), 0.001);
-    const monthlyCosts = this.totalCosts / uptimeMonths;
-    const balance = this.config.seedCapital + this.totalRevenue - this.totalCosts;
-
-    return {
-      revenue: monthlyRevenue,
-      costs: monthlyCosts,
-      customers: 0,  // Autonomous: no customers
-      quality: this.computeQuality(),
-      balance,
-    };
-  }
-
-  private computeQuality(): number {
-    // Quality = success rate across all activities
-    const keeper = getKeeperExecutor();
-    const hunter = getBountyHunter();
-    const keeperStats = keeper.getStats();
-    const hunterStats = hunter.getStats();
-
-    const totalOps = keeperStats.totalExecutions + hunterStats.bountiesSubmitted;
-    const successOps = keeperStats.successfulExecutions + hunterStats.bountiesAccepted;
-
-    return totalOps > 0 ? successOps / totalOps : 0.8; // Default to 0.8 before data
   }
 
   private getActivityStatuses(): ActivityStatus[] {

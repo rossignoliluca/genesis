@@ -78,6 +78,10 @@ export interface GenesisStatus {
   selfImprovement: boolean;
   ness: NESSState | null;
   fiber: { netFlow: number; sustainable: boolean } | null;
+  dashboard: { running: boolean; url: string } | null;
+  memorySync: { syncCount: number; isRunning: boolean } | null;
+  sensorimotor: { running: boolean; cycles: number; avgPredictionError: number } | null;
+  calibrationError: number;
   uptime: number;
   cycleCount: number;
 }
@@ -357,6 +361,13 @@ export class Genesis {
           broadcastToDashboard(`consciousness:${event.type}`, event.data);
         });
       }
+
+      // Wire FEK mode changes → dashboard SSE stream
+      if (this.fek) {
+        this.fek.onModeChange((mode, prev) => {
+          broadcastToDashboard('kernel:mode', { mode, prev, cycle: this.cycleCount });
+        });
+      }
     }
 
     if (this.config.memorySync) {
@@ -494,14 +505,17 @@ export class Genesis {
     let confidence: ConfidenceEstimate | null = null;
     let audit: ThoughtAudit | null = null;
 
-    // Step 0: Shift consciousness attention to current input
+    // Step 0: Shift consciousness attention + assess processing depth
+    const currentPhi = this.consciousness?.getSnapshot()?.level?.rawPhi ?? 1.0;
     if (this.consciousness) {
       const domain = this.inferDomain(input);
       this.consciousness.attend(`process:${domain}`, 'internal');
     }
+    // φ-gated processing: when consciousness is low, skip expensive auditing
+    const deepProcessing = currentPhi > 0.2;
 
     // Step 1: Metacognitive pre-check
-    if (this.metacognition) {
+    if (this.metacognition && deepProcessing) {
       const domain = this.inferDomain(input);
       if (this.metacognition.shouldDefer(domain)) {
         // Low competence — still process but flag it
@@ -515,8 +529,8 @@ export class Genesis {
       response = await this.brain.process(input);
     }
 
-    // Step 3: Metacognitive audit
-    if (this.metacognition && this.config.auditResponses && response) {
+    // Step 3: Metacognitive audit (skipped if φ too low)
+    if (this.metacognition && this.config.auditResponses && response && deepProcessing) {
       audit = this.metacognition.auditThought(response);
 
       // Get calibrated confidence
@@ -599,6 +613,14 @@ export class Genesis {
         nessDeviation: this.lastNESSState?.deviation,
         sustainable: this.fiber?.getGlobalSection().sustainable,
       });
+    }
+
+    // Step 7: Feed causal model with outcome data (only in deep processing)
+    if (this.causal && confidence && deepProcessing) {
+      // Each process() cycle is a data point: observation → belief → action → outcome
+      this.causal.setData('observation', [confidence.value]);
+      this.causal.setData('outcome', [confidence.value > this.config.deferThreshold ? 1 : 0]);
+      this.causal.setData('reward', [1 - cost]); // Higher reward = lower cost
     }
 
     // Release attention focus after processing
@@ -828,6 +850,9 @@ export class Genesis {
 
     const curriculum = this.metaRL?.getCurriculum();
 
+    const sensorStats = this.sensorimotor?.stats();
+    const syncStats = this.memorySync?.getStats();
+
     return {
       booted: this.booted,
       levels: { ...this.levels },
@@ -848,6 +873,14 @@ export class Genesis {
       selfImprovement: this.selfImprovement !== null,
       ness: nessState,
       fiber: fiberSection ? { netFlow: fiberSection.netFlow, sustainable: fiberSection.sustainable } : null,
+      dashboard: this.dashboard ? { running: this.dashboard.isRunning(), url: this.dashboard.getUrl() } : null,
+      memorySync: syncStats ? { syncCount: syncStats.syncCount, isRunning: syncStats.isRunning } : null,
+      sensorimotor: sensorStats ? {
+        running: sensorStats.running,
+        cycles: sensorStats.cycles,
+        avgPredictionError: sensorStats.avgPredictionError,
+      } : null,
+      calibrationError: this.getCalibrationError(),
       uptime: this.bootTime > 0 ? Date.now() - this.bootTime : 0,
       cycleCount: this.cycleCount,
     };
@@ -868,6 +901,9 @@ export class Genesis {
     // L2: Reactive shutdown
     if (this.consciousness) {
       this.consciousness.stop();
+    }
+    if (this.cognitiveWorkspace) {
+      this.cognitiveWorkspace.shutdown();
     }
     if (this.memorySync) {
       this.memorySync.stopAutoSync();

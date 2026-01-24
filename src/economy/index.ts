@@ -509,6 +509,22 @@ export {
   type AllocatorConfig,
 } from './capital-allocator.js';
 
+// Economic Intelligence (Active Inference, v15.0)
+export {
+  AutonomousNESS,
+  getAutonomousNESS,
+  EconomicEFE,
+  getEconomicEFE,
+  EconomicContraction,
+  getEconomicContraction,
+  resetEconomicIntelligence,
+  type AutonomousNESSConfig,
+  type AutonomousNESSState,
+  type EFEScore,
+  type EFEConfig,
+  type EconomicContractionState,
+} from './economic-intelligence.js';
+
 // Generators
 export {
   KeeperExecutor,

@@ -25,6 +25,9 @@ import { getCodeRuntime, type CodeRuntime } from './execution/index.js';
 import { getDashboard, broadcastToDashboard, type DashboardServer } from './observability/dashboard.js';
 import { getMCPMemorySync, type MCPMemorySync } from './sync/mcp-memory-sync.js';
 import { getSensoriMotorLoop, type SensoriMotorLoop } from './embodiment/sensorimotor-loop.js';
+import { getConsciousnessSystem, type ConsciousnessSystem } from './consciousness/index.js';
+import { getCognitiveWorkspace, type CognitiveWorkspace } from './memory/cognitive-workspace.js';
+import { getSelfImprovementEngine, type SelfImprovementEngine } from './self-modification/index.js';
 
 // ============================================================================
 // Types
@@ -51,6 +54,10 @@ export interface GenesisConfig {
   memorySync: boolean;
   /** Enable embodiment (sensorimotor loop) */
   embodiment: boolean;
+  /** Enable consciousness monitoring (φ) */
+  consciousness: boolean;
+  /** Enable self-improvement (Darwin-Gödel) */
+  selfImprovement: boolean;
   /** Confidence threshold below which Brain defers to metacognition */
   deferThreshold: number;
   /** Audit all responses for hallucinations */
@@ -67,6 +74,8 @@ export interface GenesisStatus {
   perception: boolean;
   metaRL: { curriculumSize: number } | null;
   execution: boolean;
+  consciousness: { phi: number; state: string } | null;
+  selfImprovement: boolean;
   ness: NESSState | null;
   fiber: { netFlow: number; sustainable: boolean } | null;
   uptime: number;
@@ -111,6 +120,9 @@ export class Genesis {
   private dashboard: DashboardServer | null = null;
   private memorySync: MCPMemorySync | null = null;
   private sensorimotor: SensoriMotorLoop | null = null;
+  private consciousness: ConsciousnessSystem | null = null;
+  private cognitiveWorkspace: CognitiveWorkspace | null = null;
+  private selfImprovement: SelfImprovementEngine | null = null;
 
   // State
   private booted = false;
@@ -131,6 +143,8 @@ export class Genesis {
       dashboard: false,
       memorySync: true,
       embodiment: false,
+      consciousness: true,
+      selfImprovement: false,
       deferThreshold: 0.3,
       auditResponses: true,
     };
@@ -191,12 +205,87 @@ export class Genesis {
     this.fiber.registerModule('metarl');
     this.fiber.registerModule('execution');
 
+    // Cognitive workspace (shared memory substrate)
+    this.cognitiveWorkspace = getCognitiveWorkspace();
+
+    // Consciousness monitoring (φ)
+    if (this.config.consciousness) {
+      this.consciousness = getConsciousnessSystem();
+
+      // v13.1: Wire real system state provider for φ calculation
+      this.consciousness.setSystemStateProvider(() => ({
+        components: [
+          { id: 'fek', type: 'kernel', active: !!this.fek, state: { mode: this.fek?.getMode?.() ?? 'dormant' }, entropy: this.fek?.getTotalFE?.() ?? 0, lastUpdate: new Date() },
+          { id: 'brain', type: 'processor', active: !!this.brain, state: {}, entropy: 0.5, lastUpdate: new Date() },
+          { id: 'fiber', type: 'economic', active: !!this.fiber, state: { sustainable: this.fiber?.getGlobalSection().sustainable ?? false }, entropy: 0.3, lastUpdate: new Date() },
+          { id: 'memory', type: 'storage', active: !!this.cognitiveWorkspace, state: {}, entropy: 0.4, lastUpdate: new Date() },
+        ],
+        connections: [
+          { from: 'fek', to: 'brain', strength: 0.9, informationFlow: 1.0, bidirectional: true },
+          { from: 'brain', to: 'memory', strength: 0.8, informationFlow: 0.7, bidirectional: true },
+          { from: 'fiber', to: 'fek', strength: 0.6, informationFlow: 0.5, bidirectional: true },
+        ],
+        stateHash: `cycle-${this.cycleCount}`,
+        timestamp: new Date(),
+      }));
+
+      // v13.1: Wire invariant violation → FEK vigilant mode
+      if (this.fek) {
+        this.consciousness.onInvariantViolation(() => {
+          this.fek?.setMode('vigilant');
+        });
+      }
+
+      this.consciousness.start();
+    }
+
     if (this.config.dashboard) {
-      this.dashboard = getDashboard();
+      this.dashboard = getDashboard({ port: 9876 });
+      // v13.1: Wire real metrics provider for dashboard UI
+      this.dashboard.setMetricsProvider(() => {
+        const mem = process.memoryUsage();
+        const fiberSection = this.fiber?.getGlobalSection();
+        return {
+          timestamp: Date.now(),
+          uptime: this.bootTime > 0 ? (Date.now() - this.bootTime) / 1000 : 0,
+          memory: { heapUsed: mem.heapUsed, heapTotal: mem.heapTotal, external: mem.external, rss: mem.rss },
+          consciousness: {
+            phi: this.consciousness?.getSnapshot()?.level?.rawPhi ?? 0,
+            state: this.consciousness?.getState() ?? 'unknown',
+            integration: this.consciousness?.getSnapshot()?.phi?.integratedInfo ?? 0,
+          },
+          kernel: {
+            state: this.fek?.getMode?.() ?? 'unknown',
+            energy: this.fek ? Math.max(0, 1 - (this.fek.getTotalFE?.() ?? 0) / 5) : 0,
+            cycles: this.cycleCount,
+          },
+          agents: { total: 0, active: this.brain ? 1 : 0, queued: 0 },
+          memory_system: { episodic: 0, semantic: 0, procedural: 0, total: 0 },
+          llm: {
+            totalRequests: this.cycleCount,
+            totalCost: fiberSection?.totalCosts ?? 0,
+            averageLatency: 0,
+            providers: [],
+          },
+          mcp: { connectedServers: 0, availableTools: 0, totalCalls: 0 },
+        };
+      });
+
+      // Start dashboard server (non-blocking — errors are non-fatal)
+      this.dashboard.start().catch(() => { /* port in use or similar */ });
+
+      // Wire consciousness events → dashboard SSE stream
+      if (this.consciousness) {
+        this.consciousness.on((event) => {
+          broadcastToDashboard(`consciousness:${event.type}`, event.data);
+        });
+      }
     }
 
     if (this.config.memorySync) {
       this.memorySync = getMCPMemorySync();
+      // v13.1: Start background auto-sync for cross-session persistence
+      this.memorySync.startAutoSync();
     }
 
     this.levels.L2 = true;
@@ -209,14 +298,31 @@ export class Genesis {
       // Causal reasoning with standard agent model
       this.causal = createAgentCausalModel();
 
-      // Wire FEK prediction errors to causal diagnosis
+      // Wire FEK prediction errors to causal diagnosis → belief correction
       if (this.fek) {
         this.fek.onPredictionError((error) => {
           if (this.causal) {
-            this.causal.diagnoseFailure(
+            const diagnosis = this.causal.diagnoseFailure(
               new Error(error.content),
               { source: error.source, target: error.target, magnitude: error.magnitude }
             );
+
+            // v13.1: Use causal diagnosis to inform FEK mode
+            const topCause = diagnosis.rootCauses[0];
+            if (topCause && topCause.strength > 0.7 && error.magnitude > 0.5) {
+              // High-strength root cause of severe prediction error → vigilant mode
+              this.fek?.setMode('vigilant');
+
+              // Broadcast causal diagnosis event to dashboard
+              if (this.dashboard) {
+                broadcastToDashboard('causal:diagnosis', {
+                  rootCause: topCause.description,
+                  strength: topCause.strength,
+                  magnitude: error.magnitude,
+                  recommendations: diagnosis.recommendations,
+                });
+              }
+            }
           }
         });
       }
@@ -232,6 +338,26 @@ export class Genesis {
 
     if (this.config.embodiment) {
       this.sensorimotor = getSensoriMotorLoop();
+
+      // v13.1: Wire sensorimotor prediction errors into FEK as embodied observations
+      if (this.fek) {
+        this.sensorimotor.on('prediction:error', (data: { error: number }) => {
+          // High prediction error from embodiment → increase FEK free energy
+          if (this.fek && data.error > 0.15) {
+            this.fek.cycle({
+              energy: Math.max(0, 1 - data.error),
+              agentResponsive: true,
+              merkleValid: true,
+              systemLoad: Math.min(1, data.error * 2),
+            });
+          }
+        });
+      }
+
+      // Start the loop if brain is available for cognitive callback
+      if (this.brain) {
+        this.sensorimotor.start();
+      }
     }
 
     this.levels.L3 = true;
@@ -254,6 +380,17 @@ export class Genesis {
         outerLearningRate: 0.001,
         adaptationWindow: 50,
       });
+    }
+
+    if (this.config.selfImprovement) {
+      this.selfImprovement = getSelfImprovementEngine();
+      // Wire consciousness φ monitor into self-improvement
+      if (this.consciousness) {
+        this.selfImprovement.setPhiMonitor(this.consciousness.monitor);
+      }
+      if (this.cognitiveWorkspace) {
+        this.selfImprovement.setCognitiveWorkspace(this.cognitiveWorkspace);
+      }
     }
 
     this.levels.L4 = true;
@@ -305,24 +442,31 @@ export class Genesis {
       confidence = this.metacognition.getConfidence(rawConfidence, domain);
     }
 
-    // Step 4: FEK cycle
+    // Step 4: FEK cycle with REAL observations
     let fekState: FEKState | null = null;
     if (this.fek) {
+      // v13.1: Real system observations instead of hardcoded values
+      const mem = process.memoryUsage();
+      const heapPressure = mem.heapUsed / mem.heapTotal;
+      const phi = this.consciousness
+        ? (this.consciousness.getSnapshot()?.level?.rawPhi ?? 0.5)
+        : (confidence?.value ?? 0.5);
+
       fekState = this.fek.cycle({
-        energy: 1.0,
-        agentResponsive: true,
-        merkleValid: true,
-        systemLoad: this.cycleCount / 100,
-        phi: confidence?.value,
+        energy: Math.max(0, Math.min(1, 1 - heapPressure)),
+        agentResponsive: !!this.brain,
+        merkleValid: true, // TODO: wire to StateStore.verifyChecksum()
+        systemLoad: Math.min(1, heapPressure + (this.cycleCount % 10) / 50),
+        phi,
       });
     }
 
     // Step 5: Economic tracking
     const elapsed = Date.now() - startTime;
-    const cost = elapsed * 0.001; // Rough cost proxy: $0.001 per ms
+    const cost = elapsed * 0.0001; // $0.0001/ms — process overhead only (real LLM costs tracked separately)
 
     if (this.fiber) {
-      this.fiber.recordCost('brain', cost, 'process');
+      this.fiber.recordCost('genesis', cost, 'process');
     }
 
     if (this.nessMonitor && this.fiber) {
@@ -334,6 +478,11 @@ export class Genesis {
         quality: confidence?.value ?? 0.8,
         balance: section.netFlow,
       });
+
+      // v13.1: High NESS deviation → trigger self-improvement if enabled
+      if (this.lastNESSState.deviation > 0.5 && this.selfImprovement && this.cycleCount % 20 === 0) {
+        this.triggerSelfImprovement().catch(() => { /* non-fatal */ });
+      }
     }
 
     // Track for calibration
@@ -344,6 +493,13 @@ export class Genesis {
       });
     }
 
+    // v13.1: Meta-RL curriculum learning — each process() is an experience
+    if (this.metaRL && confidence) {
+      const domain = this.inferDomain(input);
+      const success = confidence.value > this.config.deferThreshold;
+      this.metaRL.updateCurriculum(`${domain}:${this.cycleCount}`, success, 1);
+    }
+
     // Broadcast to observability dashboard
     if (this.dashboard) {
       broadcastToDashboard('cycle', {
@@ -352,6 +508,9 @@ export class Genesis {
         cost,
         fekMode: fekState?.mode,
         totalFE: fekState?.totalFE,
+        phi: this.consciousness ? this.getPhi() : undefined,
+        nessDeviation: this.lastNESSState?.deviation,
+        sustainable: this.fiber?.getGlobalSection().sustainable,
       });
     }
 
@@ -498,6 +657,45 @@ export class Genesis {
   }
 
   // ==========================================================================
+  // Consciousness Interface
+  // ==========================================================================
+
+  /**
+   * Get current φ (integrated information)
+   */
+  getPhi(): number {
+    if (!this.consciousness) return 0;
+    const snapshot = this.consciousness.getSnapshot();
+    return snapshot?.level?.rawPhi ?? 0;
+  }
+
+  /**
+   * Get consciousness snapshot
+   */
+  getConsciousnessSnapshot(): unknown {
+    return this.consciousness?.getSnapshot() ?? null;
+  }
+
+  // ==========================================================================
+  // Self-Improvement Interface
+  // ==========================================================================
+
+  /**
+   * Trigger a self-improvement cycle (requires selfImprovement=true)
+   */
+  async triggerSelfImprovement(): Promise<{ applied: number } | null> {
+    if (!this.selfImprovement) return null;
+    const result = await this.selfImprovement.runCycle();
+    const applied = result.results.filter((r: { success: boolean }) => r.success).length;
+
+    if (this.fiber && applied > 0) {
+      this.fiber.recordCost('genesis', 0.1 * applied, 'self-improvement');
+    }
+
+    return { applied };
+  }
+
+  // ==========================================================================
   // Economic Interface
   // ==========================================================================
 
@@ -550,6 +748,11 @@ export class Genesis {
       perception: this.perception !== null,
       metaRL: curriculum ? { curriculumSize: curriculum.taskHistory.length } : null,
       execution: this.codeRuntime !== null,
+      consciousness: this.consciousness ? {
+        phi: this.consciousness.getSnapshot()?.level?.rawPhi ?? 0,
+        state: this.consciousness.getSnapshot()?.state ?? 'unknown',
+      } : null,
+      selfImprovement: this.selfImprovement !== null,
       ness: nessState,
       fiber: fiberSection ? { netFlow: fiberSection.netFlow, sustainable: fiberSection.sustainable } : null,
       uptime: this.bootTime > 0 ? Date.now() - this.bootTime : 0,
@@ -561,9 +764,30 @@ export class Genesis {
    * Graceful shutdown: L4→L1
    */
   async shutdown(): Promise<void> {
+    // L4: Executive shutdown
+    // (metacognition, NESS, metaRL are stateless — no stop needed)
+
+    // L3: Cognitive shutdown
+    if (this.sensorimotor) {
+      this.sensorimotor.stop();
+    }
+
+    // L2: Reactive shutdown
+    if (this.consciousness) {
+      this.consciousness.stop();
+    }
+    if (this.memorySync) {
+      this.memorySync.stopAutoSync();
+    }
+    if (this.dashboard) {
+      await this.dashboard.stop();
+    }
+
+    // L1: Substrate shutdown
     if (this.fek) {
       this.fek.stop();
     }
+
     this.booted = false;
     this.levels = { L1: false, L2: false, L3: false, L4: false };
   }

@@ -484,3 +484,79 @@ export {
   type NESSState,
   type NESSObservation,
 } from './ness.js';
+
+// ============================================================================
+// Autonomous Economy (v13.1)
+// ============================================================================
+
+export {
+  AutonomousController,
+  getAutonomousController,
+  resetAutonomousController,
+  type AutonomousConfig,
+  type ControllerState,
+  type ActivityStatus,
+  type CycleResult,
+  type PhaseConfig,
+} from './autonomous.js';
+
+export {
+  CapitalAllocator,
+  getCapitalAllocator,
+  resetCapitalAllocator,
+  type ActivityProfile,
+  type AllocationState,
+  type AllocatorConfig,
+} from './capital-allocator.js';
+
+// Generators
+export {
+  KeeperExecutor,
+  getKeeperExecutor,
+  resetKeeperExecutor,
+  BountyHunter,
+  getBountyHunter,
+  resetBountyHunter,
+  ContentEngine,
+  getContentEngine,
+  resetContentEngine,
+  SmartContractAuditor,
+  getSmartContractAuditor,
+  resetSmartContractAuditor,
+} from './generators/index.js';
+
+// Infrastructure
+export {
+  MCPMarketplace,
+  getMCPMarketplace,
+  resetMCPMarketplace,
+  X402Facilitator,
+  getX402Facilitator,
+  resetX402Facilitator,
+  MemoryService,
+  getMemoryService,
+  resetMemoryService,
+  MetaOrchestrator,
+  getMetaOrchestrator,
+  resetMetaOrchestrator,
+} from './infrastructure/index.js';
+
+// Assets (Passive Revenue)
+export {
+  YieldOptimizer,
+  getYieldOptimizer,
+  resetYieldOptimizer,
+  ComputeProvider,
+  getComputeProvider,
+  resetComputeProvider,
+} from './assets/index.js';
+
+// Multipliers (Non-Linear Revenue)
+export {
+  GrantsManager,
+  getGrantsManager,
+  resetGrantsManager,
+  CrossL2Arbitrageur,
+  getCrossL2Arbitrageur,
+  resetCrossL2Arbitrageur,
+} from './multipliers/index.js';

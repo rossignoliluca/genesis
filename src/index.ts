@@ -170,6 +170,8 @@ async function cmdStatus(): Promise<void> {
   console.log(`  Perception: ${gStatus.perception ? 'active' : 'disabled'}`);
   console.log(`  Meta-RL: ${gStatus.metaRL ? `${gStatus.metaRL.curriculumSize} tasks learned` : 'disabled'}`);
   console.log(`  Execution: ${gStatus.execution ? 'active' : 'disabled'}`);
+  console.log(`  Consciousness: ${gStatus.consciousness ? `phi=${gStatus.consciousness.phi.toFixed(3)}, state=${gStatus.consciousness.state}` : 'disabled'}`);
+  console.log(`  Self-Improvement: ${gStatus.selfImprovement ? 'active' : 'disabled'}`);
   if (gStatus.fiber) {
     console.log(c('\n[ECONOMICS]', 'yellow'));
     console.log(`  Net flow: $${gStatus.fiber.netFlow.toFixed(4)}/cycle`);

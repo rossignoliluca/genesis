@@ -33,6 +33,14 @@ import { getKeeperExecutor, type KeeperStats } from './generators/keeper.js';
 import { getBountyHunter, type BountyHunterStats } from './generators/bounty-hunter.js';
 import { getMCPMarketplace, type MarketplaceStats } from './infrastructure/mcp-marketplace.js';
 import { getX402Facilitator, type FacilitatorStats } from './infrastructure/x402-facilitator.js';
+import { getContentEngine } from './generators/content-engine.js';
+import { getSmartContractAuditor } from './generators/auditor.js';
+import { getMemoryService } from './infrastructure/memory-service.js';
+import { getMetaOrchestrator } from './infrastructure/meta-orchestrator.js';
+import { getYieldOptimizer } from './assets/yield-optimizer.js';
+import { getComputeProvider } from './assets/compute-provider.js';
+import { getGrantsManager } from './multipliers/grants.js';
+import { getCrossL2Arbitrageur } from './multipliers/cross-l2-arb.js';
 
 // ============================================================================
 // Types
@@ -622,6 +630,117 @@ export class AutonomousController {
         // Process expired escrows
         facilitator.processExpiredEscrows();
         // Revenue is recorded in real-time
+        return null;
+      }
+
+      case 'content-engine': {
+        const engine = getContentEngine();
+        // Scan for topics if needed
+        if (engine.needsTopicScan()) {
+          await engine.scanTopics();
+        }
+        // Publish ready content
+        if (engine.needsPublish()) {
+          const piece = await engine.generate();
+          if (piece) {
+            await engine.publish(piece.id);
+          }
+        }
+        // Collect subscription/tip revenue
+        const contentRevenue = await engine.collectRevenue();
+        return contentRevenue > 0 ? { id: activityId, revenue: contentRevenue, cost: 0.05 } : null;
+      }
+
+      case 'smart-contract-auditor': {
+        const auditor = getSmartContractAuditor();
+        // Find new audit opportunities
+        if (auditor.hasCapacity()) {
+          const opportunities = await auditor.findOpportunities();
+          if (opportunities.length > 0) {
+            await auditor.acceptRequest(opportunities[0]);
+          }
+        }
+        // Execute pending audits
+        const stats = auditor.getStats();
+        const auditRevenue = stats.totalRevenue;
+        return auditRevenue > 0 ? { id: activityId, revenue: auditRevenue, cost: 0.20 } : null;
+      }
+
+      case 'memory-service': {
+        const memService = getMemoryService();
+        // Bill active subscriptions
+        const subRevenue = await memService.billSubscriptions();
+        // Per-request revenue is recorded in real-time
+        const memStats = memService.getStats();
+        return memStats.totalRevenue > 0
+          ? { id: activityId, revenue: memStats.totalRevenue, cost: 0 }
+          : null;
+      }
+
+      case 'meta-orchestrator': {
+        const orchestrator = getMetaOrchestrator();
+        // Discover available agents
+        await orchestrator.discoverAgents();
+        // Revenue is from coordination fees on task execution
+        const orchStats = orchestrator.getStats();
+        return orchStats.totalRevenue > 0
+          ? { id: activityId, revenue: orchStats.totalRevenue, cost: orchStats.totalAgentPayouts }
+          : null;
+      }
+
+      case 'yield-optimizer': {
+        const optimizer = getYieldOptimizer();
+        // Scan for opportunities periodically
+        await optimizer.scanOpportunities();
+        // Rebalance if needed
+        if (optimizer.needsRebalance()) {
+          await optimizer.rebalance();
+        }
+        // Harvest yields
+        const harvested = await optimizer.harvest();
+        const yieldStats = optimizer.getStats();
+        return harvested > 0
+          ? { id: activityId, revenue: harvested, cost: yieldStats.totalGasCost }
+          : null;
+      }
+
+      case 'compute-provider': {
+        const compute = getComputeProvider();
+        // Check for available jobs
+        const jobs = await compute.checkForJobs();
+        for (const job of jobs.slice(0, 3)) {
+          await compute.acceptJob(job);
+        }
+        // Harvest completed job payments
+        const computeRevenue = await compute.harvestCompleted();
+        return computeRevenue > 0
+          ? { id: activityId, revenue: computeRevenue, cost: 0.10 }
+          : null;
+      }
+
+      case 'grants': {
+        const grants = getGrantsManager();
+        // Scan for new grant programs
+        await grants.scanPrograms();
+        // Check outcomes of submitted applications
+        const outcomes = await grants.checkOutcomes();
+        const grantRevenue = outcomes
+          .filter(o => o.status === 'accepted')
+          .reduce((s, o) => s + (o.outcome?.amount ?? 0), 0);
+        return grantRevenue > 0 ? { id: activityId, revenue: grantRevenue, cost: 0 } : null;
+      }
+
+      case 'cross-l2-arb': {
+        const arb = getCrossL2Arbitrageur();
+        // Scan for arbitrage opportunities
+        if (arb.needsScan()) {
+          await arb.scan();
+        }
+        // Execute best opportunity
+        const arbResult = await arb.executeBest();
+        if (arbResult && arbResult.profit > 0) {
+          return { id: activityId, revenue: arbResult.profit, cost: arbResult.gasCost };
+        }
         return null;
       }
 

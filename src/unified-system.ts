@@ -1,4 +1,7 @@
 /**
+ * @deprecated Use genesis.ts instead. This module's functionality has been
+ * absorbed into the Genesis v13.0 unified bootstrap layer (src/genesis.ts).
+ *
  * Genesis 7.17 - Unified Autonomous System
  *
  * Connects all Genesis modules into a single coherent system:

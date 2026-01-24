@@ -148,6 +148,13 @@ import {
   getBrainStatePersistence,
 } from './persistence.js';
 
+// v13.1: Self-Knowledge — code-aware context
+import {
+  SelfKnowledge,
+  getSelfKnowledge,
+  isCodeQuery,
+} from './self-knowledge.js';
+
 // v10.4.2: Unified Memory Query
 import {
   UnifiedMemoryQuery,
@@ -186,6 +193,9 @@ export class Brain {
 
   // v12.0: Free Energy Kernel
   private fek: FreeEnergyKernel | null = null;
+
+  // v13.1: Self-Knowledge (code awareness)
+  private selfKnowledge: SelfKnowledge;
 
   // v8.1: State Persistence
   private persistence: BrainStatePersistence;
@@ -254,6 +264,9 @@ export class Brain {
     // v8.1: Initialize state persistence and load persisted metrics
     this.persistence = getBrainStatePersistence();
     this.metrics = { ...this.metrics, ...this.persistence.getMetrics() };
+
+    // v13.1: Self-Knowledge — code awareness (keyword search, no API)
+    this.selfKnowledge = getSelfKnowledge();
 
     // v7.13: Initialize full module integration (lazy - on first use)
     this.initializeV713Modules();
@@ -874,6 +887,9 @@ export class Brain {
     // v7.2: Build system prompt with available tools
     await this.initializeSystemPrompt();
 
+    // v13.1: Boot self-knowledge (index own source code)
+    this.selfKnowledge.boot().catch(() => {/* non-fatal */});
+
     // Start consciousness monitoring
     if (this.config.consciousness.enabled) {
       this.phiMonitor.start();
@@ -1333,6 +1349,15 @@ export class Brain {
 
     // Build context from working memory
     const context = this.buildContext(state);
+
+    // v13.1: Inject self-knowledge if query is about own code/architecture
+    if (this.selfKnowledge.isReady() && isCodeQuery(state.query)) {
+      const codeContext = this.selfKnowledge.getContext(state.query);
+      if (codeContext) {
+        context.formatted = codeContext + '\n' + context.formatted;
+        context.tokenEstimate += Math.ceil(codeContext.length / 4);
+      }
+    }
 
     // Track metrics
     this.metrics.memoryRecalls++;
@@ -2684,6 +2709,13 @@ export class Brain {
   }
 
   /**
+   * v13.1: Get self-knowledge module for code queries
+   */
+  getSelfKnowledge(): SelfKnowledge {
+    return this.selfKnowledge;
+  }
+
+  /**
    * v10.4.2: Get unified memory query for cross-store searches
    */
   getUnifiedQuery(): UnifiedMemoryQuery {
@@ -2893,3 +2925,4 @@ export function getBrainInstance(): Brain | null {
 
 export * from './types.js';
 export * from './trace.js';
+export { SelfKnowledge, getSelfKnowledge, isCodeQuery } from './self-knowledge.js';

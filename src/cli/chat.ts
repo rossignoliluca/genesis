@@ -1122,6 +1122,50 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
         });
         break;
 
+      // v13.1: Self-knowledge (code awareness)
+      case 'code':
+      case 'codice':  // Italian
+        if (args.length > 0) {
+          const codeQuery = args.join(' ');
+          const sk = this.brain.getSelfKnowledge();
+          if (!sk.isReady()) {
+            console.log(info('Indexing source code...'));
+            await sk.boot();
+          }
+          const results = sk.query(codeQuery, 5);
+          if (results.length === 0) {
+            console.log(warning(`No code found for: "${codeQuery}"`));
+          } else {
+            console.log(c(`Code results for "${codeQuery}":`, 'bold'));
+            for (const r of results) {
+              const chunk = r.chunk;
+              console.log(`  ${c(chunk.type, 'cyan')} ${c(chunk.name, 'green')} (${muted(chunk.relativePath + ':' + chunk.startLine)})`);
+              const preview = chunk.content.split('\n').slice(0, 3).join('\n    ');
+              console.log(`    ${muted(preview)}`);
+              console.log();
+            }
+          }
+        } else {
+          const sk = this.brain.getSelfKnowledge();
+          if (!sk.isReady()) {
+            console.log(info('Indexing source code...'));
+            await sk.boot();
+          }
+          const stats = sk.getStats();
+          if (stats) {
+            console.log(c('Self-Knowledge Status:', 'bold'));
+            console.log(`  Files indexed:  ${stats.totalFiles}`);
+            console.log(`  Code chunks:    ${stats.totalChunks}`);
+            console.log(`  Total lines:    ${stats.totalLines}`);
+            console.log(`  Types:          ${Object.entries(stats.byType).map(([t, n]) => `${t}:${n}`).join(', ')}`);
+            console.log(muted('\n  Usage: /code <query> — search own source code'));
+          } else {
+            console.log(warning('Self-knowledge not indexed yet.'));
+          }
+        }
+        console.log();
+        break;
+
       // v7.0: Darwin-Gödel self-improvement commands
       case 'heal':
       case 'guarisci':  // Italian
@@ -1756,6 +1800,7 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
       console.log();
       console.log(`  ${style('/brain', 'yellow')}       Brain integration on/off`);
       console.log(`  ${style('/memory', 'yellow')}      Stato memoria`);
+      console.log(`  ${style('/code', 'yellow')}        Cerca nel proprio codice sorgente`);
       console.log(`  ${style('/phi', 'yellow')}         Livello coscienza (φ)`);
       console.log(`  ${style('/improve', 'yellow')}     Auto-miglioramento`);
       console.log(`  ${style('/task', 'yellow')}        Esegui subagent`);

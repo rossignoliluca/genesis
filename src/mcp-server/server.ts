@@ -401,6 +401,7 @@ export class GenesisMCPServer extends EventEmitter {
 
     this.setupHandlers();
     this.registerDefaultTools();
+    this.registerCompIntelTools();
   }
 
   private setupHandlers(): void {
@@ -607,6 +608,326 @@ export class GenesisMCPServer extends EventEmitter {
       maxExecutionTime: 60000,
       annotations: { readOnlyHint: true },
       handler: this.handleCreate.bind(this),
+    });
+  }
+
+  // ============================================================================
+  // v11.2: CompIntel + Revenue + Daemon Tools
+  // ============================================================================
+
+  private registerCompIntelTools(): void {
+    // genesis.compintel.scan - Run competitive intelligence scan
+    this.registerTool({
+      name: 'genesis.compintel.scan',
+      description: 'Run a competitive intelligence scan on specified competitors. Scrapes their pages, detects changes from baseline, and analyzes significance.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          competitors: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string', description: 'Competitor name' },
+                domain: { type: 'string', description: 'Competitor domain (e.g. cursor.com)' },
+                pages: { type: 'array', items: { type: 'string' }, description: 'Specific URLs to monitor (optional, auto-inferred if empty)' },
+              },
+              required: ['name', 'domain'],
+            },
+            description: 'Competitors to scan',
+          },
+        },
+        required: ['competitors'],
+      },
+      requiredScopes: ['compintel'],
+      baseCost: 0.10,
+      supportsStreaming: false,
+      maxExecutionTime: 120000,
+      annotations: { readOnlyHint: true, longRunningHint: true },
+      handler: async (input: any) => {
+        const { createCompetitiveIntelService } = await import('../services/competitive-intel.js');
+        const service = createCompetitiveIntelService({ competitors: input.competitors });
+        const changes = await service.checkAll();
+        let digest;
+        if (changes.length > 0) {
+          digest = await service.generateDigest(24);
+        }
+        return {
+          success: true,
+          data: {
+            competitors: input.competitors.length,
+            pagesScraped: service.getCompetitors().reduce((sum: number, c: any) => sum + c.pages.filter((p: any) => p.lastContent).length, 0),
+            changes: changes.map((c: any) => ({
+              competitor: c.pageUrl,
+              type: c.changeType,
+              significance: c.significance,
+              summary: c.summary,
+              analysis: c.analysis,
+            })),
+            digest: digest ? {
+              insights: digest.keyInsights,
+              recommendations: digest.recommendations,
+            } : null,
+          },
+        };
+      },
+    });
+
+    // genesis.compintel.digest - Generate intelligence digest
+    this.registerTool({
+      name: 'genesis.compintel.digest',
+      description: 'Generate a strategic intelligence digest from recent competitor changes. Provides key insights and actionable recommendations.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          competitors: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                domain: { type: 'string' },
+                pages: { type: 'array', items: { type: 'string' } },
+              },
+              required: ['name', 'domain'],
+            },
+          },
+          periodHours: { type: 'number', description: 'Hours to look back (default: 24)', default: 24 },
+        },
+        required: ['competitors'],
+      },
+      requiredScopes: ['compintel'],
+      baseCost: 0.08,
+      supportsStreaming: false,
+      maxExecutionTime: 60000,
+      annotations: { readOnlyHint: true },
+      handler: async (input: any) => {
+        const { createCompetitiveIntelService } = await import('../services/competitive-intel.js');
+        const service = createCompetitiveIntelService({ competitors: input.competitors });
+        await service.checkAll();
+        const digest = await service.generateDigest(input.periodHours || 24);
+        return {
+          success: true,
+          data: digest,
+        };
+      },
+    });
+
+    // genesis.revenue.setup - Setup Stripe revenue loop
+    this.registerTool({
+      name: 'genesis.revenue.setup',
+      description: 'Initialize the Stripe revenue loop: creates product, prices ($49/$99/$199), and payment links for CompIntel subscriptions.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+      requiredScopes: ['revenue'],
+      baseCost: 0,
+      supportsStreaming: false,
+      maxExecutionTime: 30000,
+      annotations: { readOnlyHint: false, idempotentHint: true },
+      handler: async () => {
+        const { createRevenueLoop } = await import('../services/revenue-loop.js');
+        const loop = createRevenueLoop();
+        const { product, prices, paymentLinks } = await loop.setup();
+        return {
+          success: true,
+          data: {
+            product: { id: product.id, name: product.name },
+            prices: Object.fromEntries(
+              Object.entries(prices).map(([plan, p]: [string, any]) => [plan, { id: p.id, amount: p.unit_amount, interval: p.recurring?.interval }])
+            ),
+            paymentLinks: Object.fromEntries(
+              Object.entries(paymentLinks).map(([plan, l]: [string, any]) => [plan, l.url])
+            ),
+          },
+        };
+      },
+    });
+
+    // genesis.revenue.subscribe_url - Get payment link
+    this.registerTool({
+      name: 'genesis.revenue.subscribe_url',
+      description: 'Get the Stripe payment link for a CompIntel subscription plan.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          plan: { type: 'string', enum: ['starter', 'pro', 'enterprise'], description: 'Subscription plan' },
+        },
+        required: ['plan'],
+      },
+      requiredScopes: ['revenue'],
+      baseCost: 0,
+      supportsStreaming: false,
+      maxExecutionTime: 5000,
+      annotations: { readOnlyHint: true },
+      handler: async (input: any) => {
+        const { getRevenueLoop } = await import('../services/revenue-loop.js');
+        const loop = getRevenueLoop();
+        const url = loop.getPaymentUrl(input.plan);
+        return { success: true, data: { plan: input.plan, url } };
+      },
+    });
+
+    // genesis.revenue.check - Check subscription status
+    this.registerTool({
+      name: 'genesis.revenue.check',
+      description: 'Check if a Stripe customer has an active CompIntel subscription.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          customerId: { type: 'string', description: 'Stripe customer ID (cus_...)' },
+        },
+        required: ['customerId'],
+      },
+      requiredScopes: ['revenue'],
+      baseCost: 0,
+      supportsStreaming: false,
+      maxExecutionTime: 10000,
+      annotations: { readOnlyHint: true },
+      handler: async (input: any) => {
+        const { getRevenueLoop } = await import('../services/revenue-loop.js');
+        const loop = getRevenueLoop();
+        const check = await loop.checkSubscription(input.customerId);
+        return { success: true, data: check };
+      },
+    });
+
+    // genesis.revenue.paid_scan - Run a paid CompIntel scan
+    this.registerTool({
+      name: 'genesis.revenue.paid_scan',
+      description: 'Run a CompIntel scan gated behind Stripe subscription. Checks payment, runs scan, tracks revenue.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          customerId: { type: 'string', description: 'Stripe customer ID' },
+          competitors: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                domain: { type: 'string' },
+                pages: { type: 'array', items: { type: 'string' } },
+              },
+              required: ['name', 'domain'],
+            },
+          },
+        },
+        required: ['customerId', 'competitors'],
+      },
+      requiredScopes: ['revenue', 'compintel'],
+      baseCost: 0.10,
+      supportsStreaming: false,
+      maxExecutionTime: 120000,
+      annotations: { readOnlyHint: true, longRunningHint: true },
+      handler: async (input: any) => {
+        const { getRevenueLoop } = await import('../services/revenue-loop.js');
+        const loop = getRevenueLoop();
+        const result = await loop.runPaidScan(input.customerId, input.competitors);
+        return { success: result.success, data: result, error: result.error };
+      },
+    });
+
+    // genesis.daemon.compintel_start - Start daemon with CompIntel
+    this.registerTool({
+      name: 'genesis.daemon.compintel_start',
+      description: 'Start the Genesis daemon with CompIntel scheduled scans. Monitors competitors on interval.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          competitors: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                domain: { type: 'string' },
+                pages: { type: 'array', items: { type: 'string' } },
+              },
+              required: ['name', 'domain'],
+            },
+          },
+          checkIntervalMs: { type: 'number', description: 'Scan interval in ms (default: 6 hours)', default: 21600000 },
+          requireSubscription: { type: 'boolean', description: 'Gate behind Stripe subscription', default: false },
+          customerId: { type: 'string', description: 'Stripe customer ID (if requireSubscription=true)' },
+        },
+        required: ['competitors'],
+      },
+      requiredScopes: ['daemon'],
+      baseCost: 0,
+      supportsStreaming: false,
+      maxExecutionTime: 10000,
+      annotations: { readOnlyHint: false },
+      handler: async (input: any) => {
+        const { Daemon } = await import('../daemon/index.js');
+        const daemon = new Daemon({}, {
+          competitiveIntel: {
+            enabled: true,
+            checkIntervalMs: input.checkIntervalMs || 21600000,
+            digestIntervalMs: 86400000,
+            competitors: input.competitors,
+            requireSubscription: input.requireSubscription || false,
+            customerId: input.customerId,
+          },
+          maintenance: { enabled: false, intervalMs: 999999, healthCheckIntervalMs: 999999, memoryCleanupIntervalMs: 999999, autoRepair: false, maxConcurrentTasks: 1, unhealthyAgentThreshold: 30, memoryRetentionThreshold: 0.1, resourceUsageThreshold: 0.9 },
+          dream: { enabled: false, autoTrigger: false, inactivityThresholdMs: 999999, minDreamDurationMs: 60000, maxDreamDurationMs: 600000, lightSleepRatio: 0.1, deepSleepRatio: 0.6, remSleepRatio: 0.3, episodicConsolidationThreshold: 10, patternExtractionThreshold: 3, creativityTemperature: 0.7 },
+          selfImprovement: { enabled: false, intervalMs: 999999, autoApply: false, minPhiThreshold: 0.3, maxImprovementsPerCycle: 3 },
+        });
+        daemon.start();
+        // Store reference for stop
+        (globalThis as any).__genesisDaemon = daemon;
+        return {
+          success: true,
+          data: {
+            state: 'running',
+            competitors: input.competitors.length,
+            intervalMs: input.checkIntervalMs || 21600000,
+            requireSubscription: input.requireSubscription || false,
+          },
+        };
+      },
+    });
+
+    // genesis.daemon.stop - Stop running daemon
+    this.registerTool({
+      name: 'genesis.daemon.stop',
+      description: 'Stop the running Genesis daemon.',
+      inputSchema: { type: 'object', properties: {} },
+      requiredScopes: ['daemon'],
+      baseCost: 0,
+      supportsStreaming: false,
+      maxExecutionTime: 5000,
+      annotations: { readOnlyHint: false },
+      handler: async () => {
+        const daemon = (globalThis as any).__genesisDaemon;
+        if (daemon) {
+          daemon.stop();
+          (globalThis as any).__genesisDaemon = null;
+          return { success: true, data: { state: 'stopped' } };
+        }
+        return { success: false, error: 'No daemon running' };
+      },
+    });
+
+    // genesis.daemon.status - Get daemon status
+    this.registerTool({
+      name: 'genesis.daemon.status',
+      description: 'Get the current status of the Genesis daemon.',
+      inputSchema: { type: 'object', properties: {} },
+      requiredScopes: ['daemon'],
+      baseCost: 0,
+      supportsStreaming: false,
+      maxExecutionTime: 5000,
+      annotations: { readOnlyHint: true },
+      handler: async () => {
+        const daemon = (globalThis as any).__genesisDaemon;
+        if (daemon) {
+          const status = daemon.status();
+          return { success: true, data: status };
+        }
+        return { success: true, data: { state: 'stopped' } };
+      },
     });
   }
 

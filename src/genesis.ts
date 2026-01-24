@@ -28,6 +28,10 @@ import { getSensoriMotorLoop, type SensoriMotorLoop } from './embodiment/sensori
 import { getConsciousnessSystem, type ConsciousnessSystem } from './consciousness/index.js';
 import { getCognitiveWorkspace, type CognitiveWorkspace } from './memory/cognitive-workspace.js';
 import { getSelfImprovementEngine, type SelfImprovementEngine } from './self-modification/index.js';
+import { ConsciousnessBridge, type ConsciousBridgeConfig, type ConsciousnessState as BridgeState } from './active-inference/consciousness-bridge.js';
+import { getFactorGraph, type FactorGraph } from './kernel/factor-graph.js';
+import type { MotorCommand } from './embodiment/sensorimotor-loop.js';
+import { getNeuromodulationSystem, type NeuromodulationSystem, type ModulationEffect } from './neuromodulation/index.js';
 
 // ============================================================================
 // Types
@@ -81,6 +85,7 @@ export interface GenesisStatus {
   dashboard: { running: boolean; url: string } | null;
   memorySync: { syncCount: number; isRunning: boolean } | null;
   sensorimotor: { running: boolean; cycles: number; avgPredictionError: number } | null;
+  neuromodulation: { dopamine: number; serotonin: number; norepinephrine: number; cortisol: number; explorationRate: number; riskTolerance: number } | null;
   calibrationError: number;
   uptime: number;
   cycleCount: number;
@@ -127,6 +132,9 @@ export class Genesis {
   private consciousness: ConsciousnessSystem | null = null;
   private cognitiveWorkspace: CognitiveWorkspace | null = null;
   private selfImprovement: SelfImprovementEngine | null = null;
+  private consciousnessBridge: ConsciousnessBridge | null = null;
+  private factorGraph: FactorGraph | null = null;
+  private neuromodulation: NeuromodulationSystem | null = null;
 
   // State
   private booted = false;
@@ -182,6 +190,27 @@ export class Genesis {
     // Free Energy Kernel — the core autonomic loop
     this.fek = getFreeEnergyKernel();
     this.fek.start();
+
+    // Neuromodulatory System — global state broadcast (hormonal analog)
+    this.neuromodulation = getNeuromodulationSystem();
+    this.neuromodulation.start();
+
+    // Wire FEK prediction errors → novelty signal (norepinephrine + dopamine)
+    this.fek.onPredictionError((error) => {
+      this.neuromodulation?.novelty(error.magnitude, `fek:${error.source}→${error.target}`);
+    });
+
+    // Wire FEK mode changes → neuromodulatory tone
+    this.fek.onModeChange((mode) => {
+      if (mode === 'vigilant') {
+        this.neuromodulation?.threat(0.5, 'fek:vigilant');
+      } else if (mode === 'dormant' || mode === 'dreaming') {
+        this.neuromodulation?.calm(0.6, `fek:${mode}`);
+      } else if (mode === 'focused') {
+        this.neuromodulation?.modulate('norepinephrine', 0.15, 'fek:focused');
+      }
+    });
+
     this.levels.L1 = true;
   }
 
@@ -368,6 +397,22 @@ export class Genesis {
           broadcastToDashboard('kernel:mode', { mode, prev, cycle: this.cycleCount });
         });
       }
+
+      // Wire neuromodulator level changes → dashboard SSE stream
+      if (this.neuromodulation) {
+        this.neuromodulation.onUpdate((levels, effect) => {
+          broadcastToDashboard('neuromodulation:update', {
+            levels,
+            effect: {
+              explorationRate: effect.explorationRate,
+              riskTolerance: effect.riskTolerance,
+              processingDepth: effect.processingDepth,
+              learningRate: effect.learningRate,
+            },
+            cycle: this.cycleCount,
+          });
+        });
+      }
     }
 
     if (this.config.memorySync) {
@@ -375,6 +420,33 @@ export class Genesis {
       // v13.1: Start background auto-sync for cross-session persistence
       this.memorySync.startAutoSync();
     }
+
+    // v13.5: ConsciousnessBridge — φ-gated action execution for Active Inference
+    if (this.consciousness) {
+      this.consciousnessBridge = new ConsciousnessBridge(
+        { maxCycles: Infinity },
+        { phiThreshold: 0.3, verbose: false }
+      );
+      // Feed real φ values and attention shifts from consciousness system into the bridge
+      this.consciousness.on((event) => {
+        if (event.type === 'phi_updated' || event.type === 'state_changed') {
+          const phi = this.consciousness?.getSnapshot()?.level?.rawPhi ?? 0.3;
+          this.consciousnessBridge?.updatePhi(phi);
+        }
+        if (event.type === 'attention_shifted') {
+          const data = event.data as { target?: string } | undefined;
+          if (data?.target) {
+            this.consciousnessBridge?.setAttentionFocus(data.target);
+          }
+        }
+      });
+    }
+
+    // v13.5: Factor Graph — bidirectional belief propagation between modules
+    // getFactorGraph() creates pre-configured Genesis topology via createGenesisFactorGraph()
+    // with nodes: FEK, Brain, Consciousness, Economy, Metacognition, Sensorimotor
+    // and edges connecting them with precision-weighted channels
+    this.factorGraph = getFactorGraph();
 
     this.levels.L2 = true;
   }
@@ -395,11 +467,23 @@ export class Genesis {
               { source: error.source, target: error.target, magnitude: error.magnitude }
             );
 
+            // Record causal diagnosis cost
+            if (this.fiber) {
+              this.fiber.recordCost('causal', 0.01, 'diagnosis');
+            }
+
             // v13.1: Use causal diagnosis to inform FEK mode
             const topCause = diagnosis.rootCauses[0];
             if (topCause && topCause.strength > 0.7 && error.magnitude > 0.5) {
               // High-strength root cause of severe prediction error → vigilant mode
               this.fek?.setMode('vigilant');
+
+              // v13.2: Apply first recommendation as adaptive action
+              if (diagnosis.recommendations?.length > 0 && this.metacognition) {
+                // Use recommendation to update self-model competence
+                const domain = topCause.description?.includes('action') ? 'coding' : 'general';
+                this.metacognition.updateFromOutcome(domain, false, 0.7);
+              }
 
               // Broadcast causal diagnosis event to dashboard
               if (this.dashboard) {
@@ -442,8 +526,59 @@ export class Genesis {
         });
       }
 
-      // Start the loop if brain is available for cognitive callback
+      // v13.5: Brain-to-motor translation layer — cognitive callback
       if (this.brain) {
+        const brain = this.brain;
+        const bridge = this.consciousnessBridge;
+
+        this.sensorimotor.setCognitiveCallback((perception, sensorState) => {
+          // φ-gate: skip cognitive processing if consciousness is too low
+          if (bridge && bridge.getState().phi < 0.2) {
+            return null; // Let reflexes handle it
+          }
+
+          // Translate perception features into a semantic description for Brain
+          const dominantModality = perception.modalities?.[0] ?? 'proprioceptive';
+          const confidence = perception.confidence ?? 0;
+          const safetyStatus = sensorState.safetyStatus;
+
+          // Safety override: if safety critical, generate immediate stop command
+          if (!safetyStatus.safe || safetyStatus.emergencyStopped) {
+            return {
+              id: `safety-${Date.now()}`,
+              timestamp: new Date(),
+              type: 'force' as const,
+              forceTarget: new Array(sensorState.forces.length).fill(0),
+              source: 'brain' as const,
+              priority: 100,
+              timeout: 50,
+            };
+          }
+
+          // For high-confidence perceptions, generate motor intent
+          if (confidence > 0.6 && sensorState.jointStates.length > 0) {
+            // Impedance-based control: maintain current position with compliance
+            const stiffness = sensorState.jointStates.map(() =>
+              confidence > 0.8 ? 0.8 : 0.4  // Higher confidence → stiffer control
+            );
+            const damping = stiffness.map((s: number) => s * 0.5);
+
+            return {
+              id: `cognitive-${Date.now()}`,
+              timestamp: new Date(),
+              type: 'impedance' as const,
+              jointTargets: sensorState.jointStates.map((j: { position: number }) => j.position), // Hold current position
+              stiffness,
+              damping,
+              source: 'brain' as const,
+              priority: 50,
+              timeout: 100,
+            };
+          }
+
+          return null; // No motor action needed
+        });
+
         this.sensorimotor.start();
       }
     }
@@ -505,21 +640,57 @@ export class Genesis {
     let confidence: ConfidenceEstimate | null = null;
     let audit: ThoughtAudit | null = null;
 
-    // Step 0: Shift consciousness attention + assess processing depth
+    // Step 0: Assess processing depth from consciousness + FEK mode
     const currentPhi = this.consciousness?.getSnapshot()?.level?.rawPhi ?? 1.0;
+    const fekMode = this.fek?.getMode() ?? 'awake';
     if (this.consciousness) {
       const domain = this.inferDomain(input);
       this.consciousness.attend(`process:${domain}`, 'internal');
     }
-    // φ-gated processing: when consciousness is low, skip expensive auditing
-    const deepProcessing = currentPhi > 0.2;
 
-    // Step 1: Metacognitive pre-check
+    // Step 0.5: Factor graph belief propagation — synchronize module beliefs
+    if (this.factorGraph) {
+      // Inject live evidence from modules before propagation
+      const feLevel = this.fek?.getTotalFE?.() ?? 0.5;
+      this.factorGraph.injectEvidence('FEK', 'viability', 1 - feLevel);
+      this.factorGraph.injectEvidence('FEK', 'surprise', feLevel);
+
+      const calibErr = this.getCalibrationError();
+      this.factorGraph.injectEvidence('Brain', 'confidence', 1 - calibErr);
+
+      const section = this.fiber?.getGlobalSection();
+      this.factorGraph.injectEvidence('Economy', 'sustainable', section?.sustainable ? 0.9 : 0.2);
+      this.factorGraph.injectEvidence('Economy', 'net_flow', Math.max(0, Math.min(1, (section?.netFlow ?? 0) + 0.5)));
+
+      const phi = this.consciousness?.getSnapshot()?.level?.rawPhi ?? 0.5;
+      this.factorGraph.injectEvidence('Consciousness', 'phi', phi);
+
+      const nessDeviation = this.lastNESSState?.deviation ?? 0.5;
+      this.factorGraph.injectEvidence('Metacognition', 'calibration', 1 - calibErr);
+      this.factorGraph.injectEvidence('Metacognition', 'ness_proximity', 1 - nessDeviation);
+
+      this.factorGraph.propagate(5, 0.01);
+    }
+
+    // Processing depth gated by φ AND FEK mode AND neuromodulatory tone:
+    // - dormant/dreaming: minimal processing (skip audit, causal, meta-rl)
+    // - vigilant: enhanced L2 (faster, reactive), reduced L3/L4 (less deep thinking)
+    // - focused: enhanced L3/L4 (deeper analysis), suppressed L2
+    // - awake: full processing
+    // Neuromodulation: high processingDepth (calm+focused) lowers φ threshold
+    const neuroDepth = this.neuromodulation?.getEffect().processingDepth ?? 1.0;
+    const phiGateThreshold = Math.max(0.1, 0.2 / neuroDepth);
+    const deepProcessing = currentPhi > phiGateThreshold && fekMode !== 'dormant' && fekMode !== 'dreaming';
+    const enhancedAudit = fekMode === 'focused' || fekMode === 'self_improving';
+
+    // v13.2: Meta-RL adaptive thresholds
+    const adaptiveDeferThreshold = this.getAdaptiveDeferThreshold();
+
+    // Step 1: Metacognitive pre-check (uses adaptive threshold from meta-RL)
     if (this.metacognition && deepProcessing) {
       const domain = this.inferDomain(input);
       if (this.metacognition.shouldDefer(domain)) {
-        // Low competence — still process but flag it
-        confidence = this.metacognition.getConfidence(0.3, domain);
+        confidence = this.metacognition.getConfidence(adaptiveDeferThreshold, domain);
       }
     }
 
@@ -537,6 +708,24 @@ export class Genesis {
       const domain = this.inferDomain(input);
       const rawConfidence = audit.coherence * 0.5 + audit.groundedness * 0.5;
       confidence = this.metacognition.getConfidence(rawConfidence, domain);
+
+      // v13.2: Audit-driven corrective re-processing
+      // If audit detects low quality AND we're in focused/self_improving mode, apply correction
+      if (rawConfidence < 0.4 && enhancedAudit) {
+        const correction = this.metacognition.correctError(response, new Error('low coherence/groundedness'));
+        if (correction.correction && correction.confidence > 0.5) {
+          response = correction.correction;
+          // Re-audit the correction
+          audit = this.metacognition.auditThought(response);
+          const newRaw = audit.coherence * 0.5 + audit.groundedness * 0.5;
+          confidence = this.metacognition.getConfidence(newRaw, domain);
+        }
+      }
+
+      // Record metacognition audit cost
+      if (this.fiber) {
+        this.fiber.recordCost('metacognition', 0.005, 'audit');
+      }
     }
 
     // Step 4: FEK cycle with REAL observations
@@ -584,6 +773,15 @@ export class Genesis {
       if (this.lastNESSState.deviation > 0.5 && this.selfImprovement && this.cycleCount % 20 === 0) {
         this.triggerSelfImprovement().catch(() => { /* non-fatal */ });
       }
+
+      // v13.2: NESS deviation → neuromodulatory signals
+      if (this.neuromodulation) {
+        if (this.lastNESSState.deviation > 0.5) {
+          this.neuromodulation.threat(this.lastNESSState.deviation, 'ness:deviation');
+        } else if (section.sustainable) {
+          this.neuromodulation.calm(0.3, 'ness:sustainable');
+        }
+      }
     }
 
     // Track for calibration
@@ -594,15 +792,26 @@ export class Genesis {
       });
     }
 
-    // v13.1: Meta-RL curriculum learning — each process() is an experience
+    // v13.2: Meta-RL curriculum learning — each process() is an experience
     if (this.metaRL && confidence) {
       const domain = this.inferDomain(input);
-      const success = confidence.value > this.config.deferThreshold;
+      const success = confidence.value > adaptiveDeferThreshold;
       this.metaRL.updateCurriculum(`${domain}:${this.cycleCount}`, success, 1);
+
+      // v13.2: Neuromodulatory feedback from confidence
+      if (this.neuromodulation) {
+        if (success) {
+          this.neuromodulation.reward(confidence.value, `process:${domain}`);
+        } else {
+          this.neuromodulation.punish(1 - confidence.value, `process:${domain}`);
+        }
+      }
     }
 
     // Broadcast to observability dashboard
     if (this.dashboard) {
+      const neuroLevels = this.neuromodulation?.getLevels();
+      const neuroEffect = this.neuromodulation?.getEffect();
       broadcastToDashboard('cycle', {
         cycleCount: this.cycleCount,
         confidence: confidence?.value,
@@ -612,6 +821,13 @@ export class Genesis {
         phi: this.consciousness ? this.getPhi() : undefined,
         nessDeviation: this.lastNESSState?.deviation,
         sustainable: this.fiber?.getGlobalSection().sustainable,
+        neuromodulation: neuroLevels ? {
+          levels: neuroLevels,
+          explorationRate: neuroEffect?.explorationRate,
+          riskTolerance: neuroEffect?.riskTolerance,
+          learningRate: neuroEffect?.learningRate,
+          processingDepth: neuroEffect?.processingDepth,
+        } : undefined,
       });
     }
 
@@ -619,8 +835,13 @@ export class Genesis {
     if (this.causal && confidence && deepProcessing) {
       // Each process() cycle is a data point: observation → belief → action → outcome
       this.causal.setData('observation', [confidence.value]);
-      this.causal.setData('outcome', [confidence.value > this.config.deferThreshold ? 1 : 0]);
+      this.causal.setData('outcome', [confidence.value > adaptiveDeferThreshold ? 1 : 0]);
       this.causal.setData('reward', [1 - cost]); // Higher reward = lower cost
+
+      // Record causal reasoning cost
+      if (this.fiber) {
+        this.fiber.recordCost('causal', 0.002, 'data-feed');
+      }
     }
 
     // Release attention focus after processing
@@ -880,6 +1101,18 @@ export class Genesis {
         cycles: sensorStats.cycles,
         avgPredictionError: sensorStats.avgPredictionError,
       } : null,
+      neuromodulation: this.neuromodulation ? (() => {
+        const levels = this.neuromodulation!.getLevels();
+        const effect = this.neuromodulation!.getEffect();
+        return {
+          dopamine: levels.dopamine,
+          serotonin: levels.serotonin,
+          norepinephrine: levels.norepinephrine,
+          cortisol: levels.cortisol,
+          explorationRate: effect.explorationRate,
+          riskTolerance: effect.riskTolerance,
+        };
+      })() : null,
       calibrationError: this.getCalibrationError(),
       uptime: this.bootTime > 0 ? Date.now() - this.bootTime : 0,
       cycleCount: this.cycleCount,
@@ -913,6 +1146,9 @@ export class Genesis {
     }
 
     // L1: Substrate shutdown
+    if (this.neuromodulation) {
+      this.neuromodulation.stop();
+    }
     if (this.fek) {
       this.fek.stop();
     }
@@ -924,6 +1160,35 @@ export class Genesis {
   // ==========================================================================
   // Helpers
   // ==========================================================================
+
+  /**
+   * v13.2: Adaptive defer threshold — Meta-RL curriculum success rate
+   * modulates confidence threshold. High success → lower threshold (more ambitious).
+   * Low success → higher threshold (more cautious).
+   */
+  private getAdaptiveDeferThreshold(): number {
+    let threshold = this.config.deferThreshold;
+
+    // Meta-RL curriculum modulation
+    if (this.metaRL) {
+      const curriculum = this.metaRL.getCurriculum();
+      if (curriculum && curriculum.taskHistory.length >= 5) {
+        // High success → lower threshold (more ambitious)
+        const adjustment = (0.5 - curriculum.successRate) * 0.2;
+        threshold += adjustment;
+      }
+    }
+
+    // v13.2: Neuromodulatory modulation (risk tolerance from cortisol/dopamine)
+    if (this.neuromodulation) {
+      const effect = this.neuromodulation.getEffect();
+      // High risk tolerance → lower threshold (take on more)
+      // Low risk tolerance → higher threshold (defer more)
+      threshold -= (effect.riskTolerance - 0.5) * 0.15;
+    }
+
+    return Math.max(0.1, Math.min(0.6, threshold));
+  }
 
   private inferDomain(input: string): string {
     const lower = input.toLowerCase();

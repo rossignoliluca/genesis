@@ -355,3 +355,37 @@ export interface BrainEvent {
 }
 
 export type BrainEventHandler = (event: BrainEvent) => void;
+
+// ============================================================================
+// Process Context - Genesis Bootstrap Integration
+// ============================================================================
+
+/**
+ * Optional context injected into Brain.process() from external systems.
+ * Allows Genesis bootstrap to feed workspace state, sensorimotor perception,
+ * and consciousness data into the processing cycle.
+ */
+export interface ProcessContext {
+  /** Pre-loaded workspace items (bypasses internal memory lookup) */
+  workspaceItems?: WorkspaceItem[];
+  /** Sensorimotor perception data for embodied cognition */
+  sensorimotorState?: {
+    perception?: { features: number[]; confidence: number; modalities: string[] };
+    sensorState?: { joints: number[]; forces: number[]; safety: string };
+  };
+  /** Current consciousness metrics */
+  consciousness?: {
+    phi: number;
+    attentionFocus?: string;
+    mode?: string;
+  };
+  /** Additional metadata from the caller */
+  metadata?: Record<string, unknown>;
+}
+
+export interface WorkspaceItem {
+  content: string;
+  type: 'episodic' | 'semantic' | 'procedural';
+  relevance: number;
+  source: string;
+}

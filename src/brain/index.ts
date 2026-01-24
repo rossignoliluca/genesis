@@ -54,6 +54,8 @@ import {
   BrainEventHandler,
   DEFAULT_BRAIN_CONFIG,
   ContextItem,
+  ProcessContext,
+  WorkspaceItem,
 } from './types.js';
 
 // Module imports
@@ -1139,8 +1141,11 @@ export class Brain {
    * memory → llm → grounding → tools → done
    *
    * Each module can route to another via Command({ goto, update })
+   *
+   * @param input - User input query
+   * @param context - Optional context from external systems (Genesis bootstrap)
    */
-  async process(input: string): Promise<string> {
+  async process(input: string, context?: ProcessContext): Promise<string> {
     const startTime = Date.now();
 
     // Initialize state
@@ -1150,13 +1155,42 @@ export class Brain {
       response: '',
       toolCalls: [],
       toolResults: [],
-      phi: this.getCurrentPhi(),
+      phi: context?.consciousness?.phi ?? this.getCurrentPhi(),
       ignited: false,
       verified: false,
       healingAttempts: 0,
       startTime,
       moduleHistory: [],
     };
+
+    // Process injected context from Genesis bootstrap
+    if (context?.workspaceItems?.length) {
+      const items: ContextItem[] = context.workspaceItems.map((w, i) => ({
+        id: `injected-${i}`,
+        type: w.type === 'episodic' ? 'episodic' : w.type === 'semantic' ? 'semantic' : 'task',
+        content: w.content,
+        relevance: w.relevance,
+        activation: 1.0,
+        source: w.source || 'genesis-context',
+      }));
+      // Pre-fill context
+      state.context = {
+        ...state.context,
+        task: items.filter(i => i.type === 'task'),
+        episodic: items.filter(i => i.type === 'episodic'),
+        semantic: items.filter(i => i.type === 'semantic'),
+        formatted: items.map(i => i.content).join('\n'),
+        tokenEstimate: items.reduce((s, i) => s + i.content.length / 4, 0),
+        reuseRate: 0,
+      };
+    }
+
+    // Store additional context metadata for modules
+    if (context?.sensorimotorState || context?.metadata) {
+      // Store in state for module access (modules can access via state)
+      // Note: BrainState doesn't have metadata field yet, so modules would need
+      // to access this via the formatted context or through a future extension
+    }
 
     // Initial command: start with memory
     let command: Command = {

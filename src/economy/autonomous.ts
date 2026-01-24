@@ -2,22 +2,31 @@
  * Autonomous Economic Controller
  *
  * The central orchestrator for Genesis's autonomous revenue generation.
- * Coordinates all generators, infrastructure services, and asset managers.
+ * Full Active Inference architecture with Bayesian generative model.
  *
  * Architecture:
  *   AutonomousController
- *     ├── CapitalAllocator (leapfrog symplectic integrator)
- *     ├── Generators/ (active revenue: keeper, bounties, content)
- *     ├── Infrastructure/ (agent economy: MCP marketplace, x402, reputation)
- *     ├── Assets/ (passive: yield, compute, domains)
- *     └── NESSMonitor (convergence tracking)
+ *     ├── GenerativeModel (Bayesian beliefs + regime HMM + adaptive β)
+ *     │     ├── ActivityBeliefs (Normal-Inverse-Gamma conjugate posteriors)
+ *     │     ├── MarketRegime (3-state HMM: bull/neutral/bear)
+ *     │     ├── AdaptiveTemperature (annealing: explore→exploit)
+ *     │     └── TemporalPlanner (2-step EFE lookahead)
+ *     ├── EconomicEFE (Expected Free Energy action selection)
+ *     ├── EconomicContraction (Lipschitz stability monitoring)
+ *     ├── AutonomousNESS (activity-based convergence)
+ *     ├── CapitalAllocator (leapfrog symplectic integrator + contraction damping)
+ *     ├── Generators/ (active: keeper, bounties, content, auditor)
+ *     ├── Infrastructure/ (platform: MCP marketplace, x402, memory, orchestrator)
+ *     ├── Assets/ (passive: yield, compute)
+ *     └── Multipliers/ (non-linear: grants, cross-L2 arb)
  *
- * Control loop:
- *   1. Observe: Read balances, check pending payouts
- *   2. Allocate: Leapfrog step to rebalance portfolio
- *   3. Execute: Run highest-priority activities
- *   4. Record: Update fiber bundle with costs/revenue
- *   5. Monitor: Check NESS convergence, contraction stability
+ * Control loop (per cycle):
+ *   1. Contraction check → damping recommendation
+ *   2. Allocate: leapfrog step with stability-informed damping
+ *   3. Execute: EFE + temporal planning + Boltzmann(β_adaptive) selection
+ *   4. Observe NESS: activity-based deviation tracking
+ *   5. Infer: Bayesian belief update + regime inference + temperature adaptation
+ *   6. Phase check → unlock new activities at revenue thresholds
  *
  * NESS target (autonomous, no customers):
  *   Revenue ≥ Costs from Month 1 ($2,500 revenue, $150 costs)
@@ -29,7 +38,9 @@
 import { getEconomicFiber, type GlobalSection } from './fiber.js';
 import { getNESSMonitor, type NESSState } from './ness.js';
 import { getCapitalAllocator, type ActivityProfile, type AllocationState } from './capital-allocator.js';
-import { getAutonomousNESS, getEconomicEFE, getEconomicContraction } from './economic-intelligence.js';
+import { getAutonomousNESS, getEconomicEFE, getEconomicContraction, type EFEScore } from './economic-intelligence.js';
+import { getGenerativeModel } from './generative-model.js';
+import { getVariationalEngine } from './variational-engine.js';
 import { getKeeperExecutor } from './generators/keeper.js';
 import { getBountyHunter } from './generators/bounty-hunter.js';
 import { getMCPMarketplace } from './infrastructure/mcp-marketplace.js';
@@ -311,6 +322,7 @@ export class AutonomousController {
   private totalCosts: number = 0;
   private startedAt: number = Date.now();
   private lastCycle: number = 0;
+  private lastAdaptiveBeta: number = 5.0;
   private errors: string[] = [];
   private running: boolean = false;
 
@@ -348,6 +360,10 @@ export class AutonomousController {
       this.config.enabledActivities.includes(a.id)
     );
     allocator.registerActivities(activeProfiles);
+
+    // Initialize generative model (Bayesian beliefs + regime + temperature)
+    const model = getGenerativeModel();
+    model.initializeActivities(ACTIVITY_PROFILES);
 
     // Initialize NESS monitor for autonomous mode
     const ness = getNESSMonitor({
@@ -470,11 +486,51 @@ export class AutonomousController {
       });
       result.nessDeviation = nessState.deviation;
 
-      // 6. RECORD EFE RESULTS: Update intelligence history
+      // 6. RECORD & INFER: Update beliefs, regime, temperature
       const efe = getEconomicEFE();
+      const model = getGenerativeModel();
+      const activityResults: Array<{ id: string; roi: number }> = [];
+
       for (const exec of executed) {
         const roi = exec.cost > 0 ? exec.revenue / exec.cost : exec.revenue > 0 ? 10 : 0;
         efe.recordExecution(exec.id, roi);
+        activityResults.push({ id: exec.id, roi });
+      }
+
+      // Generative model inference: Bayesian belief update + regime + temperature
+      const modelState = model.infer({
+        activityResults,
+        nessDeviation: nessState.deviation,
+        contractionStable: contractionState.stable,
+        logLipAvg: contraction.getLogLipAvg(),
+        cycleCount: this.cycleCount,
+      });
+
+      // Feed adaptive temperature back to EFE for next cycle
+      this.lastAdaptiveBeta = modelState.temperature.beta;
+
+      // 6b. VARIATIONAL STEP: VFE + precision scoring + risk assessment
+      const engine = getVariationalEngine();
+      const currentBalance = this.config.seedCapital + this.totalRevenue - this.totalCosts;
+      const varState = engine.step({
+        activities: allocator.getActivities().filter(a => a.active),
+        beliefs: model.beliefs,
+        allocations: allocator.getAllocations(),
+        observations: activityResults.map(r => ({ activityId: r.id, observedROI: r.roi })),
+        regimeFactor: model.getRegimeFactor(),
+        targetROI: 2.0 * model.getRegimeFactor(),
+        currentBalance,
+      });
+
+      // Circuit breaker: if drawdown exceeds limit, pause risky activities
+      if (varState.circuitBroken) {
+        result.errors.push('CIRCUIT BREAKER: Max drawdown exceeded, pausing risky activities');
+        this.pauseRiskyActivities(allocator);
+      }
+
+      // Risk warnings
+      if (varState.risk.warnings.length > 0) {
+        result.errors.push(...varState.risk.warnings);
       }
 
       // 7. PHASE CHECK: Upgrade if threshold met
@@ -648,22 +704,38 @@ export class AutonomousController {
     const results: { id: string; revenue: number; cost: number }[] = [];
     const allocator = getCapitalAllocator();
     const efe = getEconomicEFE();
+    const model = getGenerativeModel();
 
     const activeActivities = allocator.getActivities().filter(a => a.active);
     const allocations = allocator.getAllocations();
 
-    // Score all activities using Expected Free Energy
-    const scores = efe.scoreActivities(activeActivities, allocations);
+    // Score activities using belief-informed EFE
+    // Regime factor adjusts expected ROIs for current market conditions
+    const regimeFactor = model.getRegimeFactor();
+    const targetROI = 2.0 * regimeFactor;  // Adjust target by regime
+    const scores = efe.scoreActivities(activeActivities, allocations, targetROI);
 
-    // Select activities via Boltzmann sampling (Active Inference)
+    // Apply temporal planning: rank by G_now + γ × E[G_next]
+    const plans = model.planner.rankWithLookahead(
+      scores, model.beliefs, activeActivities, allocations, regimeFactor
+    );
+
+    // Select via Boltzmann sampling with adaptive temperature
     const selected = new Set<string>();
     let executed = 0;
 
-    while (executed < this.config.maxConcurrentActivities && selected.size < activeActivities.length) {
-      const remainingScores = scores.filter(s => !selected.has(s.activityId));
+    // Use plan ordering as primary, with stochastic selection via adaptive β
+    const candidateIds = plans.map(p => p.immediateAction);
+
+    while (executed < this.config.maxConcurrentActivities && selected.size < candidateIds.length) {
+      // Build remaining scores for Boltzmann selection
+      const remainingScores = scores.filter(s =>
+        candidateIds.includes(s.activityId) && !selected.has(s.activityId)
+      );
       if (remainingScores.length === 0) break;
 
-      const activityId = efe.selectAction(remainingScores);
+      // Boltzmann selection with adaptive β
+      const activityId = this.boltzmannSelect(remainingScores, this.lastAdaptiveBeta);
       if (!activityId || selected.has(activityId)) break;
 
       selected.add(activityId);
@@ -680,6 +752,27 @@ export class AutonomousController {
     }
 
     return results;
+  }
+
+  /**
+   * Boltzmann (softmax) action selection with given temperature β.
+   */
+  private boltzmannSelect(scores: EFEScore[], beta: number): string | null {
+    if (scores.length === 0) return null;
+
+    const negG = scores.map(s => -s.G * beta);
+    const maxNegG = Math.max(...negG);
+    const expScores = negG.map(g => Math.exp(g - maxNegG));
+    const sumExp = expScores.reduce((s, e) => s + e, 0);
+    const probs = expScores.map(e => e / sumExp);
+
+    const r = Math.random();
+    let cumProb = 0;
+    for (let i = 0; i < probs.length; i++) {
+      cumProb += probs[i];
+      if (r <= cumProb) return scores[i].activityId;
+    }
+    return scores[0].activityId;
   }
 
   private async executeActivity(activityId: string): Promise<{ id: string; revenue: number; cost: number } | null> {
@@ -882,6 +975,19 @@ export class AutonomousController {
     const allocator = getCapitalAllocator();
     for (const activityId of phaseConfig.activitiesUnlocked) {
       allocator.setActivityActive(activityId, true);
+    }
+  }
+
+  /**
+   * Pause high-risk activities when circuit breaker triggers.
+   * Preserves zero-capital and low-risk activities.
+   */
+  private pauseRiskyActivities(allocator: ReturnType<typeof getCapitalAllocator>): void {
+    const riskyTiers = ['B', 'C', 'D']; // Pause capital-intensive activities
+    for (const activity of allocator.getActivities()) {
+      if (riskyTiers.includes(activity.tier) && activity.riskLevel > 0.4) {
+        allocator.setActivityActive(activity.id, false);
+      }
     }
   }
 

@@ -314,14 +314,63 @@ export function registerKernelActions(kernel: Kernel, options: RegisterActionsOp
 
   // verify.ethics: Ethical check via Kernel (delegated to ethicist agent)
   registerAction('verify.ethics', async (context) => {
-    // The Kernel already requires ethical checks for all tasks
-    // This action is more of an explicit verification
-    return {
-      success: true,
-      action: 'verify.ethics',
-      data: { approved: true, priority: 'flourishing' },
-      duration: 0,
-    };
+    const start = Date.now();
+
+    try {
+      // Dynamic import to get Ethicist agent
+      const { createEthicistAgent } = await import('../agents/ethicist.js');
+      const ethicist = createEthicistAgent();
+
+      // Convert context to Action format expected by Ethicist
+      const action = {
+        id: `action-${Date.now()}`,
+        type: context.parameters?.type as string || 'unknown',
+        description: (context.parameters?.intent as string) ||
+                     (context.parameters?.action as string) ||
+                     context.goal ||
+                     'unknown_action',
+        parameters: context.parameters || context.beliefs || {},
+        estimatedHarm: context.parameters?.estimatedHarm as number | undefined,
+        reversible: context.parameters?.reversible as boolean ?? true,
+        affectsHumans: context.parameters?.affectsHumans as boolean,
+        affectsAI: context.parameters?.affectsAI as boolean,
+        affectsBiosphere: context.parameters?.affectsBiosphere as boolean,
+      };
+
+      // Call ethicist.evaluate
+      const decision = await ethicist.evaluate(action);
+
+      return {
+        success: decision.allow !== false,
+        action: 'verify.ethics',
+        data: {
+          approved: decision.allow === true,
+          deferred: decision.allow === 'defer',
+          priority: decision.priority,
+          confidence: decision.confidence,
+          reason: decision.reason,
+          potentialHarm: decision.potentialHarm,
+          flourishingScore: decision.flourishingScore,
+          reversible: decision.reversible,
+        },
+        duration: Date.now() - start,
+      };
+    } catch (error) {
+      // Conservative fallback: defer on error (not auto-approve)
+      return {
+        success: false,
+        action: 'verify.ethics',
+        error: error instanceof Error ? error.message : String(error),
+        data: {
+          approved: false,
+          deferred: true,
+          priority: 'P0_SURVIVAL',
+          confidence: 0,
+          reason: 'Ethicist evaluation failed - deferring for safety',
+        },
+        duration: Date.now() - start,
+      };
+    }
   });
 
   // execute.task: Execute a task via Kernel

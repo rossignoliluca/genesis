@@ -525,6 +525,47 @@ export {
   type EconomicContractionState,
 } from './economic-intelligence.js';
 
+// Generative Model (Bayesian World Model, v16.0)
+export {
+  GenerativeEconomicModel,
+  getGenerativeModel,
+  resetGenerativeModel,
+  ActivityBeliefs,
+  MarketRegime,
+  AdaptiveTemperature,
+  TemporalPlanner,
+  type ActivityBelief,
+  type BeliefConfig,
+  type RegimeState,
+  type RegimeConfig,
+  type RegimeInference,
+  type TemperatureConfig,
+  type TemperatureState,
+  type TemporalPlan,
+  type PlannerConfig,
+  type GenerativeModelState,
+} from './generative-model.js';
+
+// Variational Engine (Precision-Weighted EFE + Risk, v17.0)
+export {
+  VariationalEngine,
+  getVariationalEngine,
+  resetVariationalEngine,
+  VariationalFreeEnergy,
+  PrecisionWeightedEFE,
+  CovarianceStructure,
+  RiskManager,
+  type VFEState,
+  type VFEConfig,
+  type PrecisionEFEScore,
+  type PrecisionEFEConfig,
+  type ClusterId,
+  type CovarianceConfig,
+  type RiskState,
+  type RiskConfig,
+  type VariationalEngineState,
+} from './variational-engine.js';
+
 // Generators
 export {
   KeeperExecutor,

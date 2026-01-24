@@ -10,6 +10,7 @@ import { ObservationGatherer, createObservationGatherer } from './observations.j
 import { ActionExecutorManager, createActionExecutorManager, ActionResult } from './actions.js';
 import { Observation, Beliefs, ActionType, AIEvent, ACTIONS } from './types.js';
 import { DeepActiveInference } from './deep-aif.js';
+import { ExperienceReplayBuffer, createExperienceReplayBuffer } from './experience-replay.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -33,6 +34,12 @@ export interface AutonomousLoopConfig {
   persistEveryN: number;     // Save every N cycles (0 = never)
   loadOnStart: boolean;      // Load saved model on startup
 
+  // v11.0: Experience replay & dream consolidation
+  replayEveryN: number;      // Run experience replay every N cycles (0 = never)
+  replayBatchSize: number;   // How many experiences to replay per batch
+  dreamEveryN: number;       // Run dream consolidation every N cycles (0 = never)
+  dreamBatchSize: number;    // How many high-surprise experiences to consolidate
+
   // Logging
   verbose: boolean;
 }
@@ -47,6 +54,10 @@ export const DEFAULT_LOOP_CONFIG: AutonomousLoopConfig = {
   persistModelPath: '.genesis/learned-model.json',
   persistEveryN: 10,   // Save every 10 cycles
   loadOnStart: true,    // Resume learning from previous session
+  replayEveryN: 5,     // Replay every 5 cycles
+  replayBatchSize: 8,  // 8 experiences per replay
+  dreamEveryN: 50,     // Dream consolidation every 50 cycles
+  dreamBatchSize: 16,  // 16 high-surprise experiences per dream
   verbose: false,
 };
 
@@ -89,12 +100,17 @@ export class AutonomousLoop {
   private deepAIFActive: boolean = false;  // Whether Deep-AIF has been activated
   private deepAIF: DeepActiveInference | null = null;
 
+  // v11.0: Experience replay buffer
+  private replayBuffer: ExperienceReplayBuffer;
+  private previousObservation: Observation | null = null;
+
   constructor(config: Partial<AutonomousLoopConfig> = {}) {
     this.config = { ...DEFAULT_LOOP_CONFIG, ...config };
 
     this.engine = createActiveInferenceEngine();
     this.observations = createObservationGatherer();
     this.actions = createActionExecutorManager();
+    this.replayBuffer = createExperienceReplayBuffer();
 
     // Subscribe to engine events
     this.engine.on(this.handleEngineEvent.bind(this));
@@ -228,11 +244,24 @@ export class AutonomousLoop {
 
     // 5. v10.8: Record learning event
     const surprise = this.engine.getStats().averageSurprise;
-    this.engine.recordLearningEvent(
-      action,
-      surprise,
-      result.success ? 'positive' : 'negative'
-    );
+    const outcome: 'positive' | 'negative' | 'neutral' = result.success ? 'positive' : 'negative';
+    this.engine.recordLearningEvent(action, surprise, outcome);
+
+    // 5a. v11.0: Store experience in replay buffer
+    if (this.previousObservation) {
+      this.replayBuffer.store({
+        timestamp: Date.now(),
+        observation: this.previousObservation,
+        action,
+        actionIdx: ACTIONS.indexOf(action),
+        nextObservation: obs,
+        surprise,
+        outcome,
+        beliefs: { ...beliefs },
+        nextBeliefs: this.engine.getBeliefs(),
+      });
+    }
+    this.previousObservation = obs;
 
     // 5b. v10.8.1: Meta-learning triggers (every 20 cycles)
     if (this.cycleCount % 20 === 0 && this.cycleCount >= 40) {
@@ -258,6 +287,16 @@ export class AutonomousLoop {
       } else {
         this.plateauCycles = 0;
       }
+    }
+
+    // 5c. v11.0: Experience replay (offline learning from past experiences)
+    if (this.config.replayEveryN > 0 && this.cycleCount % this.config.replayEveryN === 0) {
+      this.runExperienceReplay();
+    }
+
+    // 5d. v11.0: Dream consolidation (deep replay of high-surprise events)
+    if (this.config.dreamEveryN > 0 && this.cycleCount % this.config.dreamEveryN === 0 && this.cycleCount > 0) {
+      this.runDreamConsolidation();
     }
 
     // 6. v10.8: Persist model periodically
@@ -345,6 +384,72 @@ export class AutonomousLoop {
       const idx = this.onStopHandlers.indexOf(handler);
       if (idx >= 0) this.onStopHandlers.splice(idx, 1);
     };
+  }
+
+  // ============================================================================
+  // v11.0: Experience Replay & Dream Consolidation
+  // ============================================================================
+
+  /**
+   * Run experience replay: sample a batch from buffer and re-learn.
+   * This strengthens A/B matrix updates for important past experiences.
+   */
+  private runExperienceReplay(): void {
+    const batch = this.replayBuffer.sampleBatch(this.config.replayBatchSize);
+    if (batch.experiences.length === 0) return;
+
+    if (this.config.verbose) {
+      console.log(`[AI Loop] Replay: ${batch.experiences.length} experiences (avg surprise: ${batch.avgSurprise.toFixed(2)})`);
+    }
+
+    // Re-learn from each experience (offline update)
+    for (const exp of batch.experiences) {
+      // Feed the observation pair back through the engine's learning
+      // This is equivalent to "replaying" the experience in the model
+      (this.engine as any).learn(
+        exp.observation,
+        exp.nextObservation,
+        exp.beliefs,
+        exp.actionIdx
+      );
+    }
+  }
+
+  /**
+   * Run dream consolidation: deep replay of high-surprise experiences.
+   * This is the "sleep" phase where the model integrates difficult experiences.
+   *
+   * Differences from regular replay:
+   * - Focuses on highest-surprise experiences
+   * - Runs multiple iterations per experience
+   * - Prunes consolidated experiences afterward
+   */
+  private runDreamConsolidation(): void {
+    const highSurprise = this.replayBuffer.sampleHighSurprise(this.config.dreamBatchSize);
+    if (highSurprise.length === 0) return;
+
+    if (this.config.verbose) {
+      const avgS = highSurprise.reduce((s, e) => s + e.surprise, 0) / highSurprise.length;
+      console.log(`[AI Loop] Dream: consolidating ${highSurprise.length} high-surprise experiences (avg: ${avgS.toFixed(2)})`);
+    }
+
+    // Deep replay: 3 iterations per experience for stronger consolidation
+    for (let iter = 0; iter < 3; iter++) {
+      for (const exp of highSurprise) {
+        (this.engine as any).learn(
+          exp.observation,
+          exp.nextObservation,
+          exp.beliefs,
+          exp.actionIdx
+        );
+      }
+    }
+
+    // Prune fully consolidated experiences
+    const pruned = this.replayBuffer.pruneConsolidated();
+    if (pruned > 0 && this.config.verbose) {
+      console.log(`[AI Loop] Dream: pruned ${pruned} consolidated experiences`);
+    }
   }
 
   // ============================================================================

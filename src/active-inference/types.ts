@@ -70,6 +70,29 @@ export interface Observation {
   coherence: CoherenceObs;
   task: TaskObs;
   economic?: EconomicObs; // v9.3 - optional for backward compatibility
+  // v11.0: Precision weights per modality (0-1, higher = more reliable)
+  precision?: ObservationPrecision;
+}
+
+/**
+ * v11.0: Precision-weighted observations (Friston 2025, UAV Deep AIF papers)
+ *
+ * Each modality has a precision weight that modulates its influence on belief updates.
+ * Precision is learned from observation reliability:
+ * - High precision (→1): sensor is reliable, trust its signal
+ * - Low precision (→0): sensor is unreliable, downweight in inference
+ *
+ * This implements the precision-weighting scheme from:
+ * - "Deep Active Inference for Long-Horizon Tasks" (2025)
+ * - "Precision-weighted message passing in AIF" (Parr & Friston 2019)
+ */
+export interface ObservationPrecision {
+  energy: number;     // Precision of energy observation (heap stability)
+  phi: number;        // Precision of phi observation (IIT computation reliability)
+  tool: number;       // Precision of tool observation (MCP success rate)
+  coherence: number;  // Precision of coherence observation
+  task: number;       // Precision of task observation
+  economic: number;   // Precision of economic observation (Stripe availability)
 }
 
 export const OBSERVATION_DIMS = {

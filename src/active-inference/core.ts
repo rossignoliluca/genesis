@@ -18,6 +18,7 @@
 
 import {
   Observation,
+  ObservationPrecision,
   Beliefs,
   Policy,
   AMatrix,
@@ -796,27 +797,32 @@ export class ActiveInferenceEngine {
 
   private computeLikelihoods(observation: Observation): Beliefs {
     // Compute P(observation | state) for each factor
+    // v11.0: Precision-weighted likelihoods
+    // likelihood_eff = precision * log P(o|s)
+    // When precision → 0, observation is ignored (uniform likelihood)
+    // When precision → 1, full weight on observation
+    const prec = observation.precision ?? { energy: 1, phi: 1, tool: 1, coherence: 1, task: 1, economic: 1 };
 
-    // Energy observation → viability likelihood
-    const viabilityLik = this.A.energy[observation.energy].map(p => safeLog(p));
+    // Energy observation → viability likelihood (weighted by precision)
+    const viabilityLik = this.A.energy[observation.energy].map(p => prec.energy * safeLog(p));
 
-    // Phi observation → worldState likelihood (proxy)
-    const worldStateLik = this.A.phi[observation.phi].map(p => safeLog(p));
+    // Phi observation → worldState likelihood (weighted by precision)
+    const worldStateLik = this.A.phi[observation.phi].map(p => prec.phi * safeLog(p));
 
-    // Tool observation → coupling likelihood
-    const couplingLik = this.A.tool[observation.tool].map(p => safeLog(p));
+    // Tool observation → coupling likelihood (weighted by precision)
+    const couplingLik = this.A.tool[observation.tool].map(p => prec.tool * safeLog(p));
 
-    // Task observation → goalProgress likelihood
-    const goalProgressLik = this.A.task[observation.task].map(p => safeLog(p));
+    // Task observation → goalProgress likelihood (weighted by precision)
+    const goalProgressLik = this.A.task[observation.task].map(p => prec.task * safeLog(p));
 
-    // Coherence affects worldState
+    // Coherence affects worldState (weighted by coherence precision)
     const coherenceLik = this.A.coherence[observation.coherence];
     for (let i = 0; i < worldStateLik.length; i++) {
-      worldStateLik[i] += safeLog(coherenceLik[i] || 0.1);
+      worldStateLik[i] += prec.coherence * safeLog(coherenceLik[i] || 0.1);
     }
 
-    // v10.8.2: Economic observation → economic state likelihood
-    const economicLik = this.A.economic[observation.economic ?? 2].map(p => safeLog(p));
+    // v10.8.2: Economic observation → economic state likelihood (weighted)
+    const economicLik = this.A.economic[observation.economic ?? 2].map(p => prec.economic * safeLog(p));
 
     return {
       viability: viabilityLik,

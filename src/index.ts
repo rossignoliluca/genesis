@@ -45,7 +45,7 @@ import { getLLMBridge, getHybridRouter, detectHardware } from './llm/index.js';
 import { getMCPClient, logMCPMode, MCP_SERVER_REGISTRY } from './mcp/index.js';
 import { getProcessManager, LOG_FILE } from './daemon/process.js';
 import { createPipelineExecutor } from './pipeline/index.js';
-import { createAutonomousLoop, ACTIONS, integrateActiveInference, createIntegratedSystem, createMCPInferenceLoop } from './active-inference/index.js';
+import { createAutonomousLoop, ACTIONS, integrateActiveInference, createIntegratedSystem, createMCPInferenceLoop, createValueIntegratedLoop } from './active-inference/index.js';
 import { getBrain, resetBrain } from './brain/index.js';
 import { getAutonomousSystem, AutonomousSystem } from './autonomous/index.js';
 import { getEconomicSystem } from './economy/index.js';
@@ -982,7 +982,9 @@ ${c('Examples:', 'cyan')}
   }
 
   // Standard mode (no Kernel/Daemon integration)
-  const loop = createAutonomousLoop({
+  // v11.0: Value-JEPA augmented loop is now the default (adds trajectory planning)
+  const noValue = options['no-value'] === 'true';
+  const loopConfig = {
     cycleInterval: interval,
     maxCycles: 0,
     verbose,
@@ -990,7 +992,13 @@ ${c('Examples:', 'cyan')}
     stopOnEnergyCritical: !noEnergyStop,
     loadOnStart: true,
     persistEveryN: 10,
-  });
+    replayEveryN: 5,
+    dreamEveryN: 50,
+  };
+
+  const loop = noValue
+    ? createAutonomousLoop(loopConfig)
+    : createValueIntegratedLoop(loopConfig).loop;
 
   // Handle subcommands
   if (subcommand === 'beliefs') {

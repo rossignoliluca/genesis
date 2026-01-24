@@ -13,6 +13,7 @@
 
 import {
   Observation,
+  ObservationPrecision,
   EnergyObs,
   PhiObs,
   ToolObs,
@@ -65,6 +66,17 @@ export class ObservationGatherer {
   private mcpToolResults: Array<{ success: boolean; latency: number; timestamp: number }> = [];
   private lastStripeBalance: number = -1; // -1 = never checked
   private realSourcesInitialized = false;
+
+  // v11.0: Precision tracking per modality
+  private precisionHistory: {
+    energy: number[];    // Recent energy observation stability
+    phi: number[];       // Recent phi computation reliability
+    tool: number[];      // Recent tool success rate
+    coherence: number[]; // Recent coherence consistency
+    task: number[];      // Recent task status consistency
+    economic: number[];  // Recent Stripe availability
+  } = { energy: [], phi: [], tool: [], coherence: [], task: [], economic: [] };
+  private readonly PRECISION_WINDOW = 20; // Track last N observations for precision
 
   /**
    * Configure observation sources
@@ -231,7 +243,7 @@ export class ObservationGatherer {
     }
 
     // Map to discrete observations
-    return {
+    const obs: Observation = {
       energy: this.mapEnergy(kernelState.energy),
       phi: this.mapPhi(phiState),
       tool: this.mapTool(sensorResult),
@@ -239,6 +251,75 @@ export class ObservationGatherer {
       task: this.mapTask(kernelState.taskStatus),
       economic: economicObs,
     };
+
+    // v11.0: Compute precision weights from reliability history
+    obs.precision = this.computePrecision(kernelState, phiState, sensorResult, worldModelState);
+
+    return obs;
+  }
+
+  /**
+   * v11.0: Compute precision weights for each observation modality.
+   * Precision = how much to trust this observation channel.
+   *
+   * Based on:
+   * - Stability: low variance in recent observations → high precision
+   * - Reliability: sensor success rate → high precision
+   * - Availability: channel responding → high precision
+   */
+  private computePrecision(
+    kernel: KernelState,
+    phi: PhiState,
+    sensor: SensorResult,
+    world: WorldModelState
+  ): ObservationPrecision {
+    // Track observation reliability
+    this.precisionHistory.energy.push(kernel.energy);
+    this.precisionHistory.phi.push(phi.phi);
+    this.precisionHistory.tool.push(sensor.success ? 1 : 0);
+    this.precisionHistory.coherence.push(world.consistent ? 1 : 0);
+    this.precisionHistory.task.push(kernel.taskStatus === 'running' ? 1 : 0.5);
+    this.precisionHistory.economic.push(this.lastStripeBalance >= 0 ? 1 : 0.3);
+
+    // Trim to window size
+    for (const key of Object.keys(this.precisionHistory) as Array<keyof typeof this.precisionHistory>) {
+      if (this.precisionHistory[key].length > this.PRECISION_WINDOW) {
+        this.precisionHistory[key] = this.precisionHistory[key].slice(-this.PRECISION_WINDOW);
+      }
+    }
+
+    return {
+      energy: this.channelPrecision(this.precisionHistory.energy, 'continuous'),
+      phi: this.channelPrecision(this.precisionHistory.phi, 'continuous'),
+      tool: this.channelPrecision(this.precisionHistory.tool, 'binary'),
+      coherence: this.channelPrecision(this.precisionHistory.coherence, 'binary'),
+      task: this.channelPrecision(this.precisionHistory.task, 'continuous'),
+      economic: this.channelPrecision(this.precisionHistory.economic, 'binary'),
+    };
+  }
+
+  /**
+   * Compute precision for a single channel from its history.
+   *
+   * For continuous channels: precision = 1 / (1 + variance)
+   * For binary channels: precision = success_rate
+   * Minimum precision = 0.1 (never fully ignore a channel)
+   */
+  private channelPrecision(history: number[], type: 'continuous' | 'binary'): number {
+    if (history.length < 3) return 0.5; // Insufficient data, moderate precision
+
+    if (type === 'binary') {
+      // Binary: precision = success rate (clamped)
+      const successRate = history.reduce((s, v) => s + v, 0) / history.length;
+      return Math.max(0.1, Math.min(1.0, successRate));
+    }
+
+    // Continuous: precision = 1 / (1 + normalized_variance)
+    const mean = history.reduce((s, v) => s + v, 0) / history.length;
+    const variance = history.reduce((s, v) => s + (v - mean) ** 2, 0) / history.length;
+    // Normalize variance by expected range [0, 1]
+    const normalizedVar = Math.min(variance, 1.0);
+    return Math.max(0.1, 1.0 / (1.0 + 4.0 * normalizedVar));
   }
 
   /**

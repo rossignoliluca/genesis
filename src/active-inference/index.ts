@@ -87,6 +87,17 @@ export {
   DEFAULT_MEMORY_INTEGRATION_CONFIG,
 } from './memory-integration.js';
 
+// Export Experience Replay Buffer (Genesis 11.0)
+export {
+  ExperienceReplayBuffer,
+  createExperienceReplayBuffer,
+  getExperienceReplayBuffer,
+  type Experience,
+  type ReplayBatch,
+  type ReplayStats,
+  type ReplayConfig,
+} from './experience-replay.js';
+
 // Export Economic Integration (Genesis 9.3 - Autopoietic Self-Funding)
 export {
   EconomicIntegration,

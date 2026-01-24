@@ -541,6 +541,7 @@ export class ValueAugmentedEngine {
       worldState: [0, 0.7, 0.2, 0.1],    // Prefer stable
       coupling: [0, 0, 0.1, 0.3, 0.6],   // Prefer synced
       goalProgress: [0, 0, 0.2, 0.8],    // Prefer achieved
+      economic: [0, 0, 0.2, 0.8],        // Prefer growing
     };
 
     const preferredObs: Observation = {

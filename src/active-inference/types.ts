@@ -37,6 +37,7 @@ export const HIDDEN_STATE_DIMS = {
   worldState: 4,
   coupling: 5,
   goalProgress: 4,
+  economic: 4,    // v10.8.2: Economic state factor
 } as const;
 
 export const HIDDEN_STATE_LABELS = {
@@ -44,6 +45,7 @@ export const HIDDEN_STATE_LABELS = {
   worldState: ['unknown', 'stable', 'changing', 'hostile'] as const,
   coupling: ['none', 'weak', 'medium', 'strong', 'synced'] as const,
   goalProgress: ['blocked', 'slow', 'onTrack', 'achieved'] as const,
+  economic: ['critical', 'low', 'stable', 'growing'] as const,  // v10.8.2
 };
 
 // ============================================================================
@@ -192,6 +194,7 @@ export interface Beliefs {
   worldState: number[];  // [P(unknown), P(stable), P(changing), P(hostile)]
   coupling: number[];    // [P(none), P(weak), P(medium), P(strong), P(synced)]
   goalProgress: number[]; // [P(blocked), P(slow), P(onTrack), P(achieved)]
+  economic: number[];    // [P(critical), P(low), P(stable), P(growing)] v10.8.2
 }
 
 /**
@@ -215,6 +218,7 @@ export interface AMatrix {
   tool: number[][];      // [3][5] tool obs given coupling
   coherence: number[][]; // [3][4] coherence obs given worldState
   task: number[][];      // [4][4] task obs given goalProgress
+  economic: number[][];  // [4][4] economic obs given economic state (v10.8.2)
 }
 
 /**
@@ -224,10 +228,11 @@ export interface AMatrix {
  * Factorized: B[factor][next_state][current_state][action]
  */
 export interface BMatrix {
-  viability: number[][][];  // [5][5][8] next viability given current × action
-  worldState: number[][][]; // [4][4][8]
-  coupling: number[][][];   // [5][5][8]
-  goalProgress: number[][][]; // [4][4][8]
+  viability: number[][][];  // [5][5][ACTION_COUNT]
+  worldState: number[][][]; // [4][4][ACTION_COUNT]
+  coupling: number[][][];   // [5][5][ACTION_COUNT]
+  goalProgress: number[][][]; // [4][4][ACTION_COUNT]
+  economic: number[][][];   // [4][4][ACTION_COUNT] v10.8.2
 }
 
 /**
@@ -243,6 +248,7 @@ export interface CMatrix {
   tool: number[];       // Prefer successful tools
   coherence: number[];  // Prefer consistency
   task: number[];       // Prefer task completion
+  economic: number[];   // Prefer growing revenue (v10.8.2)
 }
 
 /**
@@ -254,6 +260,7 @@ export interface DMatrix {
   worldState: number[];
   coupling: number[];
   goalProgress: number[];
+  economic: number[];   // v10.8.2
 }
 
 // ============================================================================

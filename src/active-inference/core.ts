@@ -150,12 +150,21 @@ function createDefaultAMatrix(): AMatrix {
     [0.01, 0.05, 0.1, 0.8], // obs=completed
   ];
 
+  // v10.8.2: Economic observation given economic state (4×4)
+  const economicA: number[][] = [
+    [0.75, 0.15, 0.07, 0.03], // obs=critical
+    [0.15, 0.65, 0.15, 0.05], // obs=low
+    [0.07, 0.15, 0.65, 0.13], // obs=stable
+    [0.03, 0.05, 0.13, 0.79], // obs=growing
+  ];
+
   return {
     energy: energyA,
     phi: phiA,
     tool: toolA,
     coherence: coherenceA,
     task: taskA,
+    economic: economicA,
   };
 }
 
@@ -185,6 +194,7 @@ function createDefaultBMatrix(): BMatrix {
   const worldStateB = createIdentityTransition(HIDDEN_STATE_DIMS.worldState);
   const couplingB = createIdentityTransition(HIDDEN_STATE_DIMS.coupling);
   const goalProgressB = createIdentityTransition(HIDDEN_STATE_DIMS.goalProgress);
+  const economicB = createIdentityTransition(HIDDEN_STATE_DIMS.economic);
 
   // Customize transitions for specific actions
 
@@ -238,6 +248,36 @@ function createDefaultBMatrix(): BMatrix {
     }
   }
 
+  // v10.8.2: Economic transitions for revenue actions
+  // opportunity.scan (index 27) - slight improvement to economic state
+  const scanIdx = ACTIONS.indexOf('opportunity.scan');
+  for (let curr = 0; curr < 4; curr++) {
+    for (let next = 0; next < 4; next++) {
+      economicB[next][curr][scanIdx] = next === Math.min(curr + 1, 3) ? 0.4 : 0.2;
+    }
+  }
+  // opportunity.build (index 29) - major economic boost
+  const buildIdx = ACTIONS.indexOf('opportunity.build');
+  for (let curr = 0; curr < 4; curr++) {
+    for (let next = 0; next < 4; next++) {
+      economicB[next][curr][buildIdx] = next === Math.min(curr + 1, 3) ? 0.5 : 0.17;
+    }
+  }
+  // opportunity.monetize (index 30) - jumps toward growing
+  const monetizeIdx = ACTIONS.indexOf('opportunity.monetize');
+  for (let curr = 0; curr < 4; curr++) {
+    for (let next = 0; next < 4; next++) {
+      economicB[next][curr][monetizeIdx] = next === 3 ? 0.6 : 0.13;
+    }
+  }
+  // econ.optimize (index 24) - improves economic state
+  const econOptIdx = ACTIONS.indexOf('econ.optimize');
+  for (let curr = 0; curr < 4; curr++) {
+    for (let next = 0; next < 4; next++) {
+      economicB[next][curr][econOptIdx] = next === Math.min(curr + 1, 3) ? 0.45 : 0.18;
+    }
+  }
+
   // Normalize B matrices
   function normalizeB(B: number[][][]): number[][][] {
     const dim = B.length;
@@ -260,6 +300,7 @@ function createDefaultBMatrix(): BMatrix {
     worldState: normalizeB(worldStateB),
     coupling: normalizeB(couplingB),
     goalProgress: normalizeB(goalProgressB),
+    economic: normalizeB(economicB),
   };
 }
 
@@ -283,20 +324,13 @@ function createDefaultCMatrix(): CMatrix {
     // Strongly prefer task completion
     // v10.8: Balanced with economic goals
     task: [-2, 0, 1, 5],
+
+    // v10.8.2: Prefer growing economic health
+    economic: [-8, -3, 1, 6],
   };
 }
 
-/**
- * v10.8: Economic preferences for autonomous revenue.
- * Separate from main C matrix to avoid breaking existing EFE computation.
- * Used by the autonomous loop to bias action selection toward revenue actions
- * when economic health is low.
- */
-export const ECONOMIC_PREFERENCES = {
-  // economic observation: [critical, low, stable, growing]
-  // Strongly prefer growing revenue, penalize critical
-  economic: [-8, -3, 1, 6],
-} as const;
+// v10.8.2: ECONOMIC_PREFERENCES integrated directly into CMatrix.economic
 
 function createDefaultDMatrix(): DMatrix {
   // D matrix: Prior beliefs about initial state
@@ -307,6 +341,7 @@ function createDefaultDMatrix(): DMatrix {
     worldState: normalize([2, 1, 1, 1]),      // Slight bias toward unknown
     coupling: normalize([2, 1, 1, 1, 1]),     // Slight bias toward none
     goalProgress: normalize([1, 2, 1, 1]),    // Slight bias toward slow
+    economic: normalize([1, 2, 2, 1]),        // Slight bias toward low/stable
   };
 }
 
@@ -375,6 +410,7 @@ export class ActiveInferenceEngine {
       worldState: [...this.D.worldState],
       coupling: [...this.D.coupling],
       goalProgress: [...this.D.goalProgress],
+      economic: [...this.D.economic],
     };
 
     // Initialize Dirichlet concentration parameters from A/B matrices
@@ -396,6 +432,7 @@ export class ActiveInferenceEngine {
       tool: this.A.tool.map(row => row.map(p => p * priorScale)),
       coherence: this.A.coherence.map(row => row.map(p => p * priorScale)),
       task: this.A.task.map(row => row.map(p => p * priorScale)),
+      economic: this.A.economic.map(row => row.map(p => p * priorScale)),
     };
 
     // B Dirichlet: one per state factor
@@ -410,6 +447,9 @@ export class ActiveInferenceEngine {
         next.map(curr => curr.map(act => act * priorScale))
       ),
       goalProgress: this.B.goalProgress.map(next =>
+        next.map(curr => curr.map(act => act * priorScale))
+      ),
+      economic: this.B.economic.map(next =>
         next.map(curr => curr.map(act => act * priorScale))
       ),
     };
@@ -439,6 +479,7 @@ export class ActiveInferenceEngine {
       worldState: this.updateFactor(prior.worldState, likelihoods.worldState),
       coupling: this.updateFactor(prior.coupling, likelihoods.coupling),
       goalProgress: this.updateFactor(prior.goalProgress, likelihoods.goalProgress),
+      economic: this.updateFactor(prior.economic, likelihoods.economic),
     };
 
     // Iterate for convergence
@@ -447,6 +488,7 @@ export class ActiveInferenceEngine {
       posterior.worldState = this.updateFactor(posterior.worldState, likelihoods.worldState);
       posterior.coupling = this.updateFactor(posterior.coupling, likelihoods.coupling);
       posterior.goalProgress = this.updateFactor(posterior.goalProgress, likelihoods.goalProgress);
+      posterior.economic = this.updateFactor(posterior.economic, likelihoods.economic);
     }
 
     // Store updated beliefs
@@ -578,6 +620,7 @@ export class ActiveInferenceEngine {
       worldState: [...this.beliefs.worldState],
       coupling: [...this.beliefs.coupling],
       goalProgress: [...this.beliefs.goalProgress],
+      economic: [...this.beliefs.economic],
     };
 
     // 2. Update beliefs
@@ -665,6 +708,17 @@ export class ActiveInferenceEngine {
       this.A.task[o] = row.map(v => v / sum);
     }
 
+    // v10.8.2: Economic observation → economic state
+    const econObs = currentObs.economic ?? 2;
+    for (let s = 0; s < HIDDEN_STATE_DIMS.economic; s++) {
+      this.aDirichlet.economic[econObs][s] += lr * this.beliefs.economic[s];
+    }
+    for (let o = 0; o < 4; o++) {
+      const row = this.aDirichlet.economic[o];
+      const sum = row.reduce((a, b) => a + b, 0);
+      this.A.economic[o] = row.map(v => v / sum);
+    }
+
     // === Update B matrix (transition model) ===
     // "I was in state S, did action A, now I'm in state S'"
     const lrB = this.config.learningRateB * surpriseFactor;
@@ -704,6 +758,15 @@ export class ActiveInferenceEngine {
       }
     }
     this.recomputeB('goalProgress', HIDDEN_STATE_DIMS.goalProgress, actionIdx);
+
+    // v10.8.2: Economic transitions
+    for (let next = 0; next < HIDDEN_STATE_DIMS.economic; next++) {
+      for (let prev = 0; prev < HIDDEN_STATE_DIMS.economic; prev++) {
+        this.bDirichlet.economic[next][prev][actionIdx] +=
+          lrB * (prevBeliefs.economic?.[prev] ?? 0.25) * this.beliefs.economic[next];
+      }
+    }
+    this.recomputeB('economic', HIDDEN_STATE_DIMS.economic, actionIdx);
 
     this.emit({
       type: 'beliefs_updated',
@@ -752,11 +815,15 @@ export class ActiveInferenceEngine {
       worldStateLik[i] += safeLog(coherenceLik[i] || 0.1);
     }
 
+    // v10.8.2: Economic observation → economic state likelihood
+    const economicLik = this.A.economic[observation.economic ?? 2].map(p => safeLog(p));
+
     return {
       viability: viabilityLik,
       worldState: worldStateLik,
       coupling: couplingLik,
       goalProgress: goalProgressLik,
+      economic: economicLik,
     };
   }
 
@@ -780,12 +847,14 @@ export class ActiveInferenceEngine {
     const predictedWorldState = this.predictNextState(this.beliefs.worldState, this.B.worldState, actionIdx);
     const predictedCoupling = this.predictNextState(this.beliefs.coupling, this.B.coupling, actionIdx);
     const predictedGoalProgress = this.predictNextState(this.beliefs.goalProgress, this.B.goalProgress, actionIdx);
+    const predictedEconomic = this.predictNextState(this.beliefs.economic, this.B.economic, actionIdx);
 
     // 2. Expected observations under predicted states P(o|s')
     const expectedEnergy = matVec(this.A.energy, predictedViability);
     const expectedPhi = matVec(this.A.phi, predictedWorldState);
     const expectedTool = matVec(this.A.tool, predictedCoupling);
     const expectedTask = matVec(this.A.task, predictedGoalProgress);
+    const expectedEconomic = matVec(this.A.economic, predictedEconomic);
 
     // 3. Ambiguity: H(o|s,π) - entropy of predicted observations
     //    High ambiguity = uncertain what we'll observe = BAD
@@ -793,7 +862,8 @@ export class ActiveInferenceEngine {
       entropy(expectedEnergy) +
       entropy(expectedPhi) +
       entropy(expectedTool) +
-      entropy(expectedTask);
+      entropy(expectedTask) +
+      entropy(expectedEconomic);
 
     // 4. Risk: negative expected utility (pragmatic value)
     //    High risk = far from preferred outcomes = BAD
@@ -801,7 +871,8 @@ export class ActiveInferenceEngine {
       -dot(expectedEnergy, this.C.energy) +
       -dot(expectedPhi, this.C.phi) +
       -dot(expectedTool, this.C.tool) +
-      -dot(expectedTask, this.C.task);
+      -dot(expectedTask, this.C.task) +
+      -dot(expectedEconomic, this.C.economic);
 
     // 5. Information Gain (epistemic value): E[D_KL[Q(s|o,π) || Q(s|π)]]
     //    Approximated as mutual information between states and observations
@@ -811,7 +882,8 @@ export class ActiveInferenceEngine {
       predictedViability,
       predictedWorldState,
       predictedCoupling,
-      predictedGoalProgress
+      predictedGoalProgress,
+      predictedEconomic
     );
 
     // EFE = ambiguity + risk - infoGain
@@ -828,7 +900,8 @@ export class ActiveInferenceEngine {
     predViability: number[],
     predWorld: number[],
     predCoupling: number[],
-    predGoal: number[]
+    predGoal: number[],
+    predEconomic: number[]
   ): number {
     // Information gain ≈ I(S'; O|a) = H(O|a) - H(O|S',a)
     // = entropy of predicted observations - expected conditional entropy
@@ -839,6 +912,7 @@ export class ActiveInferenceEngine {
       phi: matVec(this.A.phi, predWorld),
       tool: matVec(this.A.tool, predCoupling),
       task: matVec(this.A.task, predGoal),
+      economic: matVec(this.A.economic, predEconomic),
     };
 
     // Marginal entropy of observations H(O|a)
@@ -846,7 +920,8 @@ export class ActiveInferenceEngine {
       entropy(predObs.energy) +
       entropy(predObs.phi) +
       entropy(predObs.tool) +
-      entropy(predObs.task);
+      entropy(predObs.task) +
+      entropy(predObs.economic);
 
     // Conditional entropy H(O|S',a) - weighted average of observation entropy per state
     // This is lower when the A matrices are more deterministic (less ambiguous)
@@ -871,6 +946,11 @@ export class ActiveInferenceEngine {
     for (let s = 0; s < predGoal.length; s++) {
       if (predGoal[s] > 1e-10) {
         conditionalEntropy += predGoal[s] * entropy(this.A.task[s] || []);
+      }
+    }
+    for (let s = 0; s < predEconomic.length; s++) {
+      if (predEconomic[s] > 1e-10) {
+        conditionalEntropy += predEconomic[s] * entropy(this.A.economic[s] || []);
       }
     }
 
@@ -902,12 +982,14 @@ export class ActiveInferenceEngine {
     const expectedPhi = matVec(this.A.phi, this.beliefs.worldState);
     const expectedTool = matVec(this.A.tool, this.beliefs.coupling);
     const expectedTask = matVec(this.A.task, this.beliefs.goalProgress);
+    const expectedEconomic = matVec(this.A.economic, this.beliefs.economic);
 
     const surprise =
       -safeLog(expectedEnergy[observation.energy]) +
       -safeLog(expectedPhi[observation.phi]) +
       -safeLog(expectedTool[observation.tool]) +
-      -safeLog(expectedTask[observation.task]);
+      -safeLog(expectedTask[observation.task]) +
+      -safeLog(expectedEconomic[observation.economic ?? 2]);
 
     return surprise;
   }
@@ -1032,8 +1114,9 @@ export class ActiveInferenceEngine {
       h(this.beliefs.viability) +
       h(this.beliefs.worldState) +
       h(this.beliefs.coupling) +
-      h(this.beliefs.goalProgress)
-    ) / 4;
+      h(this.beliefs.goalProgress) +
+      h(this.beliefs.economic)
+    ) / 5;
   }
 
   // ============================================================================
@@ -1059,6 +1142,7 @@ export class ActiveInferenceEngine {
     worldState: string;
     coupling: string;
     goalProgress: string;
+    economic: string;
   } {
     const argmax = (arr: number[]) => arr.indexOf(Math.max(...arr));
 
@@ -1067,6 +1151,7 @@ export class ActiveInferenceEngine {
       worldState: ['unknown', 'stable', 'changing', 'hostile'][argmax(this.beliefs.worldState)],
       coupling: ['none', 'weak', 'medium', 'strong', 'synced'][argmax(this.beliefs.coupling)],
       goalProgress: ['blocked', 'slow', 'onTrack', 'achieved'][argmax(this.beliefs.goalProgress)],
+      economic: ['critical', 'low', 'stable', 'growing'][argmax(this.beliefs.economic)],
     };
   }
 
@@ -1149,6 +1234,7 @@ export class ActiveInferenceEngine {
       worldState: [...this.D.worldState],
       coupling: [...this.D.coupling],
       goalProgress: [...this.D.goalProgress],
+      economic: [...this.D.economic],
     };
   }
 }

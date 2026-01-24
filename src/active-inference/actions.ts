@@ -219,15 +219,69 @@ registerAction('recall.memory', async (context) => {
  * plan.goals: Decompose goals into steps
  */
 registerAction('plan.goals', async (context) => {
-  return {
-    success: true,
-    action: 'plan.goals',
-    data: {
-      goal: context.goal,
-      steps: [],
-    },
-    duration: 0,
-  };
+  const start = Date.now();
+  const goal = context.goal || context.parameters?.goal as string || 'generate revenue autonomously';
+
+  try {
+    const mcp = getMCPClient();
+
+    // Use LLM to decompose goal into actionable steps
+    const result = await mcp.call('openai' as any, 'openai_chat', {
+      model: 'gpt-4o-mini',
+      messages: [{
+        role: 'system',
+        content: 'You are an AI planner for an autonomous agent. Decompose the goal into 3-5 concrete, actionable steps. Return JSON array of objects: [{step: string, action: string, priority: "high"|"medium"|"low"}]. Actions should be one of: opportunity.scan, opportunity.evaluate, opportunity.build, opportunity.monetize, web.search, market.analyze, econ.optimize, deploy.service, content.generate.'
+      }, {
+        role: 'user',
+        content: `Goal: ${goal}\n\nCurrent context: ${JSON.stringify(context.parameters || {}).slice(0, 500)}`
+      }],
+      temperature: 0.7,
+      max_tokens: 500,
+    });
+
+    // Parse LLM response
+    let steps: Array<{ step: string; action: string; priority: string }> = [];
+    try {
+      const r = result as any;
+      const content = r?.data?.choices?.[0]?.message?.content || r?.choices?.[0]?.message?.content || '[]';
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        steps = JSON.parse(jsonMatch[0]);
+      }
+    } catch {
+      // LLM didn't return valid JSON, use defaults
+      steps = [
+        { step: 'Scan for revenue opportunities', action: 'opportunity.scan', priority: 'high' },
+        { step: 'Evaluate best opportunity', action: 'opportunity.evaluate', priority: 'high' },
+        { step: 'Build the service', action: 'opportunity.build', priority: 'medium' },
+        { step: 'Set up monetization', action: 'opportunity.monetize', priority: 'medium' },
+      ];
+    }
+
+    return {
+      success: true,
+      action: 'plan.goals',
+      data: { goal, steps, source: 'llm' },
+      duration: Date.now() - start,
+    };
+  } catch {
+    // LLM not available, use heuristic defaults
+    return {
+      success: true,
+      action: 'plan.goals',
+      data: {
+        goal,
+        steps: [
+          { step: 'Scan for revenue opportunities', action: 'opportunity.scan', priority: 'high' },
+          { step: 'Evaluate best opportunity', action: 'opportunity.evaluate', priority: 'high' },
+          { step: 'Build the service', action: 'opportunity.build', priority: 'medium' },
+          { step: 'Set up monetization', action: 'opportunity.monetize', priority: 'medium' },
+        ],
+        source: 'heuristic',
+      },
+      duration: Date.now() - start,
+    };
+  }
 });
 
 /**
@@ -1883,12 +1937,103 @@ export class ActionExecutorManager {
     const result = await executeAction(action, this.context);
     this.history.push(result);
 
+    // v10.8.2: Context Chain - pipe action outputs to downstream actions
+    if (result.success && result.data) {
+      this.chainContext(action, result.data);
+    }
+
     // Limit history to last 100 actions
     if (this.history.length > 100) {
       this.history = this.history.slice(-100);
     }
 
     return result;
+  }
+
+  /**
+   * v10.8.2: Chain successful action outputs as inputs for downstream actions.
+   * Implements the opportunity pipeline: scan → evaluate → build → monetize
+   */
+  private chainContext(action: ActionType, data: unknown): void {
+    if (!this.context.parameters) this.context.parameters = {};
+    const params = this.context.parameters as Record<string, unknown>;
+
+    switch (action) {
+      case 'opportunity.scan':
+        // Scan found opportunities → extract titles → feed to evaluate
+        if (data && typeof data === 'object') {
+          const scanData = data as any;
+          const allFindings: string[] = [];
+          // Extract from Brave search results format
+          const results = scanData.results || [];
+          for (const r of results) {
+            const webResults = r.findings?.web?.results || r.findings?.data?.web?.results || [];
+            for (const item of webResults) {
+              if (item.title) allFindings.push(`${item.title}: ${item.description || ''}`);
+            }
+            // Also handle direct array format
+            if (Array.isArray(r.findings)) {
+              for (const item of r.findings) {
+                if (typeof item === 'string') allFindings.push(item);
+                else if (item?.title) allFindings.push(item.title);
+              }
+            }
+          }
+          if (allFindings.length > 0) {
+            params.opportunity = allFindings[0];
+            params.opportunities = allFindings.slice(0, 5);
+          } else {
+            // Fallback: use query context as opportunity seed
+            params.opportunity = scanData.scanType === 'api'
+              ? 'AI-powered API service for developers'
+              : 'Micro-SaaS tool for unmet developer need';
+          }
+        }
+        break;
+
+      case 'opportunity.evaluate':
+        // Evaluation result → feed to build
+        if (data && typeof data === 'object') {
+          const evalResult = data as any;
+          if (evalResult.recommendation === 'proceed' || evalResult.feasibility > 0.5) {
+            params.plan = {
+              name: evalResult.opportunity || params.opportunity || 'genesis-service',
+              description: evalResult.description || 'AI-powered service',
+              type: evalResult.type || 'api',
+              features: evalResult.features || ['core functionality'],
+            };
+          }
+        }
+        break;
+
+      case 'opportunity.build':
+        // Build result → feed to monetize
+        if (data && typeof data === 'object') {
+          const buildResult = data as Record<string, any>;
+          params.service = {
+            name: buildResult.name || (params.plan as any)?.name || 'genesis-service',
+            description: buildResult.description || 'Built by Genesis',
+            pricing: buildResult.pricing || 999, // $9.99/month in cents
+            interval: 'month',
+            deployUrl: buildResult.deployUrl || buildResult.repoUrl,
+          };
+        }
+        break;
+
+      case 'market.analyze':
+        // Market analysis → inform opportunity scanning
+        if (data && typeof data === 'object') {
+          params.marketContext = data;
+        }
+        break;
+
+      case 'plan.goals':
+        // Goal plan → inform task execution
+        if (data && typeof data === 'object' && 'steps' in (data as any)) {
+          params.goalSteps = (data as any).steps;
+        }
+        break;
+    }
   }
 
   /**

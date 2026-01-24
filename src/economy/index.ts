@@ -461,3 +461,26 @@ export function getEconomicSystem(budgetConfig?: Partial<BudgetConfig>): Economi
 }
 
 export default EconomicSystem;
+
+// ============================================================================
+// Re-export Economic Fiber + NESS (v13.0)
+// ============================================================================
+
+export {
+  EconomicFiber,
+  getEconomicFiber,
+  resetEconomicFiber,
+  type ModuleFiber,
+  type CostRecord,
+  type RevenueRecord,
+  type GlobalSection,
+} from './fiber.js';
+
+export {
+  NESSMonitor,
+  getNESSMonitor,
+  resetNESSMonitor,
+  type NESSConfig,
+  type NESSState,
+  type NESSObservation,
+} from './ness.js';

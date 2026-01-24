@@ -30,6 +30,11 @@
 
 import { ActiveInferenceEngine, createActiveInferenceEngine } from '../active-inference/core.js';
 import { Beliefs, ActionType, ACTIONS, Observation } from '../active-inference/types.js';
+import { ContractionMonitor, type ContractionState } from './contraction.js';
+import { naturalGradientStep } from './fisher.js';
+import { leapfrogStep, budgetConstraint, roiGradient, computeHamiltonian, type HamiltonianState } from './leapfrog.js';
+import { EconomicFiber, getEconomicFiber } from '../economy/fiber.js';
+import { NESSMonitor, getNESSMonitor, type NESSState } from '../economy/ness.js';
 
 // ============================================================================
 // Types
@@ -1055,12 +1060,43 @@ export class FreeEnergyKernel {
   private onModeChangeHandlers: Array<(mode: KernelMode, prev: KernelMode) => void> = [];
   private onErrorHandlers: Array<(error: PredictionError) => void> = [];
 
+  // v13.0: Information geometry + economic fiber
+  private contraction: ContractionMonitor;
+  private fiber: EconomicFiber;
+  private nessMonitor: NESSMonitor;
+  private budgetState: HamiltonianState;
+  private lastBeliefState: number[] = [];
+  private budgetReallocationInterval: number = 10; // Every N cycles
+
   constructor() {
     this.l1 = new AutonomicLevel();
     this.l2 = new ReactiveLevel();
     this.l3 = new CognitiveLevel();
     this.l4 = new ExecutiveLevel();
     this.supervision = new SupervisionTree();
+
+    // v13.0: Initialize contraction monitor
+    this.contraction = new ContractionMonitor({
+      emaAlpha: 0.02,
+      warningThreshold: -0.05,
+      criticalThreshold: 0.0,
+    });
+
+    // v13.0: Initialize economic fiber
+    this.fiber = getEconomicFiber(100);
+    this.fiber.registerModule('L1');
+    this.fiber.registerModule('L2');
+    this.fiber.registerModule('L3');
+    this.fiber.registerModule('L4');
+
+    // v13.0: Initialize NESS monitor
+    this.nessMonitor = getNESSMonitor();
+
+    // v13.0: Initialize Hamiltonian state for budget
+    this.budgetState = {
+      q: [25, 25, 25, 25], // Equal initial allocation
+      p: [0, 0, 0, 0],     // Zero initial momentum
+    };
   }
 
   // ==========================================================================
@@ -1153,6 +1189,50 @@ export class FreeEnergyKernel {
 
     // === Record metrics ===
     this.recordMetrics();
+
+    // === v13.0: Contraction monitoring ===
+    const currentBeliefState = [
+      this.l1.getFreeEnergy(),
+      this.l2.getFreeEnergy(),
+      this.l3.getFreeEnergy(),
+      this.l4.getFreeEnergy(),
+    ];
+    if (this.lastBeliefState.length > 0) {
+      const perturbation = Math.abs(observations.energy - 1.0) +
+        Math.abs(observations.systemLoad) +
+        (observations.agentResponsive ? 0 : 1) +
+        (observations.merkleValid ? 0 : 1);
+      this.contraction.observe(this.lastBeliefState, currentBeliefState, perturbation);
+    }
+    this.lastBeliefState = currentBeliefState;
+
+    // === v13.0: Leapfrog budget reallocation (every N cycles) ===
+    if (this.cycleCount % this.budgetReallocationInterval === 0) {
+      const rois = this.fiber.getROIs();
+      if (rois.length > 0 && rois.some(r => r !== 0)) {
+        const dampingFactor = this.contraction.getDampingFactor();
+        const gradient = roiGradient(rois, dampingFactor);
+        const constraint = budgetConstraint(this.fiber.getTotalBudget());
+        this.budgetState = leapfrogStep(
+          this.budgetState,
+          () => gradient,
+          0.1 * dampingFactor, // dt scaled by damping
+          constraint
+        );
+        this.fiber.setAllocations(this.budgetState.q);
+      }
+    }
+
+    // === v13.0: Record per-level costs in fiber ===
+    const cycleCost = 0.001; // Base cost per cycle ($0.001)
+    this.fiber.recordCost('L1', cycleCost * 0.1, 'autonomic_step');
+    this.fiber.recordCost('L2', cycleCost * 0.2, 'reactive_step');
+    if (this.mode === 'awake' || this.mode === 'focused') {
+      this.fiber.recordCost('L3', cycleCost * 0.4, 'cognitive_step');
+    }
+    if (this.mode === 'awake' || this.mode === 'self_improving') {
+      this.fiber.recordCost('L4', cycleCost * 0.3, 'executive_step');
+    }
 
     // === Collect all prediction errors ===
     this.predictionErrors = [
@@ -1326,6 +1406,64 @@ export class FreeEnergyKernel {
 
   getFreeEnergyHistory(): LevelFreeEnergy[] {
     return [...this.freeEnergyHistory];
+  }
+
+  // ==========================================================================
+  // v13.0: Information Geometry & Economic Accessors
+  // ==========================================================================
+
+  /**
+   * Get contraction state: is the system converging?
+   */
+  getContractionState(): ContractionState {
+    return this.contraction.getState();
+  }
+
+  /**
+   * Is the system dynamically stable? (E[log Lip] < 0)
+   */
+  isContracting(): boolean {
+    return this.contraction.isStable();
+  }
+
+  /**
+   * Get the economic fiber (per-module cost/revenue tracking).
+   */
+  getEconomicFiber(): EconomicFiber {
+    return this.fiber;
+  }
+
+  /**
+   * Get the NESS monitor (steady-state deviation).
+   */
+  getNESSMonitor(): NESSMonitor {
+    return this.nessMonitor;
+  }
+
+  /**
+   * Record revenue attributed to a level/module.
+   */
+  recordRevenue(moduleId: string, amount: number, source: string = 'service'): void {
+    this.fiber.recordRevenue(moduleId, amount, source);
+  }
+
+  /**
+   * Get current NESS state (requires explicit observation).
+   */
+  observeNESS(obs: { revenue: number; costs: number; customers: number; quality: number; balance: number }): NESSState {
+    return this.nessMonitor.observe(obs);
+  }
+
+  /**
+   * Get current budget allocations per level.
+   */
+  getBudgetAllocations(): { L1: number; L2: number; L3: number; L4: number } {
+    return {
+      L1: this.budgetState.q[0] || 0,
+      L2: this.budgetState.q[1] || 0,
+      L3: this.budgetState.q[2] || 0,
+      L4: this.budgetState.q[3] || 0,
+    };
   }
 
   // ==========================================================================

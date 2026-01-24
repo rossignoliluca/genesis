@@ -1146,3 +1146,31 @@ export {
   type LevelFreeEnergy,
   type AllostaticSetpoint,
 } from './free-energy-kernel.js';
+
+// ============================================================================
+// Re-export Information Geometry (v13.0)
+// ============================================================================
+
+export {
+  fisherDiagonal,
+  fisherMatrix,
+  naturalGradient,
+  naturalGradientStep,
+  fisherKLApprox,
+  empiricalFisher,
+} from './fisher.js';
+
+export {
+  leapfrogStep,
+  budgetConstraint,
+  roiGradient,
+  computeHamiltonian,
+  conservationError,
+  type HamiltonianState,
+} from './leapfrog.js';
+
+export {
+  ContractionMonitor,
+  type ContractionState,
+  type ContractionWarning,
+} from './contraction.js';

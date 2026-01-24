@@ -55,6 +55,7 @@ import { getGovernanceSystem } from './governance/index.js';
 import { A2AServer, A2AClient, generateA2AKeyPair } from './a2a/index.js';
 import { GenesisMCPServer } from './mcp-server/index.js';
 import { runCodeQualityAnalysis, persistCodeQualityToMemory, loadCodeQualityGraph } from './self-modification/code-quality-analyzer.js';
+import { bootstrapIntegration, getUnifiedStatus, getIntegrationState } from './integration/index.js';
 
 // ============================================================================
 // CLI Colors
@@ -124,6 +125,35 @@ async function cmdStatus(): Promise<void> {
   }
 
   console.log(c(`Total: 13 MCP servers, 5 categories`, 'bold'));
+
+  // v10.7: Show integration status
+  console.log(c('\n=== INTEGRATION STATUS ===\n', 'bold'));
+  const status = getUnifiedStatus();
+  const state = getIntegrationState();
+
+  console.log(c('[STREAMING]', 'cyan'));
+  console.log(`  ${c('●', state.initialized ? 'green' : 'red')} Integration: ${state.initialized ? 'active' : 'inactive'}`);
+  console.log(`  Streams completed: ${state.totalStreamsCompleted}`);
+  console.log(`  Latency models tracked: ${status.streaming.latencyStats}`);
+  console.log(`  Racing wins: ${status.streaming.racingWins}`);
+
+  console.log(c('\n[ECONOMIC]', 'yellow'));
+  console.log(`  Total LLM costs: $${state.totalCostsRecorded.toFixed(6)}`);
+  console.log(`  Avg cost/stream: $${status.economic.costPerStream.toFixed(6)}`);
+  console.log(`  Last provider: ${state.lastStreamProvider || 'none'}`);
+
+  console.log(c('\n[ACTIVE INFERENCE]', 'magenta'));
+  console.log(`  Observations emitted: ${state.latencyObservationsEmitted}`);
+
+  console.log(c('\n[CONSCIOUSNESS]', 'blue'));
+  console.log(`  Racing updates: ${status.consciousness.updated ? 'yes' : 'no'}`);
+
+  console.log(c('\n[GOVERNANCE]', 'red'));
+  console.log(`  Checks performed: ${state.governanceChecks}`);
+
+  console.log(c('\n[A2A]', 'green'));
+  console.log(`  Delegations: ${state.a2aDelegations}`);
+  console.log();
 }
 
 async function cmdCreate(name: string, options: Record<string, string>): Promise<void> {
@@ -2029,6 +2059,16 @@ async function main(): Promise<void> {
 
   // Get positional arg after command
   const positional = args.find((a, i) => i > 0 && !a.startsWith('--') && !Object.values(options).includes(a));
+
+  // v10.7: Bootstrap integration layer (connects streaming→economy→active-inference→consciousness)
+  bootstrapIntegration({
+    enableCostTracking: true,
+    enableLatencyObservations: true,
+    enableConsciousnessUpdates: true,
+    enableGovernanceChecks: !!options['governance'],
+    enableA2ADelegation: !!options['a2a'],
+    slackWebhook: process.env.SLACK_WEBHOOK_URL,
+  });
 
   try {
     switch (command) {

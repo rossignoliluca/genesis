@@ -49,7 +49,8 @@ export type {
 export { ProviderErrorCode } from './types.js';
 
 // Stream Orchestrator (primary public API)
-export { StreamOrchestrator, createStreamOrchestrator } from './orchestrator.js';
+export { StreamOrchestrator, createStreamOrchestrator, onStreamCompletion } from './orchestrator.js';
+export type { StreamCompletionHook } from './orchestrator.js';
 
 // Hybrid Executor (XML tool detection)
 export { HybridStreamExecutor, hybridStream, hybridStreamCollect } from './hybrid-executor.js';

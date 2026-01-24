@@ -2297,6 +2297,53 @@ export class Brain {
   }
 
   // ============================================================================
+  // v10.7: Streaming Integration
+  // ============================================================================
+
+  /**
+   * Record streaming metrics from the integration layer.
+   * Called when racing/streaming completes to update Brain's awareness
+   * of provider performance.
+   */
+  recordStreamingMetrics(data: {
+    provider: string;
+    model: string;
+    ttft: number;
+    tokensPerSecond: number;
+    cost: number;
+    racingSaved: number;
+    toolCalls?: number;
+    parallelToolSaved?: number;
+  }): void {
+    // Update internal metrics
+    this.metrics.toolExecutions += data.toolCalls || 0;
+
+    // Broadcast to global workspace if consciousness is active
+    if (this.config.consciousness.broadcastEnabled && this.running) {
+      const content = createWorkspaceContent(
+        'brain-streaming',
+        'percept',
+        {
+          type: 'streaming_metrics',
+          ...data,
+        },
+        {
+          salience: data.racingSaved > 0 ? 0.7 : 0.4,
+          relevance: 0.6,
+        }
+      );
+      this.metrics.broadcasts++;
+    }
+
+    // Emit brain event for any subscribers
+    this.emit({
+      type: 'streaming_metrics' as any,
+      timestamp: new Date(),
+      data,
+    });
+  }
+
+  // ============================================================================
   // Events
   // ============================================================================
 
@@ -2418,6 +2465,14 @@ export function resetBrain(): void {
     brainInstance.stop();
     brainInstance = null;
   }
+}
+
+/**
+ * v10.7: Alias for getBrain() used by integration layer.
+ * Returns null if brain hasn't been instantiated yet.
+ */
+export function getBrainInstance(): Brain | null {
+  return brainInstance;
 }
 
 // ============================================================================

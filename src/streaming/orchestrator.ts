@@ -28,6 +28,26 @@ import { MCPBridge, MCPToolCall, MCPToolResult, MCPServerName } from './mcp-brid
 import { getLatencyTracker, LatencyRecord } from './latency-tracker.js';
 
 // ============================================================================
+// Integration Hooks (called by integration layer)
+// ============================================================================
+
+export type StreamCompletionHook = (metrics: StreamMetrics, provider: string, model: string) => void;
+
+const completionHooks: StreamCompletionHook[] = [];
+
+/**
+ * Register a hook that fires when any stream completes.
+ * Used by the integration layer to forward costs, update observations, etc.
+ */
+export function onStreamCompletion(hook: StreamCompletionHook): () => void {
+  completionHooks.push(hook);
+  return () => {
+    const idx = completionHooks.indexOf(hook);
+    if (idx >= 0) completionHooks.splice(idx, 1);
+  };
+}
+
+// ============================================================================
 // Event Helpers
 // ============================================================================
 
@@ -529,6 +549,13 @@ export class StreamOrchestrator {
       success: this.state !== 'error',
       tokenCount: this.metrics.outputTokens,
     });
+
+    // Fire integration hooks (cost tracking, consciousness updates, etc.)
+    for (const hook of completionHooks) {
+      try {
+        hook(this.metrics, provider, model);
+      } catch { /* integration hooks must not break streaming */ }
+    }
   }
 
   // ============================================================================

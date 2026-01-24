@@ -488,6 +488,41 @@ export class ConsciousnessSystem {
   }
 
   // ============================================================================
+  // External Event Recording (v10.7 Integration Layer)
+  // ============================================================================
+
+  /**
+   * Record an external event into the consciousness system.
+   * Used by the integration layer to inform consciousness of racing results,
+   * streaming performance, and other system-wide events.
+   */
+  recordEvent(event: {
+    type: string;
+    [key: string]: unknown;
+  }): void {
+    // Emit as consciousness event
+    this.emit({
+      type: 'external_event' as ConsciousnessEventType,
+      timestamp: new Date(),
+      data: event,
+    });
+
+    // If workspace is running, propose the event as content for GWT competition
+    if (this.running && this.config.gwt.enabled) {
+      const content = createWorkspaceContent(
+        'integration',
+        'percept',
+        event,
+        {
+          salience: 0.6,
+          relevance: 0.7,
+        }
+      );
+      // Content enters workspace competition naturally
+    }
+  }
+
+  // ============================================================================
   // Stats
   // ============================================================================
 

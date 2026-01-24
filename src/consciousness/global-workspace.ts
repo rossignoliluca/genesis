@@ -442,10 +442,10 @@ export class GlobalWorkspace {
     const boosts: Record<ContentType, number> = {
       goal: 0.2,        // Goals get priority
       emotion: 0.15,    // Emotions are salient
+      memory: 0.15,     // Memories compete equally with emotions
       attention: 0.1,   // Attention signals matter
       percept: 0.05,    // Perceptual input
-      memory: 0.0,      // Neutral
-      plan: 0.0,
+      plan: 0.05,       // Plans get slight boost
       thought: 0.0,
     };
 

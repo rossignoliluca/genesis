@@ -409,21 +409,47 @@ export class Brain {
       propose: () => {
         const items = workspace.getActive?.() || [];
         if (items.length === 0) return null;
-        // Propose most recent/relevant item
-        const item = items[0];
+
+        // Select highest-activation item (not just first)
+        const best = items.reduce((a, b) =>
+          ((a as any).activation || 0) > ((b as any).activation || 0) ? a : b
+        );
+
+        // Salience = activation × recency × importance
+        const recency = 1 / (1 + (Date.now() - ((best as any).timestamp || Date.now())) / 60000);
+        const activation = (best as any).activation || 0.5;
+        const importance = (best as any).importance || 0.5;
+        const salience = activation * recency * importance;
+
         return {
           id: `mem-${++contentId}`,
           sourceModule: 'brain-memory',
           type: 'memory' as const,
-          data: item,
-          salience: item.relevance || 0.5,
-          relevance: item.relevance || 0.5,
+          data: best,
+          salience: Math.max(0.1, salience),
+          relevance: (best as any).relevance || 0.5,
           timestamp: new Date(),
           ttl: 30000, // 30s TTL
         };
       },
-      receive: () => {
-        // Memory module receives broadcasts - could trigger recall
+      receive: (content: import('../consciousness/types.js').WorkspaceContent) => {
+        // GWT broadcast → encode as episodic memory
+        // Every conscious broadcast = moment of awareness = new episode
+        try {
+          const { getMemorySystem } = require('../memory/index.js');
+          const memorySystem = getMemorySystem();
+          const contentStr = typeof content.data === 'string'
+            ? content.data
+            : JSON.stringify(content.data).slice(0, 500);
+
+          memorySystem.remember({
+            content: {
+              what: `Conscious broadcast [${content.type}] from ${content.sourceModule}: ${contentStr.slice(0, 200)}`,
+            },
+            importance: content.salience,
+            tags: ['conscious', 'gwt-broadcast', content.type, content.sourceModule],
+          });
+        } catch { /* memory encoding is non-fatal */ }
       },
       bottomUpSalience: () => {
         const stats = workspace.getStats?.() || { itemCount: 0 };
@@ -577,6 +603,30 @@ export class Brain {
   private wirePhiMonitorToRealState(): void {
     // Provide real system state to PhiMonitor
     this.phiMonitor.setSystemStateProvider(() => this.buildSystemState());
+
+    // v12.1: Provide workspace content coherence to modulate φ
+    // φ reflects semantic integration, not just structural connectivity
+    this.phiMonitor.setWorkspaceCoherenceProvider(() => {
+      const items = this.workspace.getActive?.() || [];
+      if (items.length < 2) return 1.0; // Single item = trivially coherent
+
+      // Compute pairwise tag-overlap as coherence proxy
+      // (Avoids embedding computation — uses pre-existing tags)
+      let totalSim = 0;
+      let pairs = 0;
+      for (let i = 0; i < Math.min(items.length, 5) - 1; i++) {
+        for (let j = i + 1; j < Math.min(items.length, 5); j++) {
+          const tagsA = new Set((items[i] as any).tags || []);
+          const tagsB = new Set((items[j] as any).tags || []);
+          if (tagsA.size === 0 && tagsB.size === 0) { totalSim += 0.5; pairs++; continue; }
+          const intersection = [...tagsA].filter(t => tagsB.has(t)).length;
+          const union = new Set([...tagsA, ...tagsB]).size;
+          totalSim += union > 0 ? intersection / union : 0;
+          pairs++;
+        }
+      }
+      return pairs > 0 ? totalSim / pairs : 1.0;
+    });
   }
 
   /**

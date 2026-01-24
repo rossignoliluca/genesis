@@ -113,6 +113,9 @@ export class PhiMonitor {
   private getSystemState: (() => SystemState) | null = null;
   private getAgentStates: (() => Map<string, SystemState>) | null = null;
 
+  // v12.1: Workspace coherence provider — modulates φ by content integration
+  private workspaceCoherenceProvider: (() => number) | null = null;
+
   constructor(config: Partial<PhiMonitorConfig> = {}) {
     this.config = { ...DEFAULT_PHI_MONITOR_CONFIG, ...config };
     this.calculator = createPhiCalculator({
@@ -173,6 +176,15 @@ export class PhiMonitor {
     this.getAgentStates = provider;
   }
 
+  /**
+   * v12.1: Set workspace coherence provider.
+   * Modulates φ by semantic coherence of workspace contents.
+   * φ_effective = φ_structural × (0.5 + 0.5 × coherence)
+   */
+  setWorkspaceCoherenceProvider(provider: () => number): void {
+    this.workspaceCoherenceProvider = provider;
+  }
+
   // ============================================================================
   // Main Update Loop
   // ============================================================================
@@ -193,6 +205,16 @@ export class PhiMonitor {
     } else {
       // Default/simulated φ
       phiResult = this.simulatePhi();
+    }
+
+    // v12.1: Modulate φ by workspace content coherence
+    // φ_effective = φ_structural × (0.5 + 0.5 × coherence)
+    // If contents are incoherent, φ drops — integration requires coherent content
+    if (this.workspaceCoherenceProvider) {
+      try {
+        const coherence = Math.max(0, Math.min(1, this.workspaceCoherenceProvider()));
+        phiResult.phi *= (0.5 + 0.5 * coherence);
+      } catch { /* coherence provider failure is non-fatal */ }
     }
 
     // Normalize φ to 0-1 range

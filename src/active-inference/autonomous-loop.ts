@@ -281,7 +281,8 @@ export class AutonomousLoop {
       console.log(`[AI Loop] Cycle ${this.cycleCount} - Observation:`, obs);
     }
 
-    // 1b. v11.4: Allostatic modulation of preferences
+    // 1b. v12.1: Allostatic modulation with LEARNED thresholds
+    //     Thresholds come from semantic memory (learned from experience)
     //     Sense internal state → modulate C-matrix before inference
     try {
       const intero = (this.allostasis as any).interoception?.sense?.();
@@ -289,22 +290,26 @@ export class AutonomousLoop {
         const energyLevel = intero.energy ?? 0.7;
         const errorRate = intero.errorRate ?? 0;
         const memPressure = intero.memoryPressure ?? 0.3;
+        const thresholds = this.getHomeostaticThresholds();
 
         // Low energy → boost preference for rest/low-energy states
-        if (energyLevel < 0.3) {
-          this.engine.modulatePreferences({ energy: [2, 1, 0, -1, -2] }); // prefer low-energy states
-          this.engine.modulatePreferences({ task: [1.5, 0.5, 0, -0.5] }); // accept incomplete tasks
+        if (energyLevel < thresholds.energy) {
+          this.engine.modulatePreferences({ energy: [2, 1, 0, -1, -2] });
+          this.engine.modulatePreferences({ task: [1.5, 0.5, 0, -0.5] });
           this.lastAllostaticDelta = true;
+          this.updateHomeostaticMemory('energy', thresholds.energy, energyLevel);
         }
         // High error rate → boost preference for tool success
-        if (errorRate > 0.4) {
-          this.engine.modulatePreferences({ tool: [-1, 0, 2] }); // strongly prefer tool success
+        if (errorRate > thresholds.error) {
+          this.engine.modulatePreferences({ tool: [-1, 0, 2] });
           this.lastAllostaticDelta = true;
+          this.updateHomeostaticMemory('error', thresholds.error, errorRate);
         }
         // High memory pressure → prefer consolidation
-        if (memPressure > 0.7) {
-          this.engine.modulatePreferences({ task: [1, 0, 0, -1] }); // accept rest
+        if (memPressure > thresholds.memory) {
+          this.engine.modulatePreferences({ task: [1, 0, 0, -1] });
           this.lastAllostaticDelta = true;
+          this.updateHomeostaticMemory('memory', thresholds.memory, memPressure);
         }
       }
     } catch { /* allostasis is optional */ }
@@ -566,7 +571,77 @@ export class AutonomousLoop {
         exp.beliefs,
         exp.actionIdx
       );
+
+      // v12.1: High-surprise experiences → episodic memory
+      // Only on first replay to avoid duplicate encoding
+      if (exp.surprise > 3.0 && exp.replayCount <= 1) {
+        try {
+          const { getMemorySystem } = require('../memory/index.js');
+          const memorySystem = getMemorySystem();
+          memorySystem.remember({
+            content: {
+              what: `AIF experience: action=${exp.action} outcome=${exp.outcome} surprise=${exp.surprise.toFixed(2)}`,
+            },
+            importance: Math.min(1, exp.surprise / 10),
+            tags: ['aif-experience', 'replay-encoded',
+                   exp.outcome,
+                   exp.surprise > 5 ? 'high-surprise' : 'notable'],
+          });
+        } catch { /* episodic encoding is non-fatal */ }
+      }
     }
+  }
+
+  // ============================================================================
+  // v12.1: Adaptive Allostasis (learned thresholds from semantic memory)
+  // ============================================================================
+
+  /**
+   * Get homeostatic thresholds from semantic memory.
+   * Falls back to defaults if not yet learned.
+   */
+  private getHomeostaticThresholds(): { energy: number; error: number; memory: number } {
+    try {
+      const { getMemorySystem } = require('../memory/index.js');
+      const mem = getMemorySystem();
+
+      const energyFact = mem.getFact('homeostatic-energy-threshold');
+      const errorFact = mem.getFact('homeostatic-error-threshold');
+      const memoryFact = mem.getFact('homeostatic-memory-threshold');
+
+      return {
+        energy: energyFact ? parseFloat(energyFact.content?.definition || '0.3') || 0.3 : 0.3,
+        error: errorFact ? parseFloat(errorFact.content?.definition || '0.4') || 0.4 : 0.4,
+        memory: memoryFact ? parseFloat(memoryFact.content?.definition || '0.7') || 0.7 : 0.7,
+      };
+    } catch {
+      return { energy: 0.3, error: 0.4, memory: 0.7 };
+    }
+  }
+
+  /**
+   * After allostasis fires, learn the effective threshold.
+   * Adjusts threshold slightly based on whether the sensor value was
+   * close to or far from the threshold (tighter = more sensitive).
+   */
+  private updateHomeostaticMemory(sensor: string, currentThreshold: number, sensorValue: number): void {
+    try {
+      const { getMemorySystem } = require('../memory/index.js');
+      const mem = getMemorySystem();
+
+      // Adaptive threshold: if sensor triggered far from threshold, threshold may be too lax
+      // Nudge threshold toward the triggering value (slow learning rate)
+      const learningRate = 0.05;
+      const newThreshold = currentThreshold + learningRate * (sensorValue - currentThreshold);
+
+      mem.learn({
+        concept: `homeostatic-${sensor}-threshold`,
+        definition: newThreshold.toFixed(4),
+        category: 'autopoiesis',
+        confidence: 0.85,
+        tags: ['homeostasis', 'learned-threshold', sensor],
+      });
+    } catch { /* threshold learning is non-fatal */ }
   }
 
   /**

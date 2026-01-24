@@ -72,34 +72,58 @@ function buildAnticipationContext(
     keywords.push(...goal.split(/\s+/).filter(w => w.length > 3));
   }
 
-  // Map beliefs to context
+  // v12.1: Distribution-based anticipation from beliefs
+  // Uses probability mass (not just argmax) to build richer context
+  const tags: string[] = [];
+  const anticipationKeywords: string[] = [];
+
+  // Viability: weighted by probability, not just peak
+  const vWeights = beliefs.viability; // [critical, low, mid, high, optimal]
+  if ((vWeights[0] || 0) + (vWeights[1] || 0) > 0.4) {
+    tags.push('energy', 'survival');
+    anticipationKeywords.push('recover', 'rest', 'recharge', 'conserve');
+  }
+  if ((vWeights[3] || 0) + (vWeights[4] || 0) > 0.4) {
+    tags.push('opportunity', 'growth');
+    anticipationKeywords.push('build', 'create', 'revenue', 'expand');
+  }
+  // Mid-range = stable operating
+  if ((vWeights[2] || 0) > 0.5) {
+    tags.push('stable', 'productive');
+  }
+
+  // World state: each level contributes proportionally
+  const wWeights = beliefs.worldState; // [unknown, stable, changing, hostile]
+  if ((wWeights[0] || 0) > 0.3) {
+    tags.push('unknown', 'exploration');
+    anticipationKeywords.push('discover', 'probe', 'scan');
+  }
+  if ((wWeights[2] || 0) > 0.25) {
+    tags.push('changing', 'adaptation');
+    anticipationKeywords.push('adapt', 'update', 'new');
+  }
+  if ((wWeights[3] || 0) > 0.2) {
+    tags.push('hostile', 'threat');
+    anticipationKeywords.push('fix', 'repair', 'defend', 'error');
+  }
+
+  // Goal progress: anticipate memories of similar states
+  const gWeights = beliefs.goalProgress; // [blocked, starting, progressing, achieved]
+  if ((gWeights[0] || 0) > 0.35) {
+    tags.push('blocked', 'problem');
+    anticipationKeywords.push('workaround', 'alternative', 'debug', 'retry');
+  }
+  if ((gWeights[2] || 0) + (gWeights[3] || 0) > 0.5) {
+    tags.push('progressing', 'success');
+    anticipationKeywords.push('next', 'deploy', 'optimize', 'complete');
+  }
+
   const context: AnticipationContext = {
     goal,
-    keywords,
+    keywords: [...keywords, ...anticipationKeywords],
     recentActions,
+    tags,
   };
-
-  // Add tags based on beliefs
-  const tags: string[] = [];
-
-  // Viability tags
-  const viabilityLevel = beliefs.viability.indexOf(Math.max(...beliefs.viability));
-  if (viabilityLevel <= 1) tags.push('energy', 'survival', 'low-energy');
-  else if (viabilityLevel >= 3) tags.push('high-energy', 'optimal');
-
-  // World state tags
-  const worldStateLevel = beliefs.worldState.indexOf(Math.max(...beliefs.worldState));
-  if (worldStateLevel === 0) tags.push('unknown', 'exploration');
-  else if (worldStateLevel === 1) tags.push('stable', 'routine');
-  else if (worldStateLevel === 2) tags.push('changing', 'adaptation');
-  else if (worldStateLevel === 3) tags.push('hostile', 'threat');
-
-  // Goal progress tags
-  const goalLevel = beliefs.goalProgress.indexOf(Math.max(...beliefs.goalProgress));
-  if (goalLevel === 0) tags.push('blocked', 'problem');
-  else if (goalLevel === 3) tags.push('achieved', 'success');
-
-  context.tags = tags;
 
   return context;
 }

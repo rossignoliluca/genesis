@@ -74,8 +74,8 @@ export class StripeTreasury {
   private connected = false;
 
   async connect(): Promise<boolean> {
-    if (!process.env.STRIPE_SECRET_KEY) {
-      console.warn('[StripeTreasury] No STRIPE_SECRET_KEY configured');
+    if (!process.env.STRIPE_SECRET_KEY && !process.env.STRIPE_API_KEY) {
+      console.warn('[StripeTreasury] No STRIPE_SECRET_KEY or STRIPE_API_KEY configured');
       return false;
     }
     this.connected = true;

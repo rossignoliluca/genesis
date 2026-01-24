@@ -499,7 +499,22 @@ export class ActiveInferenceEngine {
       return Math.sqrt(Math.log(total + 1) / count); // UCB term
     });
     const beta = 0.5; // Exploration weight
-    const augmentedEfe = efe.map((e, i) => -e + beta * explorationBonus[i]);
+
+    // v10.8: E vector - Action prior for economic opportunity discovery
+    // Biases policy toward revenue actions, stronger when economic health is low
+    const econObs = this.previousObservation?.economic ?? 0;
+    const econUrgency = econObs <= 1 ? 3.0 : (econObs === 2 ? 1.0 : 0.3);
+    const eVector = ACTIONS.map(action => {
+      if (action === 'opportunity.scan') return econUrgency * 1.5;
+      if (action === 'opportunity.evaluate') return econUrgency * 1.0;
+      if (action === 'opportunity.build') return econUrgency * 0.8;
+      if (action === 'opportunity.monetize') return econUrgency * 0.7;
+      if (action.startsWith('econ.')) return econUrgency * 0.5;
+      if (action.startsWith('web.') || action === 'market.analyze') return econUrgency * 0.3;
+      return 0;
+    });
+
+    const augmentedEfe = efe.map((e, i) => -e + beta * explorationBonus[i] + eVector[i]);
     const policy = softmax(augmentedEfe, this.config.actionTemperature);
 
     this.emit({
@@ -598,7 +613,12 @@ export class ActiveInferenceEngine {
     prevBeliefs: Beliefs,
     actionIdx: number
   ): void {
-    const lr = this.config.learningRateA;
+    // v10.8.1: Adaptive learning rate - faster when surprised, slower when stable
+    const avgSurprise = this.stats.inferenceCount > 0
+      ? this.stats.totalSurprise / this.stats.inferenceCount
+      : 2.0;
+    const surpriseFactor = Math.min(3.0, Math.max(0.3, avgSurprise / 2.0));
+    const lr = this.config.learningRateA * surpriseFactor;
 
     // === Update A matrix (likelihood mapping) ===
     // For each modality, update the row corresponding to the observation
@@ -647,7 +667,7 @@ export class ActiveInferenceEngine {
 
     // === Update B matrix (transition model) ===
     // "I was in state S, did action A, now I'm in state S'"
-    const lrB = this.config.learningRateB;
+    const lrB = this.config.learningRateB * surpriseFactor;
 
     // Viability transitions
     for (let next = 0; next < HIDDEN_STATE_DIMS.viability; next++) {

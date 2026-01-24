@@ -22,6 +22,7 @@ import {
 } from './types.js';
 import { getEconomicIntegration } from './economic-integration.js';
 import { getMCPClient } from '../mcp/index.js';
+import { createPhiMonitor } from '../consciousness/phi-monitor.js';
 
 // ============================================================================
 // Types for Agent Integration
@@ -126,6 +127,15 @@ export class ObservationGatherer {
         latency: avgLatency,
         error: successRate <= 0.5 ? `Low success rate: ${(successRate * 100).toFixed(0)}%` : undefined,
       };
+    };
+
+    // v10.8.1: Wire PhiMonitor for real consciousness observation
+    const phiMonitor = createPhiMonitor({ updateIntervalMs: 5000 });
+    phiMonitor.start();
+    this.getPhiState = () => {
+      const level = phiMonitor.getCurrentLevel();
+      const state = phiMonitor.getState();
+      return { phi: level.phi, state };
     };
 
     // Wire world model to memory coherence (Neo4j connectivity if available)

@@ -8,7 +8,8 @@
 import { ActiveInferenceEngine, createActiveInferenceEngine } from './core.js';
 import { ObservationGatherer, createObservationGatherer } from './observations.js';
 import { ActionExecutorManager, createActionExecutorManager, ActionResult } from './actions.js';
-import { Observation, Beliefs, ActionType, AIEvent } from './types.js';
+import { Observation, Beliefs, ActionType, AIEvent, ACTIONS } from './types.js';
+import { DeepActiveInference } from './deep-aif.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -82,6 +83,11 @@ export class AutonomousLoop {
 
   // Custom step function (for value integration)
   private customStepFn: ((obs: Observation) => Promise<{ action: ActionType; beliefs: Beliefs }>) | null = null;
+
+  // v10.8.1: Meta-learning state
+  private plateauCycles: number = 0;       // Consecutive cycles with near-zero learning velocity
+  private deepAIFActive: boolean = false;  // Whether Deep-AIF has been activated
+  private deepAIF: DeepActiveInference | null = null;
 
   constructor(config: Partial<AutonomousLoopConfig> = {}) {
     this.config = { ...DEFAULT_LOOP_CONFIG, ...config };
@@ -227,6 +233,32 @@ export class AutonomousLoop {
       surprise,
       result.success ? 'positive' : 'negative'
     );
+
+    // 5b. v10.8.1: Meta-learning triggers (every 20 cycles)
+    if (this.cycleCount % 20 === 0 && this.cycleCount >= 40) {
+      const patterns = this.engine.analyzeLearningPatterns();
+
+      // FIX 3: Auto-trigger self.modify when struggling
+      if (patterns.successRate < 0.3 && patterns.surpriseTrend === 'increasing') {
+        if (this.config.verbose) {
+          console.log(`[AI Loop] Meta: Low success (${(patterns.successRate*100).toFixed(0)}%) + rising surprise → self.modify`);
+        }
+        await this.actions.execute('self.modify' as ActionType);
+      }
+
+      // FIX 4: Switch to Deep-AIF on learning plateau
+      if (!this.deepAIFActive && Math.abs(patterns.learningVelocity) < 0.001 && patterns.surpriseTrend === 'stable') {
+        this.plateauCycles++;
+        if (this.plateauCycles >= 3) { // 3 consecutive plateau checks (60 cycles)
+          if (this.config.verbose) {
+            console.log(`[AI Loop] Meta: Learning plateau detected → switching to Deep-AIF`);
+          }
+          this.activateDeepAIF();
+        }
+      } else {
+        this.plateauCycles = 0;
+      }
+    }
 
     // 6. v10.8: Persist model periodically
     if (this.config.persistEveryN > 0 && this.cycleCount % this.config.persistEveryN === 0) {
@@ -424,6 +456,40 @@ export class AutonomousLoop {
     stepFn: ((obs: Observation) => Promise<{ action: ActionType; beliefs: Beliefs }>) | null
   ): void {
     this.customStepFn = stepFn;
+  }
+
+  /**
+   * v10.8.1: Activate Deep Active Inference when POMDP plateaus.
+   * Switches the step function to use VAE-based continuous inference.
+   */
+  private activateDeepAIF(): void {
+    this.deepAIF = new DeepActiveInference({
+      latentDim: 32,
+      hiddenDim: 128,
+      numLayers: 2,
+      learningRate: 0.001,
+      temperature: 0.8,
+    });
+    this.deepAIFActive = true;
+
+    // Set custom step function that uses Deep-AIF
+    this.setCustomStepFunction(async (obs: Observation) => {
+      // Convert discrete observation to Deep-AIF format
+      const deepObs = {
+        modality: 'multimodal',
+        data: [obs.energy / 4, obs.phi / 3, obs.tool / 2, obs.coherence / 2, obs.task / 3, (obs.economic ?? 0) / 3],
+        precision: 0.8,
+        timestamp: Date.now(),
+      };
+      const result = await this.deepAIF!.cycle(deepObs as any);
+      // Map Deep-AIF action back to ActionType
+      const actionType = ACTIONS.includes(result.action.type as ActionType)
+        ? (result.action.type as ActionType)
+        : 'self.analyze';
+      // Keep standard engine beliefs for compatibility
+      const beliefs = this.engine.getBeliefs();
+      return { action: actionType, beliefs };
+    });
   }
 
   /**

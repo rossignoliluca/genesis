@@ -284,8 +284,8 @@ export const DEFAULT_CONFIG: ActiveInferenceConfig = {
   policyHorizon: 3,
   actionTemperature: 1.0,
   priorWeight: 0.1,
-  learningRateA: 0.01,
-  learningRateB: 0.01,
+  learningRateA: 0.05,   // v10.8.1: 5x faster base (adaptive factor modulates)
+  learningRateB: 0.05,   // v10.8.1: 5x faster base (adaptive factor modulates)
   explorationBonus: 1.0,        // Balance exploration vs exploitation (higher = more exploration)
 };
 

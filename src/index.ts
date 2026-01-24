@@ -842,6 +842,7 @@ ${c('Examples:', 'cyan')}
   const verbose = options.verbose === 'true';
   const interactive = options.interactive === 'true';
   const integrated = options.integrated === 'true' || subcommand === 'integrated';
+  const noEnergyStop = options['no-energy-stop'] === 'true';
 
   // Integrated mode: connect to real Kernel & Daemon
   if (integrated) {
@@ -985,8 +986,10 @@ ${c('Examples:', 'cyan')}
     cycleInterval: interval,
     maxCycles: 0,
     verbose,
-    stopOnGoalAchieved: true,
-    stopOnEnergyCritical: true,
+    stopOnGoalAchieved: !noEnergyStop,
+    stopOnEnergyCritical: !noEnergyStop,
+    loadOnStart: true,
+    persistEveryN: 10,
   });
 
   // Handle subcommands

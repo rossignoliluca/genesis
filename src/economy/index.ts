@@ -617,3 +617,31 @@ export {
   getCrossL2Arbitrageur,
   resetCrossL2Arbitrageur,
 } from './multipliers/index.js';
+
+// Live Economy Layer (v18 — Real Infrastructure)
+export {
+  bootLiveEconomy,
+  boot,
+  isLive,
+  getBootResult,
+  getLiveWallet,
+  resetWallet,
+  getStatePersistence,
+  resetStatePersistence,
+  getDeworkConnector,
+  getCloudflareConnector,
+  getDefiConnector,
+} from './live/index.js';
+export type {
+  BootResult,
+  LiveConfig,
+  LiveWallet,
+  PersistedState,
+  DeworkConnector,
+  Bounty as LiveBounty,
+  CloudflareConnector,
+  WorkerDeployment,
+  WorkerStats,
+  DefiConnector,
+  YieldPool,
+} from './live/index.js';

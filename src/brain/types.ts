@@ -385,6 +385,30 @@ export interface ProcessContext {
     attentionFocus?: string;
     mode?: string;
   };
+  /** Neuromodulatory tone (hormonal analog) */
+  neuromodulation?: {
+    dopamine: number;
+    serotonin: number;
+    norepinephrine: number;
+    cortisol: number;
+    explorationRate: number;
+    riskTolerance: number;
+    processingDepth: number;
+    learningRate: number;
+  };
+  /** Current emotional valence from limbic evaluation */
+  feeling?: {
+    valence: number;
+    arousal: number;
+    category: string;
+  };
+  /** Allostatic interoceptive state (resource awareness) */
+  allostasis?: {
+    energy: number;
+    load: number;
+    memoryPressure: number;
+    errorRate: number;
+  };
   /** Additional metadata from the caller */
   metadata?: Record<string, unknown>;
 }

@@ -53,6 +53,10 @@ import { getYieldOptimizer } from './assets/yield-optimizer.js';
 import { getComputeProvider } from './assets/compute-provider.js';
 import { getGrantsManager } from './multipliers/grants.js';
 import { getCrossL2Arbitrageur } from './multipliers/cross-l2-arb.js';
+import { getDeworkConnector } from './live/connectors/dework.js';
+import { getDefiConnector } from './live/connectors/defi.js';
+import { getCloudflareConnector } from './live/connectors/cloudflare.js';
+import { isLive } from './live/boot.js';
 
 // ============================================================================
 // Types
@@ -61,6 +65,7 @@ import { getCrossL2Arbitrageur } from './multipliers/cross-l2-arb.js';
 export interface AutonomousConfig {
   seedCapital: number;                 // Initial $ (default $2,000)
   cycleIntervalMs: number;             // ms between controller cycles
+  liveMode: boolean;                   // Use real connectors (wallet, APIs)
   nessTarget: {
     monthlyRevenue: number;            // Target monthly revenue
     monthlyCosts: number;              // Target monthly costs
@@ -330,6 +335,7 @@ export class AutonomousController {
     this.config = {
       seedCapital: config?.seedCapital ?? 2000,
       cycleIntervalMs: config?.cycleIntervalMs ?? 60000,  // 1 minute
+      liveMode: config?.liveMode ?? false,
       nessTarget: config?.nessTarget ?? {
         monthlyRevenue: 2500,
         monthlyCosts: 150,
@@ -778,6 +784,30 @@ export class AutonomousController {
   private async executeActivity(activityId: string): Promise<{ id: string; revenue: number; cost: number } | null> {
     switch (activityId) {
       case 'keeper': {
+        if (this.config.liveMode || isLive()) {
+          // LIVE: Check wallet has gas before keeper operations
+          const { getLiveWallet } = await import('./live/wallet.js');
+          try {
+            const wallet = getLiveWallet();
+            const balances = await wallet.getBalances();
+            if (balances.eth === 0n) {
+              console.log('[Live] Keeper: No ETH for gas, skipping');
+              return null;
+            }
+            // Execute keeper with real wallet
+            const keeper = getKeeperExecutor();
+            if (!keeper.isOperational()) return null;
+            const exec = await keeper.executeNext();
+            if (exec?.success) {
+              return { id: activityId, revenue: exec.reward, cost: exec.gasCost };
+            }
+          } catch (e) {
+            console.warn('[Live] Keeper error:', e);
+          }
+          return null;
+        }
+
+        // SIMULATED
         const keeper = getKeeperExecutor();
         if (!keeper.isOperational()) return null;
         const exec = await keeper.executeNext();
@@ -788,30 +818,61 @@ export class AutonomousController {
       }
 
       case 'bounty-hunter': {
+        if (this.config.liveMode || isLive()) {
+          // LIVE: Use real DeWork API
+          const dework = getDeworkConnector();
+          const bounties = await dework.scanBounties(['solidity', 'typescript', 'smart-contract', 'ai']);
+          // Check payouts on previously claimed bounties
+          let revenue = 0;
+          for (const b of bounties.filter(b => b.status === 'completed')) {
+            const payout = await dework.getPayoutStatus(b.id);
+            if (payout.paid) {
+              revenue += b.reward;
+            }
+          }
+          // Report discovered opportunities (bounties are worked asynchronously)
+          const viable = bounties.filter(b => b.reward >= 50 && b.status === 'open');
+          if (viable.length > 0) {
+            console.log(`[Live] Found ${viable.length} viable bounties, best: $${viable[0].reward}`);
+          }
+          return revenue > 0 ? { id: activityId, revenue, cost: 0 } : null;
+        }
+
+        // SIMULATED: Use internal bounty hunter
         const hunter = getBountyHunter();
-        // Scan for new bounties if needed
         if (hunter.needsScan()) {
           await hunter.scan();
         }
-        // Check for payouts on submitted bounties
         const payouts = await hunter.checkPayouts();
         const revenue = payouts
           .filter(p => p.status === 'accepted')
           .reduce((s, p) => s + (p.payout ?? 0), 0);
-        // Try to claim and work on a new bounty
         const best = hunter.selectBest();
         if (best) {
           await hunter.claim(best.id);
-          // Bounty work is async - will be submitted in future cycles
         }
         return revenue > 0 ? { id: activityId, revenue, cost: 0.10 } : null;
       }
 
       case 'mcp-marketplace': {
+        if (this.config.liveMode || isLive()) {
+          // LIVE: Check Cloudflare Worker stats for real revenue
+          const cf = getCloudflareConnector();
+          if (cf.isConfigured()) {
+            const stats = await cf.getWorkerStats('genesis-defi-scanner');
+            if (stats && stats.requests > 0) {
+              // Revenue = requests × price per call ($0.005)
+              const revenue = stats.requests * 0.005;
+              console.log(`[Live] MCP marketplace: ${stats.requests} requests, $${revenue.toFixed(4)} revenue`);
+              return { id: activityId, revenue, cost: 0 };
+            }
+          }
+          return null;
+        }
+
+        // SIMULATED
         const marketplace = getMCPMarketplace();
         const stats = marketplace.getStats();
-        // Revenue is recorded in real-time via handleCall
-        // Here we just report accumulated daily revenue
         return stats.totalRevenue > 0
           ? { id: activityId, revenue: stats.totalRevenue, cost: 0 }
           : null;
@@ -881,14 +942,25 @@ export class AutonomousController {
       }
 
       case 'yield-optimizer': {
+        if (this.config.liveMode || isLive()) {
+          // LIVE: Use DeFiLlama to scan real yields on Base
+          const defi = getDefiConnector();
+          const pools = await defi.scanYields('base');
+          if (pools.length > 0) {
+            const bestPool = pools.reduce((best, p) => p.apy > best.apy ? p : best, pools[0]);
+            console.log(`[Live] Yield scan: ${pools.length} pools, best: ${bestPool.protocol} @ ${bestPool.apy.toFixed(1)}% APY`);
+            // In live mode, yield is harvested from on-chain positions
+            // For now, report discovered opportunities (actual deployment requires wallet tx)
+          }
+          return null; // Revenue comes from on-chain harvest, not scanning
+        }
+
+        // SIMULATED
         const optimizer = getYieldOptimizer();
-        // Scan for opportunities periodically
         await optimizer.scanOpportunities();
-        // Rebalance if needed
         if (optimizer.needsRebalance()) {
           await optimizer.rebalance();
         }
-        // Harvest yields
         const harvested = await optimizer.harvest();
         const yieldStats = optimizer.getStats();
         return harvested > 0

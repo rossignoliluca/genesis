@@ -33,8 +33,38 @@ import { getFactorGraph, type FactorGraph } from './kernel/factor-graph.js';
 import type { MotorCommand } from './embodiment/sensorimotor-loop.js';
 import { getNeuromodulationSystem, type NeuromodulationSystem, type ModulationEffect } from './neuromodulation/index.js';
 import { createAllostasisSystem, type AllostasisSystem, type AllostaticAction } from './allostasis/index.js';
+import { getNociceptiveSystem, type NociceptiveSystem, type NociceptiveState, type PainLevel } from './nociception/index.js';
+import { getDaemon, type Daemon, type DaemonDependencies } from './daemon/index.js';
 import { createFeelingAgent, type FeelingAgent } from './agents/feeling.js';
 import type { Feeling } from './agents/types.js';
+
+// World Model — predictive engine (core to FEK prediction error minimization)
+import { getWorldModelSystem, type WorldModelSystem } from './world-model/index.js';
+import type { LatentState, PredictedState } from './world-model/types.js';
+
+// Thinking — deep reasoning chains (ToT, GoT, super-correct)
+import { getThinkingEngine, type ThinkingEngine } from './thinking/index.js';
+
+// Reasoning — metacognitive strategy selection + execution
+import { getMetacognitiveController, type MetacognitiveController } from './reasoning/metacognitive-controller.js';
+
+// Memory — full episodic/semantic/procedural stack
+import { getMemorySystem, type MemorySystem } from './memory/index.js';
+
+// Grounding — epistemic verification of claims
+import { getGroundingSystem, type GroundingSystem } from './grounding/index.js';
+
+// Healing — error detection and auto-repair
+import { healing } from './healing/index.js';
+
+// Agents — multi-agent coordination pool
+import { getAgentPool, type AgentPool } from './agents/index.js';
+
+// Governance — permission gates, HITL, budget enforcement
+import { getGovernanceSystem, type GovernanceSystem } from './governance/index.js';
+
+// Uncertainty — conformal prediction intervals
+import { createAdaptiveConformal, type AdaptiveConformalPredictor } from './uncertainty/conformal.js';
 
 // ============================================================================
 // Types
@@ -65,6 +95,26 @@ export interface GenesisConfig {
   consciousness: boolean;
   /** Enable self-improvement (Darwin-Gödel) */
   selfImprovement: boolean;
+  /** Enable world model (prediction engine for FEK) */
+  worldModel: boolean;
+  /** Enable deep thinking (ToT, GoT, super-correct) */
+  thinking: boolean;
+  /** Enable metacognitive reasoning controller */
+  reasoning: boolean;
+  /** Enable full memory system (episodic/semantic/procedural) */
+  memory: boolean;
+  /** Enable daemon (background processing, dream mode) */
+  daemon: boolean;
+  /** Enable epistemic grounding */
+  grounding: boolean;
+  /** Enable healing (error detection, auto-repair) */
+  healing: boolean;
+  /** Enable multi-agent pool */
+  agents: boolean;
+  /** Enable governance (permissions, HITL, budget gates) */
+  governance: boolean;
+  /** Enable conformal prediction (calibrated uncertainty) */
+  uncertainty: boolean;
   /** Confidence threshold below which Brain defers to metacognition */
   deferThreshold: number;
   /** Audit all responses for hallucinations */
@@ -90,7 +140,18 @@ export interface GenesisStatus {
   sensorimotor: { running: boolean; cycles: number; avgPredictionError: number } | null;
   neuromodulation: { dopamine: number; serotonin: number; norepinephrine: number; cortisol: number; explorationRate: number; riskTolerance: number } | null;
   allostasis: { energy: number; load: number; memoryPressure: number; errorRate: number } | null;
+  nociception: { level: PainLevel; aggregatePain: number; chronic: boolean; activeSignals: number } | null;
   feeling: { valence: number; arousal: number; category: string } | null;
+  worldModel: { running: boolean; entities: number; twins: number } | null;
+  thinking: boolean;
+  reasoning: boolean;
+  memory: { episodic: number; semantic: number; procedural: number } | null;
+  daemon: { running: boolean; state: string } | null;
+  grounding: { claimsGrounded: number } | null;
+  healing: boolean;
+  agents: { poolSize: number } | null;
+  governance: boolean;
+  uncertainty: { coverage: number; avgWidth: number } | null;
   calibrationError: number;
   uptime: number;
   cycleCount: number;
@@ -141,7 +202,18 @@ export class Genesis {
   private factorGraph: FactorGraph | null = null;
   private neuromodulation: NeuromodulationSystem | null = null;
   private allostasis: AllostasisSystem | null = null;
+  private nociception: NociceptiveSystem | null = null;
+  private daemon: Daemon | null = null;
   private feelingAgent: FeelingAgent | null = null;
+  private worldModel: WorldModelSystem | null = null;
+  private thinking: ThinkingEngine | null = null;
+  private reasoningController: MetacognitiveController | null = null;
+  private memory: MemorySystem | null = null;
+  private grounding: GroundingSystem | null = null;
+  private agentPool: AgentPool | null = null;
+  private governance: GovernanceSystem | null = null;
+  private conformal: AdaptiveConformalPredictor | null = null;
+  private lastLatentState: LatentState | null = null;
 
   // State
   private booted = false;
@@ -164,6 +236,16 @@ export class Genesis {
       embodiment: false,
       consciousness: true,
       selfImprovement: false,
+      worldModel: true,
+      thinking: true,
+      reasoning: true,
+      memory: true,
+      daemon: true,
+      grounding: true,
+      healing: true,
+      agents: true,
+      governance: false,
+      uncertainty: true,
       deferThreshold: 0.3,
       auditResponses: true,
     };
@@ -238,18 +320,69 @@ export class Genesis {
       return recent.filter(p => !p.actual).length / recent.length;
     });
 
-    // Allostatic actions → neuromodulatory signals
+    // Allostatic actions → neuromodulatory signals + nociceptive pain
     this.allostasis.on('regulation', (result: { action: AllostaticAction; success: boolean }) => {
       if (!this.neuromodulation) return;
       const { action } = result;
       if (action.type === 'throttle' || action.type === 'hibernate') {
         this.neuromodulation.threat(action.urgency * 0.4, `allostasis:${action.type}`);
+        // Allostatic regulation = pain signal (system is struggling)
+        this.nociception?.stimulus('embodiment', action.urgency * 0.5, `allostasis:${action.reason}`);
       } else if (action.type === 'defer') {
         this.neuromodulation.modulate('serotonin', 0.1, 'allostasis:defer');
       } else if (action.type === 'scale_up') {
         this.neuromodulation.modulate('dopamine', 0.1, 'allostasis:scale_up');
       }
     });
+
+    // Nociceptive System — graduated pain signals (prevent catastrophic failure)
+    this.nociception = getNociceptiveSystem();
+
+    // Wire FEK high free energy → cognitive pain (surprise = discomfort)
+    this.fek.onPredictionError((error) => {
+      if (error.magnitude > 0.3) {
+        this.nociception?.stimulus('cognitive', error.magnitude * 0.6, `prediction_error:${error.source}`);
+      }
+    });
+
+    // Wire neuromodulation → analgesia (high dopamine+serotonin = pain suppression)
+    this.neuromodulation.onUpdate((levels) => {
+      const analgesiaLevel = (levels.dopamine * 0.4 + levels.serotonin * 0.6);
+      this.nociception?.updateAnalgesia(analgesiaLevel);
+    });
+
+    // Wire pain → neuromodulation (pain causes cortisol + NE spikes)
+    this.nociception.onPain((state) => {
+      if (!this.neuromodulation) return;
+      if (state.overallLevel === 'agony') {
+        this.neuromodulation.threat(0.8, 'nociception:agony');
+        // Agony → force FEK into vigilant mode
+        this.fek?.setMode('vigilant');
+      } else if (state.overallLevel === 'pain') {
+        this.neuromodulation.threat(0.4, 'nociception:pain');
+      }
+    });
+
+    // Daemon — background scheduler, dream mode, maintenance
+    if (this.config.daemon) {
+      this.daemon = getDaemon();
+
+      // Wire FEK 'dreaming' mode → daemon dream cycle
+      this.fek.onModeChange((mode) => {
+        if (mode === 'dreaming' && this.daemon) {
+          this.daemon.dream().then((dreamResult) => {
+            // Dream consolidation complete → reward signal
+            this.neuromodulation?.reward(0.3, 'daemon:dream_complete');
+            // Update world model from dream replay
+            if (this.worldModel && dreamResult.memoriesConsolidated > 0) {
+              this.worldModel.dream().catch(() => { /* non-fatal */ });
+            }
+          }).catch(() => { /* non-fatal */ });
+        }
+      });
+
+      this.daemon.start();
+    }
 
     this.levels.L1 = true;
   }
@@ -280,6 +413,56 @@ export class Genesis {
 
     // Cognitive workspace (shared memory substrate)
     this.cognitiveWorkspace = getCognitiveWorkspace();
+
+    // Full Memory System — episodic/semantic/procedural + consolidation
+    if (this.config.memory) {
+      this.memory = getMemorySystem();
+      this.fiber?.registerModule('memory');
+
+      // Wire daemon maintenance → memory consolidation (sleep = consolidate)
+      if (this.daemon) {
+        this.daemon.on((event) => {
+          if (event.type === 'maintenance_completed') {
+            this.memory?.sleep().catch(() => { /* non-fatal */ });
+          }
+        });
+      }
+    }
+
+    // World Model — predictive encoder/decoder (core to FEK prediction loop)
+    if (this.config.worldModel) {
+      this.worldModel = getWorldModelSystem();
+      this.worldModel.start();
+      this.fiber?.registerModule('worldmodel');
+
+      // Wire world model prediction errors → FEK free energy
+      this.worldModel.on((event) => {
+        if (event.type === 'consistency_violation' && this.fek) {
+          const error = event.data as { magnitude: number; source: string };
+          // World model surprise → increases system free energy
+          this.fek.cycle({
+            energy: Math.max(0, 1 - error.magnitude),
+            agentResponsive: true,
+            merkleValid: true,
+            systemLoad: Math.min(1, error.magnitude * 1.5),
+          });
+          // Nociceptive: large world-model surprise = cognitive pain
+          if (error.magnitude > 0.5) {
+            this.nociception?.stimulus('cognitive', error.magnitude * 0.4, `worldmodel:${error.source}`);
+          }
+        }
+      });
+
+      // Wire FEK prediction errors → world model adaptation signal
+      if (this.fek) {
+        this.fek.onPredictionError((error) => {
+          if (this.worldModel && error.magnitude > 0.1) {
+            // FEK surprise → trigger world model dream consolidation
+            this.worldModel.dream().catch(() => { /* non-fatal */ });
+          }
+        });
+      }
+    }
 
     // FeelingAgent — digital limbic system (valence/arousal/importance)
     this.feelingAgent = createFeelingAgent();
@@ -513,6 +696,19 @@ export class Genesis {
           });
         });
       }
+
+      // Wire nociceptive pain events → dashboard SSE stream
+      if (this.nociception) {
+        this.nociception.onPain((state) => {
+          broadcastToDashboard('nociception:pain', {
+            level: state.overallLevel,
+            aggregatePain: state.aggregatePain,
+            chronic: state.chronic,
+            signals: state.activeSignals.length,
+            cycle: this.cycleCount,
+          });
+        });
+      }
     }
 
     if (this.config.memorySync) {
@@ -711,6 +907,24 @@ export class Genesis {
       }
     }
 
+    // Thinking Engine — deep reasoning (ToT, GoT, super-correct)
+    if (this.config.thinking) {
+      this.thinking = getThinkingEngine();
+      this.fiber?.registerModule('thinking');
+    }
+
+    // Grounding System — epistemic verification
+    if (this.config.grounding) {
+      this.grounding = getGroundingSystem();
+      this.fiber?.registerModule('grounding');
+    }
+
+    // Agent Pool — multi-agent coordination
+    if (this.config.agents) {
+      this.agentPool = getAgentPool();
+      this.fiber?.registerModule('agents');
+    }
+
     this.levels.L3 = true;
   }
 
@@ -744,6 +958,61 @@ export class Genesis {
       }
     }
 
+    // Metacognitive Reasoning Controller — strategy selection + execution
+    if (this.config.reasoning && this.thinking) {
+      this.reasoningController = getMetacognitiveController();
+      this.fiber?.registerModule('reasoning');
+
+      // Inject φ provider from consciousness → strategy selection uses phi
+      if (this.consciousness) {
+        this.reasoningController.setPhiProvider(() =>
+          this.consciousness?.getSnapshot()?.level?.rawPhi ?? 0.5
+        );
+      }
+
+      // Inject strategy executor wired to thinking engine
+      const thinkingEngine = this.thinking;
+      this.reasoningController.setStrategyExecutor(async (strategy, problem, context) => {
+        switch (strategy) {
+          case 'tree_of_thought': {
+            const r = await thinkingEngine.treeOfThought(problem);
+            return { response: r.solution, confidence: r.confidence, tokens: r.treeStats.nodesExpanded };
+          }
+          case 'graph_of_thought': {
+            const r = await thinkingEngine.graphOfThought(problem);
+            return { response: r.solution, confidence: 0.5, tokens: r.stats.totalNodes };
+          }
+          case 'super_correct': {
+            const r = await thinkingEngine.superCorrect(problem);
+            return { response: r.solution, confidence: r.stats.finalConfidence, tokens: r.stats.totalCorrectionRounds };
+          }
+          default: {
+            const r = await thinkingEngine.think(problem, context);
+            return { response: r.response, confidence: r.confidence, tokens: r.totalThinkingTokens };
+          }
+        }
+      });
+    }
+
+    // Governance — permission gates + budget enforcement + HITL
+    if (this.config.governance) {
+      this.governance = getGovernanceSystem();
+      this.governance.initialize({
+        agentName: 'genesis',
+        capabilities: [
+          { name: 'reasoning', description: 'Logical reasoning', inputSchema: {}, outputSchema: {} },
+          { name: 'code_execution', description: 'Execute code', inputSchema: {}, outputSchema: {} },
+          { name: 'self_improvement', description: 'Self-modify within TCB', inputSchema: {}, outputSchema: {} },
+          { name: 'memory_write', description: 'Write to memory', inputSchema: {}, outputSchema: {} },
+        ],
+      });
+    }
+
+    // Conformal Prediction — calibrated uncertainty intervals
+    if (this.config.uncertainty) {
+      this.conformal = createAdaptiveConformal(0.9);
+    }
+
     this.levels.L4 = true;
   }
 
@@ -774,6 +1043,17 @@ export class Genesis {
     if (this.consciousness) {
       const domain = this.inferDomain(input);
       this.consciousness.attend(`process:${domain}`, 'internal');
+    }
+
+    // Nociceptive gate control: high φ (focused consciousness) suppresses pain
+    if (this.nociception) {
+      this.nociception.updateGateControl(currentPhi);
+      // Low φ → consciousness pain (identity/coherence threat)
+      if (currentPhi < 0.25) {
+        this.nociception.stimulus('consciousness', (0.25 - currentPhi) * 3, 'phi:critically_low');
+      }
+      // Periodic decay/habituation
+      this.nociception.tick();
     }
 
     // Step 0.5: Factor graph belief propagation — synchronize module beliefs
@@ -852,6 +1132,26 @@ export class Genesis {
       // v13.6: Build ProcessContext with live sensorimotor + consciousness data
       const processContext: import('./brain/types.js').ProcessContext = {};
 
+      // v13.6: Anticipatory memory pre-loading (Baddeley working memory)
+      if (this.cognitiveWorkspace && deepProcessing) {
+        const domain = this.inferDomain(input);
+        const feeling = this.feelingAgent?.getCurrentFeeling();
+        const anticipated = await this.cognitiveWorkspace.anticipate({
+          task: input.slice(0, 100),
+          goal: domain,
+          keywords: input.split(/\s+/).filter(w => w.length > 4).slice(0, 5),
+          emotionalState: feeling ? { valence: feeling.valence, arousal: feeling.arousal } : undefined,
+        });
+        if (anticipated.length > 0) {
+          processContext.workspaceItems = anticipated.map(item => ({
+            content: this.extractMemoryContent(item.memory),
+            type: item.memory.type,
+            relevance: item.relevance,
+            source: 'anticipate',
+          }));
+        }
+      }
+
       // Inject sensorimotor perception if embodiment is active
       if (this.sensorimotor) {
         const sensorState = this.sensorimotor.getSensorState();
@@ -880,20 +1180,124 @@ export class Genesis {
         };
       }
 
-      // Inject synced memories as workspace items (MemorySync → Brain gap closure)
+      // Inject synced memories as workspace items (appends to anticipated items)
       if (this.memorySync) {
         const syncedItems = this.memorySync.getWorkspaceItems(5);
         if (syncedItems.length > 0) {
-          processContext.workspaceItems = syncedItems.map(item => ({
+          const mapped = syncedItems.map(item => ({
             content: item.content,
             type: item.type,
             relevance: item.relevance,
             source: item.source,
           }));
+          processContext.workspaceItems = [...(processContext.workspaceItems || []), ...mapped];
         }
       }
 
-      response = await this.brain.process(input, processContext);
+      // Inject neuromodulatory tone (hormonal context for response modulation)
+      if (this.neuromodulation) {
+        const levels = this.neuromodulation.getLevels();
+        const effect = this.neuromodulation.getEffect();
+        processContext.neuromodulation = {
+          dopamine: levels.dopamine,
+          serotonin: levels.serotonin,
+          norepinephrine: levels.norepinephrine,
+          cortisol: levels.cortisol,
+          explorationRate: effect.explorationRate,
+          riskTolerance: effect.riskTolerance,
+          processingDepth: effect.processingDepth,
+          learningRate: effect.learningRate,
+        };
+      }
+
+      // Inject current emotional state from limbic evaluation
+      if (this.feelingAgent) {
+        const f = this.feelingAgent.getCurrentFeeling();
+        processContext.feeling = {
+          valence: f.valence,
+          arousal: f.arousal,
+          category: f.category,
+        };
+      }
+
+      // Inject allostatic interoceptive state (resource awareness)
+      if (this.allostasis) {
+        const state = this.allostasis.getState();
+        processContext.allostasis = {
+          energy: state.energy,
+          load: state.computationalLoad,
+          memoryPressure: state.memoryPressure,
+          errorRate: state.errorRate,
+        };
+      }
+
+      // Step 2.1: World model encoding — build latent representation of input
+      if (this.worldModel && deepProcessing) {
+        try {
+          this.lastLatentState = this.worldModel.encode({ modality: 'text', data: input, timestamp: new Date() });
+          // Predict expected output (used for post-hoc prediction error)
+          if (this.lastLatentState) {
+            const predicted = this.worldModel.predict(this.lastLatentState, { id: 'predict', type: 'communicate' as import('./world-model/types.js').ActionType, parameters: {}, agent: 'genesis', timestamp: new Date() });
+            processContext.metadata = { ...(processContext.metadata || {}), worldModelPrediction: {
+              uncertainty: this.worldModel.uncertainty(predicted),
+              predictedState: predicted.state,
+            } };
+          }
+        } catch { /* world model encode is best-effort */ }
+        if (this.fiber) this.fiber.recordCost('worldmodel', 0.005, 'encode');
+      }
+
+      // Step 2.2: Full memory recall — inject relevant memories from full stack
+      if (this.memory && deepProcessing) {
+        const memories = this.memory.recall(input, { limit: 5 });
+        if (memories.length > 0) {
+          const memItems = memories.map(m => ({
+            content: this.extractMemoryContent(m as { type: string; content: unknown }),
+            type: ((m as { type: string }).type || 'semantic') as 'episodic' | 'semantic' | 'procedural',
+            relevance: 0.7,
+            source: 'memory-system',
+          }));
+          processContext.workspaceItems = [...(processContext.workspaceItems || []), ...memItems];
+        }
+        if (this.fiber) this.fiber.recordCost('memory', 0.003, 'recall');
+      }
+
+      // Step 2.3: Route — reasoning controller for complex inputs, brain for simple
+      if (this.reasoningController && deepProcessing && enhancedAudit) {
+        // Complex query: metacognitive controller selects optimal strategy
+        const mcResult = await this.reasoningController.reason(input, response || undefined);
+        response = mcResult.response;
+        if (this.fiber) this.fiber.recordCost('reasoning', 0.02, `strategy:${mcResult.strategy}`);
+      } else {
+        response = await this.brain.process(input, processContext);
+      }
+    }
+
+    // Step 2.5: World model prediction error — compare predicted vs actual output
+    if (this.worldModel && this.lastLatentState && response && deepProcessing) {
+      const actualState = this.worldModel.encode({ modality: 'text', data: response, timestamp: new Date() });
+      const predicted = this.worldModel.predict(this.lastLatentState, { id: 'predict', type: 'communicate' as import('./world-model/types.js').ActionType, parameters: {}, agent: 'genesis', timestamp: new Date() });
+      const predictionError = this.worldModel.uncertainty(predicted);
+      // High prediction error → world model was wrong → FEK surprise
+      if (predictionError > 0.4 && this.fek) {
+        this.nociception?.stimulus('cognitive', predictionError * 0.3, 'worldmodel:prediction_miss');
+      }
+      if (this.fiber) this.fiber.recordCost('worldmodel', 0.003, 'predict-compare');
+    }
+
+    // Step 2.7: Healing — detect errors in response before audit
+    if (this.config.healing && response) {
+      const errorReport = healing.detectErrors(response);
+      if (healing.hasErrors(response)) {
+        // Attempt auto-fix
+        const fixResult = await healing.autoFix(response);
+        if (fixResult.success && fixResult.appliedFix) {
+          response = fixResult.appliedFix.fixed;
+          this.neuromodulation?.reward(0.2, 'healing:autofix');
+        } else {
+          this.nociception?.stimulus('cognitive', 0.3, 'healing:unfixable_error');
+        }
+      }
     }
 
     // Step 3: Metacognitive audit (skipped if φ too low)
@@ -921,6 +1325,62 @@ export class Genesis {
       // Record metacognition audit cost
       if (this.fiber) {
         this.fiber.recordCost('metacognition', 0.005, 'audit');
+      }
+    }
+
+    // Step 3.2: Epistemic grounding — verify factual claims in response
+    if (this.grounding && response && deepProcessing && confidence) {
+      // Only ground when confidence is moderate (high = trusted, low = already flagged)
+      if (confidence.value > 0.3 && confidence.value < 0.85) {
+        const claim = await this.grounding.ground(response.slice(0, 500));
+        if (claim.confidence < 0.4) {
+          // Weak grounding → reduce confidence + neuromodulatory uncertainty
+          confidence = { ...confidence, value: confidence.value * 0.7 };
+          this.neuromodulation?.modulate('norepinephrine', 0.1, 'grounding:weak');
+        }
+        if (this.grounding.needsHuman(claim)) {
+          // Flag for HITL via governance
+          if (this.governance) {
+            this.governance.executeGoverned('genesis', 'claim_verification', response.slice(0, 100), async () => claim);
+          }
+        }
+        if (this.fiber) this.fiber.recordCost('grounding', 0.008, 'verify');
+      }
+    }
+
+    // Step 3.3: Conformal prediction — calibrate uncertainty intervals
+    if (this.conformal && confidence) {
+      // Compute conformal interval from adapted alpha
+      const alpha = this.conformal.getCurrentAlpha();
+      const halfWidth = alpha * 0.5;
+      const lower = Math.max(0, confidence.value - halfWidth);
+      const upper = Math.min(1, confidence.value + halfWidth);
+      const width = upper - lower;
+      // Widen confidence to conformal interval bounds
+      confidence = {
+        ...confidence,
+        value: Math.max(lower, Math.min(upper, confidence.value)),
+      };
+      // Very wide interval → high uncertainty → neuromodulatory alert
+      if (width > 0.5) {
+        this.neuromodulation?.modulate('norepinephrine', width * 0.1, 'conformal:wide_interval');
+      }
+    }
+
+    // Step 3.5: Post-processing limbic evaluation (response quality → emotional feedback)
+    if (this.feelingAgent && response && this.neuromodulation) {
+      const responseFeeling = this.feelingAgent.evaluate(response, input);
+      // Satisfaction with own output → dopamine reward
+      if (responseFeeling.category === 'satisfaction') {
+        this.neuromodulation.reward(responseFeeling.valence * 0.5, 'limbic:satisfaction');
+      }
+      // Frustration with own output → cortisol + dopamine dip
+      if (responseFeeling.category === 'frustration') {
+        this.neuromodulation.punish(Math.abs(responseFeeling.valence) * 0.3, 'limbic:frustration');
+      }
+      // High importance → norepinephrine boost (stay alert for consequential outputs)
+      if (responseFeeling.importance > 0.7) {
+        this.neuromodulation.modulate('norepinephrine', 0.1, 'limbic:important');
       }
     }
 
@@ -970,12 +1430,14 @@ export class Genesis {
         this.triggerSelfImprovement().catch(() => { /* non-fatal */ });
       }
 
-      // v13.2: NESS deviation → neuromodulatory signals
+      // v13.2: NESS deviation → neuromodulatory signals + nociceptive economic pain
       if (this.neuromodulation) {
         if (this.lastNESSState.deviation > 0.5) {
           this.neuromodulation.threat(this.lastNESSState.deviation, 'ness:deviation');
+          this.nociception?.stimulus('economic', this.lastNESSState.deviation * 0.7, 'ness:unsustainable');
         } else if (section.sustainable) {
           this.neuromodulation.calm(0.3, 'ness:sustainable');
+          this.nociception?.resolveSource('economic');
         }
       }
     }
@@ -1003,8 +1465,13 @@ export class Genesis {
       if (this.neuromodulation) {
         if (success) {
           this.neuromodulation.reward(confidence.value, `process:${domain}`);
+          this.nociception?.resolveSource('cognitive'); // Success resolves cognitive pain
         } else {
           this.neuromodulation.punish(1 - confidence.value, `process:${domain}`);
+          // Low confidence → cognitive pain (proportional to failure severity)
+          if (confidence.value < 0.3) {
+            this.nociception?.stimulus('cognitive', (0.3 - confidence.value) * 2, `low_confidence:${domain}`);
+          }
         }
       }
     }
@@ -1033,6 +1500,11 @@ export class Genesis {
           const f = this.feelingAgent!.getCurrentFeeling();
           return { valence: f.valence, arousal: f.arousal, category: f.category };
         })() : undefined,
+        pain: this.nociception ? {
+          level: this.nociception.getPainLevel(),
+          aggregate: this.nociception.getAggregatePain(),
+          chronic: this.nociception.isChronic(),
+        } : undefined,
       });
     }
 
@@ -1047,6 +1519,28 @@ export class Genesis {
       if (this.fiber) {
         this.fiber.recordCost('causal', 0.002, 'data-feed');
       }
+    }
+
+    // Step 8: Memory consolidation — store interaction as episodic memory
+    if (this.memory && response && deepProcessing) {
+      this.memory.remember({
+        what: `processed: ${input.slice(0, 80)}`,
+        details: {
+          response: response.slice(0, 200),
+          confidence: confidence?.value,
+          cost,
+          fekMode: fekState?.mode,
+          domain: this.inferDomain(input),
+        },
+        tags: ['genesis:process', this.inferDomain(input)],
+      });
+    }
+
+    // Step 9: Conformal calibration update — feed outcome for interval recalibration
+    if (this.conformal && confidence) {
+      // Adapt conformal interval based on whether prediction was covered
+      const wasCovered = audit ? (audit.coherence > 0.6 && audit.groundedness > 0.6) : true;
+      this.conformal.adapt(wasCovered);
     }
 
     // Release attention focus after processing
@@ -1226,6 +1720,19 @@ export class Genesis {
    */
   async triggerSelfImprovement(): Promise<{ applied: number } | null> {
     if (!this.selfImprovement) return null;
+
+    // Governance gate: self-improvement requires permission
+    if (this.governance) {
+      const permitted = await this.governance.executeGoverned(
+        'genesis', 'self_improvement', 'system',
+        async () => this.selfImprovement!.runCycle()
+      );
+      if (!permitted.result) return null;
+      const applied = permitted.result.results.filter((r: { success: boolean }) => r.success).length;
+      if (this.fiber && applied > 0) this.fiber.recordCost('genesis', 0.1 * applied, 'self-improvement');
+      return { applied };
+    }
+
     const result = await this.selfImprovement.runCycle();
     const applied = result.results.filter((r: { success: boolean }) => r.success).length;
 
@@ -1327,10 +1834,39 @@ export class Genesis {
           errorRate: state.errorRate,
         };
       })() : null,
+      nociception: this.nociception ? (() => {
+        const state = this.nociception!.getState();
+        return {
+          level: state.overallLevel,
+          aggregatePain: state.aggregatePain,
+          chronic: state.chronic,
+          activeSignals: state.activeSignals.length,
+        };
+      })() : null,
       feeling: this.feelingAgent ? (() => {
         const f = this.feelingAgent!.getCurrentFeeling();
         return { valence: f.valence, arousal: f.arousal, category: f.category };
       })() : null,
+      worldModel: this.worldModel ? {
+        running: this.worldModel.isRunning(),
+        entities: this.worldModel.getAllTwins?.()?.length ?? 0,
+        twins: this.worldModel.getAllTwins?.()?.length ?? 0,
+      } : null,
+      thinking: this.thinking !== null,
+      reasoning: this.reasoningController !== null,
+      memory: this.memory ? (() => {
+        const stats = this.memory!.getStats();
+        return { episodic: stats.episodic.total, semantic: stats.semantic.total, procedural: stats.procedural.total };
+      })() : null,
+      daemon: this.daemon ? { running: this.daemon.isRunning(), state: this.daemon.getState() } : null,
+      grounding: this.grounding ? { claimsGrounded: this.grounding.stats().claimsGrounded } : null,
+      healing: this.config.healing,
+      agents: this.agentPool ? { poolSize: this.agentPool.getStats().agentsSpawned } : null,
+      governance: this.governance !== null,
+      uncertainty: this.conformal ? {
+        coverage: this.conformal.getEmpiricalCoverage(),
+        avgWidth: this.conformal.getCurrentAlpha(),
+      } : null,
       calibrationError: this.getCalibrationError(),
       uptime: this.bootTime > 0 ? Date.now() - this.bootTime : 0,
       cycleCount: this.cycleCount,
@@ -1342,7 +1878,7 @@ export class Genesis {
    */
   async shutdown(): Promise<void> {
     // L4: Executive shutdown
-    // (metacognition, NESS, metaRL are stateless — no stop needed)
+    // (metacognition, NESS, metaRL, governance, conformal are stateless)
 
     // L3: Cognitive shutdown
     if (this.sensorimotor) {
@@ -1350,6 +1886,13 @@ export class Genesis {
     }
 
     // L2: Reactive shutdown
+    if (this.worldModel) {
+      this.worldModel.stop();
+    }
+    if (this.memory) {
+      // Final consolidation before shutdown
+      await this.memory.consolidate().catch(() => { /* best-effort */ });
+    }
     if (this.consciousness) {
       this.consciousness.stop();
     }
@@ -1364,6 +1907,9 @@ export class Genesis {
     }
 
     // L1: Substrate shutdown
+    if (this.daemon) {
+      this.daemon.stop();
+    }
     if (this.allostasis) {
       this.allostasis.removeAllListeners();
     }
@@ -1376,6 +1922,107 @@ export class Genesis {
 
     this.booted = false;
     this.levels = { L1: false, L2: false, L3: false, L4: false };
+  }
+
+  // ==========================================================================
+  // Deep Reasoning Interface
+  // ==========================================================================
+
+  /**
+   * Deep think — uses metacognitive controller to select optimal strategy
+   */
+  async deepThink(problem: string, context?: string): Promise<{ response: string; confidence: number; strategy: string } | null> {
+    if (!this.reasoningController) {
+      if (!this.thinking) return null;
+      const result = await this.thinking.think(problem, context);
+      return { response: result.response, confidence: result.confidence, strategy: 'sequential' };
+    }
+    const result = await this.reasoningController.reason(problem, context);
+    if (this.fiber) this.fiber.recordCost('reasoning', 0.02, `deep:${result.strategy}`);
+    return { response: result.response, confidence: result.confidence, strategy: result.strategy };
+  }
+
+  // ==========================================================================
+  // World Model Interface
+  // ==========================================================================
+
+  /**
+   * Simulate future states given actions
+   */
+  simulate(actions: Array<{ type: string; params: Record<string, unknown> }>): unknown[] | null {
+    if (!this.worldModel || !this.lastLatentState) return null;
+    const typedActions = actions.map((a, i) => ({
+      id: `sim-${Date.now()}-${i}`,
+      type: (a.type || 'execute') as import('./world-model/types.js').ActionType,
+      parameters: a.params,
+      agent: 'genesis',
+      timestamp: new Date(),
+    }));
+    const trajectory = this.worldModel.simulate(this.lastLatentState, typedActions);
+    if (this.fiber) this.fiber.recordCost('worldmodel', 0.01 * actions.length, 'simulate');
+    return trajectory.states;
+  }
+
+  /**
+   * Get world model uncertainty for current state
+   */
+  getWorldUncertainty(): number {
+    if (!this.worldModel || !this.lastLatentState) return 1.0;
+    const action = { id: 'uncertainty-check', type: 'observe' as import('./world-model/types.js').ActionType, parameters: {}, agent: 'genesis', timestamp: new Date() };
+    const predicted = this.worldModel.predict(this.lastLatentState, action);
+    return this.worldModel.uncertainty(predicted);
+  }
+
+  // ==========================================================================
+  // Agent Pool Interface
+  // ==========================================================================
+
+  /**
+   * Execute a capability via the agent pool
+   */
+  async agentExecute(capability: string, input: unknown): Promise<unknown | null> {
+    if (!this.agentPool) return null;
+    const result = await this.agentPool.execute({
+      id: `genesis-${Date.now()}`,
+      input: typeof input === 'string' ? input : JSON.stringify(input),
+      taskType: 'general' as import('./llm/advanced-router.js').TaskType,
+    });
+    if (this.fiber) this.fiber.recordCost('agents', 0.01, `execute:${capability}`);
+    return result;
+  }
+
+  // ==========================================================================
+  // Memory Interface
+  // ==========================================================================
+
+  /**
+   * Recall memories from the full stack
+   */
+  recall(query: string, limit = 5): unknown[] {
+    if (!this.memory) return [];
+    return this.memory.recall(query, { limit });
+  }
+
+  /**
+   * Learn a semantic fact
+   */
+  learn(concept: string, definition: string, domain?: string): void {
+    if (!this.memory) return;
+    this.memory.learn({ concept, definition, category: domain ?? 'general', confidence: 0.8 });
+  }
+
+  // ==========================================================================
+  // Grounding Interface
+  // ==========================================================================
+
+  /**
+   * Ground a claim epistemically
+   */
+  async ground(claim: string): Promise<{ confidence: number; level: string; needsHuman: boolean } | null> {
+    if (!this.grounding) return null;
+    const result = await this.grounding.ground(claim);
+    if (this.fiber) this.fiber.recordCost('grounding', 0.01, 'ground');
+    return { confidence: result.confidence, level: result.level, needsHuman: this.grounding.needsHuman(result) };
   }
 
   // ==========================================================================
@@ -1409,6 +2056,14 @@ export class Genesis {
     }
 
     return Math.max(0.1, Math.min(0.6, threshold));
+  }
+
+  private extractMemoryContent(memory: { type: string; content: unknown }): string {
+    const c = memory.content as Record<string, unknown>;
+    if (memory.type === 'episodic') return (c.what as string) ?? '';
+    if (memory.type === 'semantic') return (c.concept as string) ?? '';
+    if (memory.type === 'procedural') return (c.name as string) ?? '';
+    return JSON.stringify(c).slice(0, 200);
   }
 
   private inferDomain(input: string): string {

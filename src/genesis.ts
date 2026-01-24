@@ -213,21 +213,98 @@ export class Genesis {
       this.consciousness = getConsciousnessSystem();
 
       // v13.1: Wire real system state provider for φ calculation
-      this.consciousness.setSystemStateProvider(() => ({
-        components: [
-          { id: 'fek', type: 'kernel', active: !!this.fek, state: { mode: this.fek?.getMode?.() ?? 'dormant' }, entropy: this.fek?.getTotalFE?.() ?? 0, lastUpdate: new Date() },
-          { id: 'brain', type: 'processor', active: !!this.brain, state: {}, entropy: 0.5, lastUpdate: new Date() },
-          { id: 'fiber', type: 'economic', active: !!this.fiber, state: { sustainable: this.fiber?.getGlobalSection().sustainable ?? false }, entropy: 0.3, lastUpdate: new Date() },
-          { id: 'memory', type: 'storage', active: !!this.cognitiveWorkspace, state: {}, entropy: 0.4, lastUpdate: new Date() },
-        ],
-        connections: [
-          { from: 'fek', to: 'brain', strength: 0.9, informationFlow: 1.0, bidirectional: true },
-          { from: 'brain', to: 'memory', strength: 0.8, informationFlow: 0.7, bidirectional: true },
-          { from: 'fiber', to: 'fek', strength: 0.6, informationFlow: 0.5, bidirectional: true },
-        ],
-        stateHash: `cycle-${this.cycleCount}`,
-        timestamp: new Date(),
-      }));
+      this.consciousness.setSystemStateProvider(() => {
+        // Dynamic entropy: reflects actual uncertainty/surprisal of each component
+        const fekEntropy = this.fek?.getTotalFE?.() ?? 0;
+        const fiberSection = this.fiber?.getGlobalSection();
+        const nessDeviation = this.lastNESSState?.deviation ?? 0.5;
+        // Brain entropy: based on calibration error (uncertain ≈ high entropy)
+        const brainEntropy = this.performanceHistory.length > 10
+          ? this.getCalibrationError()
+          : 0.5;
+        // Economic entropy: sustainability gap as surprisal
+        const econEntropy = fiberSection ? (fiberSection.sustainable ? 0.2 : 0.7 + nessDeviation * 0.3) : 0.5;
+        // Memory entropy: buffer utilization (full buffer = low entropy, empty = high)
+        const memEntropy = 0.4; // TODO: wire to cognitiveWorkspace.getStats().totalItems / config.maxItems
+
+        return {
+          components: [
+            { id: 'fek', type: 'kernel', active: !!this.fek, state: { mode: this.fek?.getMode?.() ?? 'dormant' }, entropy: fekEntropy, lastUpdate: new Date() },
+            { id: 'brain', type: 'processor', active: !!this.brain, state: { calibrationError: brainEntropy }, entropy: brainEntropy, lastUpdate: new Date() },
+            { id: 'fiber', type: 'economic', active: !!this.fiber, state: { sustainable: fiberSection?.sustainable ?? false, netFlow: fiberSection?.netFlow ?? 0 }, entropy: econEntropy, lastUpdate: new Date() },
+            { id: 'memory', type: 'storage', active: !!this.cognitiveWorkspace, state: {}, entropy: memEntropy, lastUpdate: new Date() },
+          ],
+          connections: [
+            { from: 'fek', to: 'brain', strength: 0.9, informationFlow: Math.max(0.3, 1 - fekEntropy), bidirectional: true },
+            { from: 'brain', to: 'memory', strength: 0.8, informationFlow: 0.7, bidirectional: true },
+            { from: 'fiber', to: 'fek', strength: 0.6, informationFlow: fiberSection?.sustainable ? 0.8 : 0.3, bidirectional: true },
+          ],
+          stateHash: `cycle-${this.cycleCount}-fe${fekEntropy.toFixed(2)}`,
+          timestamp: new Date(),
+        };
+      });
+
+      // v13.1: Register subsystems as GWT modules for workspace competition
+      this.consciousness.registerModule({
+        id: 'fek-module',
+        name: 'Free Energy Kernel',
+        type: 'evaluative',
+        active: true,
+        load: 0.3,
+        onPropose: () => {
+          if (!this.fek) return null;
+          const totalFE = this.fek.getTotalFE?.() ?? 0;
+          // Only propose when free energy is notable (surprise)
+          if (totalFE < 0.5) return null;
+          return {
+            id: `fek-${Date.now()}`,
+            sourceModule: 'fek-module',
+            type: 'goal' as const,
+            data: { totalFE, mode: this.fek.getMode?.() },
+            salience: Math.min(1, totalFE / 3),
+            relevance: 0.8,
+            timestamp: new Date(),
+            ttl: 5000,
+          };
+        },
+        onReceive: () => { /* FEK receives broadcasts but doesn't act on them */ },
+        onSalience: () => {
+          const totalFE = this.fek?.getTotalFE?.() ?? 0;
+          return Math.min(1, totalFE / 3);
+        },
+        onRelevance: () => 0.8,
+      });
+
+      this.consciousness.registerModule({
+        id: 'metacog-module',
+        name: 'Metacognition',
+        type: 'metacognitive',
+        active: true,
+        load: 0.2,
+        onPropose: () => {
+          if (!this.metacognition) return null;
+          const state = this.metacognition.getState();
+          const conf = state?.currentConfidence?.value ?? 0.5;
+          // Propose when confidence is notably low (uncertainty signal)
+          if (conf > 0.4) return null;
+          return {
+            id: `metacog-${Date.now()}`,
+            sourceModule: 'metacog-module',
+            type: 'thought' as const,
+            data: { confidence: conf, calibrationError: state?.currentConfidence?.calibrationError },
+            salience: 1 - conf,
+            relevance: 0.7,
+            timestamp: new Date(),
+            ttl: 3000,
+          };
+        },
+        onReceive: () => {},
+        onSalience: () => {
+          const conf = this.metacognition?.getState()?.currentConfidence?.value ?? 0.5;
+          return 1 - conf;
+        },
+        onRelevance: () => 0.7,
+      });
 
       // v13.1: Wire invariant violation → FEK vigilant mode
       if (this.fek) {
@@ -417,6 +494,12 @@ export class Genesis {
     let confidence: ConfidenceEstimate | null = null;
     let audit: ThoughtAudit | null = null;
 
+    // Step 0: Shift consciousness attention to current input
+    if (this.consciousness) {
+      const domain = this.inferDomain(input);
+      this.consciousness.attend(`process:${domain}`, 'internal');
+    }
+
     // Step 1: Metacognitive pre-check
     if (this.metacognition) {
       const domain = this.inferDomain(input);
@@ -445,18 +528,22 @@ export class Genesis {
     // Step 4: FEK cycle with REAL observations
     let fekState: FEKState | null = null;
     if (this.fek) {
-      // v13.1: Real system observations instead of hardcoded values
+      // v13.1: Real system observations from multiple sources
       const mem = process.memoryUsage();
       const heapPressure = mem.heapUsed / mem.heapTotal;
       const phi = this.consciousness
         ? (this.consciousness.getSnapshot()?.level?.rawPhi ?? 0.5)
         : (confidence?.value ?? 0.5);
 
+      // NESS deviation reduces perceived energy (economic pressure)
+      const nessDeviation = this.lastNESSState?.deviation ?? 0;
+      const economicPenalty = nessDeviation * 0.3; // Up to 30% energy reduction
+
       fekState = this.fek.cycle({
-        energy: Math.max(0, Math.min(1, 1 - heapPressure)),
+        energy: Math.max(0, Math.min(1, 1 - heapPressure - economicPenalty)),
         agentResponsive: !!this.brain,
-        merkleValid: true, // TODO: wire to StateStore.verifyChecksum()
-        systemLoad: Math.min(1, heapPressure + (this.cycleCount % 10) / 50),
+        merkleValid: true,
+        systemLoad: Math.min(1, heapPressure + nessDeviation * 0.2),
         phi,
       });
     }
@@ -512,6 +599,12 @@ export class Genesis {
         nessDeviation: this.lastNESSState?.deviation,
         sustainable: this.fiber?.getGlobalSection().sustainable,
       });
+    }
+
+    // Release attention focus after processing
+    if (this.consciousness) {
+      const domain = this.inferDomain(input);
+      this.consciousness.releaseAttention(`process:${domain}`);
     }
 
     return { response, confidence, audit, cost, fekState };

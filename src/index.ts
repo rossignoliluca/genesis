@@ -1468,17 +1468,41 @@ async function cmdAutonomous(subcommand: string | undefined, options: Record<str
     const cycles = parseInt(options.cycles || '0', 10);
     const interval = parseInt(options.interval || '5000', 10);
 
-    console.log(c('\n=== STARTING AUTONOMOUS LOOP ===\n', 'bold'));
-    console.log(`  Cycles: ${cycles || 'Unlimited'}`);
+    console.log(c('\n=== STARTING AUTONOMOUS LOOP (Active Inference) ===\n', 'bold'));
+    console.log(`  Engine:   POMDP + Value-JEPA + Experience Replay`);
+    console.log(`  Cycles:   ${cycles || 'Unlimited'}`);
     console.log(`  Interval: ${interval}ms`);
+    console.log(`  Replay:   every 5 cycles (batch=8)`);
+    console.log(`  Dream:    every 50 cycles (batch=16)`);
+    console.log(`  Persist:  every 10 cycles → .genesis/learned-model.json`);
     console.log();
 
-    // Initialize first
-    await system.initialize();
+    // Create and run the real Active Inference autonomous loop
+    const loop = createAutonomousLoop({
+      cycleInterval: interval,
+      maxCycles: cycles || 0,
+      persistEveryN: 10,
+      loadOnStart: true,
+      replayEveryN: 5,
+      replayBatchSize: 8,
+      dreamEveryN: 50,
+      dreamBatchSize: 16,
+      verbose: options.verbose === 'true',
+    });
 
-    // Run the loop
+    // Graceful shutdown on Ctrl+C
+    process.on('SIGINT', () => {
+      console.log(c('\n\nStopping autonomous loop...', 'yellow'));
+      loop.stop('user_interrupt');
+    });
+
     console.log(c('Running autonomous loop... (Ctrl+C to stop)\n', 'dim'));
-    await system.runLoop(interval, cycles || undefined);
+    const stats = await loop.run(cycles || undefined);
+    console.log(c('\n=== LOOP COMPLETE ===', 'bold'));
+    console.log(`  Total cycles: ${stats.cycles}`);
+    console.log(`  Actions taken: ${Object.values(stats.actions).reduce((a, b) => a + b, 0)}`);
+    console.log(`  Avg surprise: ${stats.avgSurprise.toFixed(3)}`);
+    console.log(`  Top actions: ${Object.entries(stats.actions).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([a, c]) => `${a}(${c})`).join(', ')}`);
     return;
   }
 

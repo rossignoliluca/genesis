@@ -929,6 +929,66 @@ export class GenesisMCPServer extends EventEmitter {
         return { success: true, data: { state: 'stopped' } };
       },
     });
+
+    // genesis.efe.select_tool - EFE-based MCP tool selection (novel contribution)
+    this.registerTool({
+      name: 'genesis.efe.select_tool',
+      description: 'Select the best MCP tool for a given intent using Expected Free Energy (EFE) minimization. Novel Active Inference approach to tool selection: computes ambiguity, risk, and information gain for each candidate tool.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          intent: {
+            type: 'string',
+            enum: ['search', 'research', 'generate_text', 'generate_image', 'code', 'scrape', 'memory', 'filesystem'],
+            description: 'What the agent wants to achieve',
+          },
+          beliefs: {
+            type: 'object',
+            description: 'Optional current beliefs about world state (viability, worldState, coupling, goalProgress, economic arrays)',
+          },
+        },
+        required: ['intent'],
+      },
+      requiredScopes: ['infer'],
+      baseCost: 0.01,
+      supportsStreaming: false,
+      maxExecutionTime: 5000,
+      annotations: { readOnlyHint: true },
+      handler: async (input: any) => {
+        const { getEFEToolSelector } = await import('../active-inference/efe-tool-selector.js');
+        const selector = getEFEToolSelector();
+        const defaultBeliefs = {
+          viability: [0.2, 0.3, 0.3, 0.1, 0.1],
+          worldState: [0.2, 0.3, 0.3, 0.2],
+          coupling: [0.1, 0.2, 0.3, 0.3, 0.1],
+          goalProgress: [0.1, 0.3, 0.4, 0.2],
+          economic: [0.2, 0.3, 0.3, 0.2],
+        };
+        const beliefs = input.beliefs || defaultBeliefs;
+        const result = selector.selectTool(input.intent, beliefs);
+        return {
+          success: true,
+          data: {
+            selected: {
+              server: result.selected.tool.server,
+              tool: result.selected.tool.tool,
+              efe: result.selected.efe,
+              ambiguity: result.selected.ambiguity,
+              risk: result.selected.risk,
+              infoGain: result.selected.infoGain,
+              reasoning: result.selected.reasoning,
+            },
+            alternatives: result.alternatives.map(a => ({
+              server: a.tool.server,
+              tool: a.tool.tool,
+              efe: a.efe,
+              reasoning: a.reasoning,
+            })),
+            totalCandidates: result.totalCandidates,
+          },
+        };
+      },
+    });
   }
 
   registerTool(config: ExposedToolConfig): void {

@@ -50,6 +50,16 @@ export {
   DEFAULT_LOOP_CONFIG,
 } from './autonomous-loop.js';
 
+// Export EFE Tool Selector (v11.4: novel MCP tool selection via free energy)
+export {
+  EFEToolSelector,
+  getEFEToolSelector,
+  createEFEToolSelector,
+  type MCPToolCandidate,
+  type EFEScore,
+  type ToolSelectionResult,
+} from './efe-tool-selector.js';
+
 // Export integration with Kernel/Daemon
 export {
   integrateActiveInference,

@@ -1,0 +1,65 @@
+name: genesis-ai
+description: "Autonomous AI agent with Active Inference, competitive intelligence, and EFE-based tool selection"
+version: 11.4.0
+transport: stdio
+command: npx
+args: ["-y", "genesis-ai-cli@latest", "mcp", "serve"]
+
+tools:
+  # Core cognitive tools
+  - genesis.think
+  - genesis.remember
+  - genesis.execute
+  - genesis.analyze
+  - genesis.create
+
+  # Competitive Intelligence (revenue-generating)
+  - genesis.compintel.scan
+  - genesis.compintel.digest
+
+  # Revenue loop
+  - genesis.revenue.setup
+  - genesis.revenue.subscribe_url
+  - genesis.revenue.check
+  - genesis.revenue.paid_scan
+
+  # Daemon lifecycle
+  - genesis.daemon.compintel_start
+  - genesis.daemon.stop
+  - genesis.daemon.status
+
+  # Novel: EFE-based tool selection
+  - genesis.efe.select_tool
+
+pricing:
+  model: subscription
+  stripe:
+    product: "Genesis Competitive Intelligence"
+  plans:
+    - name: starter
+      price: 4900
+      currency: usd
+      interval: month
+      features:
+        - genesis.think
+        - genesis.analyze
+        - genesis.create
+        - genesis.remember
+    - name: pro
+      price: 9900
+      currency: usd
+      interval: month
+      features:
+        - genesis.think
+        - genesis.analyze
+        - genesis.create
+        - genesis.remember
+        - genesis.compintel.scan
+        - genesis.compintel.digest
+        - genesis.efe.select_tool
+    - name: enterprise
+      price: 19900
+      currency: usd
+      interval: month
+      features:
+        - "*"

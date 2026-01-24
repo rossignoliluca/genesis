@@ -11,6 +11,9 @@ import { ActionExecutorManager, createActionExecutorManager, ActionResult } from
 import { Observation, Beliefs, ActionType, AIEvent, ACTIONS } from './types.js';
 import { DeepActiveInference } from './deep-aif.js';
 import { ExperienceReplayBuffer, createExperienceReplayBuffer } from './experience-replay.js';
+import { AllostasisSystem, createAllostasisSystem } from '../allostasis/index.js';
+import { createDreamService, DreamService } from '../daemon/dream-mode.js';
+import { ConformalPredictor, createFreeEnergyConformalPredictor } from '../uncertainty/conformal.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -104,6 +107,17 @@ export class AutonomousLoop {
   private replayBuffer: ExperienceReplayBuffer;
   private previousObservation: Observation | null = null;
 
+  // v11.4: Allostasis (interoceptive regulation → C-matrix modulation)
+  private allostasis: AllostasisSystem;
+  private lastAllostaticDelta: boolean = false;
+
+  // v11.4: Dream service (rich consolidation)
+  private dreamService: DreamService;
+
+  // v11.4: Conformal prediction (calibrated EFE ambiguity)
+  private conformal: ConformalPredictor;
+  private lastPredictedSurprise: number = 0;
+
   constructor(config: Partial<AutonomousLoopConfig> = {}) {
     this.config = { ...DEFAULT_LOOP_CONFIG, ...config };
 
@@ -111,6 +125,52 @@ export class AutonomousLoop {
     this.observations = createObservationGatherer();
     this.actions = createActionExecutorManager();
     this.replayBuffer = createExperienceReplayBuffer();
+
+    // v11.4: Initialize allostasis with real sensors
+    this.allostasis = createAllostasisSystem();
+    this.allostasis.registerSensor('energy', () => {
+      const stats = this.engine.getStats();
+      return Math.max(0, 1 - stats.averageSurprise / 10); // Low surprise = high energy
+    });
+    this.allostasis.registerSensor('errorRate', () => {
+      const stats = this.engine.getStats();
+      return stats.inferenceCount > 0 ? 1 - (stats.averageSurprise < 3 ? 0.8 : 0.3) : 0;
+    });
+    this.allostasis.registerSensor('memoryPressure', () => {
+      return this.replayBuffer.getStats().bufferSize / 1000; // Normalize to 0-1
+    });
+
+    // v11.4: Initialize dream service with replay buffer context
+    this.dreamService = createDreamService(
+      { minDreamDurationMs: 1000, maxDreamDurationMs: 5000 },
+      {
+        getEpisodicMemories: () => {
+          const experiences = this.replayBuffer.sampleHighSurprise(32);
+          return experiences.map(exp => ({
+            id: String(exp.id),
+            content: { what: `${exp.action}: surprise=${exp.surprise.toFixed(2)}, ${exp.outcome}` },
+            importance: exp.priority,
+            tags: [exp.outcome, exp.action],
+            consolidated: exp.replayCount >= 5,
+          }));
+        },
+        consolidateMemory: async (id: string) => {
+          const experiences = this.replayBuffer.sampleHighSurprise(32);
+          const exp = experiences.find(e => String(e.id) === id);
+          if (exp) {
+            (this.engine as any).learn(exp.observation, exp.nextObservation, exp.beliefs, exp.actionIdx);
+            return { concept: `consolidated_${exp.action}_${exp.outcome}` };
+          }
+          return null;
+        },
+        log: (msg: string) => {
+          if (this.config.verbose) console.log(`[Dream] ${msg}`);
+        },
+      }
+    );
+
+    // v11.4: Initialize conformal predictor for calibrated uncertainty
+    this.conformal = createFreeEnergyConformalPredictor();
 
     // Subscribe to engine events
     this.engine.on(this.handleEngineEvent.bind(this));
@@ -211,6 +271,34 @@ export class AutonomousLoop {
       console.log(`[AI Loop] Cycle ${this.cycleCount} - Observation:`, obs);
     }
 
+    // 1b. v11.4: Allostatic modulation of preferences
+    //     Sense internal state → modulate C-matrix before inference
+    try {
+      const intero = (this.allostasis as any).interoception?.sense?.();
+      if (intero) {
+        const energyLevel = intero.energy ?? 0.7;
+        const errorRate = intero.errorRate ?? 0;
+        const memPressure = intero.memoryPressure ?? 0.3;
+
+        // Low energy → boost preference for rest/low-energy states
+        if (energyLevel < 0.3) {
+          this.engine.modulatePreferences({ energy: [2, 1, 0, -1, -2] }); // prefer low-energy states
+          this.engine.modulatePreferences({ task: [1.5, 0.5, 0, -0.5] }); // accept incomplete tasks
+          this.lastAllostaticDelta = true;
+        }
+        // High error rate → boost preference for tool success
+        if (errorRate > 0.4) {
+          this.engine.modulatePreferences({ tool: [-1, 0, 2] }); // strongly prefer tool success
+          this.lastAllostaticDelta = true;
+        }
+        // High memory pressure → prefer consolidation
+        if (memPressure > 0.7) {
+          this.engine.modulatePreferences({ task: [1, 0, 0, -1] }); // accept rest
+          this.lastAllostaticDelta = true;
+        }
+      }
+    } catch { /* allostasis is optional */ }
+
     // 2. Run inference (beliefs + policy + action)
     let action: ActionType;
     let beliefs: Beliefs;
@@ -224,6 +312,12 @@ export class AutonomousLoop {
       // Use default Active Inference engine
       action = this.engine.step(obs);
       beliefs = this.engine.getBeliefs();
+    }
+
+    // 2b. v11.4: Reset preferences to avoid permanent drift
+    if (this.lastAllostaticDelta) {
+      this.engine.resetPreferences();
+      this.lastAllostaticDelta = false;
     }
 
     if (this.config.verbose) {
@@ -241,6 +335,14 @@ export class AutonomousLoop {
 
     // 4. v10.8: Feed action outcome back to observations
     this.observations.recordToolResult(result.success, result.duration);
+
+    // 4b. v11.4: Conformal calibration (feed prediction vs actual surprise)
+    const actualSurprise = this.engine.getStats().averageSurprise;
+    if (this.lastPredictedSurprise > 0) {
+      this.conformal.calibrate(action, this.lastPredictedSurprise, actualSurprise);
+    }
+    // Predict next surprise for calibration on following cycle
+    this.lastPredictedSurprise = actualSurprise;
 
     // 5. v10.8: Record learning event
     const surprise = this.engine.getStats().averageSurprise;
@@ -430,18 +532,40 @@ export class AutonomousLoop {
 
     if (this.config.verbose) {
       const avgS = highSurprise.reduce((s, e) => s + e.surprise, 0) / highSurprise.length;
-      console.log(`[AI Loop] Dream: consolidating ${highSurprise.length} high-surprise experiences (avg: ${avgS.toFixed(2)})`);
+      console.log(`[AI Loop] Dream: ${highSurprise.length} experiences, avg surprise ${avgS.toFixed(2)}`);
     }
 
-    // Deep replay: 3 iterations per experience for stronger consolidation
-    for (let iter = 0; iter < 3; iter++) {
-      for (const exp of highSurprise) {
-        (this.engine as any).learn(
-          exp.observation,
-          exp.nextObservation,
-          exp.beliefs,
-          exp.actionIdx
-        );
+    // v11.4: Delegate to DreamService for NREM/SWS/REM phases
+    // DreamService handles: episodic consolidation, pattern extraction, creative synthesis
+    this.dreamService.startDream({ duration: 3000 }).then(session => {
+      if (this.config.verbose && session?.results) {
+        console.log(`[AI Loop] Dream complete: ${session.results.memoriesConsolidated} consolidated, ${session.results.patternsExtracted} patterns`);
+      }
+    }).catch(() => {
+      // Fallback: direct 3× replay if DreamService fails
+      for (let iter = 0; iter < 3; iter++) {
+        for (const exp of highSurprise) {
+          (this.engine as any).learn(exp.observation, exp.nextObservation, exp.beliefs, exp.actionIdx);
+        }
+      }
+    });
+
+    // v11.4: Counterfactual verification (C3 from evaluation)
+    // During dream, test: "what if we had taken a different action?"
+    for (const exp of highSurprise.slice(0, 5)) {
+      // Sample 3 alternative actions and compare predicted outcomes
+      const altActions = ACTIONS.filter(a => a !== exp.action).slice(0, 3);
+      for (const altAction of altActions) {
+        const altIdx = ACTIONS.indexOf(altAction);
+        // If engine predicts better outcome for alt action, strengthen B-matrix for that transition
+        const predicted = (this.engine as any).predictTransition?.(exp.beliefs, altIdx);
+        if (predicted && predicted.expectedSurprise < exp.surprise * 0.7) {
+          // Counterfactual is significantly better → update B-matrix
+          (this.engine as any).learn(exp.observation, exp.nextObservation, exp.beliefs, altIdx);
+          if (this.config.verbose) {
+            console.log(`[AI Loop] Counterfactual: ${exp.action}→${altAction} would reduce surprise by ${((1 - predicted.expectedSurprise / exp.surprise) * 100).toFixed(0)}%`);
+          }
+        }
       }
     }
 

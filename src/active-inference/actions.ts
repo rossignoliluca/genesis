@@ -19,6 +19,7 @@ import { ActionType } from './types.js';
 import { createPhiMonitor, PhiMonitor } from '../consciousness/phi-monitor.js';
 import { getCognitiveWorkspace, CognitiveWorkspace } from '../memory/cognitive-workspace.js';
 import { getMCPClient } from '../mcp/index.js';
+import { getEFEToolSelector } from './efe-tool-selector.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -966,12 +967,35 @@ registerAction('web.search', async (context) => {
       };
     }
 
-    // Use MCP client to call brave-search
+    // v11.4: EFE-based tool selection - pick the best search tool dynamically
+    const efeSelector = getEFEToolSelector();
+    const defaultBeliefs = {
+      viability: [0.2, 0.3, 0.3, 0.1, 0.1],
+      worldState: [0.2, 0.3, 0.3, 0.2],
+      coupling: [0.1, 0.2, 0.3, 0.3, 0.1],
+      goalProgress: [0.1, 0.3, 0.4, 0.2],
+      economic: [0.2, 0.3, 0.3, 0.2],
+    };
+    const beliefs = (context.beliefs as any) || defaultBeliefs;
+    const selection = efeSelector.selectTool('search', beliefs);
+
+    const bestTool = selection.selected.tool;
     const mcp = getMCPClient();
-    const result = await mcp.call('brave-search', 'brave_web_search', {
+
+    // Call the EFE-selected tool (may be brave, exa, gemini, or firecrawl)
+    const result = await mcp.call(bestTool.server as any, bestTool.tool, {
       query,
       count: context.parameters?.count || 10,
     });
+
+    // Record outcome for future EFE estimates
+    const duration = Date.now() - start;
+    efeSelector.recordOutcome(
+      bestTool.server, bestTool.tool,
+      true, duration,
+      0, // Surprise will be computed by the loop
+      bestTool.cost
+    );
 
     return {
       success: true,
@@ -979,11 +1003,28 @@ registerAction('web.search', async (context) => {
       data: {
         query,
         results: result,
+        selectedTool: `${bestTool.server}/${bestTool.tool}`,
+        efeScore: selection.selected.efe,
+        reasoning: selection.selected.reasoning,
+        alternatives: selection.alternatives.map(a => `${a.tool.server}/${a.tool.tool} (EFE=${a.efe.toFixed(3)})`),
         timestamp: new Date().toISOString(),
       },
-      duration: Date.now() - start,
+      duration,
     };
   } catch (error) {
+    // Record failure for EFE learning
+    const efeSelector = getEFEToolSelector();
+    const fallbackBeliefs = { viability: [0.2,0.3,0.3,0.1,0.1], worldState: [0.25,0.25,0.25,0.25], coupling: [0.2,0.2,0.2,0.2,0.2], goalProgress: [0.25,0.25,0.25,0.25], economic: [0.25,0.25,0.25,0.25] };
+    const selection = efeSelector.selectTool('search', (context.beliefs as any) || fallbackBeliefs);
+    if (selection.selected.tool.server !== 'none') {
+      efeSelector.recordOutcome(
+        selection.selected.tool.server, selection.selected.tool.tool,
+        false, Date.now() - start,
+        5.0, // High surprise on failure
+        selection.selected.tool.cost
+      );
+    }
+
     return {
       success: false,
       action: 'web.search',

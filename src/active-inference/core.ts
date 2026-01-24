@@ -1243,6 +1243,46 @@ export class ActiveInferenceEngine {
       economic: [...this.D.economic],
     };
   }
+
+  /**
+   * v11.4: Modulate C-matrix preferences (allostatic regulation)
+   * Adds delta values to current preferences, enabling dynamic preference shifts
+   * based on interoceptive state (energy, error rate, memory pressure).
+   */
+  modulatePreferences(delta: Partial<CMatrix>): void {
+    if (delta.energy) {
+      for (let i = 0; i < Math.min(delta.energy.length, this.C.energy.length); i++) {
+        this.C.energy[i] += delta.energy[i];
+      }
+    }
+    if (delta.phi) {
+      for (let i = 0; i < Math.min(delta.phi.length, this.C.phi.length); i++) {
+        this.C.phi[i] += delta.phi[i];
+      }
+    }
+    if (delta.tool) {
+      for (let i = 0; i < Math.min(delta.tool.length, this.C.tool.length); i++) {
+        this.C.tool[i] += delta.tool[i];
+      }
+    }
+    if (delta.task) {
+      for (let i = 0; i < Math.min(delta.task.length, this.C.task.length); i++) {
+        this.C.task[i] += delta.task[i];
+      }
+    }
+    if (delta.economic) {
+      for (let i = 0; i < Math.min(delta.economic.length, this.C.economic.length); i++) {
+        this.C.economic[i] += delta.economic[i];
+      }
+    }
+  }
+
+  /**
+   * v11.4: Reset C-matrix to default preferences
+   */
+  resetPreferences(): void {
+    this.C = createDefaultCMatrix();
+  }
 }
 
 // ============================================================================

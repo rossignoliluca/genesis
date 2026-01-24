@@ -662,12 +662,25 @@ export class AutonomousLoop {
       console.log(`[AI Loop] Dream: ${highSurprise.length} experiences, avg surprise ${avgS.toFixed(2)}`);
     }
 
+    // v13.1: Notify FEK to enter dreaming mode (suppresses L2-L4 during consolidation)
+    try {
+      const { getFreeEnergyKernel } = require('../kernel/free-energy-kernel.js');
+      const fek = getFreeEnergyKernel();
+      if (fek?.setMode) fek.setMode('dreaming');
+    } catch { /* FEK may not be available */ }
+
     // v11.4: Delegate to DreamService for NREM/SWS/REM phases
     // DreamService handles: episodic consolidation, pattern extraction, creative synthesis
     this.dreamService.startDream({ duration: 3000 }).then(session => {
       if (this.config.verbose && session?.results) {
         console.log(`[AI Loop] Dream complete: ${session.results.memoriesConsolidated} consolidated, ${session.results.patternsExtracted} patterns`);
       }
+      // v13.1: Restore FEK to awake mode after dream
+      try {
+        const { getFreeEnergyKernel } = require('../kernel/free-energy-kernel.js');
+        const fek = getFreeEnergyKernel();
+        if (fek?.setMode) fek.setMode('awake');
+      } catch { /* non-fatal */ }
     }).catch(() => {
       // Fallback: direct 3× replay if DreamService fails
       for (let iter = 0; iter < 3; iter++) {

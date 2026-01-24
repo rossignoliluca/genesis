@@ -101,12 +101,28 @@ export class ObservationGatherer {
     if (this.realSourcesInitialized) return;
     this.realSourcesInitialized = true;
 
-    // Wire kernel state to process metrics
+    // Wire kernel state to process metrics + FEK total free energy
+    // v13.1: Incorporates FEK's hierarchical free energy as the primary energy signal
     this.getKernelState = () => {
       const mem = process.memoryUsage();
       const heapUsedRatio = mem.heapUsed / mem.heapTotal;
-      // Energy = inverse of resource pressure (more heap used = less energy)
-      const energy = Math.max(0, Math.min(1, 1 - heapUsedRatio));
+      const heapEnergy = Math.max(0, Math.min(1, 1 - heapUsedRatio));
+
+      // v13.1: Blend with FEK's total free energy (low FE = high energy/viability)
+      let fekEnergy = heapEnergy;
+      try {
+        const { getFreeEnergyKernel } = require('../kernel/free-energy-kernel.js');
+        const fek = getFreeEnergyKernel();
+        if (fek) {
+          const totalFE = fek.getTotalFE?.() ?? 0;
+          // Map FE to energy: FE=0 → energy=1.0, FE≥5 → energy=0.0
+          fekEnergy = Math.max(0, Math.min(1, 1 - totalFE / 5));
+        }
+      } catch { /* FEK may not be initialized */ }
+
+      // Blend: 30% heap pressure, 70% FEK free energy
+      const energy = 0.3 * heapEnergy + 0.7 * fekEnergy;
+
       return {
         energy,
         state: 'running',

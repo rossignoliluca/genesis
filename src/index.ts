@@ -56,6 +56,7 @@ import { A2AServer, A2AClient, generateA2AKeyPair } from './a2a/index.js';
 import { GenesisMCPServer } from './mcp-server/index.js';
 import { runCodeQualityAnalysis, persistCodeQualityToMemory, loadCodeQualityGraph } from './self-modification/code-quality-analyzer.js';
 import { bootstrapIntegration, getUnifiedStatus, getIntegrationState } from './integration/index.js';
+import { getGenesis } from './genesis.js';
 
 // ============================================================================
 // CLI Colors
@@ -153,6 +154,27 @@ async function cmdStatus(): Promise<void> {
 
   console.log(c('\n[A2A]', 'green'));
   console.log(`  Delegations: ${state.a2aDelegations}`);
+
+  // v13.0: Genesis unified system status
+  console.log(c('\n=== GENESIS CORE ===\n', 'bold'));
+  const genesis = getGenesis();
+  const gStatus = genesis.getStatus();
+  const lvl = (b: boolean) => b ? c('●', 'green') : c('○', 'red');
+  console.log(c('[LEVELS]', 'cyan'));
+  console.log(`  ${lvl(gStatus.levels.L1)} L1 Autonomic   ${lvl(gStatus.levels.L2)} L2 Reactive   ${lvl(gStatus.levels.L3)} L3 Cognitive   ${lvl(gStatus.levels.L4)} L4 Executive`);
+  console.log(c('\n[MODULES]', 'magenta'));
+  console.log(`  FEK: ${gStatus.fek ? `running, ${gStatus.fek.cycleCount} cycles, FE=${gStatus.fek.totalFE.toFixed(3)}` : 'offline'}`);
+  console.log(`  Brain: ${gStatus.brain ? `phi=${gStatus.brain.phi.toFixed(3)}` : 'offline'}`);
+  console.log(`  Causal: ${gStatus.causal ? `${gStatus.causal.graphSize} variables` : 'disabled'}`);
+  console.log(`  Metacognition: ${gStatus.metacognition ? `conf=${gStatus.metacognition.confidence.toFixed(2)}, ECE=${gStatus.metacognition.calibrationError.toFixed(3)}` : 'disabled'}`);
+  console.log(`  Perception: ${gStatus.perception ? 'active' : 'disabled'}`);
+  console.log(`  Meta-RL: ${gStatus.metaRL ? `${gStatus.metaRL.curriculumSize} tasks learned` : 'disabled'}`);
+  console.log(`  Execution: ${gStatus.execution ? 'active' : 'disabled'}`);
+  if (gStatus.fiber) {
+    console.log(c('\n[ECONOMICS]', 'yellow'));
+    console.log(`  Net flow: $${gStatus.fiber.netFlow.toFixed(4)}/cycle`);
+    console.log(`  Sustainable: ${gStatus.fiber.sustainable ? c('yes', 'green') : c('no', 'red')}`);
+  }
   console.log();
 }
 

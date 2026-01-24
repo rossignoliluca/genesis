@@ -12,6 +12,7 @@
  */
 
 import { getEconomicSystem, TreasuryBalance, EconomicSystem } from '../economy/index.js';
+import { getEconomicFiber } from '../economy/fiber.js';
 import { getObservationGatherer } from './observations.js';
 
 // ============================================================================
@@ -633,6 +634,7 @@ export function getEconomicIntegration(): EconomicIntegration {
 
 /**
  * Hook to record LLM costs (call this after each LLM request)
+ * v13.1: Also feeds real costs into EconomicFiber for FEK's leapfrog budget allocation
  */
 export function recordLLMCost(
   provider: string,
@@ -640,12 +642,30 @@ export function recordLLMCost(
   outputTokens: number,
   model: string
 ): void {
-  getEconomicIntegration().getCostTracker().recordLLMCost(
-    provider,
-    inputTokens,
-    outputTokens,
-    model
-  );
+  const tracker = getEconomicIntegration().getCostTracker();
+  tracker.recordLLMCost(provider, inputTokens, outputTokens, model);
+
+  // v13.1: Feed real cost into FEK's EconomicFiber (replaces synthetic $0.001/cycle)
+  // Recompute cost using same pricing as CostTracker
+  const pricing: Record<string, { input: number; output: number }> = {
+    'claude-3-opus': { input: 15, output: 75 },
+    'claude-3-sonnet': { input: 3, output: 15 },
+    'claude-3-haiku': { input: 0.25, output: 1.25 },
+    'claude-opus-4': { input: 15, output: 75 },
+    'claude-sonnet-4': { input: 3, output: 15 },
+    'gpt-4o': { input: 2.5, output: 10 },
+    'gpt-4o-mini': { input: 0.15, output: 0.6 },
+    'default': { input: 1, output: 4 },
+  };
+  const rates = pricing[model] || pricing['default'];
+  const realCost = (inputTokens / 1_000_000) * rates.input + (outputTokens / 1_000_000) * rates.output;
+
+  try {
+    const fiber = getEconomicFiber();
+    fiber.recordCost('llm', realCost, `${provider}:${model}`);
+  } catch {
+    // Fiber may not be initialized yet during startup
+  }
 }
 
 /**

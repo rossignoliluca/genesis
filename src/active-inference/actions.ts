@@ -302,17 +302,73 @@ registerAction('verify.ethics', async (context) => {
 
 /**
  * execute.task: Execute the planned task
+ * v13.1: Closes the autopoietic execution loop by routing through Brain.process()
  */
+let _executeTaskDepth = 0;
+const MAX_EXECUTE_DEPTH = 2; // Prevent infinite recursion (AIF → brain → AIF → brain)
+
 registerAction('execute.task', async (context) => {
-  return {
-    success: true,
-    action: 'execute.task',
-    data: {
-      taskId: context.taskId,
-      result: null,
-    },
-    duration: 0,
-  };
+  const start = Date.now();
+
+  // Re-entrancy guard: prevent recursive brain.process() calls
+  if (_executeTaskDepth >= MAX_EXECUTE_DEPTH) {
+    return {
+      success: false,
+      action: 'execute.task',
+      error: `Execution depth limit (${MAX_EXECUTE_DEPTH}) reached — preventing recursion`,
+      duration: Date.now() - start,
+    };
+  }
+
+  _executeTaskDepth++;
+  try {
+    // Dynamic import to avoid circular dependency (brain → actions → brain)
+    const { getBrainInstance } = await import('../brain/index.js');
+    const brain = getBrainInstance();
+
+    if (!brain) {
+      return {
+        success: false,
+        action: 'execute.task',
+        error: 'Brain not initialized — cannot execute task',
+        duration: Date.now() - start,
+      };
+    }
+
+    const goal = context.goal || context.parameters?.goal as string || '';
+    if (!goal) {
+      return {
+        success: false,
+        action: 'execute.task',
+        error: 'No goal specified for task execution',
+        duration: Date.now() - start,
+      };
+    }
+
+    // Route through Brain's full processing pipeline (memory → LLM → tools → response)
+    const result = await brain.process(goal);
+
+    return {
+      success: true,
+      action: 'execute.task',
+      data: {
+        taskId: context.taskId,
+        goal,
+        result,
+        truncated: result.length > 500,
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'execute.task',
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  } finally {
+    _executeTaskDepth--;
+  }
 });
 
 /**

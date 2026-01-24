@@ -387,6 +387,28 @@ export class Brain {
           data: { mode, prev, kernel: 'fek' },
           module: 'consciousness',
         });
+
+        // v13.1: Close the self-modification loop — when FEK L4 requests
+        // self_improving mode, trigger the DarwinGodel improvement engine
+        if (mode === 'self_improving' && prev !== 'self_improving' && this.darwinGodel) {
+          import('../active-inference/actions.js').then(({ executeAction }) => {
+            executeAction('improve.self', {
+              parameters: { autoApply: false },
+              beliefs: { viability: 0.5, worldState: 0.5, coupling: 0.5, goalProgress: 0.5 },
+            }).then((result) => {
+              this.emit({
+                type: 'module_exit',
+                timestamp: new Date(),
+                data: {
+                  type: 'fek_self_improvement',
+                  success: result.success,
+                  opportunities: result.data?.opportunities?.length || 0,
+                },
+                module: 'consciousness',
+              });
+            }).catch(() => { /* non-fatal */ });
+          }).catch(() => { /* non-fatal */ });
+        }
       });
     } catch {
       // FEK initialization is non-fatal

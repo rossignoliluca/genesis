@@ -854,7 +854,7 @@ class ExecutiveLevel {
     return totalDeviation / Math.max(this.goals.size, 1);
   }
 
-  private updateSelfModel(errors: PredictionError[], state: { phi: number }): void {
+  private updateSelfModel(errors: PredictionError[], state: { phi: number; totalFE?: number }): void {
     // Identity coherence decreases with high prediction errors
     const errorLoad = errors.reduce((s, e) => s + e.magnitude, 0);
     this.blanket.internal.coherence = Math.max(0.1, 1 - errorLoad * 0.2);
@@ -862,6 +862,38 @@ class ExecutiveLevel {
     // Identity strength tied to consciousness level
     this.selfModel.currentIdentity = state.phi * this.blanket.internal.coherence;
     this.blanket.internal.identity = this.selfModel.currentIdentity;
+
+    // v13.1: Bayesian prediction update (the CORE of predictive coding)
+    // Predictions are corrected by precision-weighted prediction errors
+    const lr = 0.05; // Learning rate (slow — executive-level learning)
+
+    // Update system_stability prediction from totalFE
+    if (state.totalFE !== undefined) {
+      const predicted = this.generativeModel.predictions.get('system_stability') || 0.8;
+      const observed = Math.max(0, Math.min(1, 1 - state.totalFE / 3)); // Low FE = high stability
+      const precision = this.generativeModel.precisions.get('system_stability') || 2.0;
+      const update = predicted + lr * precision * (observed - predicted);
+      this.generativeModel.predictions.set('system_stability', Math.max(0.05, Math.min(0.99, update)));
+      // Precision increases with experience (slower for L4)
+      this.generativeModel.precisions.set('system_stability', Math.min(10, precision + 0.01));
+    }
+
+    // Update goal_achievement_rate from task success errors
+    const taskErrors = errors.filter(e => e.content.includes('task_success'));
+    if (taskErrors.length > 0) {
+      const predicted = this.generativeModel.predictions.get('goal_achievement_rate') || 0.6;
+      // Extract actual value from error content (e.g., "task_success: predicted=0.75, actual=0")
+      const actualMatch = taskErrors[0].content.match(/actual=([0-9.]+)/);
+      if (actualMatch) {
+        const observed = parseFloat(actualMatch[1]);
+        const precision = this.generativeModel.precisions.get('goal_achievement_rate') || 3.0;
+        const update = predicted + lr * precision * (observed - predicted);
+        this.generativeModel.predictions.set('goal_achievement_rate', Math.max(0.05, Math.min(0.99, update)));
+        this.generativeModel.precisions.set('goal_achievement_rate', Math.min(10, precision + 0.02));
+      }
+    }
+
+    this.generativeModel.lastUpdate = Date.now();
   }
 
   private evaluatePolicies(errors: PredictionError[], fe: number): string | null {
@@ -1141,6 +1173,10 @@ export class FreeEnergyKernel {
       this.handlePanic(l1Result.actions);
     }
 
+    // v13.1: Feed real observations into L2 allostatic setpoints
+    this.l2.updateResource('energy', observations.energy);
+    this.l2.updateResource('task_load', observations.systemLoad);
+
     // L2: Reactive scheduling
     const l3Preds = this.l3.getFreeEnergy() > 0 ?
       new Map<string, number>([['expected_task_load', 0.5]]) :
@@ -1179,7 +1215,8 @@ export class FreeEnergyKernel {
       });
 
       // Handle self-modification request
-      if (l4Result.actions.selfModify && this.mode !== 'self_improving') {
+      // v13.1: Gate on contraction stability — never self-modify while diverging
+      if (l4Result.actions.selfModify && this.mode !== 'self_improving' && this.contraction.isStable()) {
         this.switchMode('self_improving');
       }
     }
@@ -1223,15 +1260,35 @@ export class FreeEnergyKernel {
       }
     }
 
-    // === v13.0: Record per-level costs in fiber ===
-    const cycleCost = 0.001; // Base cost per cycle ($0.001)
-    this.fiber.recordCost('L1', cycleCost * 0.1, 'autonomic_step');
-    this.fiber.recordCost('L2', cycleCost * 0.2, 'reactive_step');
+    // === v13.1: Record per-level kernel overhead costs in fiber ===
+    // Note: Real LLM costs are now fed directly via economic-integration.ts → fiber.recordCost('llm', ...)
+    // These costs represent only the kernel's computational overhead, not API calls
+    const kernelOverhead = 0.0001; // $0.0001/cycle — kernel CPU overhead only
+    this.fiber.recordCost('L1', kernelOverhead * 0.1, 'autonomic_step');
+    this.fiber.recordCost('L2', kernelOverhead * 0.2, 'reactive_step');
     if (this.mode === 'awake' || this.mode === 'focused') {
-      this.fiber.recordCost('L3', cycleCost * 0.4, 'cognitive_step');
+      this.fiber.recordCost('L3', kernelOverhead * 0.4, 'cognitive_step');
     }
     if (this.mode === 'awake' || this.mode === 'self_improving') {
-      this.fiber.recordCost('L4', cycleCost * 0.3, 'executive_step');
+      this.fiber.recordCost('L4', kernelOverhead * 0.3, 'executive_step');
+    }
+
+    // === v13.1: Internal NESS observation (economic steady-state deviation) ===
+    // Feed the fiber's real accumulated costs/revenue into NESS monitor
+    // High deviation → switch to vigilant mode (economic threat response)
+    if (this.cycleCount % 10 === 0) { // Every 10 cycles to avoid noise
+      const section = this.fiber.getGlobalSection();
+      const nessState = this.nessMonitor.observe({
+        revenue: section.totalRevenue,
+        costs: section.totalCosts,
+        customers: 1,
+        quality: 1 - (this.totalFE / 5), // FE inversely mapped to quality
+        balance: section.netFlow,
+      });
+      // If NESS deviation is critical and we're in a relaxed mode, switch to vigilant
+      if (nessState.deviation > 0.7 && (this.mode === 'awake' || this.mode === 'focused')) {
+        this.switchMode('vigilant');
+      }
     }
 
     // === Collect all prediction errors ===
@@ -1411,6 +1468,14 @@ export class FreeEnergyKernel {
   // ==========================================================================
   // v13.0: Information Geometry & Economic Accessors
   // ==========================================================================
+
+  /**
+   * v13.1: Lightweight getter for total system free energy.
+   * Used by ObservationGatherer to feed FEK state into AIF engine.
+   */
+  getTotalFE(): number {
+    return this.totalFE;
+  }
 
   /**
    * Get contraction state: is the system converging?

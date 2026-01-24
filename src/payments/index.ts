@@ -37,3 +37,16 @@ export {
   type APIResponse,
   type APIRequest,
 } from './api.js';
+
+// Stripe Client
+export {
+  StripeClient,
+  getStripeClient,
+  resetStripeClient,
+  type StripeProduct,
+  type StripePrice,
+  type StripePaymentLink,
+  type StripeSubscription,
+  type StripeCheckoutSession,
+  type StripeClientConfig,
+} from './stripe-client.js';

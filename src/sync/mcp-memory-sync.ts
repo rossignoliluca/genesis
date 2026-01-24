@@ -452,6 +452,63 @@ export class MCPMemorySync {
   }
 
   /**
+   * v13.6: Get synced entities as workspace-compatible items.
+   * Called by genesis.ts to feed brain's cognitive workspace after sync.
+   * Returns the most recent entities converted to SyncedMemoryItem format.
+   */
+  getWorkspaceItems(maxItems: number = 10): Array<{
+    content: string;
+    type: 'episodic' | 'semantic' | 'procedural';
+    relevance: number;
+    source: 'mcp-sync';
+    syncedAt: number;
+  }> {
+    // Load last synced graph from state
+    const statePath = this.config.statePath.replace('sync-state.json', 'last-graph.json');
+    let graph: MCPMemoryGraph;
+
+    try {
+      if (fs.existsSync(statePath)) {
+        graph = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+      } else {
+        return [];
+      }
+    } catch {
+      return [];
+    }
+
+    // Convert entities to workspace items
+    const items: Array<{
+      content: string;
+      type: 'episodic' | 'semantic' | 'procedural';
+      relevance: number;
+      source: 'mcp-sync';
+      syncedAt: number;
+    }> = [];
+
+    for (const entity of graph.entities.slice(-maxItems)) {
+      // Classify by entity type
+      const type = entity.entityType === 'event' ? 'episodic'
+        : entity.entityType === 'skill' || entity.entityType === 'procedure' ? 'procedural'
+        : 'semantic';
+
+      // Compute relevance from recency
+      const recency = Math.max(0, 1 - (Date.now() - this.state.lastSyncTimestamp) / (24 * 60 * 60 * 1000));
+      const relevance = Math.max(0.3, recency * 0.7 + 0.3);
+
+      items.push({
+        content: `${entity.name}: ${entity.observations.join('; ')}`,
+        type,
+        relevance,
+        source: 'mcp-sync',
+        syncedAt: this.state.lastSyncTimestamp,
+      });
+    }
+
+    return items;
+  }
+
+  /**
    * Log message if verbose mode enabled
    */
   private log(...args: unknown[]): void {

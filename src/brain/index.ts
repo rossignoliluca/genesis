@@ -56,6 +56,9 @@ import {
   ContextItem,
   ProcessContext,
   WorkspaceItem,
+  PerceptualInput,
+  MotorIntent,
+  SyncedMemoryItem,
 } from './types.js';
 
 // Module imports
@@ -198,6 +201,10 @@ export class Brain {
 
   // v13.1: Self-Knowledge (code awareness)
   private selfKnowledge: SelfKnowledge;
+
+  // v13.6: Motor intent output channel
+  private lastMotorIntent: MotorIntent | null = null;
+  private lastPerception: PerceptualInput | null = null;
 
   // v8.1: State Persistence
   private persistence: BrainStatePersistence;
@@ -1185,11 +1192,28 @@ export class Brain {
       };
     }
 
-    // Store additional context metadata for modules
-    if (context?.sensorimotorState || context?.metadata) {
-      // Store in state for module access (modules can access via state)
-      // Note: BrainState doesn't have metadata field yet, so modules would need
-      // to access this via the formatted context or through a future extension
+    // v13.6: Translate sensorimotor perception into cognitive context
+    if (context?.sensorimotorState) {
+      const percept = this.translatePerception(context.sensorimotorState);
+      state.perceptualInput = percept;
+
+      // Inject perception as high-salience context item
+      const perceptionItem: ContextItem = {
+        id: 'perception-current',
+        type: 'immediate',
+        content: `[Perception] ${percept.description}`,
+        relevance: percept.salience,
+        activation: percept.confidence,
+        source: 'sensorimotor',
+      };
+      state.context.immediate.push(perceptionItem);
+      state.context.formatted = perceptionItem.content + '\n' + state.context.formatted;
+      state.context.tokenEstimate += perceptionItem.content.length / 4;
+
+      // Safety flags → elevate to query prefix for urgent attention
+      if (percept.safetyFlags.length > 0) {
+        state.query = `[SAFETY: ${percept.safetyFlags.join(', ')}] ${state.query}`;
+      }
     }
 
     // Initial command: start with memory
@@ -1292,6 +1316,15 @@ export class Brain {
 
     // Update metrics
     this.updateMetrics(state, transitions);
+
+    // v13.6: Extract motor intent from cognitive processing
+    if (state.perceptualInput && state.response) {
+      const intent = this.extractMotorIntent(state);
+      if (intent) {
+        state.motorIntent = intent;
+        this.lastMotorIntent = intent;
+      }
+    }
 
     // v7.13: Auto-persistence after each cycle
     await this.autoPersist(state);
@@ -2603,6 +2636,215 @@ export class Brain {
       tokenEstimate: 0,
       reuseRate: 0,
     };
+  }
+
+  // ============================================================================
+  // v13.6: Perception → Brain Translation
+  // ============================================================================
+
+  /**
+   * Translate raw sensorimotor state into cognitive-friendly PerceptualInput.
+   * Bridges the embodied-cognitive gap: raw numbers → semantic description.
+   */
+  private translatePerception(sensorimotor: NonNullable<ProcessContext['sensorimotorState']>): PerceptualInput {
+    const perception = sensorimotor.perception;
+    const sensor = sensorimotor.sensorState;
+    const safetyFlags: string[] = [];
+
+    // Determine dominant modality
+    let modality: PerceptualInput['modality'] = 'proprioceptive';
+    if (perception?.modalities && perception.modalities.length > 1) {
+      modality = 'multi';
+    } else if (perception?.modalities?.[0]) {
+      modality = perception.modalities[0] as PerceptualInput['modality'];
+    }
+
+    // Compute salience from confidence and force magnitude
+    const confidence = perception?.confidence ?? 0.5;
+    const forceMagnitude = sensor?.forces
+      ? Math.sqrt(sensor.forces.reduce((sum, f) => sum + f * f, 0))
+      : 0;
+    const salience = Math.min(1, confidence * 0.6 + Math.min(forceMagnitude / 50, 0.4));
+
+    // Detect safety flags
+    if (sensor?.safety === 'emergency' || sensor?.safety === 'critical') {
+      safetyFlags.push(`safety:${sensor.safety}`);
+    }
+    if (forceMagnitude > 30) {
+      safetyFlags.push(`high_force:${forceMagnitude.toFixed(1)}N`);
+    }
+
+    // Build natural language description
+    const parts: string[] = [];
+    if (modality !== 'proprioceptive') {
+      parts.push(`${modality} input detected`);
+    }
+    if (sensor?.joints && sensor.joints.length > 0) {
+      parts.push(`${sensor.joints.length}-DOF body state`);
+    }
+    if (forceMagnitude > 5) {
+      parts.push(`contact force ${forceMagnitude.toFixed(1)}N`);
+    }
+    if (confidence > 0.7) {
+      parts.push(`high confidence (${(confidence * 100).toFixed(0)}%)`);
+    } else if (confidence < 0.3) {
+      parts.push(`low confidence (${(confidence * 100).toFixed(0)}%)`);
+    }
+    if (safetyFlags.length > 0) {
+      parts.push(`SAFETY: ${safetyFlags.join(', ')}`);
+    }
+
+    const description = parts.length > 0
+      ? parts.join('; ')
+      : 'nominal proprioceptive state';
+
+    const percept: PerceptualInput = {
+      description,
+      modality,
+      confidence,
+      salience,
+      safetyFlags,
+      featureSummary: perception?.features?.slice(0, 16) ?? [],
+    };
+
+    this.lastPerception = percept;
+    return percept;
+  }
+
+  // ============================================================================
+  // v13.6: Brain → Motor Intent Extraction
+  // ============================================================================
+
+  /**
+   * Extract motor intent from cognitive processing state.
+   * Analyzes the brain's response and perceptual context to determine
+   * if a motor action is warranted.
+   */
+  private extractMotorIntent(state: BrainState): MotorIntent | null {
+    const percept = state.perceptualInput;
+    if (!percept) return null;
+
+    // Safety-triggered stop intent
+    if (percept.safetyFlags.length > 0) {
+      return {
+        action: 'stop',
+        target: 'all_joints',
+        stiffness: 1.0,
+        urgency: 1.0,
+        source: 'reactive',
+        confidence: 0.99,
+      };
+    }
+
+    // High-force contact → compliant hold
+    const hasForceContact = percept.featureSummary.some(f => Math.abs(f) > 0.6);
+    if (hasForceContact && percept.confidence > 0.5) {
+      return {
+        action: 'comply',
+        target: 'current_position',
+        stiffness: 0.3, // Compliant
+        urgency: 0.6,
+        source: 'reactive',
+        confidence: percept.confidence,
+      };
+    }
+
+    // High confidence perception → hold position deliberately
+    if (percept.confidence > 0.7 && percept.salience > 0.5) {
+      return {
+        action: 'hold',
+        target: 'current_position',
+        stiffness: percept.confidence * 0.8,
+        urgency: 0.4,
+        source: 'deliberate',
+        confidence: percept.confidence,
+      };
+    }
+
+    return null; // No motor action warranted
+  }
+
+  // ============================================================================
+  // v13.6: Public API for Gap Closure
+  // ============================================================================
+
+  /**
+   * Get the last motor intent produced by cognitive processing.
+   * Used by genesis.ts cognitive callback to translate into MotorCommands.
+   */
+  getLastMotorIntent(): MotorIntent | null {
+    return this.lastMotorIntent;
+  }
+
+  /**
+   * Get the last perception that was processed.
+   */
+  getLastPerception(): PerceptualInput | null {
+    return this.lastPerception;
+  }
+
+  /**
+   * Inject synced memory items into the brain's workspace.
+   * Called by genesis.ts after MCPMemorySync completes a sync cycle.
+   * Items become available as context in the next process() call.
+   */
+  injectSyncedMemories(items: SyncedMemoryItem[]): void {
+    if (items.length === 0) return;
+
+    const now = new Date();
+    for (const item of items) {
+      const memType = item.type === 'episodic' ? 'episodic'
+        : item.type === 'procedural' ? 'procedural'
+        : 'semantic';
+
+      // Construct a Memory-compatible object for the cognitive workspace buffer
+      const memory = {
+        id: `sync-${item.syncedAt}-${Math.random().toString(36).slice(2, 8)}`,
+        type: memType as 'episodic' | 'semantic' | 'procedural',
+        created: new Date(item.syncedAt),
+        lastAccessed: now,
+        accessCount: 1,
+        R0: 0.8,
+        S: 7, // 7-day stability
+        importance: item.relevance,
+        emotionalValence: 0,
+        associations: [],
+        tags: ['mcp-sync'],
+        consolidated: true,
+        source: 'mcp-sync',
+        // Episodic-specific fields
+        ...(memType === 'episodic' ? {
+          narrative: item.content,
+          context: { when: new Date(item.syncedAt), where: 'mcp-memory', who: ['genesis'] },
+          outcome: 'neutral' as const,
+          emotionalContext: { valence: 0, arousal: 0.3, dominance: 0.5 },
+        } : {}),
+        // Semantic-specific fields
+        ...(memType === 'semantic' ? {
+          concept: item.content.slice(0, 50),
+          definition: item.content,
+          domain: 'system',
+          confidence: item.relevance,
+          evidence: ['mcp-sync'],
+        } : {}),
+        // Procedural-specific fields
+        ...(memType === 'procedural' ? {
+          name: item.content.slice(0, 50),
+          steps: [item.content],
+          triggerCondition: 'context-match',
+          successRate: 0.8,
+          executionCount: 1,
+        } : {}),
+      };
+
+      this.workspace.addToBuffer(memory as any, 'anticipate', item.relevance);
+    }
+
+    this.emit({
+      type: 'memory_recall',
+      timestamp: new Date(),
+      data: { source: 'mcp-sync', itemCount: items.length },
+    });
   }
 
   // ============================================================================

@@ -85,6 +85,12 @@ export interface BrainState {
 
   // v7.6: Extended Thinking
   thinkingResult?: ThinkingResultSummary;
+
+  // v13.6: Multi-modal perception input
+  perceptualInput?: PerceptualInput;
+
+  // v13.6: Motor intent output (produced by cognitive processing)
+  motorIntent?: MotorIntent;
 }
 
 /**
@@ -388,4 +394,73 @@ export interface WorkspaceItem {
   type: 'episodic' | 'semantic' | 'procedural';
   relevance: number;
   source: string;
+}
+
+// ============================================================================
+// Perception → Brain Channel (v13.6)
+// ============================================================================
+
+/**
+ * Multi-modal perception input translated for cognitive processing.
+ * Bridges the gap between raw sensorimotor FusedRepresentation and
+ * the Brain's text-based processing pipeline.
+ */
+export interface PerceptualInput {
+  /** Natural language description of perceived state */
+  description: string;
+  /** Dominant sensory modality */
+  modality: 'proprioceptive' | 'tactile' | 'force_torque' | 'visual' | 'auditory' | 'multi';
+  /** Perception confidence (0-1) */
+  confidence: number;
+  /** Salience — how attention-grabbing this percept is (0-1) */
+  salience: number;
+  /** Safety-relevant features detected */
+  safetyFlags: string[];
+  /** Raw feature summary (for downstream modules) */
+  featureSummary: number[];
+}
+
+// ============================================================================
+// Brain → Motor Channel (v13.6)
+// ============================================================================
+
+/**
+ * Motor intent produced by cognitive processing.
+ * The Brain doesn't produce raw MotorCommands — it produces semantic
+ * motor intentions that the genesis.ts translation layer converts.
+ */
+export interface MotorIntent {
+  /** Type of motor action intended */
+  action: 'reach' | 'grasp' | 'release' | 'hold' | 'move' | 'stop' | 'comply';
+  /** Target description (e.g., "object at left", "current position") */
+  target: string;
+  /** Desired force/compliance level (0-1, 0=compliant, 1=stiff) */
+  stiffness: number;
+  /** Urgency (affects priority in sensorimotor queue) */
+  urgency: number;
+  /** Cognitive source (which processing stage generated this) */
+  source: 'deliberate' | 'reactive' | 'reflexive';
+  /** Confidence in the motor decision */
+  confidence: number;
+}
+
+// ============================================================================
+// Memory Sync → Brain Workspace Channel (v13.6)
+// ============================================================================
+
+/**
+ * Items extracted from MCP Memory Sync for cognitive workspace injection.
+ * Transforms synced entities/relations into workspace-compatible items.
+ */
+export interface SyncedMemoryItem {
+  /** Entity or relation content as text */
+  content: string;
+  /** Type classification for workspace routing */
+  type: 'episodic' | 'semantic' | 'procedural';
+  /** Relevance score based on recency and importance */
+  relevance: number;
+  /** Source identifier */
+  source: 'mcp-sync';
+  /** When this was last synced */
+  syncedAt: number;
 }

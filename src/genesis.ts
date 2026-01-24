@@ -32,6 +32,9 @@ import { ConsciousnessBridge, type ConsciousBridgeConfig, type ConsciousnessStat
 import { getFactorGraph, type FactorGraph } from './kernel/factor-graph.js';
 import type { MotorCommand } from './embodiment/sensorimotor-loop.js';
 import { getNeuromodulationSystem, type NeuromodulationSystem, type ModulationEffect } from './neuromodulation/index.js';
+import { createAllostasisSystem, type AllostasisSystem, type AllostaticAction } from './allostasis/index.js';
+import { createFeelingAgent, type FeelingAgent } from './agents/feeling.js';
+import type { Feeling } from './agents/types.js';
 
 // ============================================================================
 // Types
@@ -86,6 +89,8 @@ export interface GenesisStatus {
   memorySync: { syncCount: number; isRunning: boolean } | null;
   sensorimotor: { running: boolean; cycles: number; avgPredictionError: number } | null;
   neuromodulation: { dopamine: number; serotonin: number; norepinephrine: number; cortisol: number; explorationRate: number; riskTolerance: number } | null;
+  allostasis: { energy: number; load: number; memoryPressure: number; errorRate: number } | null;
+  feeling: { valence: number; arousal: number; category: string } | null;
   calibrationError: number;
   uptime: number;
   cycleCount: number;
@@ -135,6 +140,8 @@ export class Genesis {
   private consciousnessBridge: ConsciousnessBridge | null = null;
   private factorGraph: FactorGraph | null = null;
   private neuromodulation: NeuromodulationSystem | null = null;
+  private allostasis: AllostasisSystem | null = null;
+  private feelingAgent: FeelingAgent | null = null;
 
   // State
   private booted = false;
@@ -211,6 +218,39 @@ export class Genesis {
       }
     });
 
+    // Allostasis — predictive interoceptive regulation (autonomic homeostasis)
+    this.allostasis = createAllostasisSystem();
+
+    // Register real sensors for interoception
+    this.allostasis.registerSensor('memoryPressure', () => {
+      const mem = process.memoryUsage();
+      return mem.heapUsed / mem.heapTotal;
+    });
+    this.allostasis.registerSensor('energy', () => {
+      // Energy = remaining budget fraction
+      const section = this.fiber?.getGlobalSection();
+      return section ? Math.max(0, 1 - section.totalCosts / (this.config.totalBudget || 100)) : 1.0;
+    });
+    this.allostasis.registerSensor('errorRate', () => {
+      // Error rate from recent performance history
+      if (this.performanceHistory.length < 5) return 0;
+      const recent = this.performanceHistory.slice(-20);
+      return recent.filter(p => !p.actual).length / recent.length;
+    });
+
+    // Allostatic actions → neuromodulatory signals
+    this.allostasis.on('regulation', (result: { action: AllostaticAction; success: boolean }) => {
+      if (!this.neuromodulation) return;
+      const { action } = result;
+      if (action.type === 'throttle' || action.type === 'hibernate') {
+        this.neuromodulation.threat(action.urgency * 0.4, `allostasis:${action.type}`);
+      } else if (action.type === 'defer') {
+        this.neuromodulation.modulate('serotonin', 0.1, 'allostasis:defer');
+      } else if (action.type === 'scale_up') {
+        this.neuromodulation.modulate('dopamine', 0.1, 'allostasis:scale_up');
+      }
+    });
+
     this.levels.L1 = true;
   }
 
@@ -240,6 +280,9 @@ export class Genesis {
 
     // Cognitive workspace (shared memory substrate)
     this.cognitiveWorkspace = getCognitiveWorkspace();
+
+    // FeelingAgent — digital limbic system (valence/arousal/importance)
+    this.feelingAgent = createFeelingAgent();
 
     // Consciousness monitoring (φ)
     if (this.config.consciousness) {
@@ -339,6 +382,49 @@ export class Genesis {
         onRelevance: () => 0.7,
       });
 
+      // v13.2: Neuromodulation as GWT module — consciousness aware of emotional tone
+      if (this.neuromodulation) {
+        this.consciousness.registerModule({
+          id: 'neuromod-module',
+          name: 'Neuromodulation',
+          type: 'evaluative',
+          active: true,
+          load: 0.15,
+          onPropose: () => {
+            if (!this.neuromodulation) return null;
+            const levels = this.neuromodulation.getLevels();
+            // Propose when any modulator deviates significantly from baseline
+            const maxDeviation = Math.max(
+              Math.abs(levels.dopamine - 0.5),
+              Math.abs(levels.serotonin - 0.6),
+              Math.abs(levels.norepinephrine - 0.4),
+              Math.abs(levels.cortisol - 0.3),
+            );
+            if (maxDeviation < 0.2) return null;
+            return {
+              id: `neuromod-${Date.now()}`,
+              sourceModule: 'neuromod-module',
+              type: 'emotion' as const,
+              data: { levels, deviation: maxDeviation },
+              salience: maxDeviation,
+              relevance: 0.6,
+              timestamp: new Date(),
+              ttl: 4000,
+            };
+          },
+          onReceive: () => {},
+          onSalience: () => {
+            if (!this.neuromodulation) return 0;
+            const levels = this.neuromodulation.getLevels();
+            return Math.max(
+              Math.abs(levels.dopamine - 0.5),
+              Math.abs(levels.cortisol - 0.3),
+            );
+          },
+          onRelevance: () => 0.6,
+        });
+      }
+
       // v13.1: Wire invariant violation → FEK vigilant mode
       if (this.fek) {
         this.consciousness.onInvariantViolation(() => {
@@ -409,6 +495,20 @@ export class Genesis {
               processingDepth: effect.processingDepth,
               learningRate: effect.learningRate,
             },
+            cycle: this.cycleCount,
+          });
+        });
+      }
+
+      // Wire allostatic regulation events → dashboard SSE stream
+      if (this.allostasis) {
+        this.allostasis.on('regulation', (result: { action: AllostaticAction; success: boolean }) => {
+          broadcastToDashboard('allostasis:regulation', {
+            action: result.action.type,
+            target: result.action.target,
+            urgency: result.action.urgency,
+            reason: result.action.reason,
+            success: result.success,
             cycle: this.cycleCount,
           });
         });
@@ -537,9 +637,6 @@ export class Genesis {
             return null; // Let reflexes handle it
           }
 
-          // Translate perception features into a semantic description for Brain
-          const dominantModality = perception.modalities?.[0] ?? 'proprioceptive';
-          const confidence = perception.confidence ?? 0;
           const safetyStatus = sensorState.safetyStatus;
 
           // Safety override: if safety critical, generate immediate stop command
@@ -555,11 +652,42 @@ export class Genesis {
             };
           }
 
-          // For high-confidence perceptions, generate motor intent
+          // v13.6: Query brain's motor intent (Brain → Motor gap closure)
+          const motorIntent = brain.getLastMotorIntent();
+          if (motorIntent && sensorState.jointStates.length > 0) {
+            const numJoints = sensorState.jointStates.length;
+
+            // Translate MotorIntent → MotorCommand
+            const commandType = motorIntent.action === 'stop' ? 'velocity' as const
+              : motorIntent.action === 'comply' ? 'impedance' as const
+              : motorIntent.action === 'hold' ? 'impedance' as const
+              : motorIntent.action === 'reach' ? 'position' as const
+              : 'impedance' as const;
+
+            const stiffnessVal = motorIntent.stiffness;
+            const stiffness = new Array(numJoints).fill(stiffnessVal);
+            const damping = stiffness.map((s: number) => s * 0.5);
+
+            return {
+              id: `brain-motor-${Date.now()}`,
+              timestamp: new Date(),
+              type: commandType,
+              jointTargets: motorIntent.action === 'stop'
+                ? new Array(numJoints).fill(0)  // Zero velocity = stop
+                : sensorState.jointStates.map((j: { position: number }) => j.position), // Hold current
+              stiffness,
+              damping,
+              source: 'brain' as const,
+              priority: Math.round(motorIntent.urgency * 80) + 10,
+              timeout: 100,
+            };
+          }
+
+          // Fallback: high-confidence perception → impedance hold
+          const confidence = perception.confidence ?? 0;
           if (confidence > 0.6 && sensorState.jointStates.length > 0) {
-            // Impedance-based control: maintain current position with compliance
             const stiffness = sensorState.jointStates.map(() =>
-              confidence > 0.8 ? 0.8 : 0.4  // Higher confidence → stiffer control
+              confidence > 0.8 ? 0.8 : 0.4
             );
             const damping = stiffness.map((s: number) => s * 0.5);
 
@@ -567,7 +695,7 @@ export class Genesis {
               id: `cognitive-${Date.now()}`,
               timestamp: new Date(),
               type: 'impedance' as const,
-              jointTargets: sensorState.jointStates.map((j: { position: number }) => j.position), // Hold current position
+              jointTargets: sensorState.jointStates.map((j: { position: number }) => j.position),
               stiffness,
               damping,
               source: 'brain' as const,
@@ -669,6 +797,13 @@ export class Genesis {
       this.factorGraph.injectEvidence('Metacognition', 'calibration', 1 - calibErr);
       this.factorGraph.injectEvidence('Metacognition', 'ness_proximity', 1 - nessDeviation);
 
+      // Neuromodulatory tone modulates factor graph precision
+      if (this.neuromodulation) {
+        const effect = this.neuromodulation.getEffect();
+        this.factorGraph.injectEvidence('Brain', 'arousal', effect.precisionGain / 2);
+        this.factorGraph.injectEvidence('Consciousness', 'depth', effect.processingDepth);
+      }
+
       this.factorGraph.propagate(5, 0.01);
     }
 
@@ -686,6 +821,23 @@ export class Genesis {
     // v13.2: Meta-RL adaptive thresholds
     const adaptiveDeferThreshold = this.getAdaptiveDeferThreshold();
 
+    // Step 0.7: Limbic evaluation — assess emotional tone of input
+    if (this.feelingAgent && this.neuromodulation) {
+      const feeling = this.feelingAgent.evaluate(input);
+      // Positive valence → dopamine (reward anticipation)
+      if (feeling.valence > 0.3) {
+        this.neuromodulation.modulate('dopamine', feeling.valence * 0.1, `feeling:${feeling.category}`);
+      }
+      // Negative valence → cortisol (stress anticipation)
+      if (feeling.valence < -0.3) {
+        this.neuromodulation.modulate('cortisol', Math.abs(feeling.valence) * 0.1, `feeling:${feeling.category}`);
+      }
+      // High arousal → norepinephrine (alertness)
+      if (feeling.arousal > 0.6) {
+        this.neuromodulation.modulate('norepinephrine', feeling.arousal * 0.1, `feeling:${feeling.category}`);
+      }
+    }
+
     // Step 1: Metacognitive pre-check (uses adaptive threshold from meta-RL)
     if (this.metacognition && deepProcessing) {
       const domain = this.inferDomain(input);
@@ -694,10 +846,54 @@ export class Genesis {
       }
     }
 
-    // Step 2: Brain processes
+    // Step 2: Brain processes (with multi-modal context injection)
     let response = '';
     if (this.brain) {
-      response = await this.brain.process(input);
+      // v13.6: Build ProcessContext with live sensorimotor + consciousness data
+      const processContext: import('./brain/types.js').ProcessContext = {};
+
+      // Inject sensorimotor perception if embodiment is active
+      if (this.sensorimotor) {
+        const sensorState = this.sensorimotor.getSensorState();
+        if (sensorState) {
+          processContext.sensorimotorState = {
+            perception: {
+              features: Array.from(sensorState.forces || []),
+              confidence: sensorState.safetyStatus?.safe ? 0.8 : 0.3,
+              modalities: ['proprioceptive', 'force_torque'],
+            },
+            sensorState: {
+              joints: sensorState.jointStates.map((j: { position: number }) => j.position),
+              forces: sensorState.forces,
+              safety: sensorState.safetyStatus?.safe ? 'nominal' : 'warning',
+            },
+          };
+        }
+      }
+
+      // Inject consciousness metrics
+      if (this.consciousness) {
+        processContext.consciousness = {
+          phi: currentPhi,
+          attentionFocus: this.consciousness.getAttentionFocus()?.target,
+          mode: fekMode,
+        };
+      }
+
+      // Inject synced memories as workspace items (MemorySync → Brain gap closure)
+      if (this.memorySync) {
+        const syncedItems = this.memorySync.getWorkspaceItems(5);
+        if (syncedItems.length > 0) {
+          processContext.workspaceItems = syncedItems.map(item => ({
+            content: item.content,
+            type: item.type,
+            relevance: item.relevance,
+            source: item.source,
+          }));
+        }
+      }
+
+      response = await this.brain.process(input, processContext);
     }
 
     // Step 3: Metacognitive audit (skipped if φ too low)
@@ -784,6 +980,11 @@ export class Genesis {
       }
     }
 
+    // Step 5.5: Allostatic regulation (every 5 cycles — predictive homeostasis)
+    if (this.allostasis && this.cycleCount % 5 === 0) {
+      this.allostasis.regulate().catch(() => { /* non-fatal */ });
+    }
+
     // Track for calibration
     if (confidence) {
       this.performanceHistory.push({
@@ -828,6 +1029,10 @@ export class Genesis {
           learningRate: neuroEffect?.learningRate,
           processingDepth: neuroEffect?.processingDepth,
         } : undefined,
+        feeling: this.feelingAgent ? (() => {
+          const f = this.feelingAgent!.getCurrentFeeling();
+          return { valence: f.valence, arousal: f.arousal, category: f.category };
+        })() : undefined,
       });
     }
 
@@ -1113,6 +1318,19 @@ export class Genesis {
           riskTolerance: effect.riskTolerance,
         };
       })() : null,
+      allostasis: this.allostasis ? (() => {
+        const state = this.allostasis!.getState();
+        return {
+          energy: state.energy,
+          load: state.computationalLoad,
+          memoryPressure: state.memoryPressure,
+          errorRate: state.errorRate,
+        };
+      })() : null,
+      feeling: this.feelingAgent ? (() => {
+        const f = this.feelingAgent!.getCurrentFeeling();
+        return { valence: f.valence, arousal: f.arousal, category: f.category };
+      })() : null,
       calibrationError: this.getCalibrationError(),
       uptime: this.bootTime > 0 ? Date.now() - this.bootTime : 0,
       cycleCount: this.cycleCount,
@@ -1146,6 +1364,9 @@ export class Genesis {
     }
 
     // L1: Substrate shutdown
+    if (this.allostasis) {
+      this.allostasis.removeAllListeners();
+    }
     if (this.neuromodulation) {
       this.neuromodulation.stop();
     }

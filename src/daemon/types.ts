@@ -282,6 +282,20 @@ export interface SelfImprovementDaemonConfig {
   maxImprovementsPerCycle: number;  // Max improvements per cycle
 }
 
+// v11.1: Competitive Intelligence Daemon Config
+export interface CompIntelDaemonConfig {
+  enabled: boolean;
+  checkIntervalMs: number;          // How often to scan competitors (default: 6h)
+  digestIntervalMs: number;         // How often to generate digests (default: 24h)
+  competitors: Array<{
+    name: string;
+    domain: string;
+    pages?: string[];
+  }>;
+  requireSubscription: boolean;     // Gate behind Stripe subscription
+  customerId?: string;              // Stripe customer ID for subscription check
+}
+
 export interface DaemonConfig {
   // General
   enabled: boolean;
@@ -302,6 +316,9 @@ export interface DaemonConfig {
 
   // v8.5: Self-Improvement
   selfImprovement: SelfImprovementDaemonConfig;
+
+  // v11.1: Competitive Intelligence
+  competitiveIntel: CompIntelDaemonConfig;
 
   // Logging
   logLevel: 'debug' | 'info' | 'warn' | 'error';
@@ -354,6 +371,15 @@ export const DEFAULT_DAEMON_CONFIG: DaemonConfig = {
     autoApply: false,                   // Manual approval by default
     minPhiThreshold: 0.3,               // Require consciousness
     maxImprovementsPerCycle: 3,         // Conservative default
+  },
+
+  // v11.1: Competitive Intelligence
+  competitiveIntel: {
+    enabled: false,                     // Opt-in (needs competitors configured)
+    checkIntervalMs: 6 * 60 * 60 * 1000,  // 6 hours
+    digestIntervalMs: 24 * 60 * 60 * 1000, // 24 hours
+    competitors: [],
+    requireSubscription: false,         // Free by default (set true for paid mode)
   },
 
   logLevel: 'info',

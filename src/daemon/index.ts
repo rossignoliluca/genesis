@@ -563,6 +563,93 @@ export class Daemon {
         tags: ['system', 'self-improvement', 'autopoiesis'],
       });
     }
+
+    // v11.1: Competitive Intelligence scan
+    if (this.config.competitiveIntel?.enabled && this.config.competitiveIntel.competitors.length > 0) {
+      this.scheduler.schedule({
+        name: 'compintel-scan',
+        description: 'Competitive Intelligence: scan competitors and generate insights',
+        schedule: { type: 'interval', intervalMs: this.config.competitiveIntel.checkIntervalMs },
+        priority: 'normal',
+        timeout: 120000, // 2 minutes max per scan
+        handler: async (ctx) => {
+          ctx.logger.info('Running CompIntel scan...');
+          const startTime = Date.now();
+          try {
+            const { createCompetitiveIntelService } = await import('../services/competitive-intel.js');
+            const { createRevenueLoop } = await import('../services/revenue-loop.js');
+
+            const ciConfig = this.config.competitiveIntel;
+
+            // Check subscription if required
+            if (ciConfig.requireSubscription && ciConfig.customerId) {
+              const revenueLoop = createRevenueLoop();
+              const sub = await revenueLoop.checkSubscription(ciConfig.customerId);
+              if (!sub.valid) {
+                ctx.logger.warn(`CompIntel scan skipped: ${sub.reason}`);
+                return {
+                  success: true,
+                  duration: Date.now() - startTime,
+                  output: { skipped: true, reason: sub.reason },
+                };
+              }
+              ctx.logger.info(`Subscription valid: plan=${sub.plan}, competitors=${sub.maxCompetitors}`);
+            }
+
+            // Run scan
+            const service = createCompetitiveIntelService({
+              competitors: ciConfig.competitors,
+            });
+
+            const changes = await service.checkAll();
+            ctx.logger.info(`Scan complete: ${changes.length} changes detected`);
+
+            // Generate digest if changes found
+            let digest;
+            if (changes.length > 0) {
+              digest = await service.generateDigest(24);
+              ctx.logger.info(`Digest: ${digest.keyInsights.length} insights, ${digest.recommendations.length} recommendations`);
+
+              // Emit event for downstream consumers
+              this.emit({
+                type: 'task_completed',
+                timestamp: new Date(),
+                data: {
+                  task: 'compintel-scan',
+                  changes: changes.length,
+                  insights: digest.keyInsights,
+                  recommendations: digest.recommendations,
+                },
+              });
+            }
+
+            return {
+              success: true,
+              duration: Date.now() - startTime,
+              output: {
+                competitors: ciConfig.competitors.length,
+                changes: changes.length,
+                digest: digest ? {
+                  insights: digest.keyInsights.length,
+                  recommendations: digest.recommendations.length,
+                } : null,
+              },
+            };
+          } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            ctx.logger.error(`CompIntel scan failed: ${error.message}`);
+            return {
+              success: false,
+              duration: Date.now() - startTime,
+              error,
+            };
+          }
+        },
+        tags: ['revenue', 'compintel', 'scan'],
+      });
+
+      this.log(`CompIntel daemon: monitoring ${this.config.competitiveIntel.competitors.length} competitors every ${(this.config.competitiveIntel.checkIntervalMs / 3600000).toFixed(1)}h`);
+    }
   }
 
   private buildMaintenanceContext(): MaintenanceContext {

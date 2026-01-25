@@ -167,6 +167,7 @@ import {
   StoreStats,
 } from './types.js';
 import { calculateForgettingStats } from './forgetting.js';
+import { getVectorDatabase, type VectorDatabase } from '../embeddings/index.js';
 
 // ============================================================================
 // Memory System Configuration
@@ -208,6 +209,8 @@ export class MemorySystem {
   readonly procedural: ProceduralStore;
   readonly consolidation: ConsolidationService;
   readonly workspace: CognitiveWorkspace;  // Memory 2.0
+  private vectorDb: VectorDatabase | null = null;
+  private vectorIndexDirty = true;
 
   constructor(config: MemorySystemConfig = {}) {
     this.episodic = createEpisodicStore(config.episodic);
@@ -253,6 +256,7 @@ export class MemorySystem {
    * Store an episodic memory (event)
    */
   remember(options: CreateEpisodicOptions): EpisodicMemory {
+    this.vectorIndexDirty = true;
     return this.episodic.createEpisode(options);
   }
 
@@ -260,6 +264,7 @@ export class MemorySystem {
    * Store a semantic memory (fact)
    */
   learn(options: CreateSemanticOptions): SemanticMemory {
+    this.vectorIndexDirty = true;
     return this.semantic.createFact(options);
   }
 
@@ -267,6 +272,7 @@ export class MemorySystem {
    * Store a procedural memory (skill)
    */
   learnSkill(options: CreateProceduralOptions): ProceduralMemory {
+    this.vectorIndexDirty = true;
     return this.procedural.createSkill(options);
   }
 
@@ -295,16 +301,19 @@ export class MemorySystem {
   }
 
   /**
-   * Recall memories by query
+   * Recall memories by query (hybrid: keyword + vector search when available)
    */
   recall(query: string, options: {
     types?: ('episodic' | 'semantic' | 'procedural')[];
     limit?: number;
+    useVectors?: boolean;
   } = {}): Memory[] {
     const types = options.types || ['episodic', 'semantic', 'procedural'];
     const limit = options.limit || 10;
+    const useVectors = options.useVectors ?? true;
     const results: Memory[] = [];
 
+    // Keyword-based search (existing)
     if (types.includes('episodic')) {
       results.push(...this.episodic.search(query, limit));
     }
@@ -323,6 +332,108 @@ export class MemorySystem {
         return retB - retA;
       })
       .slice(0, limit);
+  }
+
+  /**
+   * Semantic recall using vector embeddings (v13.8)
+   * Falls back to keyword search if vectors unavailable.
+   */
+  async semanticRecall(query: string, options: {
+    topK?: number;
+    types?: ('episodic' | 'semantic' | 'procedural')[];
+    minScore?: number;
+  } = {}): Promise<Array<{ memory: Memory; score: number }>> {
+    const topK = options.topK || 5;
+    const minScore = options.minScore || 0.3;
+
+    // Lazily initialize vector database
+    if (!this.vectorDb) {
+      try {
+        this.vectorDb = getVectorDatabase();
+        await this.vectorDb.load();
+      } catch {
+        // VectorDB unavailable — fall back to keyword recall
+        return this.recall(query, { types: options.types, limit: topK })
+          .map(m => ({ memory: m, score: 0.5 }));
+      }
+    }
+
+    // Index memories if dirty (new memories added since last index)
+    if (this.vectorIndexDirty) {
+      await this.reindexVectors();
+    }
+
+    // Vector search
+    try {
+      const results = await this.vectorDb.search(query, topK);
+      const memories: Array<{ memory: Memory; score: number }> = [];
+
+      for (const result of results) {
+        if (result.score < minScore) continue;
+
+        // Resolve memory by ID from stores
+        const memory = this.resolveMemoryById(result.id);
+        if (memory) {
+          memories.push({ memory, score: result.score });
+        }
+      }
+
+      return memories;
+    } catch {
+      // Fallback to keyword search on vector failure
+      return this.recall(query, { types: options.types, limit: topK })
+        .map(m => ({ memory: m, score: 0.5 }));
+    }
+  }
+
+  /**
+   * Index all memories into vector database for semantic search.
+   * Called lazily when semanticRecall is first used or when memories change.
+   */
+  private async reindexVectors(): Promise<void> {
+    if (!this.vectorDb) return;
+
+    const docs: Array<{ id: string; text: string; source?: string }> = [];
+
+    // Index episodic memories
+    for (const mem of this.episodic.getAll()) {
+      const ep = mem as EpisodicMemory;
+      const text = `${ep.content?.what || ''} ${ep.content?.details ? JSON.stringify(ep.content.details) : ''}`.trim();
+      if (text) docs.push({ id: mem.id, text, source: 'episodic' });
+    }
+
+    // Index semantic memories
+    for (const mem of this.semantic.getAll()) {
+      const sem = mem as SemanticMemory;
+      const text = `${sem.content?.concept || ''}: ${sem.content?.definition || ''}`.trim();
+      if (text) docs.push({ id: mem.id, text, source: 'semantic' });
+    }
+
+    // Index procedural memories
+    for (const mem of this.procedural.getAll()) {
+      const proc = mem as ProceduralMemory;
+      const text = `${proc.content?.name || ''}: ${proc.content?.description || ''}`.trim();
+      if (text) docs.push({ id: mem.id, text, source: 'procedural' });
+    }
+
+    if (docs.length > 0) {
+      await this.vectorDb.addBatch(docs);
+    }
+    this.vectorIndexDirty = false;
+  }
+
+  /**
+   * Resolve a memory by ID across all stores
+   */
+  private resolveMemoryById(id: string): Memory | undefined {
+    return this.episodic.get(id) || this.semantic.get(id) || this.procedural.get(id);
+  }
+
+  /**
+   * Mark vector index as dirty (call after storing new memories)
+   */
+  markVectorsDirty(): void {
+    this.vectorIndexDirty = true;
   }
 
   /**

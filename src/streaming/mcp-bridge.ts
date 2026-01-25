@@ -217,6 +217,8 @@ export class MCPBridge {
   private prefetchResults: Map<string, MCPToolResult> = new Map();
   private activeConnections: Set<string> = new Set();
   private latencyHistory: Map<string, number[]> = new Map();
+  private prefetchAttempts = 0;
+  private prefetchHits = 0;
 
   constructor(config: Partial<MCPBridgeConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -262,6 +264,7 @@ export class MCPBridge {
     const prefetched = this.prefetchResults.get(cacheKey);
     if (prefetched) {
       this.prefetchResults.delete(cacheKey);
+      this.prefetchHits++;
       return { ...prefetched, cached: true };
     }
 
@@ -343,6 +346,7 @@ export class MCPBridge {
         if (result.success) {
           const key = this.cacheKey(call);
           this.prefetchResults.set(key, result);
+          this.prefetchAttempts++;
           prefetchedTools.push(`${call.server}/${call.tool}`);
         }
       } catch { /* prefetch failure is non-fatal */ }
@@ -453,7 +457,7 @@ export class MCPBridge {
 
     return {
       cacheHitRate: totalCacheChecks > 0 ? cacheHits / totalCacheChecks : 0,
-      prefetchHitRate: 0, // TODO: track
+      prefetchHitRate: this.prefetchAttempts > 0 ? this.prefetchHits / this.prefetchAttempts : 0,
       avgLatencyByServer: avgLatency,
       activeConnections: this.activeConnections.size,
     };

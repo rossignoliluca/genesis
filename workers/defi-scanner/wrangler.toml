@@ -3,10 +3,36 @@ main = "worker.ts"
 compatibility_date = "2024-01-01"
 
 [vars]
-GENESIS_VERSION = "1.0.0"
-GENESIS_WALLET = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+GENESIS_VERSION = "2.0.0"
+# Set via wrangler secret or dashboard:
+# GENESIS_WALLET = "0x..."
+# GENESIS_NETWORK = "mainnet"
+# METRICS_AUTH_TOKEN = "..."
 
-# Uncomment to enable KV-based rate limiting
+# KV Namespaces (create via: wrangler kv:namespace create "NAME")
+# Uncomment after creating:
+
 # [[kv_namespaces]]
 # binding = "RATE_LIMIT"
-# id = "your-kv-namespace-id"
+# id = "your-rate-limit-kv-id"
+
+# [[kv_namespaces]]
+# binding = "METRICS"
+# id = "your-metrics-kv-id"
+
+# [[kv_namespaces]]
+# binding = "PAYMENTS"
+# id = "your-payments-kv-id"
+
+# Deployment notes:
+# 1. Create KV namespaces:
+#    wrangler kv:namespace create "RATE_LIMIT"
+#    wrangler kv:namespace create "METRICS"
+#    wrangler kv:namespace create "PAYMENTS"
+#
+# 2. Set secrets:
+#    wrangler secret put GENESIS_WALLET
+#    wrangler secret put METRICS_AUTH_TOKEN
+#
+# 3. Deploy:
+#    wrangler deploy

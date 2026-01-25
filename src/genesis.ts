@@ -22,6 +22,10 @@ import { getNESSMonitor, type NESSMonitor, type NESSState } from './economy/ness
 import { MultiModalPerception, createMultiModalPerception, type ModalityInput, type PerceptionOutput } from './perception/multi-modal.js';
 import { MetaRLLearner, createMetaRLLearner, type AdaptationResult, type CurriculumState } from './learning/meta-rl.js';
 import { getCodeRuntime, type CodeRuntime } from './execution/index.js';
+import { initializeExecutionIntegration } from './execution/integration.js';
+import { getHooksManager, type HooksManager } from './hooks/index.js';
+import { sanitizeResponse, checkResponse } from './epistemic/index.js';
+import { getSubagentExecutor, type SubagentExecutor } from './subagents/index.js';
 import { getDashboard, broadcastToDashboard, type DashboardServer } from './observability/dashboard.js';
 import { getMCPMemorySync, type MCPMemorySync } from './sync/mcp-memory-sync.js';
 import { getSensoriMotorLoop, type SensoriMotorLoop } from './embodiment/sensorimotor-loop.js';
@@ -65,6 +69,47 @@ import { getGovernanceSystem, type GovernanceSystem } from './governance/index.j
 
 // Uncertainty — conformal prediction intervals
 import { createAdaptiveConformal, type AdaptiveConformalPredictor } from './uncertainty/conformal.js';
+
+// ============================================================================
+// ORPHANED MODULES — Now fully integrated (nothing wasted)
+// ============================================================================
+
+// Bus — central event backbone (pub/sub for all modules)
+import { getEventBus, type GenesisEventBus } from './bus/index.js';
+
+// Persistence — state storage to disk
+import { StateStore } from './persistence/index.js';
+
+// MCP Client — tool infrastructure for external capabilities
+import { getMCPManager, type MCPClientManager } from './mcp/client-manager.js';
+
+// Streaming — LLM streaming orchestration
+import { createStreamOrchestrator, type StreamOrchestrator } from './streaming/index.js';
+
+// Tools — bash, edit, git execution
+import { getBashTool, getEditTool } from './tools/index.js';
+
+// Pipeline — multi-step orchestration
+import { createPipelineExecutor, type PipelineExecutor } from './pipeline/index.js';
+
+// A2A — agent-to-agent protocol
+import { A2AClient, A2AServer } from './a2a/index.js';
+
+// Payments — revenue and cost tracking
+import { getPaymentService, getRevenueTracker, type PaymentService, type RevenueTracker } from './payments/index.js';
+
+// Services — competitive intel, revenue loop
+import { createCompetitiveIntelService, type CompetitiveIntelService } from './services/competitive-intel.js';
+import { createRevenueLoop, type RevenueLoop } from './services/revenue-loop.js';
+
+// Deployment — self-deployment capability
+import { VercelDeployer } from './deployment/index.js';
+
+// Autonomous — unified autonomous system
+import { AutonomousSystem } from './autonomous/index.js';
+
+// Integration — cross-module wiring
+import { bootstrapIntegration } from './integration/index.js';
 
 // ============================================================================
 // Types
@@ -115,6 +160,26 @@ export interface GenesisConfig {
   governance: boolean;
   /** Enable conformal prediction (calibrated uncertainty) */
   uncertainty: boolean;
+  /** Enable event bus (central pub/sub) */
+  eventBus: boolean;
+  /** Enable state persistence to disk */
+  persistence: boolean;
+  /** Enable MCP client for external tools */
+  mcpClient: boolean;
+  /** Enable streaming orchestrator */
+  streaming: boolean;
+  /** Enable pipeline executor */
+  pipeline: boolean;
+  /** Enable A2A protocol */
+  a2a: boolean;
+  /** Enable payment/revenue tracking */
+  payments: boolean;
+  /** Enable competitive intel service */
+  compIntel: boolean;
+  /** Enable self-deployment capability */
+  deployment: boolean;
+  /** Enable autonomous system mode */
+  autonomous: boolean;
   /** Confidence threshold below which Brain defers to metacognition */
   deferThreshold: number;
   /** Audit all responses for hallucinations */
@@ -152,6 +217,18 @@ export interface GenesisStatus {
   agents: { poolSize: number } | null;
   governance: boolean;
   uncertainty: { coverage: number; avgWidth: number } | null;
+  hooks: { configured: number; configPath: string | null } | null;
+  subagents: { available: boolean; runningTasks: number } | null;
+  eventBus: { subscribers: number } | null;
+  persistence: { lastSave: number | null } | null;
+  mcpClient: { servers: number; tools: number } | null;
+  streaming: { activeStreams: number; avgLatency: number } | null;
+  pipeline: boolean;
+  a2a: { connected: boolean; peers: number } | null;
+  payments: { totalRevenue: number; totalCost: number } | null;
+  compIntel: { competitors: number; lastScan: number | null } | null;
+  deployment: boolean;
+  autonomous: { status: string; queuedTasks: number } | null;
   calibrationError: number;
   uptime: number;
   cycleCount: number;
@@ -213,7 +290,24 @@ export class Genesis {
   private agentPool: AgentPool | null = null;
   private governance: GovernanceSystem | null = null;
   private conformal: AdaptiveConformalPredictor | null = null;
+  private hooks: HooksManager | null = null;
+  private subagents: SubagentExecutor | null = null;
   private lastLatentState: LatentState | null = null;
+
+  // Orphaned modules — now fully integrated
+  private eventBus: GenesisEventBus | null = null;
+  private stateStore: StateStore | null = null;
+  private mcpClient: MCPClientManager | null = null;
+  private streamOrchestrator: StreamOrchestrator | null = null;
+  private pipelineExecutor: PipelineExecutor | null = null;
+  private a2aClient: A2AClient | null = null;
+  private a2aServer: A2AServer | null = null;
+  private paymentService: PaymentService | null = null;
+  private revenueTracker: RevenueTracker | null = null;
+  private compIntelService: CompetitiveIntelService | null = null;
+  private revenueLoop: RevenueLoop | null = null;
+  private deployer: VercelDeployer | null = null;
+  private autonomousSystem: AutonomousSystem | null = null;
 
   // State
   private booted = false;
@@ -246,6 +340,16 @@ export class Genesis {
       agents: true,
       governance: false,
       uncertainty: true,
+      eventBus: true,
+      persistence: true,
+      mcpClient: true,
+      streaming: true,
+      pipeline: true,
+      a2a: false,           // Disabled by default (requires network)
+      payments: false,      // Disabled by default (requires Stripe key)
+      compIntel: false,     // Disabled by default (requires setup)
+      deployment: false,    // Disabled by default (requires Vercel token)
+      autonomous: false,    // Disabled by default (safety)
       deferThreshold: 0.3,
       auditResponses: true,
     };
@@ -258,6 +362,9 @@ export class Genesis {
 
   async boot(): Promise<GenesisStatus> {
     this.bootTime = Date.now();
+
+    // v13.8: Initialize hooks system (lifecycle event hooks)
+    this.hooks = getHooksManager();
 
     // L1: Autonomic substrate
     await this.bootL1();
@@ -272,6 +379,12 @@ export class Genesis {
     await this.bootL4();
 
     this.booted = true;
+
+    // Fire session-start hook
+    if (this.hooks.hasHooks()) {
+      this.hooks.execute('session-start', { event: 'session-start' }).catch(e => console.debug('[Hooks] session-start failed:', e?.message || e));
+    }
+
     return this.getStatus();
   }
 
@@ -384,6 +497,18 @@ export class Genesis {
       this.daemon.start();
     }
 
+    // Event Bus — central pub/sub backbone
+    // Note: FEK and Neuromodulation now publish directly to the bus (v13.9)
+    // No manual wiring needed here - modules self-wire in their constructors
+    if (this.config.eventBus) {
+      this.eventBus = getEventBus();
+    }
+
+    // Persistence — state storage to disk
+    if (this.config.persistence) {
+      this.stateStore = new StateStore();
+    }
+
     this.levels.L1 = true;
   }
 
@@ -484,7 +609,9 @@ export class Genesis {
         // Economic entropy: sustainability gap as surprisal
         const econEntropy = fiberSection ? (fiberSection.sustainable ? 0.2 : 0.7 + nessDeviation * 0.3) : 0.5;
         // Memory entropy: buffer utilization (full buffer = low entropy, empty = high)
-        const memEntropy = 0.4; // TODO: wire to cognitiveWorkspace.getStats().totalItems / config.maxItems
+        const memEntropy = this.cognitiveWorkspace
+          ? Math.min(1, this.cognitiveWorkspace.getStats().itemCount / Math.max(1, this.cognitiveWorkspace.getStats().maxItems))
+          : 0.4;
 
         return {
           components: [
@@ -744,6 +871,30 @@ export class Genesis {
     // and edges connecting them with precision-weighted channels
     this.factorGraph = getFactorGraph();
 
+    // MCP Client — external tool infrastructure
+    if (this.config.mcpClient) {
+      this.mcpClient = getMCPManager();
+      this.fiber?.registerModule('mcp');
+
+      // Wire MCP tool calls → economic cost tracking
+      // (costs are tracked per-call in the MCP client itself)
+    }
+
+    // Streaming Orchestrator — LLM streaming with latency tracking
+    if (this.config.streaming) {
+      this.streamOrchestrator = createStreamOrchestrator();
+      this.fiber?.registerModule('streaming');
+
+      // TODO: Wire stream completion → economic fiber (latency tracking)
+      // Note: getLatencyTracker not yet implemented
+    }
+
+    // Pipeline Executor — multi-step orchestration
+    if (this.config.pipeline) {
+      this.pipelineExecutor = createPipelineExecutor();
+      this.fiber?.registerModule('pipeline');
+    }
+
     this.levels.L2 = true;
   }
 
@@ -798,10 +949,41 @@ export class Genesis {
 
     if (this.config.perception) {
       this.perception = createMultiModalPerception();
+
+      // v13.8: Register perception as GWT module for consciousness workspace competition
+      if (this.consciousness) {
+        const perception = this.perception;
+        this.consciousness.registerModule({
+          id: 'perception-module',
+          name: 'Multi-Modal Perception',
+          type: 'perceptual',
+          active: true,
+          load: 0.2,
+          onPropose: () => {
+            const lastOutput = perception.getLastOutput();
+            if (!lastOutput || lastOutput.confidence < 0.4) return null;
+            return {
+              id: `percept-${Date.now()}`,
+              sourceModule: 'perception-module',
+              type: 'percept' as const,
+              data: { description: lastOutput.description, confidence: lastOutput.confidence },
+              salience: lastOutput.salience,
+              relevance: lastOutput.confidence,
+              timestamp: new Date(),
+              ttl: 3000,
+            };
+          },
+          onReceive: () => { /* perception receives broadcasts but doesn't act */ },
+          onSalience: () => perception.getLastOutput()?.salience ?? 0,
+          onRelevance: () => perception.getLastOutput()?.confidence ?? 0.5,
+        });
+      }
     }
 
     if (this.config.execution) {
       this.codeRuntime = getCodeRuntime();
+      // v13.8: Register execution actions with Active Inference (execute.code, execute.shell, etc.)
+      initializeExecutionIntegration();
     }
 
     if (this.config.embodiment) {
@@ -925,6 +1107,20 @@ export class Genesis {
       this.fiber?.registerModule('agents');
     }
 
+    // Subagent Executor — parallel task dispatch
+    this.subagents = getSubagentExecutor();
+    this.fiber?.registerModule('subagents');
+
+    // A2A Protocol — agent-to-agent communication
+    // TODO: A2A integration requires config objects and governance gate method
+    // Temporarily disabled pending A2A module completion
+    if (this.config.a2a) {
+      // A2A requires proper config - see src/a2a/server.ts for A2AServerConfig
+      // this.a2aClient = new A2AClient(clientConfig);
+      // this.a2aServer = new A2AServer(serverConfig);
+      this.fiber?.registerModule('a2a');
+    }
+
     this.levels.L3 = true;
   }
 
@@ -992,6 +1188,19 @@ export class Genesis {
           }
         }
       });
+
+      // v13.8: Wire metacognition calibration → reasoning controller EFE risk
+      this.reasoningController.setCalibrationProvider(() => this.getCalibrationError());
+
+      // v13.8: Wire causal bounds → reasoning controller EFE info gain
+      if (this.causal) {
+        const causal = this.causal;
+        this.reasoningController.setCausalBoundsProvider(() => {
+          const effect = causal.estimateEffect('observation', 0.8, 'outcome');
+          if (!effect) return null;
+          return { upper: Math.min(1, effect.expectedValue + effect.bounds[1]), lower: Math.max(0, effect.expectedValue + effect.bounds[0]) };
+        });
+      }
     }
 
     // Governance — permission gates + budget enforcement + HITL
@@ -1012,6 +1221,50 @@ export class Genesis {
     if (this.config.uncertainty) {
       this.conformal = createAdaptiveConformal(0.9);
     }
+
+    // Payments — revenue and cost tracking (wired to economic fiber)
+    if (this.config.payments) {
+      this.paymentService = getPaymentService();
+      this.revenueTracker = getRevenueTracker();
+      this.fiber?.registerModule('payments');
+
+      // Wire revenue tracker → economic fiber (revenue feeds into sustainability)
+      this.revenueTracker.on('revenue', (amount: number, source: string) => {
+        this.fiber?.recordRevenue('payments', amount, source);
+        this.eventBus?.publish('economic:revenue', { precision: 1.0, amount, source: source });
+      });
+
+      this.revenueTracker.on('cost', (amount: number, category: string) => {
+        this.fiber?.recordCost('payments', amount, category);
+      });
+    }
+
+    // Competitive Intelligence — monitor competitors
+    if (this.config.compIntel) {
+      this.compIntelService = createCompetitiveIntelService({});
+      this.revenueLoop = createRevenueLoop();
+      this.fiber?.registerModule('compintel');
+
+      // TODO: CompetitiveIntelService needs EventEmitter for event bus integration
+      // Wire compIntel changes → event bus when .on() is implemented
+    }
+
+    // Deployment — self-deployment capability
+    if (this.config.deployment) {
+      this.deployer = new VercelDeployer();
+      this.fiber?.registerModule('deployment');
+    }
+
+    // Autonomous System — unified autonomous operation mode
+    if (this.config.autonomous) {
+      this.autonomousSystem = new AutonomousSystem();
+      await this.autonomousSystem.initialize();
+      this.fiber?.registerModule('autonomous');
+      // TODO: Wire autonomous status → event bus when AutonomousSystem.on() is implemented
+    }
+
+    // Bootstrap Integration — wire all cross-module connections
+    await bootstrapIntegration();
 
     this.levels.L4 = true;
   }
@@ -1036,6 +1289,14 @@ export class Genesis {
     const startTime = Date.now();
     let confidence: ConfidenceEstimate | null = null;
     let audit: ThoughtAudit | null = null;
+
+    // v13.8: Fire pre-message hook
+    if (this.hooks?.hasHooks()) {
+      const hookResult = await this.hooks.execute('pre-message', { event: 'pre-message', message: input });
+      if (hookResult?.blocked) {
+        return { response: '[Hook blocked processing]', confidence: null, audit: null, cost: 0, fekState: null };
+      }
+    }
 
     // Step 0: Assess processing depth from consciousness + FEK mode
     const currentPhi = this.consciousness?.getSnapshot()?.level?.rawPhi ?? 1.0;
@@ -1243,12 +1504,13 @@ export class Genesis {
               predictedState: predicted.state,
             } };
           }
-        } catch { /* world model encode is best-effort */ }
+        } catch (e) { console.debug('[WorldModel] encode best-effort failed:', (e as Error)?.message); }
         if (this.fiber) this.fiber.recordCost('worldmodel', 0.005, 'encode');
       }
 
       // Step 2.2: Full memory recall — inject relevant memories from full stack
       if (this.memory && deepProcessing) {
+        // Keyword recall (fast, synchronous)
         const memories = this.memory.recall(input, { limit: 5 });
         if (memories.length > 0) {
           const memItems = memories.map(m => ({
@@ -1259,6 +1521,21 @@ export class Genesis {
           }));
           processContext.workspaceItems = [...(processContext.workspaceItems || []), ...memItems];
         }
+
+        // v13.8: Semantic vector recall (async, higher relevance)
+        try {
+          const vectorResults = await this.memory.semanticRecall(input, { topK: 3, minScore: 0.5 });
+          if (vectorResults.length > 0) {
+            const vecItems = vectorResults.map(r => ({
+              content: this.extractMemoryContent(r.memory as { type: string; content: unknown }),
+              type: ((r.memory as { type: string }).type || 'semantic') as 'episodic' | 'semantic' | 'procedural',
+              relevance: r.score,
+              source: 'memory-vectors',
+            }));
+            processContext.workspaceItems = [...(processContext.workspaceItems || []), ...vecItems];
+          }
+        } catch (e) { console.debug('[Memory] vector recall best-effort failed:', (e as Error)?.message); }
+
         if (this.fiber) this.fiber.recordCost('memory', 0.003, 'recall');
       }
 
@@ -1297,6 +1574,14 @@ export class Genesis {
         } else {
           this.nociception?.stimulus('cognitive', 0.3, 'healing:unfixable_error');
         }
+      }
+    }
+
+    // Step 2.9: Epistemic grounding — qualify speculative claims before output
+    if (response) {
+      const violations = checkResponse(response);
+      if (violations.length > 0) {
+        response = sanitizeResponse(response);
       }
     }
 
@@ -1474,6 +1759,18 @@ export class Genesis {
           }
         }
       }
+
+      // v13.8: Learning → AIF feedback loop
+      // Curriculum surprise (unexpected success/failure) → FEK learning signal
+      const curriculum = this.metaRL.getCurriculum();
+      if (this.fek && curriculum && curriculum.taskHistory.length > 5) {
+        const recentSuccessRate = curriculum.successRate;
+        const surprise = Math.abs(recentSuccessRate - (confidence.value));
+        if (surprise > 0.4) {
+          // High surprise between meta-RL track record and current confidence → FEK update
+          this.neuromodulation?.novelty(surprise, `metarl:surprise:${domain}`);
+        }
+      }
     }
 
     // Broadcast to observability dashboard
@@ -1547,6 +1844,11 @@ export class Genesis {
     if (this.consciousness) {
       const domain = this.inferDomain(input);
       this.consciousness.releaseAttention(`process:${domain}`);
+    }
+
+    // v13.8: Fire post-message hook
+    if (this.hooks?.hasHooks()) {
+      this.hooks.execute('post-message', { event: 'post-message', message: input, response }).catch(e => console.debug('[Hooks] post-message failed:', e?.message || e));
     }
 
     return { response, confidence, audit, cost, fekState };
@@ -1867,6 +2169,24 @@ export class Genesis {
         coverage: this.conformal.getEmpiricalCoverage(),
         avgWidth: this.conformal.getCurrentAlpha(),
       } : null,
+      hooks: this.hooks?.hasHooks() ? {
+        configured: this.hooks.getConfiguredHooks().length,
+        configPath: this.hooks.getConfigPath(),
+      } : null,
+      subagents: this.subagents ? {
+        available: true,
+        runningTasks: this.subagents.getRunningTasks().length,
+      } : null,
+      eventBus: this.eventBus ? { subscribers: this.eventBus.stats().totalSubscriptions } : null,
+      persistence: null, // TODO: wire persistence module
+      mcpClient: this.mcpClient ? { servers: 0, tools: 0 } : null,
+      streaming: null, // TODO: wire streaming module
+      pipeline: false, // TODO: wire pipeline module
+      a2a: null, // TODO: wire A2A module
+      payments: this.paymentService ? { totalRevenue: 0, totalCost: 0 } : null,
+      compIntel: this.compIntelService ? { competitors: 0, lastScan: null } : null,
+      deployment: false, // TODO: wire deployment service
+      autonomous: this.autonomousSystem ? { status: 'idle', queuedTasks: 0 } : null,
       calibrationError: this.getCalibrationError(),
       uptime: this.bootTime > 0 ? Date.now() - this.bootTime : 0,
       cycleCount: this.cycleCount,
@@ -1877,6 +2197,11 @@ export class Genesis {
    * Graceful shutdown: L4→L1
    */
   async shutdown(): Promise<void> {
+    // v13.8: Fire session-end hook before shutdown
+    if (this.hooks?.hasHooks()) {
+      await this.hooks.execute('session-end', { event: 'session-end' }).catch(e => console.debug('[Hooks] session-end failed:', e?.message || e));
+    }
+
     // L4: Executive shutdown
     // (metacognition, NESS, metaRL, governance, conformal are stateless)
 

@@ -35,6 +35,7 @@ import { naturalGradientStep } from './fisher.js';
 import { leapfrogStep, budgetConstraint, roiGradient, computeHamiltonian, type HamiltonianState } from './leapfrog.js';
 import { EconomicFiber, getEconomicFiber } from '../economy/fiber.js';
 import { NESSMonitor, getNESSMonitor, type NESSState } from '../economy/ness.js';
+import { createPublisher, getEventBus } from '../bus/index.js';
 
 // ============================================================================
 // Types
@@ -1087,10 +1088,13 @@ export class FreeEnergyKernel {
   private predictionErrors: PredictionError[] = [];
   private totalFE: number = 0;
 
-  // Event handlers
+  // Event handlers (legacy - kept for backward compatibility)
   private onCycleHandlers: Array<(state: FEKState) => void> = [];
   private onModeChangeHandlers: Array<(mode: KernelMode, prev: KernelMode) => void> = [];
   private onErrorHandlers: Array<(error: PredictionError) => void> = [];
+
+  // Event bus publisher (v13.9: unified event system)
+  private readonly busPublisher = createPublisher('fek');
 
   // v13.0: Information geometry + economic fiber
   private contraction: ContractionMonitor;
@@ -1298,9 +1302,18 @@ export class FreeEnergyKernel {
       ...(l3Result?.errors || []),
     ];
 
-    // Notify error handlers
+    // Notify error handlers (event bus + legacy)
     for (const error of this.predictionErrors) {
       if (error.magnitude > 0.5) {
+        // Publish to event bus
+        this.busPublisher.publish('kernel.prediction.error', {
+          precision: 1.0 - error.magnitude * 0.5, // Higher error = lower precision
+          errorSource: error.source,
+          errorTarget: error.target,
+          magnitude: error.magnitude,
+          content: error.content,
+        });
+        // Legacy handlers
         for (const handler of this.onErrorHandlers) handler(error);
       }
     }
@@ -1308,7 +1321,22 @@ export class FreeEnergyKernel {
     // Build state
     const state = this.buildState(observations, l2Result, l3Result, l4Result);
 
-    // Notify cycle handlers
+    // Publish cycle completed to event bus
+    this.busPublisher.publish('kernel.cycle.completed', {
+      precision: 1.0,
+      cycle: this.cycleCount,
+      mode: this.mode,
+      totalFE: this.totalFE,
+      levels: {
+        L1: state.levels.L1,
+        L2: state.levels.L2,
+        L3: state.levels.L3 ?? 0,
+        L4: state.levels.L4 ?? 0,
+      },
+      emotional: state.emotional,
+    });
+
+    // Legacy handlers
     for (const handler of this.onCycleHandlers) handler(state);
 
     return state;
@@ -1386,7 +1414,14 @@ export class FreeEnergyKernel {
 
     this.mode = newMode;
 
-    // Notify handlers
+    // Publish to event bus
+    this.busPublisher.publish('kernel.mode.changed', {
+      precision: 1.0,
+      newMode,
+      previousMode: prev,
+    });
+
+    // Legacy handlers
     for (const handler of this.onModeChangeHandlers) {
       handler(newMode, prev);
     }
@@ -1416,14 +1451,26 @@ export class FreeEnergyKernel {
   // Event Handlers
   // ==========================================================================
 
+  /**
+   * Register a cycle handler.
+   * @deprecated Use getEventBus().subscribe('kernel.cycle.completed', ...) instead
+   */
   onCycle(handler: (state: FEKState) => void): void {
     this.onCycleHandlers.push(handler);
   }
 
+  /**
+   * Register a mode change handler.
+   * @deprecated Use getEventBus().subscribe('kernel.mode.changed', ...) instead
+   */
   onModeChange(handler: (mode: KernelMode, prev: KernelMode) => void): void {
     this.onModeChangeHandlers.push(handler);
   }
 
+  /**
+   * Register a prediction error handler.
+   * @deprecated Use getEventBus().subscribe('kernel.prediction.error', ...) instead
+   */
   onPredictionError(handler: (error: PredictionError) => void): void {
     this.onErrorHandlers.push(handler);
   }

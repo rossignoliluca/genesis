@@ -57,6 +57,10 @@ import { getDeworkConnector } from './live/connectors/dework.js';
 import { getDefiConnector } from './live/connectors/defi.js';
 import { getCloudflareConnector } from './live/connectors/cloudflare.js';
 import { isLive } from './live/boot.js';
+import { getRevenueTracker, type RevenueSource } from './live/revenue-tracker.js';
+import { getAlertSystem } from './live/alerts.js';
+import { getGasManager } from './live/gas-manager.js';
+import { isEmergencyActive } from './live/emergency.js';
 
 // ============================================================================
 // Types
@@ -448,6 +452,22 @@ export class AutonomousController {
       errors: [],
     };
 
+    // Check emergency state before proceeding
+    if (this.config.liveMode || isLive()) {
+      if (isEmergencyActive()) {
+        result.errors.push('Cycle skipped: Emergency mode active');
+        result.duration = Date.now() - startTime;
+        return result;
+      }
+
+      const gasManager = getGasManager();
+      if (!gasManager.canTransact()) {
+        result.errors.push('Cycle skipped: Insufficient gas');
+        result.duration = Date.now() - startTime;
+        return result;
+      }
+    }
+
     try {
       // 1. OBSERVE: Gather current state
       const fiber = getEconomicFiber();
@@ -477,6 +497,35 @@ export class AutonomousController {
 
       this.totalRevenue += result.revenueGenerated;
       this.totalCosts += result.costsIncurred;
+
+      // Record revenue events to tracker (live mode)
+      if ((this.config.liveMode || isLive()) && result.revenueGenerated > 0) {
+        const tracker = getRevenueTracker();
+        for (const exec of executed) {
+          if (exec.revenue > 0) {
+            const sourceMap: Record<string, RevenueSource> = {
+              'mcp-marketplace': 'mcp-api',
+              'x402-facilitator': 'mcp-api',
+              'bounty-hunter': 'bounty',
+              'yield-optimizer': 'yield',
+              'keeper': 'keeper',
+              'grants': 'grant',
+              'cross-l2-arb': 'arbitrage',
+              'smart-contract-auditor': 'bounty',
+              'content-engine': 'mcp-api',
+              'memory-service': 'mcp-api',
+              'meta-orchestrator': 'mcp-api',
+              'compute-provider': 'mcp-api',
+            };
+            tracker.record({
+              source: sourceMap[exec.id] ?? 'other',
+              amount: exec.revenue,
+              currency: 'USDC',
+              activityId: exec.id,
+            });
+          }
+        }
+      }
 
       // 5. NESS MONITOR: Activity-based steady state (not customer-based)
       const autonomousNESS = getAutonomousNESS({
@@ -532,6 +581,17 @@ export class AutonomousController {
       if (varState.circuitBroken) {
         result.errors.push('CIRCUIT BREAKER: Max drawdown exceeded, pausing risky activities');
         this.pauseRiskyActivities(allocator);
+
+        // Alert on circuit breaker
+        if (this.config.liveMode || isLive()) {
+          const alerts = getAlertSystem();
+          alerts.error(
+            'Circuit Breaker Triggered',
+            `Max drawdown exceeded\\n` +
+            `Current balance: $${currentBalance.toFixed(2)}\\n` +
+            `Risky activities paused`
+          );
+        }
       }
 
       // Risk warnings
@@ -543,9 +603,22 @@ export class AutonomousController {
       const monthlyRevenue = this.estimateMonthlyRevenue();
       const newPhase = this.checkPhaseTransition(monthlyRevenue);
       if (newPhase !== this.currentPhase) {
+        const oldPhase = this.currentPhase;
         this.currentPhase = newPhase;
         this.unlockPhaseActivities(newPhase);
         result.phaseChanged = true;
+
+        // Alert on phase transition
+        if (this.config.liveMode || isLive()) {
+          const alerts = getAlertSystem();
+          const phaseName = this.config.phases[newPhase]?.name ?? 'Unknown';
+          alerts.success(
+            'Phase Upgrade',
+            `Advanced from Phase ${oldPhase} to Phase ${newPhase} (${phaseName})\\n` +
+            `Monthly revenue: $${monthlyRevenue.toFixed(2)}\\n` +
+            `New activities unlocked: ${this.config.phases[newPhase]?.activitiesUnlocked.join(', ')}`
+          );
+        }
       }
 
       // 8. MAINTENANCE: Process escrows, check bounty payouts

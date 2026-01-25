@@ -648,6 +648,7 @@ export class MultiModalPerception {
   private temporalBuffer: TemporalBuffer;
   private uncertaintyEstimator: UncertaintyEstimator;
   private modalityWeights: Map<string, number> = new Map();
+  private lastPercept: { confidence: number; salience: number; description: string; timestamp: number } | null = null;
 
   constructor(config: Partial<MultiModalConfig> = {}) {
     this.config = {
@@ -796,6 +797,17 @@ export class MultiModalPerception {
       ? this.uncertaintyEstimator.estimate(encodings)
       : 0;
 
+    // v13.8: Track last percept for consciousness GWT proposals
+    const confidence = Math.max(0, 1 - uncertainty);
+    const fusedMag = Math.sqrt(fused.reduce((s, v) => s + v * v, 0));
+    const salience = Math.min(1, fusedMag / (fused.length || 1));
+    this.lastPercept = {
+      confidence,
+      salience,
+      description: `Multi-modal percept (${encodings.size} modalities, conf=${confidence.toFixed(2)})`,
+      timestamp: currentTime,
+    };
+
     return {
       fused,
       perModality,
@@ -886,10 +898,18 @@ export class MultiModalPerception {
   }
 
   /**
+   * v13.8: Get last perception output for consciousness workspace proposals
+   */
+  getLastOutput(): { confidence: number; salience: number; description: string; timestamp: number } | null {
+    return this.lastPercept;
+  }
+
+  /**
    * Clear temporal buffer
    */
   reset(): void {
     this.temporalBuffer.clear();
+    this.lastPercept = null;
   }
 }
 

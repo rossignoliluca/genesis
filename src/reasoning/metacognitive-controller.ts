@@ -255,6 +255,8 @@ export class MetacognitiveController {
 
   // External integrations (injected)
   private getPhiLevel: () => number = () => 0.5;
+  private getCalibrationError: () => number = () => 0;
+  private getCausalBounds: () => { upper: number; lower: number } | null = () => null;
   private executeStrategy: ((strategy: ReasoningStrategy, problem: string, context: string) =>
     Promise<{ response: string; confidence: number; tokens: number }>) | null = null;
 
@@ -299,6 +301,22 @@ export class MetacognitiveController {
   setStrategyExecutor(executor: (strategy: ReasoningStrategy, problem: string, context: string) =>
     Promise<{ response: string; confidence: number; tokens: number }>): void {
     this.executeStrategy = executor;
+  }
+
+  /**
+   * Set calibration error provider (from Genesis ECE computation)
+   * High calibration error → increase EFE risk → prefer safer strategies
+   */
+  setCalibrationProvider(provider: () => number): void {
+    this.getCalibrationError = provider;
+  }
+
+  /**
+   * Set causal bounds provider (from CausalReasoner)
+   * Bounds constrain strategy quality expectations
+   */
+  setCausalBoundsProvider(provider: () => { upper: number; lower: number } | null): void {
+    this.getCausalBounds = provider;
   }
 
   /**
@@ -653,14 +671,21 @@ export class MetacognitiveController {
       const failureRisk = history.attempts > 0
         ? (1 - history.successes / history.attempts) * 1.5
         : 0.3; // Optimistic prior for new strategies
-      const risk = computeRisk + timeRisk * 0.5 + failureRisk;
+      // v13.8: Calibration error penalizes all strategies (system-wide uncertainty)
+      const calibrationPenalty = this.getCalibrationError() * 0.5;
+      const risk = computeRisk + timeRisk * 0.5 + failureRisk + calibrationPenalty;
 
       // ─── Information Gain: alignment with complexity ───────────────
       // Higher complexity problems benefit more from advanced strategies
       const complexityAlignment = 1 - Math.abs(complexity.score - profile.computeCost);
       const baseInfoGain = profile.informationGain * complexityAlignment;
       const learningBonus = history.attempts < 3 ? 0.3 : 0; // Exploration bonus
-      const infoGain = (baseInfoGain + learningBonus) * this.beliefsPrecision;
+      // v13.8: Causal bounds constrain expected quality (can't exceed upper bound)
+      const causalBounds = this.getCausalBounds();
+      const boundsFactor = causalBounds
+        ? Math.min(1, causalBounds.upper / Math.max(0.1, profile.expectedQuality))
+        : 1.0;
+      const infoGain = (baseInfoGain + learningBonus) * this.beliefsPrecision * boundsFactor;
 
       // ─── Phi Bonus: consciousness alignment ────────────────────────
       // Higher phi → more complex strategies get bonus

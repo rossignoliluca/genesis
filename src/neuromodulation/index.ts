@@ -1,5 +1,5 @@
 /**
- * Genesis v13.2 — Neuromodulatory System
+ * Genesis v13.9 — Neuromodulatory System
  *
  * The missing "endocrine system" — provides global state modulation
  * through chemical analog signals that affect ALL subsystems.
@@ -26,11 +26,15 @@
  *                High: survival mode, conserve resources, fight/flight
  *                Low: relaxed, growth mode, long-term investment
  *
+ * v13.9: Integrated with Genesis Event Bus for unified inter-module communication.
+ *
  * References:
  *   - Doya (2002) "Metalearning and neuromodulation" (dopamine/serotonin/NE/ACh)
  *   - Friston (2012) "Dopamine, affordance and active inference"
  *   - Yu & Dayan (2005) "Uncertainty, neuromodulation, and attention"
  */
+
+import { createPublisher, createSubscriber, type Subscription } from '../bus/index.js';
 
 // ============================================================================
 // Types
@@ -109,9 +113,42 @@ export class NeuromodulationSystem {
   private history: NeuromodulatorEvent[] = [];
   private readonly maxHistory = 100;
 
+  // Event bus integration (v13.9)
+  private readonly busPublisher = createPublisher('neuromodulation');
+  private readonly busSubscriber = createSubscriber('neuromodulation');
+  private busSubscriptions: Subscription[] = [];
+
   constructor(config?: Partial<NeuromodulationConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.levels = { ...this.config.baselines };
+    this.setupBusSubscriptions();
+  }
+
+  /**
+   * Wire up to kernel events via the event bus.
+   * Replaces imperative wiring in genesis.ts.
+   */
+  private setupBusSubscriptions(): void {
+    // Prediction errors → novelty signal
+    this.busSubscriptions.push(
+      this.busSubscriber.on('kernel.prediction.error', (e) => {
+        this.novelty(e.magnitude, `fek:${e.errorSource}->${e.errorTarget}`);
+      })
+    );
+
+    // Mode changes → appropriate modulation
+    this.busSubscriptions.push(
+      this.busSubscriber.on('kernel.mode.changed', (e) => {
+        if (e.newMode === 'vigilant') {
+          this.threat(0.5, `fek:mode:${e.newMode}`);
+        } else if (e.newMode === 'dormant') {
+          this.calm(0.6, `fek:mode:${e.newMode}`);
+        } else if (e.newMode === 'focused') {
+          this.modulate('norepinephrine', 0.2, `fek:mode:${e.newMode}`);
+          this.modulate('dopamine', 0.1, `fek:mode:${e.newMode}`);
+        }
+      })
+    );
   }
 
   // ==========================================================================
@@ -128,6 +165,8 @@ export class NeuromodulationSystem {
       clearInterval(this.updateTimer);
       this.updateTimer = null;
     }
+    // Clean up bus subscriptions
+    this.busSubscriber.unsubscribeAll();
   }
 
   // ==========================================================================
@@ -142,6 +181,7 @@ export class NeuromodulationSystem {
     this.modulate('dopamine', magnitude * 0.3 * this.config.sensitivity, cause);
     this.modulate('serotonin', magnitude * 0.1 * this.config.sensitivity, cause);
     this.modulate('cortisol', -magnitude * 0.15 * this.config.sensitivity, cause);
+    this.publishSignal('reward', magnitude, cause);
   }
 
   /**
@@ -152,6 +192,7 @@ export class NeuromodulationSystem {
     this.modulate('cortisol', magnitude * 0.3 * this.config.sensitivity, cause);
     this.modulate('dopamine', -magnitude * 0.15 * this.config.sensitivity, cause);
     this.modulate('norepinephrine', magnitude * 0.2 * this.config.sensitivity, cause);
+    this.publishSignal('punishment', magnitude, cause);
   }
 
   /**
@@ -161,6 +202,7 @@ export class NeuromodulationSystem {
   novelty(magnitude: number, cause: string): void {
     this.modulate('norepinephrine', magnitude * 0.25 * this.config.sensitivity, cause);
     this.modulate('dopamine', magnitude * 0.15 * this.config.sensitivity, cause);
+    this.publishSignal('novelty', magnitude, cause);
   }
 
   /**
@@ -171,6 +213,7 @@ export class NeuromodulationSystem {
     this.modulate('cortisol', magnitude * 0.4 * this.config.sensitivity, cause);
     this.modulate('norepinephrine', magnitude * 0.3 * this.config.sensitivity, cause);
     this.modulate('serotonin', -magnitude * 0.2 * this.config.sensitivity, cause);
+    this.publishSignal('threat', magnitude, cause);
   }
 
   /**
@@ -181,6 +224,31 @@ export class NeuromodulationSystem {
     this.modulate('serotonin', magnitude * 0.2 * this.config.sensitivity, cause);
     this.modulate('cortisol', -magnitude * 0.2 * this.config.sensitivity, cause);
     this.modulate('norepinephrine', -magnitude * 0.1 * this.config.sensitivity, cause);
+    this.publishSignal('calm', magnitude, cause);
+  }
+
+  /**
+   * Publish a neuromodulation signal to the event bus.
+   */
+  private publishSignal(
+    signalType: 'reward' | 'punishment' | 'novelty' | 'threat' | 'calm',
+    magnitude: number,
+    cause: string,
+  ): void {
+    const topicMap = {
+      reward: 'neuromod.reward',
+      punishment: 'neuromod.punishment',
+      novelty: 'neuromod.novelty',
+      threat: 'neuromod.threat',
+      calm: 'neuromod.calm',
+    } as const;
+
+    this.busPublisher.publish(topicMap[signalType], {
+      precision: 1.0,
+      signalType,
+      magnitude,
+      cause,
+    });
   }
 
   /**
@@ -301,6 +369,25 @@ export class NeuromodulationSystem {
   /** Broadcast current state to all subscribers */
   private broadcast(): void {
     const effect = this.computeEffect();
+
+    // Publish to event bus
+    this.busPublisher.publish('neuromod.levels.changed', {
+      precision: 1.0,
+      levels: {
+        dopamine: this.levels.dopamine,
+        serotonin: this.levels.serotonin,
+        norepinephrine: this.levels.norepinephrine,
+        acetylcholine: 0.5, // Not tracked in this version
+      },
+      effect: {
+        explorationRate: effect.explorationRate,
+        learningRate: effect.learningRate,
+        precisionGain: effect.precisionGain,
+        discountFactor: effect.temporalDiscount,
+      },
+    });
+
+    // Legacy handlers
     for (const handler of this.handlers) {
       try {
         handler(this.levels, effect);

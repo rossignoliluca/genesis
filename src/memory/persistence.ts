@@ -462,7 +462,11 @@ export class MemoryPersistence {
 
   private async executeOps(ops: Array<() => Promise<void>>): Promise<void> {
     if (this.config.writeMode === 'sync') {
-      await Promise.all(ops.map(op => op()));
+      const results = await Promise.allSettled(ops.map(op => op()));
+      const failures = results.filter(r => r.status === 'rejected');
+      if (failures.length > 0) {
+        console.error(`[Persistence] ${failures.length}/${results.length} write ops failed`);
+      }
     } else {
       // Async: queue and process in background
       this.writeQueue.push(...ops);

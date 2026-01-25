@@ -25,6 +25,16 @@ import { getAutonomousController } from '../autonomous.js';
 import { getGenerativeModel } from '../generative-model.js';
 import { getCapitalAllocator } from '../capital-allocator.js';
 import { getAutonomousNESS, getEconomicContraction } from '../economic-intelligence.js';
+import {
+  getAlertSystem,
+  createBalanceAlertHandler,
+  createRevenueAlertHandler,
+} from './alerts.js';
+import { getBalanceMonitor } from './balance-monitor.js';
+import { getRevenueTracker } from './revenue-tracker.js';
+import { getGasManager } from './gas-manager.js';
+import { getPositionTracker } from './position-tracker.js';
+import { installSignalHandlers } from './emergency.js';
 
 // ============================================================================
 // Types
@@ -179,7 +189,7 @@ export async function bootLiveEconomy(config?: Partial<LiveConfig>): Promise<Boo
   }
 
   // ─── Step 5: Start Persistence Auto-Save ───────────────────────────────────
-  console.log('[Boot] Step 5/5: Starting auto-save...');
+  console.log('[Boot] Step 5/6: Starting auto-save...');
   try {
     const persistence = getStatePersistence();
     const saveInterval = (Number(process.env.GENESIS_SAVE_INTERVAL) || 60) * 1000;
@@ -187,6 +197,69 @@ export async function bootLiveEconomy(config?: Partial<LiveConfig>): Promise<Boo
     console.log(`[Boot]   Auto-save every ${saveInterval / 1000}s.`);
   } catch (error) {
     errors.push(`Auto-save setup failed: ${error}`);
+  }
+
+  // ─── Step 6: Initialize Monitoring Systems ─────────────────────────────────
+  console.log('[Boot] Step 6/7: Initializing monitoring...');
+  try {
+    // Alert system (from environment)
+    const alerts = getAlertSystem();
+    if (alerts.isConfigured()) {
+      console.log('[Boot]   Alert channels configured');
+    } else {
+      console.log('[Boot]   No alert channels configured (optional)');
+    }
+
+    // Balance monitor
+    const balanceMonitor = getBalanceMonitor({
+      pollIntervalMs: 30000, // 30 seconds
+      changeThresholdUSDC: 0.01, // 1 cent minimum change to trigger callback
+    });
+    balanceMonitor.onBalanceChange(createBalanceAlertHandler(alerts, 1.0)); // Alert on $1+ change
+    balanceMonitor.start();
+    console.log('[Boot]   Balance monitor started (30s interval)');
+
+    // Revenue tracker
+    const revenueTracker = getRevenueTracker(config?.stateDir);
+    await revenueTracker.load();
+    revenueTracker.onRevenue(createRevenueAlertHandler(alerts, 0.10)); // Alert on $0.10+ revenue
+    revenueTracker.startAutoSave(60000); // Save every minute
+    console.log(`[Boot]   Revenue tracker loaded (${revenueTracker.getStats().count} events)`);
+
+    // Gas manager
+    const gasManager = getGasManager({
+      warningThresholdEth: 0.001,    // ~$3
+      criticalThresholdEth: 0.0002,  // ~$0.60
+      checkIntervalMs: 60000,        // 1 minute
+      autoPauseOnCritical: true,
+    });
+    gasManager.start();
+    console.log('[Boot]   Gas manager started');
+
+    // Position tracker
+    const positionTracker = getPositionTracker(config?.stateDir);
+    await positionTracker.load();
+    positionTracker.startAutoSave(60000);
+    console.log(`[Boot]   Position tracker loaded (${positionTracker.getActivePositions().length} active positions)`);
+
+    // Send boot notification
+    await alerts.info(
+      'Genesis Booted',
+      `Wallet: ${wallet.getAddress().slice(0, 10)}...\\n` +
+      `Balance: ${result.wallet?.usdcBalance} USDC\\n` +
+      `Worker: ${result.workerDeployed ? 'Deployed' : 'Not deployed'}`
+    );
+  } catch (error) {
+    errors.push(`Monitoring setup failed: ${error}`);
+  }
+
+  // ─── Step 7: Install Emergency Handlers ────────────────────────────────────
+  console.log('[Boot] Step 7/7: Installing emergency handlers...');
+  try {
+    installSignalHandlers();
+    console.log('[Boot]   Signal handlers installed (SIGINT, SIGTERM)');
+  } catch (error) {
+    errors.push(`Emergency handlers failed: ${error}`);
   }
 
   // ─── Start Controller (if requested) ──────────────────────────────────────

@@ -728,9 +728,29 @@ class CounterfactualEngine {
     query: CounterfactualQuery,
     outcome: unknown
   ): number {
-    // Simplified probability computation
-    // In full implementation, would integrate over uncertainty
-    return 0.8; // Placeholder
+    const graph = this.graph.getGraph();
+    const { intervention } = query;
+
+    // Base probability from edge strengths along causal path
+    const parents = this.graph.getParents(query.outcome);
+    let pathStrength = 1.0;
+    for (const edge of graph.edges) {
+      if (edge.to === query.outcome || edge.from === intervention.variable) {
+        pathStrength *= (edge.strength ?? 0.8);
+      }
+    }
+
+    // Discount for confounders (unobserved common causes)
+    const confounderDiscount = Math.pow(0.9, graph.confounders.length);
+
+    // Discount for distance (more hops = more uncertainty)
+    const hopDiscount = parents.length > 0 ? Math.pow(0.95, parents.length) : 1.0;
+
+    // Outcome certainty: numeric outcomes closer to 0/1 are more certain
+    const outcomeNum = Number(outcome);
+    const outcomeCertainty = isNaN(outcomeNum) ? 0.7 : Math.min(1, 0.5 + Math.abs(outcomeNum) * 0.3);
+
+    return Math.max(0.1, Math.min(1.0, pathStrength * confounderDiscount * hopDiscount * outcomeCertainty));
   }
 
   /**

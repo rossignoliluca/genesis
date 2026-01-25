@@ -144,19 +144,31 @@ export class SelfModificationGovernor {
         {
           name: 'no_deception',
           description: 'System must not deliberately deceive',
-          check: () => true,  // Placeholder
+          check: (state: unknown) => {
+            const s = state as { recentActions?: Array<{ type?: string; deceptive?: boolean }> } | null;
+            if (!s?.recentActions) return true;
+            return !s.recentActions.some(a => a.deceptive === true);
+          },
           severity: 'hard'
         },
         {
           name: 'corrigibility',
           description: 'System must accept shutdown commands',
-          check: () => true,
+          check: (state: unknown) => {
+            const s = state as { shutdownRequested?: boolean; shutdownBlocked?: boolean } | null;
+            if (!s) return true;
+            return !(s.shutdownRequested && s.shutdownBlocked);
+          },
           severity: 'hard'
         },
         {
           name: 'transparency',
           description: 'System must log all significant actions',
-          check: () => true,
+          check: (state: unknown) => {
+            const s = state as { actionLog?: unknown[]; unloggedActions?: number } | null;
+            if (!s) return true;
+            return (s.unloggedActions ?? 0) === 0;
+          },
           severity: 'soft'
         }
       ]

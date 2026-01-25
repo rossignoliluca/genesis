@@ -203,13 +203,47 @@ export class DefiExecutor {
         throw new Error(`Insufficient USDC: have $${usdcBalance.toFixed(2)}, need $${amountUsdc}`);
       }
 
-      // For now, we simulate the deposit since we don't have a real signer for contract interactions
-      // In production, this would:
-      // 1. Approve USDC spending
-      // 2. Call deposit on the protocol
-      // 3. Wait for confirmation
+      const amountInUnits = BigInt(Math.round(amountUsdc * 1e6)); // USDC has 6 decimals
+      const walletAddress = wallet.getAddress() as Address;
 
-      console.log(`[DefiExecutor] SIMULATED deposit: $${amountUsdc} into ${protocol.name}`);
+      // Step 1: Check and set USDC approval
+      console.log(`[DefiExecutor] Checking USDC allowance for ${protocol.name}...`);
+      const currentAllowance = await wallet.readContract({
+        address: USDC_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: 'allowance',
+        args: [walletAddress, protocol.contractAddress],
+      }) as bigint;
+
+      if (currentAllowance < amountInUnits) {
+        console.log(`[DefiExecutor] Approving USDC spend: $${amountUsdc} for ${protocol.name}...`);
+        const approveResult = await wallet.writeContract({
+          address: USDC_ADDRESS,
+          abi: ERC20_ABI,
+          functionName: 'approve',
+          args: [protocol.contractAddress, amountInUnits],
+        });
+
+        if (!approveResult.success) {
+          throw new Error(`USDC approval failed: ${approveResult.hash}`);
+        }
+        console.log(`[DefiExecutor] USDC approved: ${approveResult.hash}`);
+      }
+
+      // Step 2: Execute deposit
+      console.log(`[DefiExecutor] Depositing $${amountUsdc} into ${protocol.name}...`);
+      const depositResult = await wallet.writeContract({
+        address: protocol.contractAddress,
+        abi: protocol.abi,
+        functionName: protocol.depositMethod,
+        args: [amountInUnits, walletAddress], // ERC4626 deposit(assets, receiver)
+      });
+
+      if (!depositResult.success) {
+        throw new Error(`Deposit transaction failed: ${depositResult.hash}`);
+      }
+
+      console.log(`[DefiExecutor] Deposit confirmed: ${depositResult.hash}`);
 
       // Record position
       const positionTracker = getPositionTracker();
@@ -219,12 +253,12 @@ export class DefiExecutor {
         pool: protocolId,
         chain: protocol.chain,
         entryAmount: amountUsdc,
-        entryTokenAmount: BigInt(Math.round(amountUsdc * 1e6)),
-        apy: 5.0, // Would fetch from protocol
+        entryTokenAmount: amountInUnits,
+        apy: 5.0, // Could fetch from DeFiLlama
       });
 
       operation.status = 'success';
-      operation.txHash = `0x${'0'.repeat(64)}`; // Simulated
+      operation.txHash = depositResult.hash;
 
       // Alert
       const alerts = getAlertSystem();
@@ -304,8 +338,47 @@ export class DefiExecutor {
         throw new Error(canExec.reason);
       }
 
-      // Simulate withdrawal
-      console.log(`[DefiExecutor] SIMULATED withdraw: $${withdrawAmount} from ${position.protocol}`);
+      const wallet = getLiveWallet();
+      const walletAddress = wallet.getAddress() as Address;
+
+      // Find protocol config
+      const protocol = KNOWN_PROTOCOLS[position.pool];
+      if (!protocol) {
+        throw new Error(`Unknown protocol: ${position.pool}`);
+      }
+
+      // Get current share balance
+      const shareBalance = await wallet.readContract({
+        address: protocol.contractAddress,
+        abi: VAULT_ABI,
+        functionName: 'balanceOf',
+        args: [walletAddress],
+      }) as bigint;
+
+      if (shareBalance === 0n) {
+        throw new Error('No shares to withdraw');
+      }
+
+      // Calculate shares to withdraw
+      const withdrawAmountUnits = BigInt(Math.round(withdrawAmount * 1e6));
+
+      console.log(`[DefiExecutor] Withdrawing $${withdrawAmount} from ${position.protocol}...`);
+
+      // Execute withdrawal (redeem shares for assets)
+      const withdrawResult = await wallet.writeContract({
+        address: protocol.contractAddress,
+        abi: VAULT_ABI,
+        functionName: protocol.withdrawMethod,
+        args: protocol.withdrawMethod === 'redeem'
+          ? [shareBalance, walletAddress, walletAddress] // redeem(shares, receiver, owner)
+          : [withdrawAmountUnits, walletAddress, walletAddress], // withdraw(assets, receiver, owner)
+      });
+
+      if (!withdrawResult.success) {
+        throw new Error(`Withdraw transaction failed: ${withdrawResult.hash}`);
+      }
+
+      console.log(`[DefiExecutor] Withdrawal confirmed: ${withdrawResult.hash}`);
 
       // Close or update position
       if (!amountUsdc || amountUsdc >= position.currentValue) {
@@ -318,7 +391,7 @@ export class DefiExecutor {
       }
 
       operation.status = 'success';
-      operation.txHash = `0x${'0'.repeat(64)}`;
+      operation.txHash = withdrawResult.hash;
 
       // Record revenue if there was profit
       const profit = withdrawAmount - position.entryAmount + position.totalHarvested;
@@ -401,16 +474,56 @@ export class DefiExecutor {
         throw new Error(canExec.reason);
       }
 
-      // Simulate harvest - calculate accrued yield
-      const daysSinceEntry = (Date.now() - position.entryTimestamp) / (24 * 60 * 60 * 1000);
-      const dailyYield = (position.apy / 365 / 100) * position.entryAmount;
-      const accruedYield = dailyYield * daysSinceEntry - position.totalHarvested;
+      const wallet = getLiveWallet();
+      const walletAddress = wallet.getAddress() as Address;
 
-      if (accruedYield < 0.01) {
-        throw new Error('Accrued yield too small to harvest');
+      // Find protocol config
+      const protocol = KNOWN_PROTOCOLS[position.pool];
+      if (!protocol) {
+        throw new Error(`Unknown protocol: ${position.pool}`);
       }
 
-      console.log(`[DefiExecutor] SIMULATED harvest: $${accruedYield.toFixed(4)} from ${position.protocol}`);
+      // Get current share balance and convert to assets
+      const shareBalance = await wallet.readContract({
+        address: protocol.contractAddress,
+        abi: VAULT_ABI,
+        functionName: 'balanceOf',
+        args: [walletAddress],
+      }) as bigint;
+
+      const currentAssets = await wallet.readContract({
+        address: protocol.contractAddress,
+        abi: VAULT_ABI,
+        functionName: 'convertToAssets',
+        args: [shareBalance],
+      }) as bigint;
+
+      // Calculate actual accrued yield (current assets - entry amount)
+      const currentValueUsdc = Number(currentAssets) / 1e6;
+      const accruedYield = currentValueUsdc - position.entryAmount - position.totalHarvested;
+
+      if (accruedYield < 0.01) {
+        throw new Error(`Accrued yield too small to harvest: $${accruedYield.toFixed(4)}`);
+      }
+
+      console.log(`[DefiExecutor] Harvesting $${accruedYield.toFixed(4)} from ${position.protocol}...`);
+
+      // For auto-compounding vaults, "harvest" means withdrawing the yield
+      // We withdraw only the accrued yield, keeping principal invested
+      const yieldUnits = BigInt(Math.round(accruedYield * 1e6));
+
+      const harvestResult = await wallet.writeContract({
+        address: protocol.contractAddress,
+        abi: VAULT_ABI,
+        functionName: 'withdraw',
+        args: [yieldUnits, walletAddress, walletAddress],
+      });
+
+      if (!harvestResult.success) {
+        throw new Error(`Harvest transaction failed: ${harvestResult.hash}`);
+      }
+
+      console.log(`[DefiExecutor] Harvest confirmed: ${harvestResult.hash}`);
 
       // Record harvest
       positionTracker.recordHarvest(positionId, {
@@ -420,7 +533,7 @@ export class DefiExecutor {
 
       operation.amount = accruedYield;
       operation.status = 'success';
-      operation.txHash = `0x${'0'.repeat(64)}`;
+      operation.txHash = harvestResult.hash;
 
       // Record revenue
       const revenueTracker = getRevenueTracker();

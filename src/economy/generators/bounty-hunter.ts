@@ -23,9 +23,9 @@
  *   4. Submit and track payout
  */
 
-import { getMCPClient } from '../../mcp/index.js';
 import { getEconomicFiber } from '../fiber.js';
-import type { MCPServerName } from '../../types.js';
+import { getDeworkConnector, type Bounty as DeworkBounty } from '../live/connectors/dework.js';
+import { getRevenueTracker } from '../live/revenue-tracker.js';
 
 // ============================================================================
 // Types
@@ -156,30 +156,24 @@ export class BountyHunter {
 
   /**
    * Claim a bounty (mark as in-progress).
+   * Note: DeWork doesn't require formal claiming - we track it locally.
    */
   async claim(bountyId: string): Promise<boolean> {
     const bounty = this.bounties.get(bountyId);
     if (!bounty || bounty.status !== 'open') return false;
 
-    try {
-      const client = getMCPClient();
-      const result = await client.call('coinbase' as MCPServerName, 'claim_bounty', {
-        platform: bounty.platform,
-        bountyId: bounty.id,
-      });
-
-      if (result.success) {
-        bounty.status = 'claimed';
-        return true;
-      }
-    } catch (error) {
-      console.warn(`[BountyHunter] Claim failed for ${bountyId}:`, error);
-    }
-    return false;
+    // For DeWork, claiming is just local tracking
+    // The actual work happens outside this system
+    bounty.status = 'claimed';
+    console.log(`[BountyHunter] Claimed bounty: ${bounty.title} ($${bounty.reward})`);
+    console.log(`[BountyHunter] URL: ${bounty.submissionUrl}`);
+    return true;
   }
 
   /**
    * Submit bounty deliverable.
+   * Note: Actual submission to DeWork is done manually on the platform.
+   * This tracks the submission for payout monitoring.
    */
   async submit(bountyId: string, deliverable: string): Promise<BountySubmission | null> {
     const bounty = this.bounties.get(bountyId);
@@ -187,33 +181,24 @@ export class BountyHunter {
 
     const fiber = getEconomicFiber();
 
-    try {
-      const client = getMCPClient();
-      const result = await client.call('coinbase' as MCPServerName, 'submit_bounty', {
-        platform: bounty.platform,
-        bountyId: bounty.id,
-        deliverable,
-      });
+    const submission: BountySubmission = {
+      bountyId,
+      submittedAt: Date.now(),
+      deliverable,
+      status: 'pending',
+    };
 
-      const submission: BountySubmission = {
-        bountyId,
-        submittedAt: Date.now(),
-        deliverable,
-        txHash: result.data?.txHash,
-        status: 'pending',
-      };
+    bounty.status = 'submitted';
+    this.submissions.push(submission);
 
-      bounty.status = 'submitted';
-      this.submissions.push(submission);
+    // Record minimal cost (LLM usage for bounty work)
+    fiber.recordCost(this.fiberId, 0.10, `submit:${bounty.category}`);
 
-      // Record minimal cost (LLM usage for bounty work)
-      fiber.recordCost(this.fiberId, 0.10, `submit:${bounty.category}`);
+    console.log(`[BountyHunter] Submission tracked: ${bounty.title}`);
+    console.log(`[BountyHunter] Submit at: ${bounty.submissionUrl}`);
+    console.log(`[BountyHunter] Deliverable: ${deliverable.slice(0, 100)}...`);
 
-      return submission;
-    } catch (error) {
-      console.warn(`[BountyHunter] Submit failed for ${bountyId}:`, error);
-      return null;
-    }
+    return submission;
   }
 
   /**
@@ -226,30 +211,48 @@ export class BountyHunter {
     const pending = this.submissions.filter(s => s.status === 'pending');
     for (const sub of pending) {
       try {
-        const client = getMCPClient();
-        const result = await client.call('coinbase' as MCPServerName, 'check_bounty_status', {
-          bountyId: sub.bountyId,
-        });
+        const bounty = this.bounties.get(sub.bountyId);
+        if (!bounty) continue;
 
-        if (result.data?.status === 'accepted') {
-          sub.status = 'accepted';
-          sub.payout = result.data.payout ?? this.bounties.get(sub.bountyId)?.reward ?? 0;
-          fiber.recordRevenue(this.fiberId, sub.payout ?? 0, `bounty:${sub.bountyId}`);
+        // Extract actual bounty ID from our prefixed ID
+        const [platform, actualId] = sub.bountyId.split(':');
 
-          const bounty = this.bounties.get(sub.bountyId);
-          if (bounty) bounty.status = 'completed';
+        if (platform === 'dework') {
+          const connector = getDeworkConnector();
+          const payoutStatus = await connector.getPayoutStatus(actualId);
 
-          updated.push(sub);
-        } else if (result.data?.status === 'rejected') {
-          sub.status = 'rejected';
-          sub.feedback = result.data.feedback;
+          if (payoutStatus.paid) {
+            sub.status = 'accepted';
+            sub.payout = bounty.reward;
+            sub.txHash = payoutStatus.txHash;
 
-          const bounty = this.bounties.get(sub.bountyId);
-          if (bounty) bounty.status = 'rejected';
+            // Record revenue
+            fiber.recordRevenue(this.fiberId, sub.payout, `bounty:${sub.bountyId}`);
 
-          updated.push(sub);
+            // Also record in revenue tracker for persistence
+            const revenueTracker = getRevenueTracker();
+            // Map bounty currency to tracker-supported currencies
+            const trackerCurrency = bounty.currency === 'token' ? 'USD' : bounty.currency;
+            revenueTracker.record({
+              source: 'bounty',
+              amount: sub.payout,
+              currency: trackerCurrency as 'ETH' | 'USDC' | 'USD',
+              activityId: 'bounty-hunter',
+              metadata: {
+                bountyId: sub.bountyId,
+                platform: 'dework',
+                txHash: payoutStatus.txHash,
+              },
+            });
+
+            bounty.status = 'completed';
+            updated.push(sub);
+
+            console.log(`[BountyHunter] Payout received: $${sub.payout} for ${bounty.title}`);
+          }
         }
-      } catch {
+      } catch (error) {
+        console.warn(`[BountyHunter] Payout check failed for ${sub.bountyId}:`, error);
         // Will retry next cycle
       }
     }
@@ -341,35 +344,75 @@ export class BountyHunter {
 
   private async scanPlatform(platform: string): Promise<Bounty[]> {
     try {
-      const client = getMCPClient();
-      const result = await client.call('coinbase' as MCPServerName, 'scan_bounties', {
-        platform,
-        categories: this.config.categories,
-        minReward: this.config.minReward,
-      });
+      // Use real DeWork connector for dework platform
+      if (platform === 'dework') {
+        const connector = getDeworkConnector();
+        const tags = this.config.categories.map(c => {
+          // Map our categories to DeWork tags
+          const tagMap: Record<string, string[]> = {
+            code: ['solidity', 'typescript', 'smart-contract', 'rust'],
+            audit: ['security', 'audit', 'bug-bounty'],
+            content: ['documentation', 'writing', 'content'],
+            research: ['research', 'analysis', 'report'],
+          };
+          return tagMap[c] || [c];
+        }).flat();
 
-      if (result.success && Array.isArray(result.data?.bounties)) {
-        return result.data.bounties.map((b: Record<string, unknown>) => ({
-          id: `${platform}:${b.id}`,
-          platform,
-          title: b.title || 'Untitled',
-          description: b.description || '',
-          reward: Number(b.reward) || 0,
-          currency: b.currency || 'USDC',
-          difficulty: b.difficulty || 'medium',
-          category: b.category || 'code',
-          deadline: b.deadline ? Number(b.deadline) : undefined,
-          submissionUrl: b.url as string | undefined,
-          protocol: b.protocol as string | undefined,
-          tags: Array.isArray(b.tags) ? b.tags : [],
-          discovered: Date.now(),
-          status: 'open' as const,
-        }));
+        const deworkBounties = await connector.scanBounties(tags);
+
+        return deworkBounties
+          .filter(b => b.reward >= this.config.minReward)
+          .map((b: DeworkBounty) => ({
+            id: `dework:${b.id}`,
+            platform: 'dework' as const,
+            title: b.title,
+            description: b.description || '',
+            reward: b.reward,
+            currency: this.mapCurrency(b.currency),
+            difficulty: this.inferDifficulty(b.reward),
+            category: this.inferCategory(b.tags),
+            deadline: b.deadline ? new Date(b.deadline).getTime() : undefined,
+            submissionUrl: b.url,
+            protocol: undefined,
+            tags: b.tags,
+            discovered: Date.now(),
+            status: 'open' as const,
+          }));
       }
-    } catch {
-      // Platform unavailable
+
+      // For other platforms (layer3, immunefi), return empty for now
+      // Can add more connectors later
+      console.log(`[BountyHunter] Platform ${platform} not yet connected to real API`);
+      return [];
+    } catch (error) {
+      console.warn(`[BountyHunter] Scan failed for ${platform}:`, error);
+      return [];
     }
-    return [];
+  }
+
+  private inferDifficulty(reward: number): 'easy' | 'medium' | 'hard' | 'critical' {
+    if (reward < 100) return 'easy';
+    if (reward < 500) return 'medium';
+    if (reward < 2000) return 'hard';
+    return 'critical';
+  }
+
+  private inferCategory(tags: string[]): 'code' | 'audit' | 'content' | 'design' | 'translation' | 'research' {
+    const tagStr = tags.join(' ').toLowerCase();
+    if (tagStr.includes('audit') || tagStr.includes('security')) return 'audit';
+    if (tagStr.includes('doc') || tagStr.includes('content') || tagStr.includes('writing')) return 'content';
+    if (tagStr.includes('research') || tagStr.includes('analysis')) return 'research';
+    if (tagStr.includes('design') || tagStr.includes('ui') || tagStr.includes('ux')) return 'design';
+    if (tagStr.includes('translation') || tagStr.includes('localization')) return 'translation';
+    return 'code';
+  }
+
+  private mapCurrency(currency: string | undefined): 'USDC' | 'ETH' | 'USD' | 'token' {
+    const c = (currency || 'USD').toUpperCase();
+    if (c === 'USDC') return 'USDC';
+    if (c === 'ETH') return 'ETH';
+    if (c === 'USD') return 'USD';
+    return 'token';
   }
 }
 

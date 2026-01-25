@@ -1,5 +1,5 @@
 /**
- * Genesis v10.7 - System Integration Layer
+ * Genesis v13.11 - System Integration Layer
  *
  * Wires ALL subsystems into a coherent whole:
  *
@@ -10,9 +10,22 @@
  *   A2A Protocol ──→ Streaming (Remote Delegation)
  *   Payments (Revenue) ──→ Active Inference (Economic Health)
  *
+ * v13.11.0: Added CentralAwareness and full module wiring
+ *   All 49 modules ──→ Event Bus ──→ CentralAwareness
+ *   CentralAwareness ──→ Decision Gating (φ-based)
+ *   Neuromodulation ──→ Behavior Modulation (all modules)
+ *
  * This module is the "nervous system" connecting all organs.
  * Call `bootstrapIntegration()` once at startup.
  */
+
+// Re-export module wiring (v13.11.0)
+export {
+  wireAllModules,
+  isFullyWired,
+  type ModuleRegistry,
+  type WiringResult,
+} from './module-wiring.js';
 
 import { onStreamCompletion } from '../streaming/orchestrator.js';
 import { getLatencyTracker } from '../streaming/latency-tracker.js';

@@ -707,6 +707,17 @@ export class MultiModalPerception {
     const encoderDims = this.config.modalities.map(m => m.encoderDim);
     const numModalities = this.config.modalities.length;
 
+    // Guard: if no modalities, use default late fusion (handles empty config)
+    if (numModalities === 0) {
+      this.fusion = new LateFusion(this.config.hiddenDim);
+      return;
+    }
+
+    // Safe max: use hiddenDim as fallback if encoderDims is empty
+    const maxEncoderDim = encoderDims.length > 0
+      ? Math.max(...encoderDims)
+      : this.config.hiddenDim;
+
     switch (this.config.fusionMethod) {
       case 'early':
         this.fusion = new EarlyFusion(encoderDims, this.config.hiddenDim);
@@ -718,7 +729,7 @@ export class MultiModalPerception {
 
       case 'attention':
         this.fusion = new AttentionFusion(
-          Math.max(...encoderDims),
+          maxEncoderDim,
           this.config.hiddenDim,
           numModalities
         );
@@ -726,7 +737,7 @@ export class MultiModalPerception {
 
       case 'tensor':
         this.fusion = new TensorFusion(
-          Math.max(...encoderDims),
+          maxEncoderDim,
           this.config.hiddenDim,
           numModalities
         );

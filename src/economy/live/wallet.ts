@@ -22,6 +22,9 @@ import {
   type Address,
   type Hash,
 } from 'viem';
+
+// Re-export Address for consumers
+export type { Address };
 import { base, baseSepolia } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
 
@@ -57,6 +60,14 @@ const USDC_ABI = [
   },
 ] as const;
 
+export interface WriteContractArgs {
+  address: Address;
+  abi: readonly any[];
+  functionName: string;
+  args: readonly any[];
+  value?: bigint;
+}
+
 export interface LiveWallet {
   getAddress(): string;
   getBalances(): Promise<{
@@ -76,6 +87,10 @@ export interface LiveWallet {
   signMessage(message: string): Promise<string>;
   isConnected(): boolean;
   getChainId(): number;
+  // DeFi operations
+  writeContract(args: WriteContractArgs): Promise<{ hash: string; success: boolean }>;
+  readContract(args: Omit<WriteContractArgs, 'value'>): Promise<any>;
+  estimateContractGas(args: WriteContractArgs): Promise<bigint>;
 }
 
 class BaseWallet implements LiveWallet {
@@ -361,6 +376,91 @@ class BaseWallet implements LiveWallet {
 
   getChainId(): number {
     return this.chain.id;
+  }
+
+  /**
+   * Write to a smart contract (DeFi operations)
+   */
+  async writeContract(args: WriteContractArgs): Promise<{ hash: string; success: boolean }> {
+    if (!this.connected) {
+      throw new Error('Wallet not connected');
+    }
+
+    try {
+      // Estimate gas first
+      const gasEstimate = await this.publicClient.estimateContractGas({
+        address: args.address,
+        abi: args.abi,
+        functionName: args.functionName,
+        args: args.args,
+        account: this.account,
+        value: args.value,
+      });
+
+      console.log(`[Wallet] Writing contract ${args.functionName}, gas: ${gasEstimate}`);
+
+      // Execute the contract call
+      const hash = await this.walletClient.writeContract({
+        address: args.address,
+        abi: args.abi,
+        functionName: args.functionName,
+        args: args.args,
+        gas: gasEstimate,
+        value: args.value,
+      });
+
+      console.log(`[Wallet] Transaction sent: ${hash}`);
+
+      // Wait for confirmation
+      const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+      const success = receipt.status === 'success';
+
+      console.log(`[Wallet] Transaction ${success ? 'confirmed' : 'failed'}: ${hash}`);
+
+      return { hash, success };
+    } catch (error) {
+      throw new Error(
+        `Failed to write contract: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  /**
+   * Read from a smart contract
+   */
+  async readContract(args: Omit<WriteContractArgs, 'value'>): Promise<any> {
+    try {
+      return await this.publicClient.readContract({
+        address: args.address,
+        abi: args.abi,
+        functionName: args.functionName,
+        args: args.args,
+      });
+    } catch (error) {
+      throw new Error(
+        `Failed to read contract: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  /**
+   * Estimate gas for a contract call
+   */
+  async estimateContractGas(args: WriteContractArgs): Promise<bigint> {
+    try {
+      return await this.publicClient.estimateContractGas({
+        address: args.address,
+        abi: args.abi,
+        functionName: args.functionName,
+        args: args.args,
+        account: this.account,
+        value: args.value,
+      });
+    } catch (error) {
+      throw new Error(
+        `Failed to estimate gas: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 }
 

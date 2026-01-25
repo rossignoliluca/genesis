@@ -1077,23 +1077,34 @@ export class CausalReasoner extends EventEmitter {
 
 /**
  * Create a causal reasoner with standard agent variables
+ *
+ * Uses temporal indexing to model feedback loops without creating cycles:
+ * observation_t → belief_t → action_t → outcome_t → next_observation
+ *
+ * This maintains DAG structure while capturing the feedback nature of
+ * perception-action loops in Active Inference agents.
  */
 export function createAgentCausalModel(): CausalReasoner {
   const reasoner = new CausalReasoner();
 
-  // Standard agent variables
+  // Standard agent variables (current timestep)
   reasoner.addVariable({ name: 'observation', type: 'continuous' });
   reasoner.addVariable({ name: 'belief', type: 'continuous' });
   reasoner.addVariable({ name: 'action', type: 'discrete' });
   reasoner.addVariable({ name: 'outcome', type: 'continuous' });
   reasoner.addVariable({ name: 'reward', type: 'continuous' });
 
-  // Standard causal relationships
+  // Temporal variable for next timestep (avoids cycle)
+  reasoner.addVariable({ name: 'next_observation', type: 'continuous' });
+
+  // Standard causal relationships (within timestep)
   reasoner.addCause('observation', 'belief', 0.8);
   reasoner.addCause('belief', 'action', 0.9);
   reasoner.addCause('action', 'outcome', 0.7);
   reasoner.addCause('outcome', 'reward', 0.9);
-  reasoner.addCause('outcome', 'observation', 0.6); // Feedback loop
+
+  // Temporal feedback: outcome influences next observation (no cycle)
+  reasoner.addCause('outcome', 'next_observation', 0.6);
 
   return reasoner;
 }

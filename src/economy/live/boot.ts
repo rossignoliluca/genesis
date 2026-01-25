@@ -60,7 +60,7 @@ export interface LiveConfig {
   rpcUrl?: string;
   stateDir?: string;
   cycleIntervalMs?: number;
-  autoStart?: boolean;  // Start the controller loop after boot
+  autoStart?: boolean;  // Start the controller loop after boot (default: true)
 }
 
 // ============================================================================
@@ -262,14 +262,19 @@ export async function bootLiveEconomy(config?: Partial<LiveConfig>): Promise<Boo
     errors.push(`Emergency handlers failed: ${error}`);
   }
 
-  // ─── Start Controller (if requested) ──────────────────────────────────────
-  if (config?.autoStart) {
+  // ─── Start Controller (default: true) ─────────────────────────────────────
+  const shouldAutoStart = config?.autoStart ?? true;
+  if (shouldAutoStart) {
     console.log('[Boot] Starting autonomous controller loop...');
     const controller = getAutonomousController();
     // Don't await — runs indefinitely
     controller.start().catch(err => {
       console.error('[Boot] Controller crashed:', err);
     });
+    const cycleInterval = config?.cycleIntervalMs ?? (Number(process.env.GENESIS_CYCLE_INTERVAL) || 60000);
+    console.log('[Boot]   Controller loop started. Running every ' + cycleInterval + 'ms');
+  } else {
+    console.log('[Boot] Controller auto-start disabled. Call controller.start() manually.');
   }
 
   result.success = errors.length === 0 || errors.every(e => e.startsWith('WARNING'));

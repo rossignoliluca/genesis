@@ -225,7 +225,7 @@ class PriceFeedManager {
     // Try CoinGecko batch first
     try {
       const batch = await this.fetchBatchPrices();
-      if (batch[symbol] !== undefined) {
+      if (batch[symbol] !== undefined && batch[symbol] > 0) {
         return {
           symbol,
           priceUsd: batch[symbol],
@@ -240,23 +240,20 @@ class PriceFeedManager {
 
     // Try Coinbase
     try {
-      const coinbaseSource = PRICE_SOURCES.find(s => s.name === 'coinbase');
-      if (coinbaseSource && 'urls' in coinbaseSource) {
-        const url = (coinbaseSource.urls as Record<string, string>)[symbol];
-        if (url) {
-          const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
-          if (response.ok) {
-            const data = await response.json();
-            const price = coinbaseSource.parse(data);
-            if (price !== null) {
-              return {
-                symbol,
-                priceUsd: price,
-                source: 'coinbase',
-                timestamp: Date.now(),
-                confidence: 'high',
-              };
-            }
+      const url = COINBASE_URLS[symbol];
+      if (url) {
+        const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+        if (response.ok) {
+          const data = await response.json();
+          const price = parseCoinbase(data);
+          if (price !== null && price > 0) {
+            return {
+              symbol,
+              priceUsd: price,
+              source: 'coinbase',
+              timestamp: Date.now(),
+              confidence: 'high',
+            };
           }
         }
       }
@@ -281,10 +278,8 @@ class PriceFeedManager {
   }
 
   private async fetchBatchPrices(): Promise<Record<string, number>> {
-    const source = PRICE_SOURCES[0]; // CoinGecko
-
-    const url = new URL(source.url);
-    for (const [key, value] of Object.entries(source.params)) {
+    const url = new URL(COINGECKO_URL);
+    for (const [key, value] of Object.entries(COINGECKO_PARAMS)) {
       url.searchParams.set(key, value);
     }
 
@@ -298,7 +293,7 @@ class PriceFeedManager {
     }
 
     const data = await response.json();
-    return source.parse(data);
+    return parseCoinGecko(data);
   }
 }
 

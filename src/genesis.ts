@@ -109,7 +109,28 @@ import { VercelDeployer } from './deployment/index.js';
 import { AutonomousSystem } from './autonomous/index.js';
 
 // Integration — cross-module wiring
-import { bootstrapIntegration } from './integration/index.js';
+import { bootstrapIntegration, wireAllModules, type WiringResult } from './integration/index.js';
+
+// Central Awareness — global consciousness over all modules
+import { getCentralAwareness, type CentralAwareness, type DecisionGate } from './consciousness/central-awareness.js';
+
+// Finance — market data, signals, risk, portfolio (simulation mode for now)
+import { createFinanceModule, type FinanceModule } from './finance/index.js';
+
+// Revenue — autonomous revenue streams (bounty, MCP, keeper, content, yield)
+import { createRevenueSystem, type RevenueSystem } from './revenue/index.js';
+
+// x402 Payments — HTTP 402 micropayment protocol (USDC on Base)
+import { isClientConfigured as isX402Configured } from './payments/x402/index.js';
+
+// Observatory UI — real-time visualization (connects to dashboard SSE)
+import { createObservatory, type Observatory } from './ui/index.js';
+
+// Polymarket — prediction market integration via Active Inference
+import { createPolymarketTrader, type PolymarketTrader } from './finance/polymarket/index.js';
+
+// MCP Finance — unified financial MCP servers interface
+import { getMCPFinanceManager, type MCPFinanceManager } from './mcp-finance/index.js';
 
 // ============================================================================
 // Types
@@ -180,6 +201,16 @@ export interface GenesisConfig {
   deployment: boolean;
   /** Enable autonomous system mode */
   autonomous: boolean;
+  /** Enable finance module (market data, signals, risk, portfolio) */
+  finance: boolean;
+  /** Enable revenue system (autonomous revenue streams) */
+  revenue: boolean;
+  /** Enable Observatory UI (real-time visualization) */
+  observatory: boolean;
+  /** Enable Polymarket integration (prediction markets) */
+  polymarket: boolean;
+  /** Enable MCP Finance servers (market data APIs) */
+  mcpFinance: boolean;
   /** Confidence threshold below which Brain defers to metacognition */
   deferThreshold: number;
   /** Audit all responses for hallucinations */
@@ -229,6 +260,31 @@ export interface GenesisStatus {
   compIntel: { competitors: number; lastScan: number | null } | null;
   deployment: boolean;
   autonomous: { status: string; queuedTasks: number } | null;
+  // v13.11.0: Central Awareness
+  centralAwareness: {
+    coherence: number;
+    activeModules: number;
+    dominantNeuroState: string;
+    inAgony: boolean;
+    sustainable: boolean;
+  } | null;
+  // v13.12.0: Finance, Revenue, UI
+  finance: {
+    running: boolean;
+    symbols: number;
+    regime: string;
+    portfolioValue: number;
+  } | null;
+  revenue: {
+    running: boolean;
+    totalRevenue: number;
+    activeStreams: number;
+    pendingTasks: number;
+  } | null;
+  observatory: { connected: boolean } | null;
+  polymarket: { running: boolean; activeMarkets: number } | null;
+  mcpFinance: { cacheSize: number } | null;
+  modulesWired: number;
   calibrationError: number;
   uptime: number;
   cycleCount: number;
@@ -309,6 +365,17 @@ export class Genesis {
   private deployer: VercelDeployer | null = null;
   private autonomousSystem: AutonomousSystem | null = null;
 
+  // v13.11.0: Central Awareness — unified consciousness over all modules
+  private centralAwareness: CentralAwareness | null = null;
+  private wiringResult: WiringResult | null = null;
+
+  // v13.12.0: Finance, Revenue, UI modules
+  private financeModule: FinanceModule | null = null;
+  private revenueSystem: RevenueSystem | null = null;
+  private observatory: Observatory | null = null;
+  private polymarketTrader: PolymarketTrader | null = null;
+  private mcpFinance: MCPFinanceManager | null = null;
+
   // State
   private booted = false;
   private bootTime = 0;
@@ -350,6 +417,11 @@ export class Genesis {
       compIntel: false,     // Disabled by default (requires setup)
       deployment: false,    // Disabled by default (requires Vercel token)
       autonomous: false,    // Disabled by default (safety)
+      finance: true,        // v13.12: Finance module (simulation mode)
+      revenue: true,        // v13.12: Revenue streams (simulation mode)
+      observatory: false,   // v13.12: UI (requires dashboard running)
+      polymarket: false,    // v13.12: Prediction markets (requires API)
+      mcpFinance: true,     // v13.12: MCP finance servers
       deferThreshold: 0.3,
       auditResponses: true,
     };
@@ -1263,8 +1335,87 @@ export class Genesis {
       // TODO: Wire autonomous status → event bus when AutonomousSystem.on() is implemented
     }
 
+    // v13.12.0: Finance Module — market data, signals, risk, portfolio
+    if (this.config.finance && this.eventBus) {
+      this.financeModule = createFinanceModule(this.eventBus, {
+        dataSource: 'simulation',  // Start in simulation mode
+        symbols: ['BTC', 'ETH', 'SPY'],
+        updateInterval: 60000,     // 1 minute updates
+      });
+      this.financeModule.start();
+      this.fiber?.registerModule('finance');
+      console.log('[Genesis] Finance module started (simulation mode)');
+    }
+
+    // v13.12.0: MCP Finance — unified financial MCP servers
+    if (this.config.mcpFinance) {
+      this.mcpFinance = getMCPFinanceManager({
+        enableBraveSearch: true,
+        enableGemini: true,
+        enableFirecrawl: true,
+      });
+      this.fiber?.registerModule('mcp-finance');
+    }
+
+    // v13.12.0: Revenue System — autonomous revenue streams
+    if (this.config.revenue) {
+      this.revenueSystem = createRevenueSystem({
+        maxConcurrentTasks: 3,
+        minRoi: 0.5,            // 50% minimum ROI
+      });
+      this.revenueSystem.start();
+      this.fiber?.registerModule('revenue');
+      console.log('[Genesis] Revenue system started (simulation mode)');
+    }
+
+    // v13.12.0: Observatory UI — real-time visualization
+    if (this.config.observatory && this.dashboard) {
+      this.observatory = createObservatory({
+        dashboardUrl: 'http://localhost:9876',
+      });
+      // Don't auto-connect — user must call genesis.connectObservatory()
+    }
+
+    // v13.12.0: Polymarket — prediction market trading via Active Inference
+    if (this.config.polymarket) {
+      this.polymarketTrader = createPolymarketTrader({
+        simulationMode: true,  // Start in simulation mode
+        maxPositionSize: 100,
+        maxPortfolioRisk: 500,
+      });
+      this.polymarketTrader.start();
+      this.fiber?.registerModule('polymarket');
+      console.log('[Genesis] Polymarket trader started (simulation mode)');
+    }
+
     // Bootstrap Integration — wire all cross-module connections
     await bootstrapIntegration();
+
+    // v13.11.0: Wire ALL modules to event bus + start CentralAwareness
+    this.centralAwareness = getCentralAwareness();
+    this.wiringResult = wireAllModules({
+      fek: this.fek ?? undefined,
+      neuromodulation: this.neuromodulation ?? undefined,
+      nociception: this.nociception ?? undefined,
+      allostasis: this.allostasis ?? undefined,
+      daemon: this.daemon ?? undefined,
+      consciousness: this.consciousness ?? undefined,
+      worldModel: this.worldModel ?? undefined,
+      memory: this.memory ?? undefined,
+      brain: this.brain ?? undefined,
+      thinking: this.thinking ?? undefined,
+      causal: this.causal ?? undefined,
+      grounding: this.grounding ?? undefined,
+      agents: this.agentPool ?? undefined,
+      subagents: this.subagents ?? undefined,
+      mcp: this.mcpClient ?? undefined,
+      metacognition: this.metacognition ?? undefined,
+      governance: this.governance ?? undefined,
+      fiber: this.fiber ?? undefined,
+      ness: this.nessMonitor ?? undefined,
+    });
+
+    console.log(`[Genesis] Central Awareness active: ${this.wiringResult.modulesWired} modules wired`);
 
     this.levels.L4 = true;
   }
@@ -1295,6 +1446,27 @@ export class Genesis {
       const hookResult = await this.hooks.execute('pre-message', { event: 'pre-message', message: input });
       if (hookResult?.blocked) {
         return { response: '[Hook blocked processing]', confidence: null, audit: null, cost: 0, fekState: null };
+      }
+    }
+
+    // v13.11.0: Central Awareness consciousness gating
+    // Check if system is conscious enough to process this request
+    if (this.centralAwareness) {
+      const riskLevel = this.assessInputRisk(input);
+      const gate = this.centralAwareness.gateDecision(riskLevel, `process:${input.slice(0, 50)}`);
+
+      if (!gate.allowed) {
+        if (gate.recommendation === 'block') {
+          return {
+            response: `[Consciousness Gate] ${gate.reason}. Please wait or simplify your request.`,
+            confidence: null,
+            audit: null,
+            cost: 0,
+            fekState: null,
+          };
+        }
+        // For 'defer' or 'escalate', log warning but proceed
+        console.warn(`[CentralAwareness] ${gate.reason} (proceeding with caution)`);
       }
     }
 
@@ -2187,6 +2359,40 @@ export class Genesis {
       compIntel: this.compIntelService ? { competitors: 0, lastScan: null } : null,
       deployment: false, // TODO: wire deployment service
       autonomous: this.autonomousSystem ? { status: 'idle', queuedTasks: 0 } : null,
+      // v13.11.0: Central Awareness status
+      centralAwareness: this.centralAwareness ? (() => {
+        const state = this.centralAwareness!.getState();
+        return {
+          coherence: state.consciousness.coherence,
+          activeModules: this.centralAwareness!.getActiveModules().length,
+          dominantNeuroState: state.neuromodulation.dominantState,
+          inAgony: state.pain.inAgony,
+          sustainable: state.economy.sustainable,
+        };
+      })() : null,
+      // v13.12.0: Finance, Revenue, UI status
+      finance: this.financeModule ? {
+        running: true,
+        symbols: this.financeModule.config.symbols.length,
+        regime: 'simulation',
+        portfolioValue: this.financeModule.portfolio.getPortfolio().totalValue,
+      } : null,
+      revenue: this.revenueSystem ? (() => {
+        const metrics = this.revenueSystem!.getMetrics();
+        return {
+          running: true,
+          totalRevenue: metrics.totalRevenue,
+          activeStreams: this.revenueSystem!.getAllStreams().filter(s => s.status === 'active').length,
+          pendingTasks: this.revenueSystem!.getActiveTasks().length,
+        };
+      })() : null,
+      observatory: this.observatory ? { connected: this.observatory.isConnected() } : null,
+      polymarket: this.polymarketTrader ? {
+        running: this.polymarketTrader.isRunning(),
+        activeMarkets: 0, // TODO: wire market count
+      } : null,
+      mcpFinance: this.mcpFinance ? { cacheSize: this.mcpFinance.stats().cacheSize } : null,
+      modulesWired: this.wiringResult?.modulesWired ?? 0,
       calibrationError: this.getCalibrationError(),
       uptime: this.bootTime > 0 ? Date.now() - this.bootTime : 0,
       cycleCount: this.cycleCount,
@@ -2204,6 +2410,10 @@ export class Genesis {
 
     // L4: Executive shutdown
     // (metacognition, NESS, metaRL, governance, conformal are stateless)
+    if (this.centralAwareness) {
+      this.centralAwareness.stop();
+      this.centralAwareness = null;
+    }
 
     // L3: Cognitive shutdown
     if (this.sensorimotor) {
@@ -2398,6 +2608,46 @@ export class Genesis {
     if (lower.includes('deploy') || lower.includes('server') || lower.includes('infra')) return 'infrastructure';
     if (lower.includes('money') || lower.includes('pay') || lower.includes('budget')) return 'economics';
     return 'general';
+  }
+
+  /**
+   * v13.11.0: Assess risk level of an input for consciousness gating.
+   * Higher risk = requires higher consciousness (phi) to process.
+   */
+  private assessInputRisk(input: string): number {
+    const lower = input.toLowerCase();
+
+    // High risk: Irreversible or system-critical operations
+    const highRiskPatterns = [
+      'delete', 'remove', 'drop', 'destroy', 'shutdown', 'kill',
+      'deploy', 'publish', 'push to production', 'release',
+      'transfer', 'payment', 'transaction', 'send money',
+      'modify database', 'alter table', 'update all',
+      'sudo', 'root', 'admin', 'credentials',
+    ];
+
+    // Medium risk: Code/system modifications
+    const mediumRiskPatterns = [
+      'edit', 'modify', 'change', 'update', 'write',
+      'create', 'install', 'configure', 'setup',
+      'execute', 'run', 'bash', 'shell',
+    ];
+
+    // Check for high risk
+    for (const pattern of highRiskPatterns) {
+      if (lower.includes(pattern)) return 0.8;
+    }
+
+    // Check for medium risk
+    for (const pattern of mediumRiskPatterns) {
+      if (lower.includes(pattern)) return 0.5;
+    }
+
+    // Check input length (longer = more complex = slightly higher risk)
+    const lengthRisk = Math.min(0.3, input.length / 2000);
+
+    // Default: low risk query
+    return 0.2 + lengthRisk;
   }
 }
 

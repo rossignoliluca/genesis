@@ -70,10 +70,12 @@ export interface LLMConfig {
   apiKey: string;
   temperature?: number;
   maxTokens?: number;
+  enableThinking?: boolean; // v13.10: Extended thinking for Claude
 }
 
 export interface LLMResponse {
   content: string;
+  thinking?: string;  // v13.10: Extended thinking output from Claude
   model: string;
   provider: LLMProvider;
   usage?: {
@@ -85,9 +87,10 @@ export interface LLMResponse {
 
 // v7.20.1: Streaming support
 export interface StreamChunk {
-  type: 'token' | 'done' | 'error';
+  type: 'token' | 'thinking' | 'done' | 'error';  // v13.10: Added 'thinking' type
   token?: string;
   content?: string;  // Full content so far
+  thinking?: string; // v13.10: Full thinking content so far
   usage?: {
     inputTokens: number;
     outputTokens: number;
@@ -535,9 +538,31 @@ export class LLMBridge {
 
   /**
    * Call Anthropic API
+   * v13.10: Extended thinking support with budget_tokens
    */
   private async callAnthropic(systemPrompt: string): Promise<LLMResponse> {
     const startTime = Date.now();
+
+    // Build request body
+    const requestBody: Record<string, unknown> = {
+      model: this.config.model,
+      max_tokens: this.config.maxTokens,
+      system: systemPrompt,
+      messages: this.conversationHistory.map(m => ({
+        role: m.role === 'system' ? 'user' : m.role,
+        content: m.content,
+      })),
+    };
+
+    // v13.10: Add extended thinking if enabled
+    if (this.config.enableThinking) {
+      requestBody.thinking = {
+        type: 'enabled',
+        budget_tokens: Math.min(this.config.maxTokens || 4096, 10000), // Cap at 10k thinking tokens
+      };
+      // Extended thinking requires higher max_tokens
+      requestBody.max_tokens = Math.max(this.config.maxTokens || 4096, 16000);
+    }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -546,16 +571,8 @@ export class LLMBridge {
         'x-api-key': this.config.apiKey,
         'anthropic-version': '2023-06-01',
       },
-      body: JSON.stringify({
-        model: this.config.model,
-        max_tokens: this.config.maxTokens,
-        system: systemPrompt,
-        messages: this.conversationHistory.map(m => ({
-          role: m.role === 'system' ? 'user' : m.role,
-          content: m.content,
-        })),
-      }),
-      signal: AbortSignal.timeout(60000), // v7.18: 60s timeout for faster failure
+      body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(120000), // v13.10: 120s for extended thinking
     });
 
     if (!response.ok) {
@@ -565,8 +582,26 @@ export class LLMBridge {
 
     const data = await response.json();
 
+    // v13.10: Parse content blocks (may include thinking and text)
+    let textContent = '';
+    let thinkingContent = '';
+
+    for (const block of (data.content || [])) {
+      if (block.type === 'thinking') {
+        thinkingContent += block.thinking || '';
+      } else if (block.type === 'text') {
+        textContent += block.text || '';
+      }
+    }
+
+    // Fallback for non-thinking responses
+    if (!textContent && data.content?.[0]?.text) {
+      textContent = data.content[0].text;
+    }
+
     return {
-      content: data.content[0]?.text || '',
+      content: textContent,
+      thinking: thinkingContent || undefined,
       model: this.config.model,
       provider: 'anthropic',
       usage: {
@@ -753,8 +788,30 @@ export class LLMBridge {
 
   /**
    * Stream from Anthropic API
+   * v13.10: Extended thinking support
    */
   private async *streamAnthropic(systemPrompt: string, startTime: number): AsyncGenerator<StreamChunk> {
+    // Build request body
+    const requestBody: Record<string, unknown> = {
+      model: this.config.model,
+      max_tokens: this.config.maxTokens,
+      system: systemPrompt,
+      stream: true,
+      messages: this.conversationHistory.map(m => ({
+        role: m.role === 'system' ? 'user' : m.role,
+        content: m.content,
+      })),
+    };
+
+    // v13.10: Add extended thinking if enabled
+    if (this.config.enableThinking) {
+      requestBody.thinking = {
+        type: 'enabled',
+        budget_tokens: Math.min(this.config.maxTokens || 4096, 10000),
+      };
+      requestBody.max_tokens = Math.max(this.config.maxTokens || 4096, 16000);
+    }
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -762,17 +819,8 @@ export class LLMBridge {
         'x-api-key': this.config.apiKey,
         'anthropic-version': '2023-06-01',
       },
-      body: JSON.stringify({
-        model: this.config.model,
-        max_tokens: this.config.maxTokens,
-        system: systemPrompt,
-        stream: true,
-        messages: this.conversationHistory.map(m => ({
-          role: m.role === 'system' ? 'user' : m.role,
-          content: m.content,
-        })),
-      }),
-      signal: AbortSignal.timeout(120000),
+      body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(180000), // v13.10: 3 min for extended thinking streams
     });
 
     if (!response.ok) {
@@ -785,6 +833,7 @@ export class LLMBridge {
 
     const decoder = new TextDecoder();
     let fullContent = '';
+    let fullThinking = '';  // v13.10: Track thinking content
     let inputTokens = 0;
     let outputTokens = 0;
 
@@ -807,17 +856,38 @@ export class LLMBridge {
 
             // Handle different event types
             if (parsed.type === 'content_block_delta') {
-              const token = parsed.delta?.text || '';
-              if (token) {
-                fullContent += token;
-                outputTokens++;
-                yield {
-                  type: 'token',
-                  token,
-                  content: fullContent,
-                  usage: { inputTokens, outputTokens },
-                };
+              // v13.10: Handle both text and thinking deltas
+              if (parsed.delta?.type === 'thinking_delta') {
+                // Thinking tokens - emit as 'thinking' type chunks
+                const thinkingToken = parsed.delta?.thinking || '';
+                if (thinkingToken) {
+                  fullThinking += thinkingToken;
+                  outputTokens++;
+                  yield {
+                    type: 'thinking',
+                    token: thinkingToken,
+                    thinking: fullThinking,
+                    content: fullContent,
+                    usage: { inputTokens, outputTokens },
+                  };
+                }
+              } else {
+                // Regular text tokens
+                const token = parsed.delta?.text || '';
+                if (token) {
+                  fullContent += token;
+                  outputTokens++;
+                  yield {
+                    type: 'token',
+                    token,
+                    content: fullContent,
+                    usage: { inputTokens, outputTokens },
+                  };
+                }
               }
+            } else if (parsed.type === 'content_block_start') {
+              // v13.10: Track block type for thinking vs text
+              // Content block starting (thinking or text)
             } else if (parsed.type === 'message_start') {
               inputTokens = parsed.message?.usage?.input_tokens || 0;
             } else if (parsed.type === 'message_delta') {
@@ -838,6 +908,7 @@ export class LLMBridge {
     yield {
       type: 'done',
       content: fullContent,
+      thinking: fullThinking || undefined, // v13.10: Include thinking in final chunk
       model: this.config.model,
       provider: 'anthropic',
       usage: { inputTokens, outputTokens },

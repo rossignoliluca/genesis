@@ -64,6 +64,18 @@ export {
   type ConsciousAgentConfig,
 } from './conscious-agent.js';
 
+// v13.11.0: Central Awareness - Global consciousness over all modules
+export {
+  CentralAwareness,
+  getCentralAwareness,
+  createCentralAwareness,
+  resetCentralAwareness,
+  type SystemAwarenessState,
+  type AwarenessEvent,
+  type DecisionGate,
+  type CentralAwarenessConfig,
+} from './central-awareness.js';
+
 import {
   ConsciousnessConfig,
   ConsciousnessSnapshot,

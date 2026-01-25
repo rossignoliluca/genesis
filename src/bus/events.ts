@@ -327,6 +327,148 @@ export interface SelfImprovementEvent extends BusEvent {
 }
 
 // ============================================================================
+// Finance Module Events
+// ============================================================================
+
+export interface MarketDataUpdateEvent extends BusEvent {
+  symbol: string;
+  price: number;
+  volatility: number;
+  volume: number;
+}
+
+export interface TradingSignalEvent extends BusEvent {
+  symbol: string;
+  direction: 'long' | 'short' | 'neutral';
+  strength: number;
+  uncertainty: number;
+  action: 'buy' | 'sell' | 'hold';
+}
+
+export interface PositionOpenedEvent extends BusEvent {
+  symbol: string;
+  size: number;
+  entryPrice: number;
+  direction: 'long' | 'short';
+}
+
+export interface PositionClosedEvent extends BusEvent {
+  symbol: string;
+  size: number;
+  entryPrice: number;
+  exitPrice: number;
+  realizedPnL: number;
+}
+
+export interface DrawdownAlertEvent extends BusEvent {
+  symbol: string;
+  drawdown: number;
+  painLevel: number;
+  threshold: number;
+}
+
+export interface RegimeChangeEvent extends BusEvent {
+  symbol: string;
+  previousRegime: string;
+  newRegime: string;
+  confidence: number;
+}
+
+// ============================================================================
+// Polymarket Events
+// ============================================================================
+
+export interface PolymarketDiscoveredEvent extends BusEvent {
+  marketId: string;
+  question: string;
+  relevance: number;
+  category: string;
+  outcomes: string[];
+}
+
+export interface PolymarketBeliefEvent extends BusEvent {
+  marketId: string;
+  outcome: string;
+  subjectiveP: number;
+  marketP: number;
+  surprise: number;
+  confidence: number;
+}
+
+export interface PolymarketTradeEvent extends BusEvent {
+  marketId: string;
+  outcome: string;
+  side: 'buy' | 'sell';
+  size: number;
+  price: number;
+  riskTolerance: number;
+}
+
+export interface PolymarketPortfolioEvent extends BusEvent {
+  totalValue: number;
+  totalPnL: number;
+  winRate: number;
+  activePositions: number;
+}
+
+// ============================================================================
+// Revenue Module Events
+// ============================================================================
+
+export interface RevenueOpportunityEvent extends BusEvent {
+  opportunityId: string;
+  stream: string;
+  estimatedRevenue: number;
+  estimatedCost: number;
+  roi: number;
+  risk: number;
+}
+
+export interface RevenueTaskEvent extends BusEvent {
+  taskId: string;
+  stream: string;
+  success: boolean;
+  actualRevenue: number;
+  actualCost: number;
+  duration: number;
+}
+
+export interface RevenueStreamEvent extends BusEvent {
+  stream: string;
+  status: 'active' | 'paused' | 'error';
+  totalEarned: number;
+  successRate: number;
+}
+
+// ============================================================================
+// x402 Payment Events
+// ============================================================================
+
+export interface X402ChallengeEvent extends BusEvent {
+  challengeId: string;
+  resourceUri: string;
+  amount: number;
+  currency: string;
+  expiresAt: string;
+}
+
+export interface X402PaymentEvent extends BusEvent {
+  challengeId: string;
+  txHash: string;
+  amount: number;
+  currency: string;
+  success: boolean;
+}
+
+export interface X402ReceiptEvent extends BusEvent {
+  receiptId: string;
+  challengeId: string;
+  amount: number;
+  accessToken: string;
+  expiresAt: string;
+}
+
+// ============================================================================
 // Legacy Event Types (for genesis.ts compatibility)
 // ============================================================================
 
@@ -457,6 +599,30 @@ export interface GenesisEventMap {
   // --- Self-Modification Events ---
   'self.improvement.proposed': SelfImprovementEvent;
   'self.improvement.applied': SelfImprovementEvent;
+
+  // --- Finance Events ---
+  'finance.market.updated': MarketDataUpdateEvent;
+  'finance.signal.generated': TradingSignalEvent;
+  'finance.position.opened': PositionOpenedEvent;
+  'finance.position.closed': PositionClosedEvent;
+  'finance.drawdown.alert': DrawdownAlertEvent;
+  'finance.regime.changed': RegimeChangeEvent;
+
+  // --- Polymarket Events ---
+  'polymarket.market.discovered': PolymarketDiscoveredEvent;
+  'polymarket.belief.updated': PolymarketBeliefEvent;
+  'polymarket.trade.executed': PolymarketTradeEvent;
+  'polymarket.portfolio.updated': PolymarketPortfolioEvent;
+
+  // --- Revenue Events ---
+  'revenue.opportunity.found': RevenueOpportunityEvent;
+  'revenue.task.completed': RevenueTaskEvent;
+  'revenue.stream.status': RevenueStreamEvent;
+
+  // --- x402 Payment Events ---
+  'x402.challenge.issued': X402ChallengeEvent;
+  'x402.payment.completed': X402PaymentEvent;
+  'x402.receipt.generated': X402ReceiptEvent;
 
   // --- Legacy Aliases (colon syntax for genesis.ts compatibility) ---
   'kernel:prediction_error': LegacyPredictionErrorEvent;

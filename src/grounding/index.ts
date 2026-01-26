@@ -37,6 +37,12 @@ export * from './epistemic-stack.js';
 export * from './verifier.js';
 export * from './feedback.js';
 
+// Re-export semantic grounding (RDF/SPARQL)
+export * from './semantic.js';
+
+// Re-export GraphRAG
+export * from './graphrag.js';
+
 import {
   EpistemicStack,
   EpistemicClaim,

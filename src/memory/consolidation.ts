@@ -57,6 +57,7 @@ export class ConsolidationService {
 
   private backgroundTimer: NodeJS.Timeout | null = null;
   private isConsolidating: boolean = false;
+  private currentConsolidationPromise: Promise<ConsolidationResult> | null = null;  // v13.9: Race condition fix
   private lastConsolidation: Date | null = null;
   private consolidationHistory: ConsolidationResult[] = [];
   private eventLog: MemoryEvent[] = [];
@@ -104,47 +105,56 @@ export class ConsolidationService {
 
   /**
    * Core consolidation logic
+   * v13.9: Fixed race condition - returns ongoing promise instead of throwing
    */
   private async consolidate(mode: ConsolidationMode): Promise<ConsolidationResult> {
-    if (this.isConsolidating) {
-      throw new Error('Consolidation already in progress');
+    // v13.9: If consolidation already in progress, return the ongoing promise
+    // This prevents race conditions when multiple callers try to consolidate simultaneously
+    if (this.isConsolidating && this.currentConsolidationPromise) {
+      return this.currentConsolidationPromise;
     }
 
     this.isConsolidating = true;
     const startTime = Date.now();
 
-    try {
-      // Get episodes ready for consolidation
-      const episodes = mode === 'background'
-        ? this.episodicStore.getReadyForConsolidation(this.config.consolidationThreshold)
-        : this.episodicStore.getAll().filter((e) => !e.consolidated);
+    // Create and store the promise for potential concurrent access
+    this.currentConsolidationPromise = (async () => {
+      try {
+        // Get episodes ready for consolidation
+        const episodes = mode === 'background'
+          ? this.episodicStore.getReadyForConsolidation(this.config.consolidationThreshold)
+          : this.episodicStore.getAll().filter((e) => !e.consolidated);
 
-      // Process episodes
-      const result = await this.processEpisodes(episodes, mode);
+        // Process episodes
+        const result = await this.processEpisodes(episodes, mode);
 
-      // Run forgetting
-      const forgottenEpisodic = this.episodicStore.runForgetting();
-      const forgottenSemantic = this.semanticStore.runForgetting();
-      const forgottenProcedural = this.proceduralStore.runForgetting();
+        // Run forgetting
+        const forgottenEpisodic = this.episodicStore.runForgetting();
+        const forgottenSemantic = this.semanticStore.runForgetting();
+        const forgottenProcedural = this.proceduralStore.runForgetting();
 
-      result.forgotten = forgottenEpisodic.forgotten +
-                         forgottenSemantic.forgotten +
-                         forgottenProcedural.forgotten;
+        result.forgotten = forgottenEpisodic.forgotten +
+                           forgottenSemantic.forgotten +
+                           forgottenProcedural.forgotten;
 
-      result.duration = Date.now() - startTime;
-      result.timestamp = new Date();
+        result.duration = Date.now() - startTime;
+        result.timestamp = new Date();
 
-      // Record history
-      this.consolidationHistory.push(result);
-      if (this.consolidationHistory.length > 100) {
-        this.consolidationHistory.shift();
+        // Record history
+        this.consolidationHistory.push(result);
+        if (this.consolidationHistory.length > 100) {
+          this.consolidationHistory.shift();
+        }
+
+        this.lastConsolidation = new Date();
+        return result;
+      } finally {
+        this.isConsolidating = false;
+        this.currentConsolidationPromise = null;
       }
+    })();
 
-      this.lastConsolidation = new Date();
-      return result;
-    } finally {
-      this.isConsolidating = false;
-    }
+    return this.currentConsolidationPromise;
   }
 
   /**

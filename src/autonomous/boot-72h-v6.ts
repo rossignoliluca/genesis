@@ -26,6 +26,7 @@ import { getDaemon, Daemon, DaemonDependencies } from '../daemon/index.js';
 import { healing } from '../healing/index.js';
 import { ActionType, ACTIONS } from '../active-inference/types.js';
 import { getAutopoiesisEngine, AutopoiesisEngine, SelfObservation } from '../autopoiesis/index.js';
+import { getRSIOrchestrator, RSIOrchestrator, DEFAULT_RSI_CONFIG } from '../rsi/index.js';
 import { getObservationGatherer, AutopoiesisState } from '../active-inference/index.js';
 
 // ============================================================================
@@ -75,6 +76,7 @@ interface CognitiveState {
   daemon: Daemon;
   revenueLoop: RevenueLoop;
   autopoiesis: AutopoiesisEngine;  // v6.1: True autopoiesis
+  rsi: RSIOrchestrator;             // v14.0: Recursive Self-Improvement
   criticalErrors: number;
   running: boolean;
 }
@@ -506,11 +508,101 @@ async function boot(): Promise<CognitiveState> {
   log('  Autopoiesis: ONLINE (self-observation → AI loop wired)');
 
   // ============================================================================
-  // PHASE 8: Build State
+  // PHASE 8: Initialize RSI (Recursive Self-Improvement)
+  // ============================================================================
+  log('Phase 8: Initializing RSI System...');
+
+  const rsi = getRSIOrchestrator({
+    ...DEFAULT_RSI_CONFIG,
+    enabled: true,                    // Enable RSI
+    autoRun: false,                   // Don't auto-run cycles (trigger manually or via events)
+    minPhiForImprovement: 0.3,        // Require stable consciousness
+    minConfidenceForAction: 0.7,      // High confidence threshold
+    maxRiskLevel: 'medium',           // Don't take high risks automatically
+    maxConcurrentPlans: 1,            // One improvement at a time
+    maxChangesPerPlan: 5,             // Limit scope
+    cooldownBetweenCycles: 1800000,   // 30 minutes between cycles
+    requireHumanReview: true,         // Require human approval for high risk
+    humanReviewThreshold: 'high',     // Only ask for high risk changes
+    defaultSearchSources: ['memory', 'github', 'arxiv', 'web'],
+    maxResearchResults: 10,
+    improvementThreshold: 0.05,       // 5% improvement to count as success
+  });
+
+  // Wire RSI events to memory
+  rsi.on('event', (event) => {
+    if (CONFIG.verbose) {
+      log(`  [RSI] Event: ${event.type}`, 'debug');
+    }
+
+    // Record significant RSI events in memory
+    if (event.type === 'cycle:completed' || event.type === 'cycle:failed') {
+      memory.remember({
+        what: `RSI cycle ${event.type}: ${JSON.stringify(event.data).slice(0, 200)}`,
+        when: new Date(),
+        importance: 0.85,
+        tags: ['rsi', event.type, 'self-improvement'],
+        details: event.data,
+      });
+    }
+
+    if (event.type === 'plan:approved' || event.type === 'plan:rejected') {
+      memory.remember({
+        what: `RSI plan ${event.type}`,
+        when: new Date(),
+        importance: 0.9,
+        tags: ['rsi', 'plan', event.type],
+        details: event.data,
+      });
+    }
+
+    if (event.type === 'learning:recorded') {
+      // Feed RSI learning back to semantic memory
+      const learning = event.data;
+      if (learning.lessonsLearned?.length > 0) {
+        for (const lesson of learning.lessonsLearned.slice(0, 3)) {
+          memory.learn({
+            concept: `rsi-lesson-${Date.now()}`,
+            definition: lesson,
+            category: 'self-improvement',
+          });
+        }
+      }
+    }
+  });
+
+  // Set human approval handler (CLI-based for now)
+  rsi.setHumanApprovalHandler(async (request) => {
+    log(`[RSI] Human approval requested for plan: ${request.plan.name}`, 'warn');
+    log(`[RSI] Risk level: ${request.plan.safetyAnalysis.riskLevel}`, 'warn');
+    log(`[RSI] Changes: ${request.plan.changes.map(c => c.file).join(', ')}`, 'warn');
+
+    // In autonomous mode, auto-reject high-risk changes
+    // Human can approve via direct API if monitoring
+    if (request.plan.safetyAnalysis.riskLevel === 'high' || request.plan.safetyAnalysis.riskLevel === 'critical') {
+      log(`[RSI] Auto-rejecting high-risk plan in autonomous mode`, 'warn');
+      return { approved: false, feedback: 'Auto-rejected: high risk in autonomous mode' };
+    }
+
+    // Auto-approve medium/low risk if constitutional check passed
+    if (request.plan.constitutionalApproval.approved) {
+      log(`[RSI] Auto-approving constitutional-approved plan`, 'info');
+      return { approved: true, feedback: 'Auto-approved: constitutional check passed' };
+    }
+
+    return { approved: false, feedback: 'Auto-rejected: constitutional check failed' };
+  });
+
+  // Start RSI (will only run cycles when triggered or phi is healthy)
+  rsi.start();
+  log('  RSI: ONLINE (Recursive Self-Improvement enabled)');
+
+  // ============================================================================
+  // PHASE 9: Build State
   // ============================================================================
   log('');
   log('='.repeat(70));
-  log('BOOT COMPLETE - Full Cognitive Stack + Autopoiesis Online');
+  log('BOOT COMPLETE - Full Cognitive Stack + Autopoiesis + RSI Online');
   log('='.repeat(70));
   log('');
 
@@ -523,6 +615,7 @@ async function boot(): Promise<CognitiveState> {
     daemon,
     revenueLoop,
     autopoiesis,
+    rsi,
     criticalErrors: 0,
     running: true,
   };
@@ -683,6 +776,12 @@ async function printStatus(state: CognitiveState): Promise<void> {
   log(`  Revenue: $${(revenueStats.totalRevenue / 100).toFixed(2)}`);
   log(`  Scans: ${revenueStats.scansDelivered}`);
   log('');
+  log('RSI (Self-Improvement):');
+  const rsiStats = state.rsi.getStats();
+  log(`  Running: ${rsiStats.running}`);
+  log(`  Total Cycles: ${rsiStats.totalCycles}`);
+  log(`  Success Rate: ${(rsiStats.learningStats.successRate * 100).toFixed(0)}%`);
+  log('');
   log('HEALTH:');
   log(`  Critical Errors: ${state.criticalErrors}`);
   log(`  FEK Mode: ${state.fek.getStatus().mode}`);
@@ -704,6 +803,7 @@ function shutdown(state: CognitiveState): void {
   }
 
   // Stop other systems
+  state.rsi.stop();
   state.autopoiesis.stop();
   state.daemon.stop();
   state.consciousness.stop();

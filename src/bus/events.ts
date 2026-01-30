@@ -316,6 +316,41 @@ export interface HookExecutedEvent extends BusEvent {
 }
 
 // ============================================================================
+// Daemon Events
+// ============================================================================
+
+export interface DaemonStateEvent extends BusEvent {
+  state: 'stopped' | 'starting' | 'running' | 'dreaming' | 'maintaining' | 'stopping' | 'error';
+  previousState?: string;
+}
+
+export interface DaemonTaskEvent extends BusEvent {
+  taskId?: string;
+  taskName?: string;
+  status: 'scheduled' | 'started' | 'completed' | 'failed' | 'cancelled';
+  priority?: 'critical' | 'high' | 'normal' | 'low' | 'idle';
+  durationMs?: number;
+  error?: string;
+}
+
+export interface DaemonDreamEvent extends BusEvent {
+  phase: 'started' | 'completed' | 'interrupted' | 'phase_changed';
+  dreamPhase?: string;
+  consolidations?: number;
+  creativeInsights?: number;
+  durationMs?: number;
+  reason?: string;
+}
+
+export interface DaemonMaintenanceEvent extends BusEvent {
+  status: 'started' | 'completed' | 'issue_detected';
+  issuesFound?: number;
+  issuesFixed?: number;
+  memoryReclaimed?: number;
+  report?: unknown;
+}
+
+// ============================================================================
 // Self-Modification Events
 // ============================================================================
 
@@ -519,6 +554,38 @@ export interface LegacyAutonomousTaskEvent extends BusEvent {
   duration: number;
 }
 
+// v14.1: Persistence Events
+export interface LegacyPersistenceEvent extends BusEvent {
+  dataDir?: string;
+  checksum?: string;
+  lastModified?: Date;
+  error?: string;
+}
+
+// v14.1: A2A Events
+export interface LegacyA2AEvent extends BusEvent {
+  agentId?: string;
+  publicKey?: string;
+  endpoint?: unknown;
+  taskId?: string;
+  success?: boolean;
+  error?: string;
+}
+
+// v14.1: CompIntel Started/Stopped Events
+export interface LegacyCompIntelStatusEvent extends BusEvent {
+  competitors?: number;
+}
+
+// v14.1: Autonomous Events
+export interface LegacyAutonomousEvent extends BusEvent {
+  health?: string;
+  pendingActions?: number;
+  type?: 'expense' | 'revenue';
+  amount?: number;
+  description?: string;
+}
+
 // ============================================================================
 // Genesis Event Map - All Topics
 // ============================================================================
@@ -596,6 +663,21 @@ export interface GenesisEventMap {
   'system.shutdown': SystemLifecycleEvent;
   'system.hook.executed': HookExecutedEvent;
 
+  // --- Daemon Events ---
+  'daemon.state.changed': DaemonStateEvent;
+  'daemon.task.scheduled': DaemonTaskEvent;
+  'daemon.task.started': DaemonTaskEvent;
+  'daemon.task.completed': DaemonTaskEvent;
+  'daemon.task.failed': DaemonTaskEvent;
+  'daemon.task.cancelled': DaemonTaskEvent;
+  'daemon.dream.started': DaemonDreamEvent;
+  'daemon.dream.phase_changed': DaemonDreamEvent;
+  'daemon.dream.completed': DaemonDreamEvent;
+  'daemon.dream.interrupted': DaemonDreamEvent;
+  'daemon.maintenance.started': DaemonMaintenanceEvent;
+  'daemon.maintenance.completed': DaemonMaintenanceEvent;
+  'daemon.maintenance.issue': DaemonMaintenanceEvent;
+
   // --- Self-Modification Events ---
   'self.improvement.proposed': SelfImprovementEvent;
   'self.improvement.applied': SelfImprovementEvent;
@@ -633,6 +715,29 @@ export interface GenesisEventMap {
   'economic:revenue': LegacyRevenueEvent;
   'compintel:change': LegacyCompIntelEvent;
   'autonomous:task_completed': LegacyAutonomousTaskEvent;
+
+  // v14.1: Persistence Events
+  'persistence:initialized': LegacyPersistenceEvent;
+  'persistence:saved': LegacyPersistenceEvent;
+  'persistence:error': LegacyPersistenceEvent;
+  'persistence:shutdown': LegacyPersistenceEvent;
+
+  // v14.1: A2A Events
+  'a2a:initialized': LegacyA2AEvent;
+  'a2a:connected': LegacyA2AEvent;
+  'a2a:disconnected': LegacyA2AEvent;
+  'a2a:task:complete': LegacyA2AEvent;
+  'a2a:error': LegacyA2AEvent;
+
+  // v14.1: CompIntel Events
+  'compintel:started': LegacyCompIntelStatusEvent;
+  'compintel:stopped': LegacyCompIntelStatusEvent;
+
+  // v14.1: Autonomous Events
+  'autonomous:initialized': LegacyAutonomousEvent;
+  'autonomous:task:started': LegacyAutonomousEvent;
+  'autonomous:task:completed': LegacyAutonomousEvent;
+  'autonomous:payment': LegacyAutonomousEvent;
 }
 
 /** All valid topic names */

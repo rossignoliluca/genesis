@@ -17,6 +17,7 @@
  */
 
 import { getMCPClient } from '../mcp/index.js';
+import { EventEmitter } from 'events';
 
 // ============================================================================
 // Types
@@ -81,7 +82,7 @@ export const DEFAULT_INTEL_CONFIG: CompetitiveIntelConfig = {
 // Competitive Intelligence Engine
 // ============================================================================
 
-export class CompetitiveIntelService {
+export class CompetitiveIntelService extends EventEmitter {
   private config: CompetitiveIntelConfig;
   private competitors: Map<string, Competitor> = new Map();
   private running: boolean = false;
@@ -89,6 +90,7 @@ export class CompetitiveIntelService {
   private checkTimer?: ReturnType<typeof setInterval>;
 
   constructor(config: Partial<CompetitiveIntelConfig> = {}) {
+    super();
     this.config = { ...DEFAULT_INTEL_CONFIG, ...config };
     this.initCompetitors();
   }
@@ -111,6 +113,9 @@ export class CompetitiveIntelService {
     this.checkTimer = setInterval(() => {
       this.checkAll().catch(e => console.error('[CompIntel] Check failed:', e));
     }, this.config.checkIntervalMs);
+
+    // v14.1: Emit started event
+    this.emit('started', { competitors: this.competitors.size });
   }
 
   /**
@@ -122,6 +127,9 @@ export class CompetitiveIntelService {
       clearInterval(this.checkTimer);
       this.checkTimer = undefined;
     }
+
+    // v14.1: Emit stopped event
+    this.emit('stopped');
   }
 
   /**
@@ -254,6 +262,9 @@ export class CompetitiveIntelService {
 
             changes.push(event);
             competitor.changeHistory.push(event);
+
+            // v14.1: Emit change event for event bus integration
+            this.emit('change', { competitor: competitor.name, event });
           }
         }
 

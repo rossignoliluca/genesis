@@ -52,6 +52,7 @@ export interface A2AMessage {
   id: string;
   method: A2AMethod;
   params: A2AParams;
+  from: A2AAgentId;  // v14.1: Sender agent ID
   signature?: A2ASignature;
   timestamp: string;
   protocol: string;
@@ -538,6 +539,7 @@ export interface A2AKeyPair {
 export function createA2AMessage(
   method: A2AMethod,
   params: A2AParams,
+  from: A2AAgentId,
   signature?: A2ASignature
 ): A2AMessage {
   return {
@@ -545,6 +547,7 @@ export function createA2AMessage(
     id: randomUUID(),
     method,
     params,
+    from,
     signature,
     timestamp: new Date().toISOString(),
     protocol: A2A_PROTOCOL_VERSION,
@@ -607,7 +610,7 @@ export function createTaskRequest(
     from,
     to,
     task,
-  } as TaskParams);
+  } as TaskParams, from);
 }
 
 /**
@@ -620,5 +623,5 @@ export function createCapabilityAdvertisement(
   return createA2AMessage('a2a.capabilities.advertise', {
     from,
     capabilities,
-  } as CapabilityParams);
+  } as CapabilityParams, from);
 }

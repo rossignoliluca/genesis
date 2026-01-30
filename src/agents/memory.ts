@@ -535,9 +535,32 @@ export class MemoryAgent extends BaseAgent {
     this.associations.clear();
   }
 
+  /**
+   * Override sleep to clear consolidation timer
+   * Fixes timer leak when agent goes to sleep without full shutdown
+   */
+  sleep(): void {
+    if (this.consolidationInterval) {
+      clearInterval(this.consolidationInterval);
+      this.consolidationInterval = null;
+    }
+    super.sleep();
+  }
+
+  /**
+   * Override wake to restart consolidation cycle
+   */
+  wake(): void {
+    super.wake();
+    if (!this.consolidationInterval) {
+      this.startConsolidationCycle();
+    }
+  }
+
   shutdown(): void {
     if (this.consolidationInterval) {
       clearInterval(this.consolidationInterval);
+      this.consolidationInterval = null;
     }
     super.shutdown();
   }

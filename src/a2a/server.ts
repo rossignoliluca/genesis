@@ -84,6 +84,9 @@ export class A2AServer extends EventEmitter {
   private attestations: TrustAttestation[] = [];
   private rateLimitMap: Map<string, number[]> = new Map();
 
+  // v14.1: Governance gate for incoming A2A requests
+  private governanceGate?: (request: { method: string; from: string; id: string }) => Promise<boolean>;
+
   private metrics = {
     requestsReceived: 0,
     requestsProcessed: 0,
@@ -129,6 +132,30 @@ export class A2AServer extends EventEmitter {
     }
 
     this.emit('stopped');
+  }
+
+  /**
+   * v14.1: Set governance gate for incoming A2A requests
+   * The gate function receives request info and returns true if approved
+   */
+  setGovernanceGate(gate: (request: { method: string; from: string; id: string }) => Promise<boolean>): void {
+    this.governanceGate = gate;
+  }
+
+  /**
+   * v14.1: Check governance gate before processing request
+   */
+  private async checkGovernanceGate(message: A2AMessage): Promise<boolean> {
+    if (!this.governanceGate) return true; // No gate = allow all
+    try {
+      return await this.governanceGate({
+        method: message.method,
+        from: message.from,
+        id: message.id,
+      });
+    } catch {
+      return false; // Gate error = deny
+    }
   }
 
   private startHttpServer(): void {

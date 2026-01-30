@@ -387,7 +387,8 @@ export type RSIEventType =
   | 'learning:recorded'
   | 'human-review:requested'
   | 'human-review:responded'
-  | 'invariant:violation';
+  | 'invariant:violation'
+  | 'strategy:adjusted'; // v14.1: Feedback loop event
 
 export interface RSIEvent {
   type: RSIEventType;

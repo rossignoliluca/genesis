@@ -129,7 +129,7 @@ export class A2AClient extends EventEmitter {
         minTrust: options.minTrust,
         limit: options.limit,
       },
-    } as DiscoveryParams);
+    } as DiscoveryParams, this.config.agentId);
 
     this.log('Broadcasting discovery request');
     return Array.from(this.knownAgents.values());
@@ -482,7 +482,7 @@ export class A2AClient extends EventEmitter {
     params: unknown,
     options: { timeout?: number } = {}
   ): Promise<A2AResponse> {
-    const message = createA2AMessage(method, params as A2AMessage['params']);
+    const message = createA2AMessage(method, params as A2AMessage['params'], this.config.agentId);
     message.signature = this.sign(JSON.stringify({ method, params }));
 
     this.metrics.requestsSent++;

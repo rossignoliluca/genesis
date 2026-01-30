@@ -10,6 +10,7 @@
  * This is the "brain" that orchestrates all subsystems for true autonomy.
  */
 
+import { EventEmitter } from 'events';
 import { getEconomicSystem, EconomicSystem, TreasuryBalance } from '../economy';
 import { getDeploymentSystem, DeploymentSystem, WebsiteConfig, DeploymentResult } from '../deployment';
 import { getProductionMemory, ProductionMemory, MemoryEntry, SearchResult } from '../memory-production';
@@ -64,7 +65,7 @@ export interface AutonomousTask {
 // Autonomous System
 // ============================================================================
 
-export class AutonomousSystem {
+export class AutonomousSystem extends EventEmitter {
   private config: AutonomousConfig;
   private economy: EconomicSystem | null = null;
   private deployment: DeploymentSystem | null = null;
@@ -77,6 +78,7 @@ export class AutonomousSystem {
   private lastActivity = new Date().toISOString();
 
   constructor(config: AutonomousConfig = {}) {
+    super();
     this.config = {
       enableEconomy: true,
       enableDeployment: true,
@@ -135,6 +137,10 @@ export class AutonomousSystem {
 
     const status = await this.getStatus();
     console.log('[AutonomousSystem] Initialized. Health:', status.health);
+
+    // v14.1: Emit initialized event
+    this.emit('initialized', { health: status.health, pendingActions: status.pendingActions });
+
     return status;
   }
 

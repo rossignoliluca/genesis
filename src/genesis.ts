@@ -93,7 +93,7 @@ import { getBashTool, getEditTool } from './tools/index.js';
 import { createPipelineExecutor, type PipelineExecutor } from './pipeline/index.js';
 
 // A2A — agent-to-agent protocol
-import { A2AClient, A2AServer } from './a2a/index.js';
+import { A2AClient, A2AServer, generateA2AKeyPair, type A2AClientConfig, type A2AServerConfig } from './a2a/index.js';
 
 // Payments — revenue and cost tracking
 import { getPaymentService, getRevenueTracker, type PaymentService, type RevenueTracker } from './payments/index.js';
@@ -574,11 +574,107 @@ export class Genesis {
     // No manual wiring needed here - modules self-wire in their constructors
     if (this.config.eventBus) {
       this.eventBus = getEventBus();
+
+      // v14.1: Wire daemon events → event bus (fixes daemon isolation)
+      if (this.daemon) {
+        this.daemon.on((event) => {
+          const baseEvent = {
+            source: 'daemon',
+            precision: 0.9,
+          };
+          // Cast data for property access (DaemonEvent.data is unknown)
+          const data = event.data as Record<string, unknown> | null;
+
+          switch (event.type) {
+            case 'daemon_started':
+            case 'daemon_stopped':
+            case 'daemon_error':
+              this.eventBus?.publish('daemon.state.changed', {
+                ...baseEvent,
+                state: event.type === 'daemon_started' ? 'running' :
+                       event.type === 'daemon_stopped' ? 'stopped' : 'error',
+                previousState: data?.previousState as string | undefined,
+              });
+              break;
+
+            case 'task_scheduled':
+            case 'task_started':
+            case 'task_completed':
+            case 'task_failed':
+            case 'task_cancelled':
+              this.eventBus?.publish(`daemon.task.${event.type.replace('task_', '')}` as 'daemon.task.scheduled', {
+                ...baseEvent,
+                taskId: data?.id as string | undefined,
+                taskName: data?.name as string | undefined,
+                status: event.type.replace('task_', '') as 'scheduled',
+                priority: (data?.priority as 'critical' | 'high' | 'normal' | 'low' | 'idle') || 'normal',
+                durationMs: data?.duration as number | undefined,
+                error: data?.error as string | undefined,
+              });
+              break;
+
+            case 'dream_started':
+            case 'dream_completed':
+            case 'dream_interrupted':
+            case 'dream_phase_changed':
+              this.eventBus?.publish(`daemon.dream.${event.type.replace('dream_', '')}` as 'daemon.dream.started', {
+                ...baseEvent,
+                phase: event.type.replace('dream_', '') as 'started',
+                dreamPhase: data?.phase as string | undefined,
+                consolidations: data?.memoriesConsolidated as number | undefined,
+                creativeInsights: data?.creativeInsights as number | undefined,
+                durationMs: data?.duration as number | undefined,
+                reason: data?.reason as string | undefined,
+              });
+              break;
+
+            case 'maintenance_started':
+            case 'maintenance_completed':
+            case 'maintenance_issue':
+              this.eventBus?.publish(`daemon.maintenance.${event.type.replace('maintenance_', '')}` as 'daemon.maintenance.started', {
+                ...baseEvent,
+                status: event.type.replace('maintenance_', '') as 'started',
+                issuesFound: data?.issuesFound as number | undefined,
+                issuesFixed: data?.issuesFixed as number | undefined,
+                memoryReclaimed: data?.memoryReclaimed as number | undefined,
+                report: data,
+              });
+              break;
+          }
+        });
+      }
     }
 
     // Persistence — state storage to disk
     if (this.config.persistence) {
-      this.stateStore = new StateStore();
+      this.stateStore = new StateStore({
+        autoSave: true,
+        autoSaveIntervalMs: 60000, // 1 minute auto-save
+        onSave: (state) => {
+          this.eventBus?.publish('persistence:saved', {
+            source: 'persistence',
+            precision: 1.0,
+            checksum: state.checksum,
+            lastModified: state.lastModified
+          });
+        },
+        onError: (error) => {
+          this.eventBus?.publish('persistence:error', {
+            source: 'persistence',
+            precision: 0.0,
+            error: error.message
+          });
+        },
+      });
+
+      // Wire state persistence → event bus
+      if (this.eventBus) {
+        this.eventBus.publish('persistence:initialized', {
+          source: 'persistence',
+          precision: 1.0,
+          dataDir: this.stateStore.getDataDir()
+        });
+      }
     }
 
     this.levels.L1 = true;
@@ -621,6 +717,18 @@ export class Genesis {
         this.daemon.on((event) => {
           if (event.type === 'maintenance_completed') {
             this.memory?.sleep().catch(() => { /* non-fatal */ });
+          }
+        });
+      }
+
+      // v14.1: Wire memory → persistence (sync memory stats to state store)
+      if (this.stateStore) {
+        const memStats = this.memory.getStats();
+        this.stateStore.updateMemory({
+          stats: {
+            totalEpisodes: memStats.episodic.total,
+            totalFacts: memStats.semantic.total,
+            totalSkills: memStats.procedural.total,
           }
         });
       }
@@ -1184,13 +1292,76 @@ export class Genesis {
     this.fiber?.registerModule('subagents');
 
     // A2A Protocol — agent-to-agent communication
-    // TODO: A2A integration requires config objects and governance gate method
-    // Temporarily disabled pending A2A module completion
+    // v14.1: Full A2A wiring with key generation and event bus integration
     if (this.config.a2a) {
-      // A2A requires proper config - see src/a2a/server.ts for A2AServerConfig
-      // this.a2aClient = new A2AClient(clientConfig);
-      // this.a2aServer = new A2AServer(serverConfig);
+      const keyPair = generateA2AKeyPair();
+      const agentId: `genesis:${string}:${string}` = `genesis:main:${keyPair.keyId.slice(0, 8)}`;
+
+      // A2A Client — for discovering and delegating to other agents
+      const clientConfig: A2AClientConfig = {
+        agentId,
+        keyPair,
+        defaultTimeout: 30000,
+        autoRetry: true,
+        maxRetries: 3,
+        debug: false,
+      };
+      this.a2aClient = new A2AClient(clientConfig);
+
+      // Wire A2A client events → event bus
+      this.a2aClient.on('connected', (endpoint) => {
+        this.eventBus?.publish('a2a:connected', { source: 'a2a', precision: 1.0, endpoint });
+      });
+      this.a2aClient.on('disconnected', (endpoint) => {
+        this.eventBus?.publish('a2a:disconnected', { source: 'a2a', precision: 1.0, endpoint });
+      });
+      this.a2aClient.on('task:complete', (taskId, result) => {
+        this.eventBus?.publish('a2a:task:complete', { source: 'a2a', precision: 1.0, taskId, success: result.success });
+      });
+      this.a2aClient.on('error', (error) => {
+        this.eventBus?.publish('a2a:error', { source: 'a2a', precision: 0.0, error: error.message });
+      });
+
+      // A2A Server — for receiving tasks from other agents
+      const serverConfig: A2AServerConfig = {
+        agentId,
+        instanceName: 'genesis-main',
+        keyPair,
+        httpPort: 9877,  // A2A HTTP port (dashboard is 9876)
+        wsPort: 9878,    // A2A WebSocket port
+        secure: false,
+        capabilities: [
+          { id: 'genesis-reasoning', name: 'reasoning', category: 'reasoning', description: 'Deep reasoning with ToT/GoT', version: '14.0', inputSchema: {}, costTier: 'moderate', qualityTier: 'excellent' },
+          { id: 'genesis-tools', name: 'code-execution', category: 'tools', description: 'Safe code execution in sandbox', version: '14.0', inputSchema: {}, costTier: 'cheap', qualityTier: 'good' },
+          { id: 'genesis-memory', name: 'memory-recall', category: 'memory', description: 'Episodic/semantic memory access', version: '14.0', inputSchema: {}, costTier: 'free', qualityTier: 'good' },
+        ],
+        debug: false,
+        rateLimit: 100,
+        minTrustLevel: 0.3,
+      };
+      this.a2aServer = new A2AServer(serverConfig);
+
+      // Wire governance gate for incoming A2A requests
+      if (this.governance) {
+        this.a2aServer.setGovernanceGate(async (request) => {
+          // Check if request passes governance rules
+          const permission = await this.governance!.governance.checkPermission({
+            actor: request.from,
+            action: request.method,
+            resource: 'a2a',
+            metadata: { taskId: request.id },
+          });
+          return permission.allowed;
+        });
+      }
+
       this.fiber?.registerModule('a2a');
+      this.eventBus?.publish('a2a:initialized', {
+        source: 'a2a',
+        precision: 1.0,
+        agentId,
+        publicKey: keyPair.publicKey
+      });
     }
 
     this.levels.L3 = true;
@@ -1312,13 +1483,38 @@ export class Genesis {
     }
 
     // Competitive Intelligence — monitor competitors
+    // v14.1: Full wiring with event bus integration
     if (this.config.compIntel) {
-      this.compIntelService = createCompetitiveIntelService({});
+      this.compIntelService = createCompetitiveIntelService({
+        checkIntervalMs: 6 * 60 * 60 * 1000,  // 6 hours
+        digestIntervalMs: 24 * 60 * 60 * 1000, // Daily
+      });
       this.revenueLoop = createRevenueLoop();
       this.fiber?.registerModule('compintel');
 
-      // TODO: CompetitiveIntelService needs EventEmitter for event bus integration
-      // Wire compIntel changes → event bus when .on() is implemented
+      // Wire compIntel events → event bus
+      this.compIntelService.on('started', (data) => {
+        this.eventBus?.publish('compintel:started', { precision: 1.0, ...data });
+      });
+      this.compIntelService.on('stopped', () => {
+        this.eventBus?.publish('compintel:stopped', { source: 'compintel', precision: 1.0 });
+      });
+      this.compIntelService.on('change', (data) => {
+        this.eventBus?.publish('compintel:change', {
+          source: 'compintel',
+          precision: 1.0,
+          competitor: data.competitor,
+          significance: data.event.significance === 'critical' ? 1.0 : data.event.significance === 'high' ? 0.7 : 0.5,
+          changeType: data.event.changeType,
+        });
+        // Nociceptive: critical changes = competitive pain
+        if (data.event.significance === 'critical') {
+          this.nociception?.stimulus('cognitive', 0.6, `compintel:${data.competitor}`);
+        }
+      });
+
+      // Start monitoring (auto-starts periodic checks)
+      this.compIntelService.start();
     }
 
     // Deployment — self-deployment capability
@@ -1328,11 +1524,41 @@ export class Genesis {
     }
 
     // Autonomous System — unified autonomous operation mode
+    // v14.1: Full wiring with event bus integration
     if (this.config.autonomous) {
-      this.autonomousSystem = new AutonomousSystem();
+      this.autonomousSystem = new AutonomousSystem({
+        enableEconomy: true,
+        enableDeployment: this.config.deployment,
+        enableProductionMemory: this.config.memory,
+        enableGovernance: this.config.governance,
+        budgetLimits: {
+          dailyUSD: this.config.totalBudget,
+          monthlyUSD: this.config.totalBudget * 30,
+        },
+      });
+
+      // Wire autonomous events → event bus
+      this.autonomousSystem.on('initialized', (data) => {
+        this.eventBus?.publish('autonomous:initialized', { precision: 1.0, ...data });
+      });
+      this.autonomousSystem.on('task:started', (data) => {
+        this.eventBus?.publish('autonomous:task:started', { precision: 1.0, ...data });
+      });
+      this.autonomousSystem.on('task:completed', (data) => {
+        this.eventBus?.publish('autonomous:task:completed', { precision: 1.0, ...data });
+      });
+      this.autonomousSystem.on('payment', (data) => {
+        this.eventBus?.publish('autonomous:payment', { precision: 1.0, ...data });
+        // Wire to economic fiber
+        if (data.type === 'expense') {
+          this.fiber?.recordCost('autonomous', data.amount, data.description);
+        } else if (data.type === 'revenue') {
+          this.fiber?.recordRevenue('autonomous', data.amount, data.description);
+        }
+      });
+
       await this.autonomousSystem.initialize();
       this.fiber?.registerModule('autonomous');
-      // TODO: Wire autonomous status → event bus when AutonomousSystem.on() is implemented
     }
 
     // v13.12.0: Finance Module — market data, signals, risk, portfolio
@@ -2453,6 +2679,25 @@ export class Genesis {
     }
     if (this.fek) {
       this.fek.stop();
+    }
+
+    // v14.1: Final state persistence before shutdown
+    if (this.stateStore) {
+      // Update final memory stats
+      if (this.memory) {
+        const memStats = this.memory.getStats();
+        this.stateStore.updateMemory({
+          stats: {
+            totalEpisodes: memStats.episodic.total,
+            totalFacts: memStats.semantic.total,
+            totalSkills: memStats.procedural.total,
+            lastConsolidation: new Date(),
+          }
+        });
+      }
+      // Close and save (synchronous to ensure save before exit)
+      this.stateStore.close();
+      this.eventBus?.publish('persistence:shutdown', { source: 'persistence', precision: 1.0 });
     }
 
     this.booted = false;

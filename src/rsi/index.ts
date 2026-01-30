@@ -31,7 +31,7 @@ import { EventEmitter } from 'events';
 import {
   RSIConfig, DEFAULT_RSI_CONFIG, RSICycle, RSICycleStatus, RSIEvent, RSIEventType,
   Limitation, Opportunity, SynthesizedKnowledge, ImprovementPlan,
-  ImplementationResult, DeploymentResult, LearningOutcome
+  ImplementationResult, DeploymentResult, LearningOutcome, StrategyAdjustment
 } from './types.js';
 import { getObservationEngine, ObservationEngine } from './observe/index.js';
 import { getResearchEngine, ResearchEngine } from './research/index.js';
@@ -331,6 +331,14 @@ export class RSIOrchestrator extends EventEmitter {
       console.log(`[RSI] Learning recorded: ${learning.success ? 'SUCCESS' : 'FAILURE'}`);
       console.log(`[RSI] Lessons: ${learning.lessonsLearned.length}`);
 
+      // v14.1: Apply strategy adjustments to config (closes feedback loop)
+      if (learning.strategyAdjustment) {
+        const adj = learning.strategyAdjustment;
+        console.log(`[RSI] Applying strategy adjustment: ${adj.component} ${adj.before} → ${adj.after}`);
+        this.applyStrategyAdjustment(adj);
+        this.emitEvent('strategy:adjusted', adj);
+      }
+
       // Update final phi
       this.currentCycle.phiAtEnd = consciousness.getCurrentLevel().rawPhi;
       this.currentCycle.freeEnergyAtEnd = this.observeEngine.getCurrentMetrics().freeEnergy;
@@ -501,6 +509,55 @@ export class RSIOrchestrator extends EventEmitter {
    */
   updateConfig(config: Partial<RSIConfig>): void {
     this.config = { ...this.config, ...config };
+  }
+
+  /**
+   * Apply a strategy adjustment to the config
+   * v14.1: Closes the RSI feedback loop
+   */
+  private applyStrategyAdjustment(adjustment: StrategyAdjustment): void {
+    const configUpdate: Partial<RSIConfig> = {};
+
+    // Map adjustment components to config fields
+    switch (adjustment.component) {
+      case 'maxRiskLevel':
+        if (typeof adjustment.after === 'string') {
+          configUpdate.maxRiskLevel = adjustment.after as RSIConfig['maxRiskLevel'];
+        }
+        break;
+
+      case 'maxChangesPerPlan':
+        if (typeof adjustment.after === 'number') {
+          configUpdate.maxChangesPerPlan = adjustment.after;
+        }
+        break;
+
+      case 'humanReviewThreshold':
+        if (typeof adjustment.after === 'string') {
+          configUpdate.humanReviewThreshold = adjustment.after as RSIConfig['humanReviewThreshold'];
+        }
+        break;
+
+      case 'cooldownBetweenCycles':
+        if (typeof adjustment.after === 'number') {
+          configUpdate.cooldownBetweenCycles = adjustment.after;
+        }
+        break;
+
+      case 'maxResearchResults':
+        if (typeof adjustment.after === 'number') {
+          configUpdate.maxResearchResults = adjustment.after;
+        }
+        break;
+
+      default:
+        console.log(`[RSI] Unknown adjustment component: ${adjustment.component}`);
+        return;
+    }
+
+    // Apply the update
+    this.updateConfig(configUpdate);
+    console.log(`[RSI] Config updated: ${adjustment.component} = ${JSON.stringify(adjustment.after)}`);
   }
 }
 

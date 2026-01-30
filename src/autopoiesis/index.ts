@@ -328,6 +328,13 @@ export async function updateSelfModel(
 // Autopoiesis Engine
 // ============================================================================
 
+// Callback type for cycle events - enables Active Inference integration
+export type AutopoiesisCycleCallback = (
+  cycleNumber: number,
+  observations: SelfObservation[],
+  opportunities: string[],
+) => void;
+
 export class AutopoiesisEngine {
   private config: AutopoiesisConfig;
   private mcp: IMCPClient;
@@ -338,6 +345,9 @@ export class AutopoiesisEngine {
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
   private observationHistory: SelfObservation[] = [];
   private cycleCount: number = 0;
+
+  // v13.14: Callback for Active Inference integration
+  private cycleCallbacks: AutopoiesisCycleCallback[] = [];
 
   constructor(
     config: Partial<AutopoiesisConfig> = {},
@@ -385,6 +395,14 @@ export class AutopoiesisEngine {
     }
 
     console.log('[Autopoiesis] Stopped autopoietic loop');
+  }
+
+  /**
+   * v13.14: Register a callback to be called after each autopoietic cycle.
+   * This enables closing the loop with Active Inference.
+   */
+  onCycle(callback: AutopoiesisCycleCallback): void {
+    this.cycleCallbacks.push(callback);
   }
 
   /**
@@ -437,6 +455,16 @@ export class AutopoiesisEngine {
       const surprises = observations.filter(o => (o.surprise || 0) > 0.5);
       for (const s of surprises) {
         console.log(`[Autopoiesis] HIGH SURPRISE: ${s.category}.${s.metric} = ${s.value} (surprise: ${s.surprise})`);
+      }
+
+      // 6. CLOSE THE LOOP: Notify Active Inference via callbacks
+      // This is the critical integration point - self-observations feed back into AI decision-making
+      for (const callback of this.cycleCallbacks) {
+        try {
+          callback(this.cycleCount, observations, opportunities);
+        } catch (callbackError) {
+          console.error('[Autopoiesis] Callback error:', callbackError);
+        }
       }
 
     } catch (error) {

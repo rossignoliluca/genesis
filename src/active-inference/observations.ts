@@ -51,6 +51,18 @@ export interface WorldModelState {
   issues: number;
 }
 
+// v13.14: Autopoiesis state for self-observation feedback
+export interface AutopoiesisState {
+  heapUsageRatio: number;    // 0.0 - 1.0
+  phi: number;               // Consciousness level
+  episodicCount: number;     // Memory growth
+  semanticCount: number;
+  proceduralCount: number;
+  learnedModelSizeKb: number;
+  uptimeHours: number;
+  opportunities: string[];   // Self-improvement opportunities detected
+}
+
 // ============================================================================
 // Observation Gatherer
 // ============================================================================
@@ -61,6 +73,9 @@ export class ObservationGatherer {
   private getPhiState?: () => PhiState;
   private getSensorResult?: () => Promise<SensorResult>;
   private getWorldModelState?: () => WorldModelState;
+
+  // v13.14: Autopoiesis integration - self-observations feed back into AI loop
+  private autopoiesisState: AutopoiesisState | null = null;
 
   // v10.8: Real MCP data tracking
   private mcpToolResults: Array<{ success: boolean; latency: number; timestamp: number }> = [];
@@ -91,6 +106,21 @@ export class ObservationGatherer {
     if (sources.phiState) this.getPhiState = sources.phiState;
     if (sources.sensorResult) this.getSensorResult = sources.sensorResult;
     if (sources.worldModelState) this.getWorldModelState = sources.worldModelState;
+  }
+
+  /**
+   * v13.14: Update autopoiesis state from self-observation.
+   * This closes the autopoietic loop: self-observation → AI decision-making.
+   */
+  updateAutopoiesisState(state: AutopoiesisState): void {
+    this.autopoiesisState = state;
+  }
+
+  /**
+   * v13.14: Get current autopoiesis state.
+   */
+  getAutopoiesisState(): AutopoiesisState | null {
+    return this.autopoiesisState;
   }
 
   /**
@@ -226,16 +256,43 @@ export class ObservationGatherer {
     }
 
     // Get states from components (with defaults if not configured)
-    const kernelState = this.getKernelState?.() ?? {
+    let kernelState = this.getKernelState?.() ?? {
       energy: 0.5,
       state: 'idle',
       taskStatus: 'none' as const,
     };
 
-    const phiState = this.getPhiState?.() ?? {
+    let phiState = this.getPhiState?.() ?? {
       phi: 0.5,
       state: 'aware' as const,
     };
+
+    // v13.14: AUTOPOIESIS INTEGRATION - Self-observations feed back into AI loop
+    // This closes the autopoietic loop: what Genesis observes about itself
+    // directly influences its decision-making through Active Inference.
+    if (this.autopoiesisState) {
+      const auto = this.autopoiesisState;
+
+      // Blend autopoiesis heap observation with kernel energy
+      // High heap usage (autopoiesis) → low energy
+      const autoEnergy = Math.max(0, 1 - auto.heapUsageRatio);
+      kernelState = {
+        ...kernelState,
+        energy: 0.5 * kernelState.energy + 0.5 * autoEnergy, // 50/50 blend
+        taskStatus: auto.opportunities.length > 0 ? 'pending' as const : kernelState.taskStatus,
+      };
+
+      // Use autopoiesis phi directly (more accurate self-observation)
+      phiState = {
+        phi: auto.phi,
+        state: auto.phi > 0.5 ? 'aware' : auto.phi > 0.2 ? 'drowsy' : 'dormant',
+      };
+
+      // Log integration (debug)
+      if (process.env.LOG_LEVEL === 'debug') {
+        console.log(`[AI Loop] Autopoiesis → AI: energy=${kernelState.energy.toFixed(2)}, phi=${phiState.phi.toFixed(2)}, opportunities=${auto.opportunities.length}`);
+      }
+    }
 
     const sensorResult = this.getSensorResult
       ? await this.getSensorResult()

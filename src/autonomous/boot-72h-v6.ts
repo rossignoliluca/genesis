@@ -25,7 +25,8 @@ import { getRevenueLoop, RevenueLoop } from '../services/revenue-loop.js';
 import { getDaemon, Daemon, DaemonDependencies } from '../daemon/index.js';
 import { healing } from '../healing/index.js';
 import { ActionType, ACTIONS } from '../active-inference/types.js';
-import { getAutopoiesisEngine, AutopoiesisEngine } from '../autopoiesis/index.js';
+import { getAutopoiesisEngine, AutopoiesisEngine, SelfObservation } from '../autopoiesis/index.js';
+import { getObservationGatherer, AutopoiesisState } from '../active-inference/index.js';
 
 // ============================================================================
 // Configuration
@@ -467,9 +468,42 @@ async function boot(): Promise<CognitiveState> {
     learningEnabled: true,          // Learn from self-modification outcomes
   });
 
+  // v13.14: Wire autopoiesis → Active Inference observation gatherer
+  // This closes the autopoietic loop: self-observation feeds back into AI decision-making
+  const observationGatherer = getObservationGatherer();
+  autopoiesis.onCycle((cycleNumber, observations, opportunities) => {
+    // Extract key metrics from self-observations
+    const heapObs = observations.find(o => o.metric === 'heap_usage_ratio');
+    const phiObs = observations.find(o => o.metric === 'phi');
+    const episodicObs = observations.find(o => o.metric === 'episodic_count');
+    const semanticObs = observations.find(o => o.metric === 'semantic_count');
+    const proceduralObs = observations.find(o => o.metric === 'procedural_count');
+    const modelSizeObs = observations.find(o => o.metric === 'learned_model_size_kb');
+    const uptimeObs = observations.find(o => o.metric === 'uptime_hours');
+
+    // Build AutopoiesisState for AI loop
+    const state: AutopoiesisState = {
+      heapUsageRatio: typeof heapObs?.value === 'number' ? heapObs.value : 0.5,
+      phi: typeof phiObs?.value === 'number' ? phiObs.value : 0.5,
+      episodicCount: typeof episodicObs?.value === 'number' ? episodicObs.value : 0,
+      semanticCount: typeof semanticObs?.value === 'number' ? semanticObs.value : 0,
+      proceduralCount: typeof proceduralObs?.value === 'number' ? proceduralObs.value : 0,
+      learnedModelSizeKb: typeof modelSizeObs?.value === 'number' ? modelSizeObs.value : 0,
+      uptimeHours: typeof uptimeObs?.value === 'number' ? uptimeObs.value : 0,
+      opportunities,
+    };
+
+    // Feed self-observations into Active Inference loop
+    observationGatherer.updateAutopoiesisState(state);
+
+    if (CONFIG.verbose) {
+      log(`  [Autopoiesis → AI] Cycle ${cycleNumber}: heapRatio=${state.heapUsageRatio.toFixed(2)}, phi=${state.phi.toFixed(2)}, opportunities=${opportunities.length}`, 'debug');
+    }
+  });
+
   // Start autopoietic self-observation loop
   autopoiesis.start();
-  log('  Autopoiesis: ONLINE (self-observation active)');
+  log('  Autopoiesis: ONLINE (self-observation → AI loop wired)');
 
   // ============================================================================
   // PHASE 8: Build State

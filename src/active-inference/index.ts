@@ -28,7 +28,12 @@ export * from './types.js';
 
 // Export core components
 export { ActiveInferenceEngine, createActiveInferenceEngine } from './core.js';
-export { ObservationGatherer, createObservationGatherer, getObservationGatherer } from './observations.js';
+export {
+  ObservationGatherer,
+  createObservationGatherer,
+  getObservationGatherer,
+  type AutopoiesisState,  // v13.14: Autopoiesis → AI loop integration
+} from './observations.js';
 export {
   ActionExecutorManager,
   createActionExecutorManager,

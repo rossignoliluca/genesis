@@ -9,7 +9,7 @@ import assert from 'node:assert';
 // Memory Module Tests
 describe('Memory Module', () => {
   test('MemorySystem creates and initializes', async () => {
-    const { createMemorySystem, resetMemorySystem } = await import('../src/memory/index.js');
+    const { createMemorySystem, resetMemorySystem } = await import('../dist/src/memory/index.js');
     resetMemorySystem();
 
     const memory = createMemorySystem();
@@ -22,7 +22,7 @@ describe('Memory Module', () => {
   });
 
   test('EpisodicStore can store and retrieve memories', async () => {
-    const { createEpisodicStore } = await import('../src/memory/episodic.js');
+    const { createEpisodicStore } = await import('../dist/src/memory/episodic.js');
 
     const store = createEpisodicStore();
 
@@ -49,7 +49,7 @@ describe('Memory Module', () => {
   });
 
   test('SemanticStore can store and retrieve facts', async () => {
-    const { createSemanticStore } = await import('../src/memory/semantic.js');
+    const { createSemanticStore } = await import('../dist/src/memory/semantic.js');
 
     const store = createSemanticStore();
 
@@ -72,7 +72,7 @@ describe('Memory Module', () => {
   });
 
   test('ProceduralStore can store and retrieve procedures', async () => {
-    const { createProceduralStore } = await import('../src/memory/procedural.js');
+    const { createProceduralStore } = await import('../dist/src/memory/procedural.js');
 
     const store = createProceduralStore();
 
@@ -95,7 +95,7 @@ describe('Memory Module', () => {
   });
 
   test('Forgetting module exports functions', async () => {
-    const forgettingModule = await import('../src/memory/forgetting.js');
+    const forgettingModule = await import('../dist/src/memory/forgetting.js');
 
     // Just verify the module exports what we expect
     assert.ok(forgettingModule.calculateRetention, 'Should export calculateRetention');
@@ -106,7 +106,7 @@ describe('Memory Module', () => {
 // Consciousness Module Tests
 describe('Consciousness Module', () => {
   test('ConsciousnessSystem creates and initializes', async () => {
-    const { createConsciousnessSystem, resetConsciousnessSystem } = await import('../src/consciousness/index.js');
+    const { createConsciousnessSystem, resetConsciousnessSystem } = await import('../dist/src/consciousness/index.js');
     resetConsciousnessSystem();
 
     const consciousness = createConsciousnessSystem();
@@ -120,7 +120,7 @@ describe('Consciousness Module', () => {
   });
 
   test('PhiCalculator calculates phi values', async () => {
-    const { createPhiCalculator } = await import('../src/consciousness/phi-calculator.js');
+    const { createPhiCalculator } = await import('../dist/src/consciousness/phi-calculator.js');
 
     const calculator = createPhiCalculator();
 
@@ -146,7 +146,7 @@ describe('Consciousness Module', () => {
   });
 
   test('GlobalWorkspace performs selection and broadcast', async () => {
-    const { createGlobalWorkspace } = await import('../src/consciousness/global-workspace.js');
+    const { createGlobalWorkspace } = await import('../dist/src/consciousness/global-workspace.js');
 
     const workspace = createGlobalWorkspace();
     assert.ok(workspace, 'Workspace should be created');
@@ -157,7 +157,7 @@ describe('Consciousness Module', () => {
   });
 
   test('PhiMonitor tracks phi', async () => {
-    const { createPhiMonitor } = await import('../src/consciousness/phi-monitor.js');
+    const { createPhiMonitor } = await import('../dist/src/consciousness/phi-monitor.js');
 
     const monitor = createPhiMonitor();
     assert.ok(monitor, 'Monitor should be created');
@@ -168,7 +168,7 @@ describe('Consciousness Module', () => {
   });
 
   test('PhiDecisionMaker makes decisions', async () => {
-    const { createPhiDecisionMaker } = await import('../src/consciousness/phi-decisions.js');
+    const { createPhiDecisionMaker } = await import('../dist/src/consciousness/phi-decisions.js');
 
     const decisionMaker = createPhiDecisionMaker();
     assert.ok(decisionMaker, 'Decision maker should be created');
@@ -178,7 +178,7 @@ describe('Consciousness Module', () => {
 // World Model Module Tests
 describe('World Model Module', () => {
   test('WorldModelSystem creates and initializes', async () => {
-    const { createWorldModelSystem, resetWorldModelSystem } = await import('../src/world-model/index.js');
+    const { createWorldModelSystem, resetWorldModelSystem } = await import('../dist/src/world-model/index.js');
     resetWorldModelSystem();
 
     const worldModel = createWorldModelSystem();
@@ -192,7 +192,7 @@ describe('World Model Module', () => {
   });
 
   test('LatentEncoder encodes multimodal inputs', async () => {
-    const { createLatentEncoder } = await import('../src/world-model/encoder.js');
+    const { createLatentEncoder } = await import('../dist/src/world-model/encoder.js');
 
     const encoder = createLatentEncoder();
 
@@ -221,8 +221,8 @@ describe('World Model Module', () => {
   });
 
   test('LatentDecoder decodes latent states', async () => {
-    const { createLatentEncoder } = await import('../src/world-model/encoder.js');
-    const { createLatentDecoder } = await import('../src/world-model/decoder.js');
+    const { createLatentEncoder } = await import('../dist/src/world-model/encoder.js');
+    const { createLatentDecoder } = await import('../dist/src/world-model/decoder.js');
 
     const encoder = createLatentEncoder();
     const decoder = createLatentDecoder();
@@ -244,7 +244,7 @@ describe('World Model Module', () => {
   });
 
   test('WorldModelPredictor exists and initializes', async () => {
-    const { createWorldModelPredictor } = await import('../src/world-model/predictor.js');
+    const { createWorldModelPredictor } = await import('../dist/src/world-model/predictor.js');
 
     const predictor = createWorldModelPredictor();
     assert.ok(predictor, 'Predictor should be created');
@@ -253,7 +253,7 @@ describe('World Model Module', () => {
   });
 
   test('DigitalTwinManager creates twins', async () => {
-    const { createDigitalTwinManager } = await import('../src/world-model/digital-twin.js');
+    const { createDigitalTwinManager } = await import('../dist/src/world-model/digital-twin.js');
 
     const manager = createDigitalTwinManager();
     assert.ok(manager, 'Manager should be created');
@@ -268,7 +268,7 @@ describe('World Model Module', () => {
 // Daemon Module Tests
 describe('Daemon Module', () => {
   test('Scheduler creates and manages tasks', async () => {
-    const { createScheduler } = await import('../src/daemon/scheduler.js');
+    const { createScheduler } = await import('../dist/src/daemon/scheduler.js');
 
     const scheduler = createScheduler();
     assert.ok(scheduler, 'Scheduler should be created');
@@ -288,14 +288,14 @@ describe('Daemon Module', () => {
   });
 
   test('MaintenanceService initializes', async () => {
-    const { createMaintenanceService } = await import('../src/daemon/maintenance.js');
+    const { createMaintenanceService } = await import('../dist/src/daemon/maintenance.js');
 
     const maintenance = createMaintenanceService();
     assert.ok(maintenance, 'Maintenance service should be created');
   });
 
   test('DreamService initializes', async () => {
-    const { createDreamService } = await import('../src/daemon/dream-mode.js');
+    const { createDreamService } = await import('../dist/src/daemon/dream-mode.js');
 
     const dreamService = createDreamService();
     assert.ok(dreamService, 'Dream service should be created');
@@ -305,7 +305,7 @@ describe('Daemon Module', () => {
 // Cross-Module Integration Tests
 describe('Cross-Module Integration', () => {
   test('Memory system stores and retrieves', async () => {
-    const { createMemorySystem, resetMemorySystem } = await import('../src/memory/index.js');
+    const { createMemorySystem, resetMemorySystem } = await import('../dist/src/memory/index.js');
 
     resetMemorySystem();
     const memory = createMemorySystem();
@@ -327,7 +327,7 @@ describe('Cross-Module Integration', () => {
   });
 
   test('World Model encodes and decodes', async () => {
-    const { createWorldModelSystem, resetWorldModelSystem } = await import('../src/world-model/index.js');
+    const { createWorldModelSystem, resetWorldModelSystem } = await import('../dist/src/world-model/index.js');
 
     resetWorldModelSystem();
     const worldModel = createWorldModelSystem();
@@ -351,10 +351,10 @@ describe('Cross-Module Integration', () => {
   });
 
   test('All modules can be imported together', async () => {
-    const memory = await import('../src/memory/index.js');
-    const consciousness = await import('../src/consciousness/index.js');
-    const worldModel = await import('../src/world-model/index.js');
-    const daemon = await import('../src/daemon/index.js');
+    const memory = await import('../dist/src/memory/index.js');
+    const consciousness = await import('../dist/src/consciousness/index.js');
+    const worldModel = await import('../dist/src/world-model/index.js');
+    const daemon = await import('../dist/src/daemon/index.js');
 
     assert.ok(memory.createMemorySystem, 'Memory should export factory');
     assert.ok(consciousness.createConsciousnessSystem, 'Consciousness should export factory');

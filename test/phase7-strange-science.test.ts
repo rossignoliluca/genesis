@@ -23,7 +23,7 @@ import {
   createSymbol,
   getLSM,
   resetLSM
-} from '../src/semiotics/index.js';
+} from '../dist/src/semiotics/index.js';
 
 // Umwelt
 import {
@@ -35,7 +35,7 @@ import {
   createAction,
   getUmwelt,
   clearUmwelts
-} from '../src/umwelt/index.js';
+} from '../dist/src/umwelt/index.js';
 
 // Morphogenetic
 import {
@@ -48,7 +48,7 @@ import {
   getNCA,
   resetColony,
   resetNCA
-} from '../src/morphogenetic/index.js';
+} from '../dist/src/morphogenetic/index.js';
 
 // Strange Loops
 import {
@@ -57,7 +57,7 @@ import {
   createLevel,
   getStrangeLoop,
   resetStrangeLoop
-} from '../src/strange-loop/index.js';
+} from '../dist/src/strange-loop/index.js';
 
 // Symbiotic
 import {
@@ -66,7 +66,7 @@ import {
   createTask,
   getPartnership,
   resetPartnership
-} from '../src/symbiotic/index.js';
+} from '../dist/src/symbiotic/index.js';
 
 // Second-Order Cybernetics
 import {
@@ -75,7 +75,7 @@ import {
   createDistinction,
   getCybernetics,
   resetCybernetics
-} from '../src/second-order/index.js';
+} from '../dist/src/second-order/index.js';
 
 // ============================================================================
 // Semiotics Tests

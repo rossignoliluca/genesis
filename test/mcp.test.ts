@@ -19,7 +19,7 @@ describe('MCP Cache', () => {
   let MCPCache: any;
 
   beforeEach(async () => {
-    cacheModule = await import('../src/mcp/cache.js');
+    cacheModule = await import('../dist/src/mcp/cache.js');
     MCPCache = cacheModule.MCPCache;
     // Reset singleton between tests
     cacheModule.resetMCPCache();
@@ -285,7 +285,7 @@ describe('MCP Transformers', () => {
   let transformersModule: any;
 
   beforeEach(async () => {
-    transformersModule = await import('../src/mcp/transformers.js');
+    transformersModule = await import('../dist/src/mcp/transformers.js');
   });
 
   describe('transform pipeline', () => {

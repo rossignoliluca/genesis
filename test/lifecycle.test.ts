@@ -15,14 +15,14 @@ import assert from 'node:assert';
 // ============================================================================
 
 describe('Shutdown Manager', () => {
-  let ShutdownManager: typeof import('../src/lifecycle/shutdown-manager.js').ShutdownManager;
-  let ShutdownPhase: typeof import('../src/lifecycle/shutdown-manager.js').ShutdownPhase;
-  let ShutdownPriority: typeof import('../src/lifecycle/shutdown-manager.js').ShutdownPriority;
-  let shutdownHelpers: typeof import('../src/lifecycle/shutdown-manager.js').shutdownHelpers;
+  let ShutdownManager: typeof import('../dist/src/lifecycle/shutdown-manager.js').ShutdownManager;
+  let ShutdownPhase: typeof import('../dist/src/lifecycle/shutdown-manager.js').ShutdownPhase;
+  let ShutdownPriority: typeof import('../dist/src/lifecycle/shutdown-manager.js').ShutdownPriority;
+  let shutdownHelpers: typeof import('../dist/src/lifecycle/shutdown-manager.js').shutdownHelpers;
   let manager: InstanceType<typeof ShutdownManager>;
 
   beforeEach(async () => {
-    const module = await import('../src/lifecycle/shutdown-manager.js');
+    const module = await import('../dist/src/lifecycle/shutdown-manager.js');
     ShutdownManager = module.ShutdownManager;
     ShutdownPhase = module.ShutdownPhase;
     ShutdownPriority = module.ShutdownPriority;
@@ -249,12 +249,12 @@ describe('Shutdown Manager', () => {
 // ============================================================================
 
 describe('Rate Limiter', () => {
-  let RateLimiter: typeof import('../src/lifecycle/rate-limiter.js').RateLimiter;
-  let TokenBucket: typeof import('../src/lifecycle/rate-limiter.js').TokenBucket;
+  let RateLimiter: typeof import('../dist/src/lifecycle/rate-limiter.js').RateLimiter;
+  let TokenBucket: typeof import('../dist/src/lifecycle/rate-limiter.js').TokenBucket;
   let limiter: InstanceType<typeof RateLimiter>;
 
   beforeEach(async () => {
-    const module = await import('../src/lifecycle/rate-limiter.js');
+    const module = await import('../dist/src/lifecycle/rate-limiter.js');
     RateLimiter = module.RateLimiter;
     TokenBucket = module.TokenBucket;
     limiter = new RateLimiter({
@@ -404,11 +404,11 @@ describe('Rate Limiter', () => {
 // ============================================================================
 
 describe('Environment Validator', () => {
-  let EnvValidator: typeof import('../src/lifecycle/env-validator.js').EnvValidator;
-  let validators: typeof import('../src/lifecycle/env-validator.js').validators;
+  let EnvValidator: typeof import('../dist/src/lifecycle/env-validator.js').EnvValidator;
+  let validators: typeof import('../dist/src/lifecycle/env-validator.js').validators;
 
   beforeEach(async () => {
-    const module = await import('../src/lifecycle/env-validator.js');
+    const module = await import('../dist/src/lifecycle/env-validator.js');
     EnvValidator = module.EnvValidator;
     validators = module.validators;
   });

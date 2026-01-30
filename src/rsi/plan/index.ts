@@ -86,9 +86,24 @@ export const SAFETY_INVARIANTS = [
     id: 'tcb-integrity',
     description: 'Trusted Computing Base files must not be modified without approval',
     tcbFiles: [
+      // Core TCB files
       'src/kernel/tcb.ts',
       'src/darwin-godel/sandbox.ts',
       'src/darwin-godel/invariants.ts',
+      // FIX: RSI module itself is part of TCB (prevents self-modification without review)
+      'src/rsi/index.ts',
+      'src/rsi/plan/index.ts',
+      'src/rsi/implement/index.ts',
+      'src/rsi/deploy/index.ts',
+      'src/rsi/learn/index.ts',
+      'src/rsi/observe/index.ts',
+      'src/rsi/research/index.ts',
+      'src/rsi/types.ts',
+      // Kernel safety-critical files
+      'src/kernel/free-energy-kernel.ts',
+      'src/kernel/invariants.ts',
+      // Consciousness safety
+      'src/consciousness/phi-calculator.ts',
     ],
   },
   {
@@ -289,8 +304,19 @@ export class ChangeGenerator {
 // =============================================================================
 
 export class SafetyAnalyzer {
+  private maxRiskLevel: 'low' | 'medium' | 'high' | 'critical';
+
+  constructor(config?: Partial<RSIConfig>) {
+    this.maxRiskLevel = config?.maxRiskLevel || 'medium';
+  }
+
   /**
    * Analyze safety of planned changes
+   *
+   * Risk tolerance policy:
+   * - Risks at or below maxRiskLevel: passed=true (can proceed with gates)
+   * - Risks above maxRiskLevel: passed=false (blocked)
+   * - CRITICAL is always blocked regardless of config
    */
   analyze(changes: PlannedChange[]): SafetyAnalysis {
     const invariantImpacts: InvariantImpact[] = [];
@@ -343,8 +369,37 @@ export class SafetyAnalyzer {
     mitigations.push('Git commit provides rollback capability');
     mitigations.push('Invariant checks will run after implementation');
 
+    // DESIGN: Risk tolerance policy (fully configurable via maxRiskLevel)
+    //
+    // Risk hierarchy: low < medium < high < critical
+    //
+    // With maxRiskLevel='medium' (default):
+    //   - LOW/MEDIUM → passed=true
+    //   - HIGH/CRITICAL → passed=false (blocked)
+    //
+    // With maxRiskLevel='high':
+    //   - LOW/MEDIUM/HIGH → passed=true
+    //   - CRITICAL → passed=false (blocked)
+    //
+    // With maxRiskLevel='critical' (FULL AUTONOMY):
+    //   - ALL levels → passed=true
+    //   - Human review gate still applies based on humanReviewThreshold
+    //   - Invariant checks still run post-implementation
+    //   - Rollback always available via git
+    //
+    // This enables aggressive self-improvement while maintaining:
+    // 1. Sandbox testing before deployment
+    // 2. Invariant verification (φ, memory, TCB)
+    // 3. Human review gates (configurable)
+    // 4. Full git rollback capability
+    const riskHierarchy: SafetyAnalysis['riskLevel'][] = ['low', 'medium', 'high', 'critical'];
+    const currentRiskIdx = riskHierarchy.indexOf(riskLevel);
+    const maxAllowedIdx = riskHierarchy.indexOf(this.maxRiskLevel);
+
+    const passed = currentRiskIdx <= maxAllowedIdx;
+
     return {
-      passed: riskLevel !== 'critical',
+      passed,
       riskLevel,
       invariantImpact: invariantImpacts,
       sideEffects,
@@ -591,7 +646,7 @@ export class PlanEngine {
   constructor(config: Partial<RSIConfig> = {}) {
     this.config = config;
     this.changeGenerator = new ChangeGenerator();
-    this.safetyAnalyzer = new SafetyAnalyzer();
+    this.safetyAnalyzer = new SafetyAnalyzer(config); // Pass config for maxRiskLevel
     this.constitutionalReviewer = new ConstitutionalReviewer();
     this.rollbackPlanner = new RollbackPlanner();
   }

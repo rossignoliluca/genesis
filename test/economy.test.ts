@@ -20,7 +20,7 @@ describe('Capital Allocator', () => {
   let CapitalAllocator: any;
 
   beforeEach(async () => {
-    capitalModule = await import('../src/economy/capital-allocator.js');
+    capitalModule = await import('../dist/src/economy/capital-allocator.js');
     CapitalAllocator = capitalModule.CapitalAllocator;
   });
 
@@ -268,7 +268,7 @@ describe('Autonomous NESS', () => {
   let AutonomousNESS: any;
 
   beforeEach(async () => {
-    economicModule = await import('../src/economy/economic-intelligence.js');
+    economicModule = await import('../dist/src/economy/economic-intelligence.js');
     AutonomousNESS = economicModule.AutonomousNESS;
   });
 

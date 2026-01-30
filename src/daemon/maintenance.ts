@@ -228,6 +228,14 @@ export class MaintenanceService {
     this.lastCycleAt = new Date();
 
     this.emit({ type: 'cycle_completed', data: report });
+
+    // Verbose issue logging for diagnostics
+    if (report.issues.length > 0) {
+      for (const issue of report.issues) {
+        this.log(`  Issue: ${issue.type} - ${issue.description} (${issue.severity})`);
+      }
+    }
+
     this.log(`Maintenance cycle completed: ${report.issues.length} issues, ${report.tasksRun} actions`);
 
     return report;

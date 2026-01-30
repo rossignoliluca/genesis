@@ -11,7 +11,7 @@ describe('Kernel', () => {
   let kernel: any;
 
   beforeEach(async () => {
-    const module = await import('../src/kernel/index.js');
+    const module = await import('../dist/src/kernel/index.js');
     Kernel = module.Kernel;
     kernel = new Kernel();
   });

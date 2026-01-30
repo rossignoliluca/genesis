@@ -13,7 +13,7 @@ describe('ThinkingModule', () => {
   let DEFAULT_GOT_CONFIG: any;
 
   beforeEach(async () => {
-    const module = await import('../src/thinking/index.js');
+    const module = await import('../dist/src/thinking/index.js');
     ThinkingEngine = module.ThinkingEngine;
     createThinkingEngine = module.createThinkingEngine;
     DEFAULT_TOT_CONFIG = module.DEFAULT_TOT_CONFIG;
@@ -110,43 +110,43 @@ describe('ThinkingModule', () => {
 
   describe('type exports', () => {
     test('exports ThoughtNode interface', async () => {
-      const module = await import('../src/thinking/index.js');
+      const module = await import('../dist/src/thinking/index.js');
       // TypeScript interfaces aren't runtime values, but we can check related types
       assert.ok(module.DEFAULT_TOT_CONFIG, 'Should have ToT related exports');
     });
 
     test('exports ToTSearchStrategy type', async () => {
-      const module = await import('../src/thinking/index.js');
+      const module = await import('../dist/src/thinking/index.js');
       // Check that strategies are valid
       const strategies = ['bfs', 'dfs', 'mcts', 'beam'];
       assert.ok(strategies.includes(module.DEFAULT_TOT_CONFIG.strategy));
     });
 
     test('exports PRMConfig', async () => {
-      const module = await import('../src/thinking/index.js');
+      const module = await import('../dist/src/thinking/index.js');
       assert.ok(module.DEFAULT_PRM_CONFIG, 'Should have PRM config');
       assert.ok('enabled' in module.DEFAULT_PRM_CONFIG);
       assert.ok('minStepScore' in module.DEFAULT_PRM_CONFIG);
     });
 
     test('exports EntropyConfig', async () => {
-      const module = await import('../src/thinking/index.js');
+      const module = await import('../dist/src/thinking/index.js');
       assert.ok(module.DEFAULT_ENTROPY_CONFIG, 'Should have entropy config');
       assert.ok('numSamples' in module.DEFAULT_ENTROPY_CONFIG);
     });
 
     test('exports ComputeBudgetConfig', async () => {
-      const module = await import('../src/thinking/index.js');
+      const module = await import('../dist/src/thinking/index.js');
       assert.ok(module.DEFAULT_COMPUTE_BUDGET_CONFIG, 'Should have compute budget config');
     });
 
     test('exports SuperCorrectConfig', async () => {
-      const module = await import('../src/thinking/index.js');
+      const module = await import('../dist/src/thinking/index.js');
       assert.ok(module.DEFAULT_SUPERCORRECT_CONFIG, 'Should have SuperCorrect config');
     });
 
     test('exports TraceCompressionConfig', async () => {
-      const module = await import('../src/thinking/index.js');
+      const module = await import('../dist/src/thinking/index.js');
       assert.ok(module.DEFAULT_TRACE_COMPRESSION_CONFIG, 'Should have trace compression config');
     });
   });
@@ -203,7 +203,7 @@ describe('ThinkingModule', () => {
 
   describe('integration', () => {
     test('full module imports without error', async () => {
-      const module = await import('../src/thinking/index.js');
+      const module = await import('../dist/src/thinking/index.js');
 
       // Verify key exports exist
       assert.ok(module.ThinkingEngine);

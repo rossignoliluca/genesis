@@ -347,13 +347,13 @@ export class StrategyAdjuster {
   }
 
   private lowerRiskThreshold(current: RSIConfig['maxRiskLevel']): RSIConfig['maxRiskLevel'] {
-    const levels: RSIConfig['maxRiskLevel'][] = ['low', 'medium', 'high'];
+    const levels: RSIConfig['maxRiskLevel'][] = ['low', 'medium', 'high', 'critical'];
     const idx = levels.indexOf(current);
     return levels[Math.max(0, idx - 1)];
   }
 
   private raiseRiskThreshold(current: RSIConfig['maxRiskLevel']): RSIConfig['maxRiskLevel'] {
-    const levels: RSIConfig['maxRiskLevel'][] = ['low', 'medium', 'high'];
+    const levels: RSIConfig['maxRiskLevel'][] = ['low', 'medium', 'high', 'critical'];
     const idx = levels.indexOf(current);
     return levels[Math.min(levels.length - 1, idx + 1)];
   }

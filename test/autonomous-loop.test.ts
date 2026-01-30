@@ -13,7 +13,7 @@ describe('AutonomousLoop', () => {
   let loop: any;
 
   beforeEach(async () => {
-    const module = await import('../src/active-inference/autonomous-loop.js');
+    const module = await import('../dist/src/active-inference/autonomous-loop.js');
     AutonomousLoop = module.AutonomousLoop;
     createAutonomousLoop = module.createAutonomousLoop;
     resetAutonomousLoop = module.resetAutonomousLoop;

@@ -19,8 +19,8 @@ describe('LLM Module', () => {
   let routerModule: any;
 
   beforeEach(async () => {
-    llmModule = await import('../src/llm/index.js');
-    routerModule = await import('../src/llm/router.js');
+    llmModule = await import('../dist/src/llm/index.js');
+    routerModule = await import('../dist/src/llm/router.js');
   });
 
   // ============================================================================
@@ -571,7 +571,7 @@ describe('Advanced Router', () => {
   let advancedRouterModule: any;
 
   beforeEach(async () => {
-    advancedRouterModule = await import('../src/llm/advanced-router.js');
+    advancedRouterModule = await import('../dist/src/llm/advanced-router.js');
   });
 
   describe('PROVIDER_REGISTRY', () => {

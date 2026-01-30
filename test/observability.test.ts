@@ -45,7 +45,7 @@ import {
 
   // Full stack
   initObservability,
-} from '../src/observability/index.js';
+} from '../dist/src/observability/index.js';
 
 // ============================================================
 // LOGGER TESTS
@@ -92,7 +92,7 @@ describe('Logger', () => {
   });
 
   it('should log at various levels', () => {
-    const entries: import('../src/observability/logger.js').LogEntry[] = [];
+    const entries: import('../dist/src/observability/logger.js').LogEntry[] = [];
     const logger = new Logger({
       level: 'trace',
       output: (entry) => entries.push(entry),
@@ -109,7 +109,7 @@ describe('Logger', () => {
   });
 
   it('should filter logs by level', () => {
-    const entries: import('../src/observability/logger.js').LogEntry[] = [];
+    const entries: import('../dist/src/observability/logger.js').LogEntry[] = [];
     const logger = new Logger({
       level: 'error',
       output: (entry) => entries.push(entry),

@@ -15,7 +15,7 @@ import assert from 'node:assert';
 describe('Brain Module (Phase 10)', () => {
   describe('Brain Types', () => {
     test('exports all required types', async () => {
-      const types = await import('../src/brain/types.js');
+      const types = await import('../dist/src/brain/types.js');
 
       // Check type exports exist
       assert.ok(types.DEFAULT_BRAIN_CONFIG, 'DEFAULT_BRAIN_CONFIG should exist');
@@ -23,7 +23,7 @@ describe('Brain Module (Phase 10)', () => {
     });
 
     test('DEFAULT_BRAIN_CONFIG has correct structure', async () => {
-      const { DEFAULT_BRAIN_CONFIG } = await import('../src/brain/types.js');
+      const { DEFAULT_BRAIN_CONFIG } = await import('../dist/src/brain/types.js');
 
       // Memory config
       assert.strictEqual(typeof DEFAULT_BRAIN_CONFIG.memory.enabled, 'boolean');
@@ -59,7 +59,7 @@ describe('Brain Module (Phase 10)', () => {
     });
 
     test('DEFAULT_BRAIN_CONFIG has sensible defaults', async () => {
-      const { DEFAULT_BRAIN_CONFIG } = await import('../src/brain/types.js');
+      const { DEFAULT_BRAIN_CONFIG } = await import('../dist/src/brain/types.js');
 
       // Memory should be enabled by default
       assert.strictEqual(DEFAULT_BRAIN_CONFIG.memory.enabled, true);
@@ -84,14 +84,14 @@ describe('Brain Module (Phase 10)', () => {
 
   describe('Brain Class', () => {
     test('creates brain instance', async () => {
-      const { createBrain } = await import('../src/brain/index.js');
+      const { createBrain } = await import('../dist/src/brain/index.js');
 
       const brain = createBrain();
       assert.ok(brain, 'Brain should be created');
     });
 
     test('getBrain returns singleton', async () => {
-      const { getBrain, resetBrain } = await import('../src/brain/index.js');
+      const { getBrain, resetBrain } = await import('../dist/src/brain/index.js');
 
       // Reset first to ensure clean state
       resetBrain();
@@ -103,7 +103,7 @@ describe('Brain Module (Phase 10)', () => {
     });
 
     test('resetBrain creates new instance', async () => {
-      const { getBrain, resetBrain } = await import('../src/brain/index.js');
+      const { getBrain, resetBrain } = await import('../dist/src/brain/index.js');
 
       const brain1 = getBrain();
       resetBrain();
@@ -113,7 +113,7 @@ describe('Brain Module (Phase 10)', () => {
     });
 
     test('brain has start/stop methods', async () => {
-      const { createBrain } = await import('../src/brain/index.js');
+      const { createBrain } = await import('../dist/src/brain/index.js');
 
       const brain = createBrain();
       assert.strictEqual(typeof brain.start, 'function');
@@ -121,7 +121,7 @@ describe('Brain Module (Phase 10)', () => {
     });
 
     test('brain has isRunning method', async () => {
-      const { createBrain } = await import('../src/brain/index.js');
+      const { createBrain } = await import('../dist/src/brain/index.js');
 
       const brain = createBrain();
       assert.strictEqual(typeof brain.isRunning, 'function');
@@ -139,14 +139,14 @@ describe('Brain Module (Phase 10)', () => {
     });
 
     test('brain has process method', async () => {
-      const { createBrain } = await import('../src/brain/index.js');
+      const { createBrain } = await import('../dist/src/brain/index.js');
 
       const brain = createBrain();
       assert.strictEqual(typeof brain.process, 'function');
     });
 
     test('brain has getMetrics method', async () => {
-      const { createBrain } = await import('../src/brain/index.js');
+      const { createBrain } = await import('../dist/src/brain/index.js');
 
       const brain = createBrain();
       assert.strictEqual(typeof brain.getMetrics, 'function');
@@ -158,7 +158,7 @@ describe('Brain Module (Phase 10)', () => {
 
   describe('Brain Metrics', () => {
     test('metrics have correct structure and types', async () => {
-      const { createBrain } = await import('../src/brain/index.js');
+      const { createBrain } = await import('../dist/src/brain/index.js');
 
       const brain = createBrain();
       const metrics = brain.getMetrics();
@@ -181,7 +181,7 @@ describe('Brain Module (Phase 10)', () => {
     });
 
     test('metrics track avgPhi', async () => {
-      const { createBrain } = await import('../src/brain/index.js');
+      const { createBrain } = await import('../dist/src/brain/index.js');
 
       const brain = createBrain();
       const metrics = brain.getMetrics();
@@ -192,7 +192,7 @@ describe('Brain Module (Phase 10)', () => {
     });
 
     test('metrics track memoryReuseRate', async () => {
-      const { createBrain } = await import('../src/brain/index.js');
+      const { createBrain } = await import('../dist/src/brain/index.js');
 
       const brain = createBrain();
       const metrics = brain.getMetrics();
@@ -203,7 +203,7 @@ describe('Brain Module (Phase 10)', () => {
     });
 
     test('metrics have moduleTransitions', async () => {
-      const { createBrain } = await import('../src/brain/index.js');
+      const { createBrain } = await import('../dist/src/brain/index.js');
 
       const brain = createBrain();
       const metrics = brain.getMetrics();
@@ -214,14 +214,14 @@ describe('Brain Module (Phase 10)', () => {
 
   describe('Brain Events', () => {
     test('brain has on method for events', async () => {
-      const { createBrain } = await import('../src/brain/index.js');
+      const { createBrain } = await import('../dist/src/brain/index.js');
 
       const brain = createBrain();
       assert.strictEqual(typeof brain.on, 'function');
     });
 
     test('on returns unsubscribe function', async () => {
-      const { createBrain } = await import('../src/brain/index.js');
+      const { createBrain } = await import('../dist/src/brain/index.js');
 
       const brain = createBrain();
       const events: string[] = [];
@@ -241,7 +241,7 @@ describe('Brain Module (Phase 10)', () => {
 
   describe('Brain Configuration', () => {
     test('can create brain with custom config', async () => {
-      const { createBrain } = await import('../src/brain/index.js');
+      const { createBrain } = await import('../dist/src/brain/index.js');
 
       const brain = createBrain({
         memory: {
@@ -283,7 +283,7 @@ describe('Brain Module (Phase 10)', () => {
   describe('Command Routing', () => {
     test('BrainModule type includes all modules', async () => {
       // This is a type-level test - we just verify the module works
-      const { DEFAULT_BRAIN_CONFIG } = await import('../src/brain/types.js');
+      const { DEFAULT_BRAIN_CONFIG } = await import('../dist/src/brain/types.js');
 
       // The modules are: memory, llm, grounding, tools, healing, consciousness, kernel, done
       // If this compiles, the types are correct
@@ -294,7 +294,7 @@ describe('Brain Module (Phase 10)', () => {
 
   describe('Integration', () => {
     test('brain can be started and stopped multiple times', async () => {
-      const { createBrain } = await import('../src/brain/index.js');
+      const { createBrain } = await import('../dist/src/brain/index.js');
 
       const brain = createBrain();
 
@@ -391,7 +391,7 @@ describe('Brain Types Validation', () => {
 
 describe('Brain Trace (Phase 10)', () => {
   test('createBrainTrace creates trace instance', async () => {
-    const { createBrain, createBrainTrace } = await import('../src/brain/index.js');
+    const { createBrain, createBrainTrace } = await import('../dist/src/brain/index.js');
 
     const brain = createBrain();
     const trace = createBrainTrace(brain);
@@ -400,7 +400,7 @@ describe('Brain Trace (Phase 10)', () => {
   });
 
   test('trace has enable/disable methods', async () => {
-    const { createBrain, createBrainTrace } = await import('../src/brain/index.js');
+    const { createBrain, createBrainTrace } = await import('../dist/src/brain/index.js');
 
     const brain = createBrain();
     const trace = createBrainTrace(brain);
@@ -412,7 +412,7 @@ describe('Brain Trace (Phase 10)', () => {
   });
 
   test('trace starts disabled', async () => {
-    const { createBrain, createBrainTrace } = await import('../src/brain/index.js');
+    const { createBrain, createBrainTrace } = await import('../dist/src/brain/index.js');
 
     const brain = createBrain();
     const trace = createBrainTrace(brain);
@@ -421,7 +421,7 @@ describe('Brain Trace (Phase 10)', () => {
   });
 
   test('enable() enables trace', async () => {
-    const { createBrain, createBrainTrace } = await import('../src/brain/index.js');
+    const { createBrain, createBrainTrace } = await import('../dist/src/brain/index.js');
 
     const brain = createBrain();
     const trace = createBrainTrace(brain);
@@ -434,7 +434,7 @@ describe('Brain Trace (Phase 10)', () => {
   });
 
   test('toggle() toggles trace state', async () => {
-    const { createBrain, createBrainTrace } = await import('../src/brain/index.js');
+    const { createBrain, createBrainTrace } = await import('../dist/src/brain/index.js');
 
     const brain = createBrain();
     const trace = createBrainTrace(brain);

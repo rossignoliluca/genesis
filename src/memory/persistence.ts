@@ -401,13 +401,21 @@ export class MemoryPersistence {
   /**
    * Load all persisted memories from Supabase into stores.
    * Call this once at system boot.
+   *
+   * FIX v14.1: Now accepts store references and actually loads data into them.
+   * Previous version only counted records without storing them.
    */
-  async hydrate(): Promise<{
+  async hydrate(stores?: {
+    episodic?: { store: (memory: EpisodicMemory) => void };
+    semantic?: { store: (memory: SemanticMemory) => void };
+    procedural?: { store: (memory: ProceduralMemory) => void };
+  }): Promise<{
     episodic: number;
     semantic: number;
     procedural: number;
+    errors: number;
   }> {
-    const counts = { episodic: 0, semantic: 0, procedural: 0 };
+    const counts = { episodic: 0, semantic: 0, procedural: 0, errors: 0 };
 
     if (!this.config.supabase) return counts;
 
@@ -421,7 +429,44 @@ export class MemoryPersistence {
         limit: 10000,
       }) as any;
       if (Array.isArray(episodes)) {
-        counts.episodic = episodes.length;
+        // FIX: Actually load data into store
+        if (stores?.episodic) {
+          for (const ep of episodes) {
+            try {
+              // Convert DB row to EpisodicMemory format with all required fields
+              const memory: EpisodicMemory = {
+                id: ep.id,
+                type: 'episodic',
+                content: ep.content || { what: ep.what || '', details: ep.details || {} },
+                created: new Date(ep.created_at || ep.created),
+                lastAccessed: new Date(ep.last_accessed || ep.created_at),
+                R0: ep.r0 ?? ep.retention ?? 1.0,
+                S: ep.s ?? ep.stability ?? 1.0,
+                accessCount: ep.access_count ?? 0,
+                consolidated: ep.consolidated ?? false,
+                emotionalValence: ep.emotional_valence ?? 0,
+                importance: ep.importance ?? 0.5,
+                associations: ep.associations ?? [],
+                tags: ep.tags ?? [],
+                when: ep.when || {
+                  timestamp: new Date(ep.timestamp || ep.created_at || Date.now()),
+                  duration: ep.duration,
+                  sequence: ep.sequence,
+                },
+                where: ep.where,
+                who: ep.who,
+                feeling: ep.feeling,
+              };
+              stores.episodic.store(memory);
+              counts.episodic++;
+            } catch (e) {
+              counts.errors++;
+              if (this.config.verbose) console.warn('[Persistence] Failed to hydrate episode:', ep.id, e);
+            }
+          }
+        } else {
+          counts.episodic = episodes.length; // Fallback: just count
+        }
       }
 
       // Load semantic
@@ -431,7 +476,48 @@ export class MemoryPersistence {
         limit: 50000,
       }) as any;
       if (Array.isArray(facts)) {
-        counts.semantic = facts.length;
+        // FIX: Actually load data into store
+        if (stores?.semantic) {
+          for (const fact of facts) {
+            try {
+              const memory: SemanticMemory = {
+                id: fact.id,
+                type: 'semantic',
+                content: fact.content || {
+                  concept: fact.concept || '',
+                  definition: fact.definition || '',
+                  properties: fact.properties || {},
+                },
+                created: new Date(fact.created_at || fact.created),
+                lastAccessed: new Date(fact.last_accessed || fact.created_at),
+                R0: fact.r0 ?? fact.retention ?? 1.0,
+                S: fact.s ?? fact.stability ?? 1.0,
+                accessCount: fact.access_count ?? 0,
+                importance: fact.importance ?? 0.5,
+                emotionalValence: fact.emotional_valence ?? 0,
+                associations: fact.associations ?? [],
+                tags: fact.tags ?? [],
+                consolidated: fact.consolidated ?? false,
+                confidence: fact.confidence ?? 0.8,
+                sources: fact.sources ?? [],
+                category: fact.category ?? 'general',
+                superordinates: fact.superordinates ?? [],
+                subordinates: fact.subordinates ?? [],
+                related: fact.related ?? [],
+                usageCount: fact.usage_count ?? 0,
+                lastUsed: new Date(fact.last_used || fact.last_accessed || fact.created_at),
+                contradictions: fact.contradictions,
+              };
+              stores.semantic.store(memory);
+              counts.semantic++;
+            } catch (e) {
+              counts.errors++;
+              if (this.config.verbose) console.warn('[Persistence] Failed to hydrate fact:', fact.id, e);
+            }
+          }
+        } else {
+          counts.semantic = facts.length; // Fallback: just count
+        }
       }
 
       // Load procedural
@@ -441,12 +527,52 @@ export class MemoryPersistence {
         limit: 5000,
       }) as any;
       if (Array.isArray(skills)) {
-        counts.procedural = skills.length;
+        // FIX: Actually load data into store
+        if (stores?.procedural) {
+          for (const skill of skills) {
+            try {
+              const memory: ProceduralMemory = {
+                id: skill.id,
+                type: 'procedural',
+                content: skill.content || {
+                  name: skill.name || '',
+                  description: skill.description || '',
+                  steps: skill.steps ?? [],
+                },
+                created: new Date(skill.created_at || skill.created),
+                lastAccessed: new Date(skill.last_accessed || skill.created_at),
+                R0: skill.r0 ?? skill.retention ?? 1.0,
+                S: skill.s ?? skill.stability ?? 1.0,
+                accessCount: skill.access_count ?? 0,
+                importance: skill.importance ?? 0.5,
+                emotionalValence: skill.emotional_valence ?? 0,
+                associations: skill.associations ?? [],
+                tags: skill.tags ?? [],
+                consolidated: skill.consolidated ?? false,
+                successRate: skill.success_rate ?? 0.8,
+                executionCount: skill.execution_count ?? 0,
+                avgDuration: skill.avg_duration ?? skill.average_duration ?? 0,
+                requires: skill.requires ?? [],
+                inputs: skill.inputs ?? [],
+                outputs: skill.outputs ?? [],
+                version: skill.version ?? 1,
+                improvements: skill.improvements ?? [],
+              };
+              stores.procedural.store(memory);
+              counts.procedural++;
+            } catch (e) {
+              counts.errors++;
+              if (this.config.verbose) console.warn('[Persistence] Failed to hydrate skill:', skill.id, e);
+            }
+          }
+        } else {
+          counts.procedural = skills.length; // Fallback: just count
+        }
       }
 
       this.stats.lastSync = new Date();
       if (this.config.verbose) {
-        console.log(`[Persistence] Hydrated: ${counts.episodic} episodes, ${counts.semantic} facts, ${counts.procedural} skills`);
+        console.log(`[Persistence] Hydrated: ${counts.episodic} episodes, ${counts.semantic} facts, ${counts.procedural} skills (${counts.errors} errors)`);
       }
     } catch (e) {
       this.stats.errors++;

@@ -18,7 +18,7 @@ describe('Forgetting Module', () => {
   let forgettingModule: any;
 
   beforeEach(async () => {
-    forgettingModule = await import('../src/memory/forgetting.js');
+    forgettingModule = await import('../dist/src/memory/forgetting.js');
   });
 
   describe('FORGETTING_THRESHOLDS', () => {
@@ -450,7 +450,7 @@ describe('Episodic Store', () => {
   let EpisodicStore: any;
 
   beforeEach(async () => {
-    episodicModule = await import('../src/memory/episodic.js');
+    episodicModule = await import('../dist/src/memory/episodic.js');
     EpisodicStore = episodicModule.EpisodicStore;
   });
 
@@ -658,7 +658,7 @@ describe('Semantic Store', () => {
   let SemanticStore: any;
 
   beforeEach(async () => {
-    semanticModule = await import('../src/memory/semantic.js');
+    semanticModule = await import('../dist/src/memory/semantic.js');
     SemanticStore = semanticModule.SemanticStore;
   });
 

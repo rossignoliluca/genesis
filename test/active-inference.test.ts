@@ -16,7 +16,7 @@ describe('Active Inference Engine', () => {
   let createActiveInferenceEngine: any;
 
   beforeEach(async () => {
-    const module = await import('../src/active-inference/core.js');
+    const module = await import('../dist/src/active-inference/core.js');
     createActiveInferenceEngine = module.createActiveInferenceEngine;
     engine = createActiveInferenceEngine();
   });
@@ -463,7 +463,7 @@ describe('Active Inference Engine', () => {
 describe('Active Inference Math Utilities', () => {
   test('softmax produces valid probability distribution', async () => {
     // Import the core module to access internal functions if exported
-    const module = await import('../src/active-inference/core.js');
+    const module = await import('../dist/src/active-inference/core.js');
 
     // Test with a simple case using the engine
     const engine = module.createActiveInferenceEngine();

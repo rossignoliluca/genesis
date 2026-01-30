@@ -328,7 +328,7 @@ export interface RSIConfig {
   // Thresholds
   minPhiForImprovement: number;
   minConfidenceForAction: number;
-  maxRiskLevel: 'low' | 'medium' | 'high';
+  maxRiskLevel: 'low' | 'medium' | 'high' | 'critical';  // v14.1: Added 'critical' for full autonomy
 
   // Limits
   maxConcurrentPlans: number;

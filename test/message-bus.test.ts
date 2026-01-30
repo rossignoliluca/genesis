@@ -11,7 +11,7 @@ describe('MessageBus', () => {
   let bus: any;
 
   beforeEach(async () => {
-    const module = await import('../src/agents/message-bus.js');
+    const module = await import('../dist/src/agents/message-bus.js');
     MessageBus = module.MessageBus;
     bus = new MessageBus();
   });

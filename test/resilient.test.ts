@@ -13,7 +13,7 @@ describe('ResilientMCP', () => {
   let client: any;
 
   beforeEach(async () => {
-    const module = await import('../src/mcp/resilient.js');
+    const module = await import('../dist/src/mcp/resilient.js');
     ResilientMCP = module.ResilientMCP;
     getResilientMCP = module.getResilientMCP;
     resetResilientMCP = module.resetResilientMCP;

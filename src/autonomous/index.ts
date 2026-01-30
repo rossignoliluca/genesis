@@ -507,23 +507,224 @@ export class AutonomousSystem {
   }
 
   private async handleEarnTask(task: AutonomousTask): Promise<unknown> {
-    // Implement revenue generation logic
-    return { type: 'earn', status: 'executed' };
+    // Real revenue generation via Stripe and CompIntel
+    try {
+      const { getRevenueLoop } = await import('../services/revenue-loop.js');
+      const revenueLoop = getRevenueLoop();
+
+      // Parse task description for action type
+      const description = task.description.toLowerCase();
+
+      if (description.includes('setup') || description.includes('initialize')) {
+        // Setup Stripe products and payment links
+        const result = await revenueLoop.setup();
+        return {
+          type: 'earn',
+          action: 'setup',
+          product: result.product.id,
+          paymentLinks: Object.fromEntries(
+            Object.entries(result.paymentLinks).map(([k, v]) => [k, v.url])
+          ),
+          status: 'success'
+        };
+      }
+
+      if (description.includes('scan') || description.includes('intel')) {
+        // Run CompIntel scan for a paying customer
+        const customerId = (task as any).customerId || process.env.STRIPE_CUSTOMER_ID;
+        const competitors = (task as any).competitors || [
+          { name: 'Competitor', domain: 'example.com', pages: ['https://example.com'] }
+        ];
+
+        const result = await revenueLoop.runPaidScan(customerId, competitors);
+        return {
+          type: 'earn',
+          action: 'scan',
+          success: result.success,
+          changes: result.changes?.length || 0,
+          subscription: result.subscription,
+          error: result.error
+        };
+      }
+
+      // Default: return current stats
+      const stats = revenueLoop.getStats();
+      return {
+        type: 'earn',
+        action: 'status',
+        revenue: stats.totalRevenue,
+        scans: stats.scansDelivered,
+        subscriptions: stats.activeSubscriptions,
+        status: 'success'
+      };
+    } catch (err) {
+      return {
+        type: 'earn',
+        status: 'error',
+        error: err instanceof Error ? err.message : String(err)
+      };
+    }
   }
 
   private async handleDeployTask(task: AutonomousTask): Promise<unknown> {
-    // Implement deployment logic
-    return { type: 'deploy', status: 'executed' };
+    // Real deployment via Vercel/Supabase/Cloudflare
+    if (!this.deployment) {
+      return { type: 'deploy', status: 'error', error: 'Deployment system not initialized' };
+    }
+
+    try {
+      const config = (task as any).config || {
+        name: `genesis-deploy-${Date.now()}`,
+        template: 'landing',
+        features: { auth: false, payments: false }
+      };
+
+      // Check governance approval for high-impact deploys
+      if (this.governance && config.features?.payments) {
+        const permission = await this.governance.governance.checkPermission({
+          actor: 'autonomous-system',
+          action: 'deploy-with-payments',
+          resource: config.name,
+          metadata: { template: config.template }
+        });
+
+        if (!permission.allowed) {
+          return {
+            type: 'deploy',
+            status: 'blocked',
+            reason: permission.deniedBy || 'governance-denied',
+            approvalRequired: permission.requiresApproval
+          };
+        }
+      }
+
+      const result = await this.deployment.deployFullStack(config);
+
+      // Store deployment in memory
+      if (result.success && this.memory) {
+        await this.memory.store({
+          content: `Deployed ${config.template}: ${config.name} at ${result.url}`,
+          type: 'episodic',
+          source: 'autonomous-deployment',
+          importance: 0.85,
+          tags: ['deployment', 'autonomous', config.template]
+        });
+      }
+
+      return {
+        type: 'deploy',
+        status: result.success ? 'success' : 'error',
+        url: result.url,
+        error: result.error
+      };
+    } catch (err) {
+      return {
+        type: 'deploy',
+        status: 'error',
+        error: err instanceof Error ? err.message : String(err)
+      };
+    }
   }
 
   private async handleRememberTask(task: AutonomousTask): Promise<unknown> {
-    // Implement memory storage logic
-    return { type: 'remember', status: 'executed' };
+    // Real memory storage with importance and consolidation
+    if (!this.memory) {
+      return { type: 'remember', status: 'error', error: 'Memory system not initialized' };
+    }
+
+    try {
+      const content = (task as any).content || task.description;
+      const memoryType = (task as any).memoryType || 'episodic';
+      const importance = (task as any).importance || 0.7;
+      const tags = (task as any).tags || ['autonomous', 'learned'];
+
+      const result = await this.memory.store({
+        content,
+        type: memoryType,
+        source: 'autonomous-system',
+        importance,
+        tags
+      });
+
+      return {
+        type: 'remember',
+        status: 'success',
+        memoryId: result.id,
+        stored: result.success
+      };
+    } catch (err) {
+      return {
+        type: 'remember',
+        status: 'error',
+        error: err instanceof Error ? err.message : String(err)
+      };
+    }
   }
 
   private async handleCollaborateTask(task: AutonomousTask): Promise<unknown> {
-    // Implement A2A collaboration logic
-    return { type: 'collaborate', status: 'executed' };
+    // Real A2A collaboration via agent card protocol
+    if (!this.governance) {
+      return { type: 'collaborate', status: 'error', error: 'Governance system not initialized' };
+    }
+
+    try {
+      const targetCapability = (task as any).capability;
+      const minRating = (task as any).minRating;
+
+      // Get our agent card
+      const selfCard = this.governance.a2a.getSelfCard();
+      if (!selfCard) {
+        return {
+          type: 'collaborate',
+          status: 'error',
+          error: 'No agent card configured'
+        };
+      }
+
+      // Discover agents with specific capability
+      if (targetCapability) {
+        const agents = await this.governance.a2a.discoverAgents({
+          capability: targetCapability,
+          minRating: minRating
+        });
+
+        if (agents.length === 0) {
+          return {
+            type: 'collaborate',
+            status: 'not_found',
+            message: `No agents found with capability: ${targetCapability}`
+          };
+        }
+
+        return {
+          type: 'collaborate',
+          status: 'success',
+          discovered: agents.map(a => ({
+            id: a.id,
+            name: a.name,
+            capabilities: a.capabilities.map(c => c.name),
+            pricing: a.pricing
+          }))
+        };
+      }
+
+      // No target: just return our capabilities
+      return {
+        type: 'collaborate',
+        status: 'success',
+        selfCard: {
+          id: selfCard.id,
+          name: selfCard.name,
+          capabilities: selfCard.capabilities.map(c => c.name)
+        }
+      };
+    } catch (err) {
+      return {
+        type: 'collaborate',
+        status: 'error',
+        error: err instanceof Error ? err.message : String(err)
+      };
+    }
   }
 
   /**

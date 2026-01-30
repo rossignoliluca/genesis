@@ -38,7 +38,20 @@ export class SandboxManager {
    * Create a sandbox environment for testing changes
    */
   async createSandbox(planId: string): Promise<string> {
-    const sandboxPath = path.join(this.baseDir, planId);
+    // FIX: Sanitize planId to prevent path traversal attacks
+    // Only allow alphanumeric, dashes, underscores (UUID format)
+    const sanitizedPlanId = planId.replace(/[^a-zA-Z0-9\-_]/g, '');
+    if (!sanitizedPlanId || sanitizedPlanId.length < 10) {
+      throw new Error('Invalid plan ID format');
+    }
+    const sandboxPath = path.join(this.baseDir, sanitizedPlanId);
+
+    // FIX: Verify sandbox path is actually under baseDir (defense in depth)
+    const resolvedSandbox = path.resolve(sandboxPath);
+    const resolvedBase = path.resolve(this.baseDir);
+    if (!resolvedSandbox.startsWith(resolvedBase + path.sep)) {
+      throw new Error('Sandbox path escape detected');
+    }
 
     // Clean up if exists
     if (fs.existsSync(sandboxPath)) {
@@ -521,7 +534,34 @@ export class ImplementationEngine {
     change: PlannedChange,
     sandboxPath: string
   ): Promise<AppliedChange> {
-    const filePath = path.join(sandboxPath, change.file);
+    // FIX: Sanitize file path to prevent path traversal
+    const normalizedFile = path.normalize(change.file).replace(/^(\.\.(\/|\\|$))+/, '');
+    if (normalizedFile.startsWith('/') || normalizedFile.includes('..')) {
+      return {
+        changeId: change.id,
+        file: change.file,
+        applied: false,
+        beforeHash: '',
+        afterHash: '',
+        error: 'Invalid file path: path traversal detected',
+      };
+    }
+    const filePath = path.join(sandboxPath, normalizedFile);
+
+    // FIX: Verify file is within sandbox (defense in depth)
+    const resolvedPath = path.resolve(filePath);
+    const resolvedSandbox = path.resolve(sandboxPath);
+    if (!resolvedPath.startsWith(resolvedSandbox + path.sep)) {
+      return {
+        changeId: change.id,
+        file: change.file,
+        applied: false,
+        beforeHash: '',
+        afterHash: '',
+        error: 'Invalid file path: sandbox escape detected',
+      };
+    }
+
     const beforeHash = this.fileHash(filePath);
 
     try {

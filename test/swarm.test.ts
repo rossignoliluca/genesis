@@ -4,18 +4,17 @@
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
-import {
+import pkg from '../dist/src/swarm/index.js';
+const {
   SwarmDynamics,
-  SwarmAgent,
   createAgent,
   createRandomSwarm,
   getSwarmDynamics,
   resetSwarmDynamics,
-  EmergentPattern
-} from '../src/swarm/index.js';
+} = pkg;
 
 describe('SwarmDynamics', () => {
-  let swarm: SwarmDynamics;
+  let swarm: any;
 
   beforeEach(() => {
     swarm = new SwarmDynamics({
@@ -378,7 +377,7 @@ describe('SwarmDynamics', () => {
       swarm.addAgent(createAgent('a2', [0.5, 0], { velocity: [1, 0] }));
       swarm.addAgent(createAgent('a3', [1, 0], { velocity: [1, 0] }));
 
-      swarm.once('pattern:detected', (pattern: EmergentPattern) => {
+      swarm.once('pattern:detected', (pattern: any) => {
         assert.ok(pattern.id);
         assert.ok(pattern.type);
         done();

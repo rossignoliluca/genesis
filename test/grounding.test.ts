@@ -10,7 +10,7 @@ import assert from 'node:assert';
 describe('Grounding Module', () => {
   describe('Domain Classification', () => {
     test('classifies factual questions', async () => {
-      const { classifyDomain } = await import('../src/grounding/index.js');
+      const { classifyDomain } = await import('../dist/src/grounding/index.js');
 
       assert.strictEqual(classifyDomain('What is TypeScript?'), 'factual');
       assert.strictEqual(classifyDomain('How does React work?'), 'factual');
@@ -18,7 +18,7 @@ describe('Grounding Module', () => {
     });
 
     test('classifies mathematical questions', async () => {
-      const { classifyDomain } = await import('../src/grounding/index.js');
+      const { classifyDomain } = await import('../dist/src/grounding/index.js');
 
       assert.strictEqual(classifyDomain('Prove that sqrt(2) is irrational'), 'mathematical');
       assert.strictEqual(classifyDomain('Calculate the derivative of x^2'), 'mathematical');
@@ -26,7 +26,7 @@ describe('Grounding Module', () => {
     });
 
     test('classifies ethical questions', async () => {
-      const { classifyDomain } = await import('../src/grounding/index.js');
+      const { classifyDomain } = await import('../dist/src/grounding/index.js');
 
       // "should I" pattern
       assert.strictEqual(classifyDomain('should I release this code'), 'ethical');
@@ -35,7 +35,7 @@ describe('Grounding Module', () => {
     });
 
     test('classifies existential questions', async () => {
-      const { classifyDomain } = await import('../src/grounding/index.js');
+      const { classifyDomain } = await import('../dist/src/grounding/index.js');
 
       // "meaning" pattern
       assert.strictEqual(classifyDomain('what is the meaning of life'), 'existential');
@@ -44,14 +44,14 @@ describe('Grounding Module', () => {
     });
 
     test('classifies aesthetic questions', async () => {
-      const { classifyDomain } = await import('../src/grounding/index.js');
+      const { classifyDomain } = await import('../dist/src/grounding/index.js');
 
       assert.strictEqual(classifyDomain('Is it beautiful?'), 'aesthetic');
       assert.strictEqual(classifyDomain('Which do you prefer?'), 'aesthetic');
     });
 
     test('defaults to factual for unknown patterns', async () => {
-      const { classifyDomain } = await import('../src/grounding/index.js');
+      const { classifyDomain } = await import('../dist/src/grounding/index.js');
 
       assert.strictEqual(classifyDomain('some random text'), 'factual');
     });
@@ -59,7 +59,7 @@ describe('Grounding Module', () => {
 
   describe('Authority Mapping', () => {
     test('maps domains to authorities', async () => {
-      const { getAuthority } = await import('../src/grounding/index.js');
+      const { getAuthority } = await import('../dist/src/grounding/index.js');
 
       assert.deepStrictEqual(getAuthority('factual'), ['science']);
       assert.deepStrictEqual(getAuthority('mathematical'), ['proof']);
@@ -72,14 +72,14 @@ describe('Grounding Module', () => {
 
   describe('Epistemic Stack', () => {
     test('creates and initializes', async () => {
-      const { createEpistemicStack } = await import('../src/grounding/index.js');
+      const { createEpistemicStack } = await import('../dist/src/grounding/index.js');
 
       const stack = createEpistemicStack();
       assert.ok(stack, 'Stack should be created');
     });
 
     test('grounds factual claims (without science connected)', async () => {
-      const { createEpistemicStack } = await import('../src/grounding/index.js');
+      const { createEpistemicStack } = await import('../dist/src/grounding/index.js');
 
       const stack = createEpistemicStack();
       const claim = await stack.ground('What is TypeScript?');
@@ -91,7 +91,7 @@ describe('Grounding Module', () => {
     });
 
     test('grounds ethical claims with wisdom', async () => {
-      const { createEpistemicStack } = await import('../src/grounding/index.js');
+      const { createEpistemicStack } = await import('../dist/src/grounding/index.js');
 
       const stack = createEpistemicStack();
       const claim = await stack.ground('should I do this');
@@ -104,7 +104,7 @@ describe('Grounding Module', () => {
     });
 
     test('grounds existential claims with tradition', async () => {
-      const { createEpistemicStack } = await import('../src/grounding/index.js');
+      const { createEpistemicStack } = await import('../dist/src/grounding/index.js');
 
       const stack = createEpistemicStack();
       const claim = await stack.ground('what is the meaning of life');
@@ -117,7 +117,7 @@ describe('Grounding Module', () => {
     });
 
     test('generates human questions', async () => {
-      const { createEpistemicStack } = await import('../src/grounding/index.js');
+      const { createEpistemicStack } = await import('../dist/src/grounding/index.js');
 
       const stack = createEpistemicStack();
       const claim = await stack.ground('Should I release this?');
@@ -128,7 +128,7 @@ describe('Grounding Module', () => {
     });
 
     test('incorporates human response', async () => {
-      const { createEpistemicStack } = await import('../src/grounding/index.js');
+      const { createEpistemicStack } = await import('../dist/src/grounding/index.js');
 
       const stack = createEpistemicStack();
       let claim = await stack.ground('Should I proceed?');
@@ -145,7 +145,7 @@ describe('Grounding Module', () => {
 
   describe('Wisdom Repository', () => {
     test('contains wisdom sources', async () => {
-      const { WISDOM_REPOSITORY } = await import('../src/grounding/index.js');
+      const { WISDOM_REPOSITORY } = await import('../dist/src/grounding/index.js');
 
       assert.ok(WISDOM_REPOSITORY.length > 0, 'Should have wisdom');
 
@@ -158,7 +158,7 @@ describe('Grounding Module', () => {
     });
 
     test('contains prudential heuristics', async () => {
-      const { WISDOM_REPOSITORY } = await import('../src/grounding/index.js');
+      const { WISDOM_REPOSITORY } = await import('../dist/src/grounding/index.js');
 
       const prudential = WISDOM_REPOSITORY.filter(w =>
         w.content.includes('reversible') || w.content.includes('doubt')
@@ -170,7 +170,7 @@ describe('Grounding Module', () => {
 
   describe('Tradition Repository', () => {
     test('contains tradition sources', async () => {
-      const { TRADITION_REPOSITORY } = await import('../src/grounding/index.js');
+      const { TRADITION_REPOSITORY } = await import('../dist/src/grounding/index.js');
 
       assert.ok(TRADITION_REPOSITORY.length > 0, 'Should have traditions');
 
@@ -183,7 +183,7 @@ describe('Grounding Module', () => {
     });
 
     test('contains universal moral absolutes', async () => {
-      const { TRADITION_REPOSITORY } = await import('../src/grounding/index.js');
+      const { TRADITION_REPOSITORY } = await import('../dist/src/grounding/index.js');
 
       const absolutes = TRADITION_REPOSITORY.filter(t =>
         t.type === 'moral_absolute' && t.universality > 0.9
@@ -193,7 +193,7 @@ describe('Grounding Module', () => {
     });
 
     test('contains meaning frameworks', async () => {
-      const { TRADITION_REPOSITORY } = await import('../src/grounding/index.js');
+      const { TRADITION_REPOSITORY } = await import('../dist/src/grounding/index.js');
 
       const frameworks = TRADITION_REPOSITORY.filter(t =>
         t.type === 'meaning_framework'
@@ -205,7 +205,7 @@ describe('Grounding Module', () => {
 
   describe('Grounding System', () => {
     test('creates and initializes', async () => {
-      const { createGroundingSystem, resetGroundingSystem } = await import('../src/grounding/index.js');
+      const { createGroundingSystem, resetGroundingSystem } = await import('../dist/src/grounding/index.js');
       resetGroundingSystem();
 
       const system = createGroundingSystem();
@@ -213,7 +213,7 @@ describe('Grounding Module', () => {
     });
 
     test('grounds claims', async () => {
-      const { createGroundingSystem } = await import('../src/grounding/index.js');
+      const { createGroundingSystem } = await import('../dist/src/grounding/index.js');
 
       const system = createGroundingSystem();
       const claim = await system.ground('What is React?');
@@ -225,7 +225,7 @@ describe('Grounding Module', () => {
     });
 
     test('tracks statistics', async () => {
-      const { createGroundingSystem } = await import('../src/grounding/index.js');
+      const { createGroundingSystem } = await import('../dist/src/grounding/index.js');
 
       const system = createGroundingSystem();
 
@@ -244,7 +244,7 @@ describe('Grounding Module', () => {
     });
 
     test('escalates to human on low confidence', async () => {
-      const { createGroundingSystem } = await import('../src/grounding/index.js');
+      const { createGroundingSystem } = await import('../dist/src/grounding/index.js');
 
       const system = createGroundingSystem({
         uncertaintyThreshold: 0.9, // Very high threshold
@@ -257,7 +257,7 @@ describe('Grounding Module', () => {
     });
 
     test('provides wisdom and tradition access', async () => {
-      const { createGroundingSystem } = await import('../src/grounding/index.js');
+      const { createGroundingSystem } = await import('../dist/src/grounding/index.js');
 
       const system = createGroundingSystem();
 
@@ -269,7 +269,7 @@ describe('Grounding Module', () => {
     });
 
     test('allows adding custom wisdom', async () => {
-      const { createGroundingSystem } = await import('../src/grounding/index.js');
+      const { createGroundingSystem } = await import('../dist/src/grounding/index.js');
 
       const system = createGroundingSystem();
       const initialCount = system.getWisdom().length;
@@ -287,7 +287,7 @@ describe('Grounding Module', () => {
 
   describe('Integration with Science', () => {
     test('connects science grounding function', async () => {
-      const { createGroundingSystem } = await import('../src/grounding/index.js');
+      const { createGroundingSystem } = await import('../dist/src/grounding/index.js');
 
       const system = createGroundingSystem();
 
@@ -306,7 +306,7 @@ describe('Grounding Module', () => {
     });
 
     test('connects proof checker', async () => {
-      const { createGroundingSystem } = await import('../src/grounding/index.js');
+      const { createGroundingSystem } = await import('../dist/src/grounding/index.js');
 
       const system = createGroundingSystem();
 

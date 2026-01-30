@@ -153,6 +153,9 @@ export class DaemonProcessManager {
   // IPC Server
   // ============================================================================
 
+  // FIX v14.1: Maximum buffer size to prevent OOM from malicious large messages
+  private static readonly MAX_IPC_BUFFER_SIZE = 1024 * 1024; // 1MB max
+
   private startIPCServer(): void {
     this.cleanupSocket();
 
@@ -162,12 +165,34 @@ export class DaemonProcessManager {
       socket.on('data', (data) => {
         buffer += data.toString();
 
+        // FIX v14.1: Prevent buffer overflow DoS attack
+        if (buffer.length > DaemonProcessManager.MAX_IPC_BUFFER_SIZE) {
+          console.error('IPC buffer overflow: client sent too much data without newline');
+          this.sendResponse(socket, {
+            id: 'overflow',
+            success: false,
+            error: 'Message too large (max 1MB)',
+          });
+          buffer = '';
+          socket.destroy();
+          return;
+        }
+
         // Process complete messages (newline-delimited JSON)
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
 
         for (const line of lines) {
           if (line.trim()) {
+            // FIX v14.1: Also limit individual message size
+            if (line.length > DaemonProcessManager.MAX_IPC_BUFFER_SIZE) {
+              this.sendResponse(socket, {
+                id: 'overflow',
+                success: false,
+                error: 'Message too large',
+              });
+              continue;
+            }
             this.handleIPCRequest(socket, line.trim());
           }
         }

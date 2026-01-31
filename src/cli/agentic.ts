@@ -321,8 +321,13 @@ export class AgenticToolExecutor {
   }
 
   // Read file with line numbers
-  private async readFile(args: { file_path: string; offset?: number; limit?: number }): Promise<string> {
-    const filePath = path.isAbsolute(args.file_path) ? args.file_path : path.join(this.cwd, args.file_path);
+  private async readFile(args: { file_path?: string; path?: string; offset?: number; limit?: number }): Promise<string> {
+    // Accept both file_path and path for flexibility
+    const inputPath = args.file_path || args.path;
+    if (!inputPath) {
+      return 'Error: file_path is required';
+    }
+    const filePath = path.isAbsolute(inputPath) ? inputPath : path.join(this.cwd, inputPath);
 
     if (!fs.existsSync(filePath)) {
       return `File not found: ${filePath}`;
@@ -346,8 +351,12 @@ export class AgenticToolExecutor {
   }
 
   // Write file
-  private async writeFile(args: { file_path: string; content: string }): Promise<string> {
-    const filePath = path.isAbsolute(args.file_path) ? args.file_path : path.join(this.cwd, args.file_path);
+  private async writeFile(args: { file_path?: string; path?: string; content: string }): Promise<string> {
+    const inputPath = args.file_path || args.path;
+    if (!inputPath) {
+      return 'Error: file_path is required';
+    }
+    const filePath = path.isAbsolute(inputPath) ? inputPath : path.join(this.cwd, inputPath);
 
     // Ensure directory exists
     const dir = path.dirname(filePath);
@@ -360,8 +369,12 @@ export class AgenticToolExecutor {
   }
 
   // Edit file with string replacement
-  private async editFile(args: { file_path: string; old_string: string; new_string: string; replace_all?: boolean }): Promise<string> {
-    const filePath = path.isAbsolute(args.file_path) ? args.file_path : path.join(this.cwd, args.file_path);
+  private async editFile(args: { file_path?: string; path?: string; old_string: string; new_string: string; replace_all?: boolean }): Promise<string> {
+    const inputPath = args.file_path || args.path;
+    if (!inputPath) {
+      return 'Error: file_path is required';
+    }
+    const filePath = path.isAbsolute(inputPath) ? inputPath : path.join(this.cwd, inputPath);
 
     if (!fs.existsSync(filePath)) {
       return `File not found: ${filePath}`;
@@ -771,9 +784,19 @@ ${colorize('Commands:', 'cyan')}
 
         if (toolMatch) {
           try {
-            const toolCall = JSON.parse(toolMatch[1]) as { name: string; arguments: Record<string, unknown> };
+            const rawJson = toolMatch[1].trim();
+            const toolCall = JSON.parse(rawJson) as { name: string; arguments?: Record<string, unknown> };
+
+            // Ensure arguments exists
+            if (!toolCall.arguments) {
+              toolCall.arguments = {};
+            }
 
             console.log(muted(`\n  ⚙ ${toolCall.name}...`));
+            // Debug: show what arguments were parsed
+            if (Object.keys(toolCall.arguments).length === 0) {
+              console.log(muted(`  ⚠ No arguments parsed. Raw JSON: ${rawJson.slice(0, 200)}`));
+            }
 
             const result = await this.executor.execute({
               id: `tool-${Date.now()}`,

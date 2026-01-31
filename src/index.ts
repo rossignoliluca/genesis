@@ -227,7 +227,12 @@ async function cmdPipeline(specOrFile: SystemSpec | string, options: Record<stri
       console.error(c(`Error: Spec file not found: ${specOrFile}`, 'red'));
       process.exit(1);
     }
-    spec = JSON.parse(fs.readFileSync(specOrFile, 'utf-8'));
+    try {
+      spec = JSON.parse(fs.readFileSync(specOrFile, 'utf-8'));
+    } catch (err) {
+      console.error(c(`Error: Invalid JSON in spec file: ${err instanceof Error ? err.message : String(err)}`, 'red'));
+      process.exit(1);
+    }
   } else {
     spec = specOrFile;
   }
@@ -313,7 +318,13 @@ async function cmdDesign(specFile: string): Promise<void> {
     process.exit(1);
   }
 
-  const spec: SystemSpec = JSON.parse(fs.readFileSync(specFile, 'utf-8'));
+  let spec: SystemSpec;
+  try {
+    spec = JSON.parse(fs.readFileSync(specFile, 'utf-8'));
+  } catch (err) {
+    console.error(c(`Error: Invalid JSON in spec file: ${err instanceof Error ? err.message : String(err)}`, 'red'));
+    process.exit(1);
+  }
   console.log(c(`\nDesigning architecture for: ${spec.name}\n`, 'bold'));
 
   const orchestrator = createOrchestrator({ verbose: true });
@@ -341,7 +352,13 @@ async function cmdGenerate(specFile: string): Promise<void> {
     process.exit(1);
   }
 
-  const spec: SystemSpec = JSON.parse(fs.readFileSync(specFile, 'utf-8'));
+  let spec: SystemSpec;
+  try {
+    spec = JSON.parse(fs.readFileSync(specFile, 'utf-8'));
+  } catch (err) {
+    console.error(c(`Error: Invalid JSON in spec file: ${err instanceof Error ? err.message : String(err)}`, 'red'));
+    process.exit(1);
+  }
   console.log(c(`\nGenerating code for: ${spec.name}\n`, 'bold'));
 
   const orchestrator = createOrchestrator({ verbose: true });
@@ -368,7 +385,13 @@ async function cmdVisualize(specFile: string): Promise<void> {
     process.exit(1);
   }
 
-  const spec: SystemSpec = JSON.parse(fs.readFileSync(specFile, 'utf-8'));
+  let spec: SystemSpec;
+  try {
+    spec = JSON.parse(fs.readFileSync(specFile, 'utf-8'));
+  } catch (err) {
+    console.error(c(`Error: Invalid JSON in spec file: ${err instanceof Error ? err.message : String(err)}`, 'red'));
+    process.exit(1);
+  }
   console.log(c(`\nCreating visuals for: ${spec.name}\n`, 'bold'));
 
   const orchestrator = createOrchestrator({ verbose: true });
@@ -391,7 +414,13 @@ async function cmdPublish(specFile: string): Promise<void> {
     process.exit(1);
   }
 
-  const spec: SystemSpec = JSON.parse(fs.readFileSync(specFile, 'utf-8'));
+  let spec: SystemSpec;
+  try {
+    spec = JSON.parse(fs.readFileSync(specFile, 'utf-8'));
+  } catch (err) {
+    console.error(c(`Error: Invalid JSON in spec file: ${err instanceof Error ? err.message : String(err)}`, 'red'));
+    process.exit(1);
+  }
   console.log(c(`\nPublishing: ${spec.name}\n`, 'bold'));
 
   console.log(c('Steps:', 'cyan'));
@@ -2033,7 +2062,13 @@ async function cmdAgentic(subcommand: string | undefined, options: Record<string
 
 async function cmdInstall(options: Record<string, string>): Promise<void> {
   const { execSync, spawn } = await import('child_process');
-  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf-8'));
+  let pkg: { version: string };
+  try {
+    pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf-8'));
+  } catch (err) {
+    console.error(c('Error: Could not read package.json', 'red'));
+    process.exit(1);
+  }
   const version = pkg.version;
 
   console.log(c(`\n=== Genesis Installation (v${version}) ===\n`, 'bold'));

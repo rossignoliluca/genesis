@@ -37,6 +37,8 @@ export interface VectorDocument {
   createdAt: Date;
   /** Last updated timestamp */
   updatedAt: Date;
+  /** v14.4.0: Last accessed timestamp for LRU eviction */
+  accessedAt: Date;
   /** Optional namespace/collection */
   namespace?: string;
 }
@@ -119,13 +121,15 @@ export class VectorStore {
     // Generate embedding
     const result = await this.embeddings.embed(text);
 
+    const now = new Date();
     const doc: VectorDocument = {
       id,
       text,
       vector: result.vector,
       metadata,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: now,
+      updatedAt: now,
+      accessedAt: now,
       namespace: namespace || this.config.defaultNamespace,
     };
 
@@ -159,6 +163,7 @@ export class VectorStore {
 
     const docs: VectorDocument[] = [];
 
+    const now = new Date();
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const doc: VectorDocument = {
@@ -166,8 +171,9 @@ export class VectorStore {
         text: item.text,
         vector: embedResults[i].vector,
         metadata: item.metadata || {},
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        createdAt: now,
+        updatedAt: now,
+        accessedAt: now,
         namespace: item.namespace || this.config.defaultNamespace,
       };
 
@@ -205,12 +211,14 @@ export class VectorStore {
       vector = result.vector;
     }
 
+    const now = new Date();
     const updated: VectorDocument = {
       ...existing,
       text: text || existing.text,
       vector,
       metadata: metadata ? { ...existing.metadata, ...metadata } : existing.metadata,
-      updatedAt: new Date(),
+      updatedAt: now,
+      accessedAt: now,
     };
 
     this.documents.set(id, updated);
@@ -240,9 +248,15 @@ export class VectorStore {
 
   /**
    * Get a document by ID
+   * v14.4.0: Updates accessedAt for LRU tracking
    */
   get(id: string): VectorDocument | undefined {
-    return this.documents.get(id);
+    const doc = this.documents.get(id);
+    if (doc) {
+      // Update access time for LRU
+      doc.accessedAt = new Date();
+    }
+    return doc;
   }
 
   /**
@@ -355,18 +369,19 @@ export class VectorStore {
   // ============================================================================
 
   /**
-   * Maintain size limits by removing oldest documents when over limit
+   * Maintain size limits using LRU eviction
    * v9.4.0: Prevents unbounded memory growth
+   * v14.4.0: Changed to LRU (least recently used) instead of FIFO
    */
   private maintainSize(): void {
     const maxDocs = this.config.maxDocuments || 50000;
     if (this.documents.size <= maxDocs) return;
 
-    // Convert to array and sort by creation date (oldest first)
+    // Convert to array and sort by access date (least recently accessed first)
     const sorted = Array.from(this.documents.values())
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      .sort((a, b) => a.accessedAt.getTime() - b.accessedAt.getTime());
 
-    // Remove oldest documents until under limit
+    // Remove least recently accessed documents until under limit
     const toRemove = sorted.slice(0, this.documents.size - maxDocs);
     for (const doc of toRemove) {
       this.documents.delete(doc.id);
@@ -446,12 +461,13 @@ export class VectorStore {
     if (!this.config.persistPath) return;
 
     const data = {
-      version: '1.0',
+      version: '1.1', // v14.4.0: Added accessedAt for LRU
       documents: Array.from(this.documents.entries()).map(([id, doc]) => ({
         ...doc,
         id,
         createdAt: doc.createdAt.toISOString(),
         updatedAt: doc.updatedAt.toISOString(),
+        accessedAt: doc.accessedAt.toISOString(),
       })),
       savedAt: new Date().toISOString(),
     };
@@ -491,6 +507,7 @@ export class VectorStore {
       this.documents.clear();
 
       for (const doc of data.documents) {
+        const accessedAt = (doc as { accessedAt?: string }).accessedAt;
         this.documents.set(doc.id, {
           id: doc.id,
           text: doc.text,
@@ -498,6 +515,7 @@ export class VectorStore {
           metadata: doc.metadata,
           createdAt: new Date(doc.createdAt),
           updatedAt: new Date(doc.updatedAt),
+          accessedAt: accessedAt ? new Date(accessedAt) : new Date(doc.updatedAt),
           namespace: doc.namespace,
         });
       }

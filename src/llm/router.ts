@@ -358,6 +358,10 @@ export class HybridRouter {
   private cloudBridge: LLMBridge | null = null;
   private hardwareProfile: HardwareProfile;
 
+  // v14.4.0: Cache Ollama availability to avoid repeated network calls
+  private ollamaAvailableCache: { result: boolean; timestamp: number } | null = null;
+  private static readonly OLLAMA_CACHE_TTL_MS = 5000; // 5 seconds
+
   constructor(config?: Partial<RouterConfig>) {
     // Detect hardware and auto-configure
     this.hardwareProfile = detectHardware();
@@ -539,13 +543,28 @@ export class HybridRouter {
   // Helpers
   // ==========================================================================
 
+  /**
+   * Check if Ollama is available
+   * v14.4.0: Results cached for 5 seconds to avoid repeated network calls
+   */
   private async isOllamaAvailable(): Promise<boolean> {
+    const now = Date.now();
+
+    // Return cached result if fresh
+    if (this.ollamaAvailableCache &&
+        (now - this.ollamaAvailableCache.timestamp) < HybridRouter.OLLAMA_CACHE_TTL_MS) {
+      return this.ollamaAvailableCache.result;
+    }
+
     try {
       const response = await fetch('http://localhost:11434/api/tags', {
         signal: AbortSignal.timeout(1000),
       });
-      return response.ok;
+      const result = response.ok;
+      this.ollamaAvailableCache = { result, timestamp: now };
+      return result;
     } catch {
+      this.ollamaAvailableCache = { result: false, timestamp: now };
       return false;
     }
   }

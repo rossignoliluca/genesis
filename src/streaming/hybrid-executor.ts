@@ -21,6 +21,15 @@ import {
   StreamMetrics,
   StreamCheckpoint,
   Message,
+  TokenEvent,
+  ToolStartEvent,
+  ToolResultEvent,
+  ThinkingStartEvent,
+  ThinkingTokenEvent,
+  ThinkingEndEvent,
+  MetadataEvent,
+  ErrorEvent,
+  DoneEvent,
 } from './types.js';
 import { ToolCall, ToolResult, getDispatcher } from '../cli/dispatcher.js';
 import { LLMBridge, StreamChunk, calculateCost } from '../llm/index.js';
@@ -106,9 +115,14 @@ export class HybridStreamExecutor {
       // Get API key from environment (HybridStreamOptions doesn't include apiKey)
       const apiKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || '';
 
-      // Create LLM bridge
+      // Create LLM bridge - validate provider is supported
+      const validProviders = ['ollama', 'openai', 'anthropic'] as const;
+      const provider = validProviders.includes(this.options.provider as typeof validProviders[number])
+        ? (this.options.provider as 'ollama' | 'openai' | 'anthropic')
+        : 'anthropic'; // Default to anthropic if unknown provider
+
       const bridge = new LLMBridge({
-        provider: this.options.provider as any,
+        provider,
         model: this.options.model,
         apiKey,
         temperature: this.options.temperature || 0.7,
@@ -447,7 +461,7 @@ export class HybridStreamExecutor {
   // Event Creation
   // ==========================================================================
 
-  private createEvent(type: StreamEvent['type'], data: any): StreamEvent {
+  private createEvent(type: StreamEvent['type'], data: Record<string, unknown> = {}): StreamEvent {
     const baseEvent = {
       id: `evt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       timestamp: new Date().toISOString(),
@@ -455,37 +469,65 @@ export class HybridStreamExecutor {
 
     switch (type) {
       case 'token':
-        return { ...baseEvent, type: 'token', content: data.token } as any;
+        return { ...baseEvent, type: 'token', content: String(data.token || '') } satisfies TokenEvent;
       case 'tool_start':
-        return { ...baseEvent, type: 'tool_start', ...data } as any;
+        return {
+          ...baseEvent,
+          type: 'tool_start',
+          toolCallId: String(data.toolCallId || ''),
+          name: String(data.name || ''),
+          args: (data.args as Record<string, unknown>) || {}
+        } satisfies ToolStartEvent;
       case 'tool_result':
-        return { ...baseEvent, type: 'tool_result', ...data } as any;
+        return {
+          ...baseEvent,
+          type: 'tool_result',
+          toolCallId: String(data.toolCallId || ''),
+          content: data.content,
+          success: Boolean(data.success),
+          duration: Number(data.duration || 0),
+          error: data.error ? String(data.error) : undefined
+        } satisfies ToolResultEvent;
       case 'thinking_start':
-        return { ...baseEvent, type: 'thinking_start' } as any;
+        return { ...baseEvent, type: 'thinking_start' } satisfies ThinkingStartEvent;
       case 'thinking_token':
-        return { ...baseEvent, type: 'thinking_token', content: data.content } as any;
+        return { ...baseEvent, type: 'thinking_token', content: String(data.content || '') } satisfies ThinkingTokenEvent;
       case 'thinking_end':
-        return { ...baseEvent, type: 'thinking_end' } as any;
+        return { ...baseEvent, type: 'thinking_end' } satisfies ThinkingEndEvent;
       case 'metadata':
-        return { ...baseEvent, type: 'metadata', provider: this.options.provider, model: this.options.model, ...data } as any;
+        return {
+          ...baseEvent,
+          type: 'metadata',
+          provider: this.options.provider,
+          model: this.options.model,
+          usage: data.usage as MetadataEvent['usage'],
+          cost: data.cost as number | undefined
+        } satisfies MetadataEvent;
       case 'error':
         return {
           ...baseEvent,
           type: 'error',
           code: 'EXECUTION_ERROR',
-          message: data.error,
-          retryable: data.recoverable,
-        } as any;
+          message: String(data.error || 'Unknown error'),
+          retryable: Boolean(data.recoverable),
+        } satisfies ErrorEvent;
       case 'done':
         return {
           ...baseEvent,
           type: 'done',
-          content: data.finalContent,
+          content: String(data.finalContent || ''),
           reason: 'stop' as const,
-          metrics: data.metrics,
-        } as any;
+          metrics: data.metrics as StreamMetrics,
+        } satisfies DoneEvent;
       default:
-        return baseEvent as any;
+        // For unknown event types, return error event
+        return {
+          ...baseEvent,
+          type: 'error',
+          code: 'UNKNOWN_EVENT',
+          message: `Unknown event type: ${type}`,
+          retryable: false
+        } satisfies ErrorEvent;
     }
   }
 
@@ -614,11 +656,22 @@ export async function hybridStreamCollect(
     }
   }
 
+  // Get final metrics from done event if available
+  if (!metrics && events.length > 0) {
+    const lastEvent = events[events.length - 1];
+    if (lastEvent.type === 'done') {
+      metrics = lastEvent.metrics;
+    }
+  }
+
   return {
     content,
     events,
-    metrics: metrics || events[events.length - 1]?.type === 'done'
-      ? (events[events.length - 1] as any).metrics
-      : {} as StreamMetrics,
+    metrics: metrics || {
+      tokensPerSecond: 0, totalTokens: 0, inputTokens: 0, outputTokens: 0,
+      thinkingTokens: 0, cost: 0, confidence: 0, toolCallCount: 0,
+      toolLatencyTotal: 0, toolLatencyAverage: 0, modelUpgrades: 0,
+      startTime: new Date().toISOString(), elapsed: 0, state: 'completed', retries: 0
+    },
   };
 }

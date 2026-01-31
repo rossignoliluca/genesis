@@ -540,35 +540,38 @@ export class AgenticToolExecutor {
   }
 
   // Memory operations
-  private async handleMemory(args: { action: string; content?: string; query?: string; tags?: string }): Promise<string> {
+  private async handleMemory(args: Record<string, unknown>): Promise<string> {
     const memory = this.memory;
 
     // Normalize action - support common aliases
+    const action = String(args.action || '').toLowerCase();
     const normalizedAction = (() => {
-      const action = args.action?.toLowerCase() || '';
       if (['store', 'save', 'remember', 'add', 'write'].includes(action)) return 'store';
       if (['search', 'query', 'find', 'retrieve', 'recall', 'get', 'read', 'load', 'fetch'].includes(action)) return 'search';
       if (['list', 'stats', 'status', 'info'].includes(action)) return 'list';
       return action;
     })();
 
+    // v14.5.1: Accept multiple parameter names for content
+    const content = String(args.content || args.text || args.message || args.data || args.value || args.input || '');
+    const query = String(args.query || args.search || args.q || content || '');
+    const tags = String(args.tags || args.tag || args.categories || '');
+
     switch (normalizedAction) {
       case 'store':
-        if (!args.content) return 'Missing content to store';
+        if (!content) return 'Missing content to store. Use: {"action":"store","content":"text to remember"}';
         // Use remember for simple episodic storage
         memory.remember({
-          what: args.content,
-          tags: args.tags?.split(',').map(t => t.trim()) || [],
+          what: content,
+          tags: tags ? tags.split(',').map(t => t.trim()) : [],
         });
-        return 'Stored in memory';
+        return `Stored in memory: "${content.slice(0, 100)}${content.length > 100 ? '...' : ''}"`;
 
       case 'search':
-        // If no query but has content, use content as query
-        const searchQuery = args.query || args.content;
-        if (!searchQuery) return 'Missing search query';
-        const results = await memory.recall(searchQuery, { limit: 5 });
+        if (!query) return 'Missing search query. Use: {"action":"search","query":"what to find"}';
+        const results = await memory.recall(query, { limit: 5 });
         if (!results || results.length === 0) {
-          return 'No memories found matching query';
+          return `No memories found matching: "${query}"`;
         }
         return results.map((r: any, i: number) => {
           const text = typeof r === 'string' ? r : (r.content || r.text || JSON.stringify(r));
@@ -580,7 +583,7 @@ export class AgenticToolExecutor {
         return `Memory stats: ${JSON.stringify(stats, null, 2)}`;
 
       default:
-        return `Unknown memory action: ${args.action}. Valid actions: store, search, list (or aliases: save, retrieve, recall, get, etc.)`;
+        return `Unknown memory action: "${action}". Valid actions: store, search, list (aliases: save, retrieve, recall, get, remember)`;
     }
   }
 }
@@ -641,26 +644,52 @@ ${muted('Claude Code-like capabilities:')}
   private buildSystemPrompt(): string {
     return `You are Genesis, an autonomous AI agent with full agentic capabilities.
 
-You have access to these tools:
+## Available Tools
 ${AGENTIC_TOOLS.map(t => `- ${t.name}: ${t.description}`).join('\n')}
 
-Current working directory: ${this.config.cwd}
-Current date: ${new Date().toISOString().split('T')[0]}
-
-Guidelines:
-1. Use tools proactively to accomplish tasks
-2. Read files before editing them
-3. Use Glob/Grep to explore codebases
-4. Execute bash commands for git, npm, etc.
-5. Break complex tasks into steps
-6. Store important information in memory
-
-When you need to use a tool, respond with a JSON tool call in this format:
+## Tool Call Format
+When you need to use a tool, respond with ONLY a JSON block:
 \`\`\`tool
-{"name": "ToolName", "arguments": {...}}
+{"name": "ToolName", "arguments": {"param": "value"}}
 \`\`\`
 
-You can make multiple tool calls in sequence. After each tool result, continue your work.`;
+## Common Tool Examples
+
+Read a file:
+\`\`\`tool
+{"name": "Read", "arguments": {"path": "package.json"}}
+\`\`\`
+
+Search for files:
+\`\`\`tool
+{"name": "Glob", "arguments": {"pattern": "**/*.ts"}}
+\`\`\`
+
+Run bash command:
+\`\`\`tool
+{"name": "Bash", "arguments": {"command": "npm test"}}
+\`\`\`
+
+Store in memory:
+\`\`\`tool
+{"name": "Memory", "arguments": {"action": "store", "content": "Important finding..."}}
+\`\`\`
+
+Search memory:
+\`\`\`tool
+{"name": "Memory", "arguments": {"action": "search", "query": "what I learned about..."}}
+\`\`\`
+
+## Context
+Working directory: ${this.config.cwd}
+Date: ${new Date().toISOString().split('T')[0]}
+
+## Guidelines
+1. Use tools to accomplish tasks - don't just explain what you would do
+2. Read files before editing them
+3. Use Glob to find files, Grep to search content
+4. After using tools, provide a summary of findings or results
+5. When task is complete, provide a final answer WITHOUT a tool block`;
   }
 
   private async chatLoop(): Promise<void> {
@@ -782,7 +811,7 @@ ${colorize('Commands:', 'cyan')}
     try {
       let continueLoop = true;
       let iterations = 0;
-      const maxIterations = 20;
+      const maxIterations = 30; // v14.5.1: Increased from 20
       let currentPrompt = fullPrompt;
 
       while (continueLoop && iterations < maxIterations) {
@@ -828,10 +857,17 @@ ${colorize('Commands:', 'cyan')}
             this.conversationHistory.push(`Assistant: ${content}`);
             this.conversationHistory.push(`Tool (${toolCall.name}): ${result}`);
 
-            // Continue with tool result
-            currentPrompt = `Tool result for ${toolCall.name}:\n\`\`\`\n${result}\n\`\`\`\n\nContinue with your task.`;
-
-            spinner.start();
+            // v14.5.1: Check if there's meaningful text outside the tool block
+            const textOutsideTool = content.replace(/```tool\s*\n[\s\S]*?\n```/g, '').trim();
+            if (textOutsideTool.length > 100) {
+              // LLM provided explanation alongside tool - this is the final response
+              console.log('\n' + this.formatResponse(content));
+              continueLoop = false;
+            } else {
+              // Continue with tool result
+              currentPrompt = `Tool result for ${toolCall.name}:\n\`\`\`\n${result}\n\`\`\`\n\nContinue with your task. When done, provide a summary without tool calls.`;
+              spinner.start();
+            }
           } catch {
             // Not a valid tool call, treat as regular response
             this.conversationHistory.push(`Assistant: ${content}`);

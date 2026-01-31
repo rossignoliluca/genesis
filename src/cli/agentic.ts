@@ -207,18 +207,18 @@ const AGENTIC_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'Memory',
-    description: 'Store or retrieve information from long-term memory.',
+    description: 'Store or retrieve information from long-term memory. Actions: store (save/remember), search (retrieve/recall/get), list (stats).',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          description: 'Action to perform',
-          enum: ['store', 'search', 'list'],
+          description: 'Action: "store" to save, "search" to retrieve/recall, "list" for stats. Aliases: retrieve/recall/get → search, save/remember → store',
+          enum: ['store', 'search', 'list', 'retrieve', 'recall', 'get', 'save', 'remember'],
         },
-        content: { type: 'string', description: 'Content to store (for store action)' },
-        query: { type: 'string', description: 'Query to search (for search action)' },
-        tags: { type: 'string', description: 'Comma-separated tags' },
+        content: { type: 'string', description: 'Content to store (for store) or query text (for search)' },
+        query: { type: 'string', description: 'Query to search for in memories' },
+        tags: { type: 'string', description: 'Comma-separated tags for categorization' },
       },
       required: ['action'],
     },
@@ -259,15 +259,20 @@ function simpleGlob(pattern: string, cwd: string): string[] {
   }
 
   function matchesPattern(filePath: string, pat: string): boolean {
-    // Convert glob to regex
+    // Convert glob to regex - order matters!
     const regexPat = pat
+      .replace(/\./g, '\\.') // Escape dots FIRST (before other replacements)
       .replace(/\*\*/g, '<<<DOUBLESTAR>>>')
       .replace(/\*/g, '[^/]*')
       .replace(/<<<DOUBLESTAR>>>/g, '.*')
-      .replace(/\?/g, '.')
-      .replace(/\./g, '\\.');
+      .replace(/\?/g, '.');
 
-    return new RegExp(`^${regexPat}$`).test(filePath);
+    try {
+      return new RegExp(`^${regexPat}$`).test(filePath);
+    } catch {
+      // Fallback to simple includes for malformed patterns
+      return filePath.includes(pat.replace(/\*/g, ''));
+    }
   }
 
   walk(cwd);
@@ -538,7 +543,16 @@ export class AgenticToolExecutor {
   private async handleMemory(args: { action: string; content?: string; query?: string; tags?: string }): Promise<string> {
     const memory = this.memory;
 
-    switch (args.action) {
+    // Normalize action - support common aliases
+    const normalizedAction = (() => {
+      const action = args.action?.toLowerCase() || '';
+      if (['store', 'save', 'remember', 'add', 'write'].includes(action)) return 'store';
+      if (['search', 'query', 'find', 'retrieve', 'recall', 'get', 'read', 'load', 'fetch'].includes(action)) return 'search';
+      if (['list', 'stats', 'status', 'info'].includes(action)) return 'list';
+      return action;
+    })();
+
+    switch (normalizedAction) {
       case 'store':
         if (!args.content) return 'Missing content to store';
         // Use remember for simple episodic storage
@@ -549,10 +563,12 @@ export class AgenticToolExecutor {
         return 'Stored in memory';
 
       case 'search':
-        if (!args.query) return 'Missing search query';
-        const results = await memory.recall(args.query, { limit: 5 });
+        // If no query but has content, use content as query
+        const searchQuery = args.query || args.content;
+        if (!searchQuery) return 'Missing search query';
+        const results = await memory.recall(searchQuery, { limit: 5 });
         if (!results || results.length === 0) {
-          return 'No memories found';
+          return 'No memories found matching query';
         }
         return results.map((r: any, i: number) => {
           const text = typeof r === 'string' ? r : (r.content || r.text || JSON.stringify(r));
@@ -564,7 +580,7 @@ export class AgenticToolExecutor {
         return `Memory stats: ${JSON.stringify(stats, null, 2)}`;
 
       default:
-        return `Unknown memory action: ${args.action}`;
+        return `Unknown memory action: ${args.action}. Valid actions: store, search, list (or aliases: save, retrieve, recall, get, etc.)`;
     }
   }
 }

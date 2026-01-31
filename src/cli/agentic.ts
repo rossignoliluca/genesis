@@ -701,6 +701,12 @@ Date: ${new Date().toISOString().split('T')[0]}
         }
 
         this.rl.question(colorize('\n❯ ', 'cyan'), async (input) => {
+          // v14.5.2: Check if readline was closed during question
+          if (!this.rl) {
+            resolve();
+            return;
+          }
+
           if (!input.trim()) {
             askQuestion();
             return;
@@ -713,19 +719,26 @@ Date: ${new Date().toISOString().split('T')[0]}
               resolve();
               return;
             }
-            askQuestion();
+            if (this.rl) askQuestion();
             return;
           }
 
           // Process user message
           await this.processUserMessage(input);
-          askQuestion();
+          if (this.rl) askQuestion();
         });
       };
 
-      // Handle readline close event (e.g., Ctrl+D)
+      // Handle readline close event (e.g., Ctrl+D or pipe EOF)
       this.rl!.on('close', () => {
+        this.rl = null; // v14.5.2: Prevent further calls after close
         console.log(muted('\nGoodbye!'));
+        resolve();
+      });
+
+      // v14.5.2: Also handle error events
+      this.rl!.on('error', () => {
+        this.rl = null;
         resolve();
       });
 

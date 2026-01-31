@@ -481,6 +481,11 @@ export class ResearchEngine {
   private buildQuery(limitation: Limitation): string {
     const parts: string[] = [];
 
+    // v14.6: Use suggested research topics from bounty feedback if available
+    if (limitation.suggestedResearch && limitation.suggestedResearch.length > 0) {
+      parts.push(...limitation.suggestedResearch.slice(0, 3));
+    }
+
     // Add type-specific keywords
     switch (limitation.type) {
       case 'performance':

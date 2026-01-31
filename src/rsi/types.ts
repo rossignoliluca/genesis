@@ -29,10 +29,11 @@ export interface Limitation {
   detectedAt: Date;
   confidence: number;        // 0-1 confidence in detection
   estimatedImpact: number;   // 0-1 impact on system performance
+  suggestedResearch?: string[];  // v14.6: Research topics from bounty feedback
 }
 
 export interface Evidence {
-  source: 'metrics' | 'logs' | 'static-analysis' | 'user-feedback' | 'self-observation';
+  source: 'metrics' | 'logs' | 'static-analysis' | 'user-feedback' | 'self-observation' | 'bounty-feedback';
   data: any;
   timestamp: Date;
 }

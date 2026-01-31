@@ -17,6 +17,7 @@ import {
 } from '../types.js';
 import { getAutopoiesisEngine } from '../../autopoiesis/index.js';
 import { getObservationGatherer } from '../../active-inference/observations.js';
+import { getBountyRSIFeedback, LimitationReport } from '../../economy/rsi-feedback.js';
 
 // =============================================================================
 // PERFORMANCE METRICS
@@ -286,6 +287,63 @@ export class CapabilityDetector {
 }
 
 // =============================================================================
+// BOUNTY LIMITATION SOURCE (v14.6)
+// =============================================================================
+
+export class BountyLimitationSource {
+  /**
+   * Get limitations detected from bounty hunting failures
+   */
+  detectLimitations(): Limitation[] {
+    const limitations: Limitation[] = [];
+
+    try {
+      const feedback = getBountyRSIFeedback();
+      const bountyLimitations = feedback.getLimitationsForRSI();
+
+      for (const bl of bountyLimitations) {
+        limitations.push(this.convertBountyLimitation(bl));
+      }
+    } catch {
+      // Bounty feedback not available
+    }
+
+    return limitations;
+  }
+
+  private convertBountyLimitation(bl: LimitationReport): Limitation {
+    const typeMap: Record<string, LimitationType> = {
+      'capability': 'capability',
+      'knowledge': 'knowledge',
+      'performance': 'performance',
+    };
+
+    const severityMap: Record<string, 'low' | 'medium' | 'high' | 'critical'> = {
+      'low': 'low',
+      'medium': 'medium',
+      'high': 'high',
+    };
+
+    return {
+      id: randomUUID(),
+      type: typeMap[bl.type] || 'capability',
+      severity: severityMap[bl.severity] || 'medium',
+      description: `Bounty hunting: ${bl.description}`,
+      evidence: bl.evidence.map(e => ({
+        source: 'bounty-feedback' as const,
+        data: { evidence: e },
+        timestamp: new Date(),
+      })),
+      affectedComponents: ['economy', 'bounty-hunter'],
+      detectedAt: new Date(),
+      confidence: 0.8,
+      estimatedImpact: bl.severity === 'high' ? 0.8 : bl.severity === 'medium' ? 0.5 : 0.3,
+      suggestedResearch: bl.suggestedResearch,
+    };
+  }
+}
+
+// =============================================================================
 // OPPORTUNITY FINDER
 // =============================================================================
 
@@ -335,12 +393,14 @@ export class ObservationEngine {
   private codeAnalyzer: CodeAnalyzer;
   private capabilityDetector: CapabilityDetector;
   private opportunityFinder: OpportunityFinder;
+  private bountyLimitationSource: BountyLimitationSource;
 
   constructor() {
     this.performanceMonitor = new PerformanceMonitor();
     this.codeAnalyzer = new CodeAnalyzer();
     this.capabilityDetector = new CapabilityDetector();
     this.opportunityFinder = new OpportunityFinder();
+    this.bountyLimitationSource = new BountyLimitationSource();
   }
 
   /**
@@ -364,6 +424,9 @@ export class ObservationEngine {
 
     // Missing capabilities
     all.push(...this.capabilityDetector.detectLimitations());
+
+    // v14.6: Bounty hunting limitations
+    all.push(...this.bountyLimitationSource.detectLimitations());
 
     // Sort by impact * confidence
     all.sort((a, b) => (b.estimatedImpact * b.confidence) - (a.estimatedImpact * a.confidence));

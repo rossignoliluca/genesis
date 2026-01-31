@@ -37,6 +37,7 @@ import { getAlgoraConnector, type AlgoraBounty } from '../live/connectors/algora
 import { getGitcoinConnector, type GitcoinBounty } from '../live/connectors/gitcoin.js';
 import { getGitHubBountyConnector, type GitHubBounty } from '../live/connectors/github-bounties.js';
 import { getRevenueTracker } from '../live/revenue-tracker.js';
+import { getBountyRSIFeedback } from '../rsi-feedback.js';
 
 // ============================================================================
 // Types
@@ -264,6 +265,17 @@ export class BountyHunter {
               },
             });
 
+            // v14.6: Record success in RSI feedback for skill learning
+            const rsiFeedback = getBountyRSIFeedback();
+            const duration = Math.round((Date.now() - sub.submittedAt) / 60000); // minutes
+            rsiFeedback.recordSuccess(
+              bounty,
+              sub,
+              sub.payout,
+              0.10, // minimal cost estimate
+              duration
+            ).catch(err => console.warn('[BountyHunter] RSI feedback error:', err));
+
             bounty.status = 'completed';
             updated.push(sub);
 
@@ -320,6 +332,61 @@ export class BountyHunter {
     return fiber?.roi ?? 0;
   }
 
+  /**
+   * v14.6: Record a failed bounty attempt for RSI learning.
+   * This detects limitations and suggests research topics.
+   */
+  async recordFailure(bountyId: string, reason: string, cost: number = 0.10): Promise<void> {
+    const bounty = this.bounties.get(bountyId);
+    if (!bounty) return;
+
+    // Update submission status
+    const submission = this.submissions.find(s => s.bountyId === bountyId);
+    if (submission) {
+      submission.status = 'rejected';
+      submission.feedback = reason;
+    }
+
+    bounty.status = 'rejected';
+
+    // Record in RSI feedback for limitation detection
+    const rsiFeedback = getBountyRSIFeedback();
+    const duration = submission
+      ? Math.round((Date.now() - submission.submittedAt) / 60000)
+      : 60; // default 1 hour
+
+    const limitation = await rsiFeedback.recordFailure(bounty, reason, cost, duration);
+
+    console.log(`[BountyHunter] Failure recorded: ${bounty.title}`);
+    console.log(`[BountyHunter] Limitation: ${limitation.type} - ${limitation.description}`);
+  }
+
+  /**
+   * v14.6: Check if RSI should be triggered based on bounty performance.
+   * Returns true if success rate is low or many limitations detected.
+   */
+  shouldTriggerRSI(): boolean {
+    const rsiFeedback = getBountyRSIFeedback();
+    return rsiFeedback.shouldTriggerRSI();
+  }
+
+  /**
+   * v14.6: Get research topics suggested by RSI feedback.
+   * Use these for the RSI RESEARCH phase.
+   */
+  getRSIResearchTopics(): string[] {
+    const rsiFeedback = getBountyRSIFeedback();
+    return rsiFeedback.getResearchTopicsForRSI();
+  }
+
+  /**
+   * v14.6: Get RSI feedback statistics.
+   */
+  getRSIStats(): ReturnType<ReturnType<typeof getBountyRSIFeedback>['getStats']> {
+    const rsiFeedback = getBountyRSIFeedback();
+    return rsiFeedback.getStats();
+  }
+
   // ============================================================================
   // Private
   // ============================================================================
@@ -338,6 +405,14 @@ export class BountyHunter {
   }
 
   private estimateSuccessProbability(bounty: Bounty): number {
+    // v14.6: Use RSI feedback for improved probability estimation
+    try {
+      const rsiFeedback = getBountyRSIFeedback();
+      return rsiFeedback.getImprovedSuccessProbability(bounty);
+    } catch {
+      // Fallback to heuristics if RSI feedback not available
+    }
+
     // Heuristic based on category and difficulty
     const categoryProb: Record<string, number> = {
       content: 0.8,

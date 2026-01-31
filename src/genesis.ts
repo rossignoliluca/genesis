@@ -132,6 +132,9 @@ import { createPolymarketTrader, type PolymarketTrader } from './finance/polymar
 // MCP Finance — unified financial MCP servers interface
 import { getMCPFinanceManager, type MCPFinanceManager } from './mcp-finance/index.js';
 
+// Exotic Computing — thermodynamic, hyperdimensional, reservoir computing
+import { createExoticComputing, type ExoticComputing } from './exotic/index.js';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -211,6 +214,8 @@ export interface GenesisConfig {
   polymarket: boolean;
   /** Enable MCP Finance servers (market data APIs) */
   mcpFinance: boolean;
+  /** Enable exotic computing (thermodynamic, hyperdimensional, reservoir) */
+  exotic: boolean;
   /** Confidence threshold below which Brain defers to metacognition */
   deferThreshold: number;
   /** Audit all responses for hallucinations */
@@ -284,6 +289,7 @@ export interface GenesisStatus {
   observatory: { connected: boolean } | null;
   polymarket: { running: boolean; activeMarkets: number } | null;
   mcpFinance: { cacheSize: number } | null;
+  exotic: { thermodynamic: boolean; hyperdimensional: boolean; reservoir: boolean } | null;
   modulesWired: number;
   calibrationError: number;
   uptime: number;
@@ -375,6 +381,7 @@ export class Genesis {
   private observatory: Observatory | null = null;
   private polymarketTrader: PolymarketTrader | null = null;
   private mcpFinance: MCPFinanceManager | null = null;
+  private exotic: ExoticComputing | null = null;
 
   // State
   private booted = false;
@@ -422,6 +429,7 @@ export class Genesis {
       observatory: false,   // v13.12: UI (requires dashboard running)
       polymarket: false,    // v13.12: Prediction markets (requires API)
       mcpFinance: true,     // v13.12: MCP finance servers
+      exotic: true,         // v14.2: Exotic computing (thermodynamic, HDC, reservoir)
       deferThreshold: 0.3,
       auditResponses: true,
     };
@@ -1583,6 +1591,17 @@ export class Genesis {
       this.fiber?.registerModule('mcp-finance');
     }
 
+    // v14.2: Exotic Computing — thermodynamic, hyperdimensional, reservoir
+    if (this.config.exotic) {
+      this.exotic = createExoticComputing({
+        thermodynamic: { temperature: 1.0 },
+        hyperdimensional: { dimension: 10000 },
+        reservoir: { reservoirSize: 500 },
+      });
+      this.fiber?.registerModule('exotic');
+      console.log('[Genesis] Exotic computing initialized (thermodynamic, HDC, reservoir)');
+    }
+
     // v13.12.0: Revenue System — autonomous revenue streams
     if (this.config.revenue) {
       this.revenueSystem = createRevenueSystem({
@@ -2618,6 +2637,11 @@ export class Genesis {
         activeMarkets: 0, // TODO: wire market count
       } : null,
       mcpFinance: this.mcpFinance ? { cacheSize: this.mcpFinance.stats().cacheSize } : null,
+      exotic: this.exotic ? {
+        thermodynamic: true,
+        hyperdimensional: true,
+        reservoir: true,
+      } : null,
       modulesWired: this.wiringResult?.modulesWired ?? 0,
       calibrationError: this.getCalibrationError(),
       uptime: this.bootTime > 0 ? Date.now() - this.bootTime : 0,

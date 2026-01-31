@@ -40,7 +40,7 @@ import { getImplementationEngine, ImplementationEngine } from './implement/index
 import { getDeploymentEngine, DeploymentEngine } from './deploy/index.js';
 import { getLearningEngine, LearningEngine } from './learn/index.js';
 import { getConsciousnessSystem } from '../consciousness/index.js';
-import { getAutopoiesisEngine } from '../autopoiesis/index.js';
+import { getAutopoiesisEngine, SelfObservation } from '../autopoiesis/index.js';
 
 // =============================================================================
 // HUMAN APPROVAL INTERFACE
@@ -190,8 +190,18 @@ export class RSIOrchestrator extends EventEmitter {
       this.updateStatus('observing');
       console.log(`[RSI] ─── Phase 1: OBSERVE ───`);
 
+      // v14.2: Trigger autopoiesis cycle first to gather fresh self-observations
+      const autopoiesis = getAutopoiesisEngine();
+      await autopoiesis.cycle();
+      const autoStats = autopoiesis.stats();
+      console.log(`[RSI] Autopoiesis cycle ${autoStats.cycleCount} completed, ${autoStats.lastObservations.length} observations`);
+
+      // Convert high-surprise autopoiesis observations to RSI limitations
+      const autopoiesisLimitations = this.convertAutopoiesisToLimitations(autoStats.lastObservations);
+
       this.observeEngine.recordMetrics();
-      const limitations = await this.observeEngine.detectLimitations();
+      const baseLimitations = await this.observeEngine.detectLimitations();
+      const limitations = [...baseLimitations, ...autopoiesisLimitations];
       const opportunities = await this.observeEngine.detectOpportunities();
 
       this.currentCycle.limitations = limitations;
@@ -509,6 +519,69 @@ export class RSIOrchestrator extends EventEmitter {
    */
   updateConfig(config: Partial<RSIConfig>): void {
     this.config = { ...this.config, ...config };
+  }
+
+  /**
+   * Convert autopoiesis self-observations to RSI limitations
+   * v14.2: Integrates autopoietic self-awareness into RSI observation
+   */
+  private convertAutopoiesisToLimitations(observations: SelfObservation[]): Limitation[] {
+    const limitations: Limitation[] = [];
+
+    for (const obs of observations) {
+      // Only convert high-surprise or degrading observations
+      if ((obs.surprise && obs.surprise > 0.5) || obs.trend === 'degrading') {
+        const limitationType = this.mapCategoryToLimitationType(obs.category);
+        const severity = this.calculateSeverity(obs);
+
+        limitations.push({
+          id: randomUUID(),
+          type: limitationType,
+          severity,
+          description: `Autopoiesis detected: ${obs.category}.${obs.metric} = ${obs.value}${obs.trend ? ` (${obs.trend})` : ''}`,
+          evidence: [{
+            source: 'self-observation',
+            data: { ...obs },
+            timestamp: obs.timestamp,
+          }],
+          affectedComponents: this.mapCategoryToComponents(obs.category),
+          detectedAt: obs.timestamp,
+          confidence: obs.surprise ?? 0.7,
+          estimatedImpact: obs.surprise ?? 0.5,
+        });
+      }
+    }
+
+    return limitations;
+  }
+
+  private mapCategoryToLimitationType(category: string): Limitation['type'] {
+    switch (category) {
+      case 'performance': return 'performance';
+      case 'memory': return 'efficiency';
+      case 'consciousness': return 'capability';
+      case 'code': return 'quality';
+      case 'learning': return 'knowledge';
+      default: return 'reliability';
+    }
+  }
+
+  private mapCategoryToComponents(category: string): string[] {
+    switch (category) {
+      case 'performance': return ['kernel', 'memory'];
+      case 'memory': return ['memory', 'episodic', 'semantic'];
+      case 'consciousness': return ['consciousness', 'phi-monitor'];
+      case 'code': return ['codebase', 'build'];
+      case 'learning': return ['learning', 'procedural-memory'];
+      default: return ['kernel'];
+    }
+  }
+
+  private calculateSeverity(obs: SelfObservation): Limitation['severity'] {
+    const surprise = obs.surprise ?? 0;
+    if (surprise > 0.9 || obs.trend === 'degrading') return 'high';
+    if (surprise > 0.7) return 'medium';
+    return 'low';
   }
 
   /**

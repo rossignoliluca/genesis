@@ -42,6 +42,7 @@ export { EthicistAgent, createEthicistAgent } from './ethicist.js';
 export { BuilderAgent, createBuilderAgent } from './builder.js';
 export { NarratorAgent, createNarratorAgent } from './narrator.js';
 export { SensorAgent, createSensorAgent } from './sensor.js';
+export { ConsciousnessAgent, createConsciousnessAgent } from './consciousness.js';
 
 // ============================================================================
 // Phase 11: Multi-Agent Coordination (v7.6)

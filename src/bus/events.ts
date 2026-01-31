@@ -504,6 +504,41 @@ export interface X402ReceiptEvent extends BusEvent {
 }
 
 // ============================================================================
+// CLI Events
+// ============================================================================
+
+export interface CLIUserMessageEvent extends BusEvent {
+  sessionId: string;
+  messageId: string;
+  content: string;
+  tokenCount: number;
+}
+
+export interface CLIResponseEvent extends BusEvent {
+  sessionId: string;
+  messageId: string;
+  phase: 'started' | 'streaming' | 'completed';
+  tokenCount?: number;
+  durationMs?: number;
+}
+
+export interface CLISessionEvent extends BusEvent {
+  sessionId: string;
+  phase: 'started' | 'ended';
+  messageCount?: number;
+  totalTokens?: number;
+  durationMs?: number;
+}
+
+export interface CLIToolCallEvent extends BusEvent {
+  sessionId: string;
+  toolName: string;
+  phase: 'started' | 'completed' | 'failed';
+  durationMs?: number;
+  result?: string;
+}
+
+// ============================================================================
 // Legacy Event Types (for genesis.ts compatibility)
 // ============================================================================
 
@@ -705,6 +740,17 @@ export interface GenesisEventMap {
   'x402.challenge.issued': X402ChallengeEvent;
   'x402.payment.completed': X402PaymentEvent;
   'x402.receipt.generated': X402ReceiptEvent;
+
+  // --- CLI Events ---
+  'cli.user.message': CLIUserMessageEvent;
+  'cli.response.started': CLIResponseEvent;
+  'cli.response.streaming': CLIResponseEvent;
+  'cli.response.completed': CLIResponseEvent;
+  'cli.session.started': CLISessionEvent;
+  'cli.session.ended': CLISessionEvent;
+  'cli.tool.started': CLIToolCallEvent;
+  'cli.tool.completed': CLIToolCallEvent;
+  'cli.tool.failed': CLIToolCallEvent;
 
   // --- Legacy Aliases (colon syntax for genesis.ts compatibility) ---
   'kernel:prediction_error': LegacyPredictionErrorEvent;

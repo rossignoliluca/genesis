@@ -1,12 +1,19 @@
 /**
- * Bounty Hunter — DeWork / Layer3 / Immunefi
+ * Bounty Hunter — Multi-Platform Autonomous Bounty Discovery
  *
- * Autonomously discovers and completes bounties on Web3 platforms.
+ * v14.5.0: Added Algora, Gitcoin, GitHub bounty sources
+ *
+ * Autonomously discovers and completes bounties on multiple platforms:
+ * - DeWork: Web3 DAO bounties (GraphQL API)
+ * - Algora: GitHub-native bounties (REST API) - BEST FOR AI
+ * - Gitcoin: OSS grants and bounties (REST API)
+ * - GitHub: Issues with bounty labels (Search API)
+ *
  * Revenue model: per-bounty payouts (typically $50-$10,000+).
  *
  * Requirements:
  *   - Capital: $0 (zero capital needed)
- *   - Identity: Wallet only (wallet-based identity on all platforms)
+ *   - Identity: Wallet/GitHub account
  *   - Revenue: $500-$5,000/month depending on bounty availability
  *
  * Bounty types:
@@ -21,10 +28,14 @@
  *   2. Evaluate expected value (reward × success probability)
  *   3. Execute bounty work using kernel task system
  *   4. Submit and track payout
+ *   5. Feed results back to RSI for skill improvement
  */
 
 import { getEconomicFiber } from '../fiber.js';
 import { getDeworkConnector, type Bounty as DeworkBounty } from '../live/connectors/dework.js';
+import { getAlgoraConnector, type AlgoraBounty } from '../live/connectors/algora.js';
+import { getGitcoinConnector, type GitcoinBounty } from '../live/connectors/gitcoin.js';
+import { getGitHubBountyConnector, type GitHubBounty } from '../live/connectors/github-bounties.js';
 import { getRevenueTracker } from '../live/revenue-tracker.js';
 
 // ============================================================================
@@ -33,7 +44,7 @@ import { getRevenueTracker } from '../live/revenue-tracker.js';
 
 export interface Bounty {
   id: string;
-  platform: 'dework' | 'layer3' | 'immunefi' | 'code4rena' | 'gitcoin';
+  platform: 'dework' | 'algora' | 'gitcoin' | 'github' | 'layer3' | 'immunefi' | 'code4rena';
   title: string;
   description: string;
   reward: number;              // $ value
@@ -46,6 +57,13 @@ export interface Bounty {
   tags: string[];
   discovered: number;          // When we found it
   status: 'open' | 'claimed' | 'submitted' | 'completed' | 'rejected' | 'expired';
+  /** v14.5.0: Source-specific metadata */
+  sourceMetadata?: {
+    org?: string;
+    repo?: string;
+    issueNumber?: number;
+    githubUrl?: string;
+  };
 }
 
 export interface BountySubmission {
@@ -94,7 +112,8 @@ export class BountyHunter {
 
   constructor(config?: Partial<BountyHunterConfig>) {
     this.config = {
-      platforms: config?.platforms ?? ['dework', 'layer3', 'immunefi'],
+      // v14.5.0: Added algora, gitcoin, github as primary platforms
+      platforms: config?.platforms ?? ['algora', 'github', 'gitcoin', 'dework'],
       categories: config?.categories ?? ['code', 'audit', 'content', 'research'],
       minReward: config?.minReward ?? 50,
       maxDifficulty: config?.maxDifficulty ?? 'hard',
@@ -344,11 +363,12 @@ export class BountyHunter {
 
   private async scanPlatform(platform: string): Promise<Bounty[]> {
     try {
-      // Use real DeWork connector for dework platform
+      // ══════════════════════════════════════════════════════════════════════
+      // DEWORK - Web3 DAO bounties
+      // ══════════════════════════════════════════════════════════════════════
       if (platform === 'dework') {
         const connector = getDeworkConnector();
         const tags = this.config.categories.map(c => {
-          // Map our categories to DeWork tags
           const tagMap: Record<string, string[]> = {
             code: ['solidity', 'typescript', 'smart-contract', 'rust'],
             audit: ['security', 'audit', 'bug-bounty'],
@@ -380,13 +400,119 @@ export class BountyHunter {
           }));
       }
 
+      // ══════════════════════════════════════════════════════════════════════
+      // ALGORA - GitHub-native bounties (BEST API for AI agents)
+      // ══════════════════════════════════════════════════════════════════════
+      if (platform === 'algora') {
+        const connector = getAlgoraConnector();
+        const algoraBounties = await connector.scanBounties();
+
+        return algoraBounties
+          .filter(b => (b.reward / 100) >= this.config.minReward) // Algora uses cents
+          .map((b: AlgoraBounty) => ({
+            id: `algora:${b.id}`,
+            platform: 'algora' as const,
+            title: b.title,
+            description: b.description || '',
+            reward: b.reward / 100, // Convert from cents to dollars
+            currency: 'USD' as const,
+            difficulty: this.inferDifficulty(b.reward / 100),
+            category: 'code' as const, // Algora is primarily code bounties
+            deadline: b.deadline ? new Date(b.deadline).getTime() : undefined,
+            submissionUrl: b.url,
+            protocol: b.org,
+            tags: b.tags,
+            discovered: Date.now(),
+            status: 'open' as const,
+            sourceMetadata: {
+              org: b.org,
+              repo: b.repo,
+              githubUrl: b.issueUrl,
+            },
+          }));
+      }
+
+      // ══════════════════════════════════════════════════════════════════════
+      // GITCOIN - OSS grants and bounties
+      // ══════════════════════════════════════════════════════════════════════
+      if (platform === 'gitcoin') {
+        const connector = getGitcoinConnector();
+        const gitcoinBounties = await connector.scanBounties({
+          isOpen: true,
+          keywords: this.config.categories,
+        });
+
+        return gitcoinBounties
+          .filter(b => b.reward >= this.config.minReward)
+          .map((b: GitcoinBounty) => ({
+            id: `gitcoin:${b.id}`,
+            platform: 'gitcoin' as const,
+            title: b.title,
+            description: b.description || '',
+            reward: b.reward,
+            currency: this.mapCurrency(b.currency),
+            difficulty: this.mapGitcoinDifficulty(b.experienceLevel),
+            category: this.inferCategory(b.tags),
+            deadline: b.deadline ? new Date(b.deadline).getTime() : undefined,
+            submissionUrl: b.url,
+            protocol: b.projectType,
+            tags: b.tags,
+            discovered: Date.now(),
+            status: 'open' as const,
+            sourceMetadata: {
+              githubUrl: b.githubUrl,
+            },
+          }));
+      }
+
+      // ══════════════════════════════════════════════════════════════════════
+      // GITHUB - Issues with bounty labels
+      // ══════════════════════════════════════════════════════════════════════
+      if (platform === 'github') {
+        const connector = getGitHubBountyConnector();
+        const githubBounties = await connector.scanBounties();
+
+        return githubBounties
+          .filter(b => b.reward >= this.config.minReward && b.status === 'open')
+          .map((b: GitHubBounty) => ({
+            id: b.id,
+            platform: 'github' as const,
+            title: b.title,
+            description: b.description || '',
+            reward: b.reward,
+            currency: this.mapCurrency(b.currency),
+            difficulty: this.inferDifficulty(b.reward),
+            category: 'code' as const, // GitHub bounties are typically code
+            deadline: undefined,
+            submissionUrl: b.url,
+            protocol: `${b.owner}/${b.repo}`,
+            tags: b.tags,
+            discovered: Date.now(),
+            status: 'open' as const,
+            sourceMetadata: {
+              org: b.owner,
+              repo: b.repo,
+              issueNumber: b.issueNumber,
+              githubUrl: b.url,
+            },
+          }));
+      }
+
       // For other platforms (layer3, immunefi), return empty for now
-      // Can add more connectors later
       console.log(`[BountyHunter] Platform ${platform} not yet connected to real API`);
       return [];
     } catch (error) {
       console.warn(`[BountyHunter] Scan failed for ${platform}:`, error);
       return [];
+    }
+  }
+
+  private mapGitcoinDifficulty(level: string): 'easy' | 'medium' | 'hard' | 'critical' {
+    switch (level) {
+      case 'beginner': return 'easy';
+      case 'intermediate': return 'medium';
+      case 'advanced': return 'hard';
+      default: return 'medium';
     }
   }
 

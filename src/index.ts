@@ -41,6 +41,7 @@ for (const file of envFiles) {
 import { createOrchestrator, MCP_CAPABILITIES, GenesisPipeline } from './orchestrator.js';
 import { SystemSpec, MCPServerName, PipelineStage } from './types.js';
 import { startChat, runHeadless, readStdin } from './cli/chat.js';
+import { runAgenticChat } from './cli/agentic.js';
 import { getLLMBridge, getHybridRouter, detectHardware } from './llm/index.js';
 import { getMCPClient, logMCPMode, MCP_SERVER_REGISTRY } from './mcp/index.js';
 import { getProcessManager, LOG_FILE } from './daemon/process.js';
@@ -2006,6 +2007,27 @@ async function cmdAgents(subcommand: string | undefined, options: Record<string,
 }
 
 // ============================================================================
+// Agentic Command (v14.2: Claude Code-like Interface)
+// ============================================================================
+
+async function cmdAgentic(subcommand: string | undefined, options: Record<string, string>): Promise<void> {
+  const args: string[] = [];
+
+  // Pass through options
+  if (options.model) {
+    args.push('--model', options.model);
+  }
+  if (options.cwd) {
+    args.push('--cwd', options.cwd);
+  }
+  if (options.verbose) {
+    args.push('--verbose');
+  }
+
+  await runAgenticChat(args);
+}
+
+// ============================================================================
 // Install Command (v10.1: Self-Installation)
 // ============================================================================
 
@@ -2222,6 +2244,11 @@ async function main(): Promise<void> {
         break;
       case 'agents':
         await cmdAgents(positional, options);
+        break;
+      case 'agentic':
+      case 'agent':
+        // v14.2: Agentic chat interface with Claude Code-like capabilities
+        await cmdAgentic(positional, options);
         break;
       default:
         console.error(c(`Unknown command: ${command}`, 'red'));

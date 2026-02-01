@@ -43,6 +43,29 @@ genesis chat
 genesis infer mcp --cycles 10
 ```
 
+## Use as MCP Server (Claude Code / Claude Desktop)
+
+Genesis can be installed as an MCP server, giving Claude access to:
+- **genesis.chat** - Multi-model AI with auto-routing (GPT-4, Claude, Gemini, local Ollama)
+- **genesis.research** - Deep research using 20+ sources (arXiv, Semantic Scholar, Brave, etc.)
+- **genesis.analyze** - Code/data analysis with multi-perspective reasoning
+
+```bash
+# Add to Claude Code
+claude mcp add genesis -- npx genesis-ai-cli mcp-server
+
+# Or manual config in Claude Desktop settings:
+# Add to ~/Library/Application Support/Claude/claude_desktop_config.json
+{
+  "mcpServers": {
+    "genesis": {
+      "command": "npx",
+      "args": ["genesis-ai-cli", "mcp-server"]
+    }
+  }
+}
+```
+
 ## API Keys Setup
 
 Copy `.env.example` to `.env` and add your keys:

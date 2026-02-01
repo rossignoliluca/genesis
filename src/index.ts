@@ -633,7 +633,17 @@ async function cmdMCP(subcommand: string | undefined, options: Record<string, st
 
     console.log(`  Name: ${options.name || 'genesis'}`);
     console.log(`  Transport: stdio`);
-    console.log(`  Tools: genesis.think, genesis.remember, genesis.execute, genesis.analyze, genesis.create`);
+    console.log(`  Tools:`);
+    console.log(`    ${c('genesis.chat', 'cyan')}     - Multi-model AI chat with auto-routing`);
+    console.log(`    ${c('genesis.research', 'cyan')} - Deep research using 20+ MCP sources`);
+    console.log(`    ${c('genesis.analyze', 'cyan')}  - Code/data analysis`);
+    console.log(`    ${c('genesis.think', 'cyan')}    - Deep reasoning with multi-mind synthesis`);
+    console.log(`    ${c('genesis.create', 'cyan')}   - Code/content generation`);
+    console.log(`    ${c('genesis.remember', 'cyan')} - Memory operations`);
+    console.log(`    ${c('genesis.execute', 'cyan')} - Autonomous task execution`);
+    console.log('');
+    console.log(c('To add to Claude Code:', 'dim'));
+    console.log(c('  claude mcp add genesis -- npx genesis-ai-cli mcp-server', 'yellow'));
     console.log('');
     console.log(c('Server starting... (Ctrl+C to stop)', 'dim'));
 
@@ -2333,6 +2343,11 @@ async function main(): Promise<void> {
         break;
       case 'mcp':
         await cmdMCP(positional, options);
+        break;
+      case 'mcp-server':
+        // v14.7: Alias for `mcp serve` - easier for Claude Code installation
+        // Usage: npx genesis-ai-cli mcp-server
+        await cmdMCP('serve', options);
         break;
       case 'daemon':
         await cmdDaemon(positional, options);

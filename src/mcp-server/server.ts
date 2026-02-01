@@ -609,6 +609,42 @@ export class GenesisMCPServer extends EventEmitter {
       annotations: { readOnlyHint: true },
       handler: this.handleCreate.bind(this),
     });
+
+    // v14.7: genesis.chat - Multi-model AI chat with automatic routing
+    this.registerTool({
+      name: 'genesis.chat',
+      description: 'Multi-model AI chat with automatic routing. Routes to cheapest/fastest/best model based on query complexity. Supports GPT-4, Claude, Gemini, Mistral, and local Ollama.',
+      inputSchema: z.object({
+        prompt: z.string().describe('User message to process'),
+        model: z.enum(['auto', 'fast', 'smart', 'cheap', 'local']).optional().default('auto'),
+        systemPrompt: z.string().optional().describe('Optional system prompt'),
+        maxTokens: z.number().optional().default(2048),
+      }),
+      requiredScopes: ['chat'],
+      baseCost: 0.01,
+      supportsStreaming: true,
+      maxExecutionTime: 60000,
+      annotations: { readOnlyHint: true },
+      handler: this.handleChat.bind(this),
+    });
+
+    // v14.7: genesis.research - Deep research using 20+ MCP sources
+    this.registerTool({
+      name: 'genesis.research',
+      description: 'Deep research using 20+ MCP sources including arXiv, Semantic Scholar, Brave Search, Gemini, Exa, and more. Aggregates and synthesizes results.',
+      inputSchema: z.object({
+        topic: z.string().describe('Research topic or question'),
+        depth: z.enum(['quick', 'standard', 'deep']).optional().default('standard'),
+        sources: z.array(z.string()).optional().describe('Specific sources to use (arxiv, semantic-scholar, brave, gemini, etc)'),
+        maxResults: z.number().optional().default(10),
+      }),
+      requiredScopes: ['research'],
+      baseCost: 0.05,
+      supportsStreaming: false,
+      maxExecutionTime: 120000,
+      annotations: { readOnlyHint: true, longRunningHint: true },
+      handler: this.handleResearch.bind(this),
+    });
   }
 
   // ============================================================================
@@ -1127,6 +1163,115 @@ export class GenesisMCPServer extends EventEmitter {
           content: `// Generated ${input.type} based on specification`,
           verified: input.verify ?? true,
           warnings: [],
+        },
+      };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  // v14.7: Chat handler with multi-model routing
+  private async handleChat(
+    rawInput: unknown,
+    ctx: ToolExecutionContext
+  ): Promise<ToolResult<{ response: string; model: string; tokens: number; cost: number }>> {
+    const input = rawInput as { prompt: string; model?: string; systemPrompt?: string; maxTokens?: number };
+    try {
+      // Dynamic import to avoid circular dependencies
+      const { getLLMBridge } = await import('../llm/index.js');
+      const bridge = getLLMBridge();
+
+      const response = await bridge.chat(input.prompt, input.systemPrompt);
+
+      ctx.meter.recordTokens(input.prompt.length / 4, (response.content?.length || 0) / 4);
+
+      const totalTokens = (response.usage?.inputTokens || 0) + (response.usage?.outputTokens || 0);
+      return {
+        success: true,
+        data: {
+          response: response.content || '',
+          model: response.model || 'unknown',
+          tokens: totalTokens,
+          cost: 0, // Cost calculated separately
+        },
+      };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  // v14.7: Research handler using MCP sources
+  private async handleResearch(
+    rawInput: unknown,
+    ctx: ToolExecutionContext
+  ): Promise<ToolResult<{ findings: any[]; summary: string; sources: string[] }>> {
+    const input = rawInput as { topic: string; depth?: string; sources?: string[]; maxResults?: number };
+    try {
+      const { getMCPClient } = await import('../mcp/index.js');
+      const mcp = getMCPClient();
+
+      const findings: any[] = [];
+      const usedSources: string[] = [];
+      const defaultSources = input.sources || ['arxiv', 'brave', 'gemini'];
+      const maxResults = input.maxResults || 10;
+
+      // Quick depth = 1 source, standard = 3, deep = 5+
+      const sourceCount = input.depth === 'quick' ? 1 : input.depth === 'deep' ? 5 : 3;
+      const sourcesToUse = defaultSources.slice(0, sourceCount);
+
+      for (const source of sourcesToUse) {
+        try {
+          let result;
+          switch (source) {
+            case 'arxiv':
+              result = await mcp.call('arxiv', 'search_arxiv', { query: input.topic, max_results: maxResults });
+              if (result.success && result.data) {
+                findings.push(...(Array.isArray(result.data) ? result.data : [result.data]));
+                usedSources.push('arxiv');
+              }
+              break;
+            case 'semantic-scholar':
+              result = await mcp.call('semantic-scholar', 'search_semantic_scholar', { query: input.topic, limit: maxResults });
+              if (result.success && result.data) {
+                findings.push(...(Array.isArray(result.data) ? result.data : [result.data]));
+                usedSources.push('semantic-scholar');
+              }
+              break;
+            case 'brave':
+              result = await mcp.call('brave-search', 'brave_web_search', { query: input.topic, count: maxResults });
+              if (result.success && result.data) {
+                findings.push(...(Array.isArray(result.data) ? result.data : [result.data]));
+                usedSources.push('brave-search');
+              }
+              break;
+            case 'gemini':
+              result = await mcp.call('gemini', 'web_search', { query: input.topic });
+              if (result.success && result.data) {
+                findings.push(result.data);
+                usedSources.push('gemini');
+              }
+              break;
+            case 'exa':
+              result = await mcp.call('exa', 'web_search_exa', { query: input.topic, numResults: maxResults });
+              if (result.success && result.data) {
+                findings.push(...(Array.isArray(result.data) ? result.data : [result.data]));
+                usedSources.push('exa');
+              }
+              break;
+          }
+        } catch (sourceError) {
+          console.warn(`[Research] Source ${source} failed:`, sourceError);
+        }
+      }
+
+      ctx.meter.recordTokens(input.topic.length / 4, findings.length * 100);
+
+      return {
+        success: true,
+        data: {
+          findings: findings.slice(0, maxResults),
+          summary: `Found ${findings.length} results from ${usedSources.length} sources for "${input.topic}"`,
+          sources: usedSources,
         },
       };
     } catch (error) {

@@ -745,9 +745,10 @@ class RealMCPClient implements IMCPClient {
     tool: string,
     params: Record<string, any>,
     options: MCPCallOptions = {},
-    _isRetry = false
+    retryCount = 0
   ): Promise<MCPCallResult<T>> {
     const startTime = Date.now();
+    const maxRetries = options.retries ?? 3;
 
     if (this.config.onCall) {
       this.config.onCall(server, tool, params);
@@ -774,8 +775,17 @@ class RealMCPClient implements IMCPClient {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
-      // v7.18: Try fallback for web search tools
-      if (!_isRetry) {
+      // v14.6.4: Retry with exponential backoff for transient errors
+      const isTransient = this.isTransientError(errorMessage);
+      if (retryCount < maxRetries && isTransient) {
+        const backoffMs = Math.min(1000 * Math.pow(2, retryCount) + Math.random() * 100, 30000);
+        console.log(`[MCP] ${server}.${tool} transient error, retry ${retryCount + 1}/${maxRetries} in ${Math.round(backoffMs)}ms`);
+        await new Promise(r => setTimeout(r, backoffMs));
+        return this.call<T>(server, tool, params, options, retryCount + 1);
+      }
+
+      // v7.18: Try fallback for web search tools (only on first attempt)
+      if (retryCount === 0) {
         const fallback = getNextFallbackServer(server, tool);
         if (fallback) {
           console.log(`[MCP] ${server}.${tool} failed (${isRateLimitError(errorMessage) ? 'rate limit' : 'error'}), trying ${fallback.server}.${fallback.tool}...`);
@@ -783,7 +793,7 @@ class RealMCPClient implements IMCPClient {
           // Adapt params for the new tool if needed
           const adaptedParams = this.adaptParamsForFallback(tool, fallback.tool, params);
 
-          return this.call<T>(fallback.server, fallback.tool, adaptedParams, options, true);
+          return this.call<T>(fallback.server, fallback.tool, adaptedParams, options, 0);
         }
       }
 
@@ -803,6 +813,28 @@ class RealMCPClient implements IMCPClient {
 
       return result;
     }
+  }
+
+  /**
+   * Check if an error is transient and should be retried.
+   */
+  private isTransientError(errorMessage: string): boolean {
+    const transientPatterns = [
+      'ECONNRESET',
+      'ETIMEDOUT',
+      'ECONNREFUSED',
+      'socket hang up',
+      '429',
+      'rate limit',
+      'too many requests',
+      'timeout',
+      'ENOTFOUND',
+      'EAI_AGAIN',
+      'network error',
+      'connection reset',
+    ];
+    const lowerError = errorMessage.toLowerCase();
+    return transientPatterns.some(p => lowerError.includes(p.toLowerCase()));
   }
 
   /**

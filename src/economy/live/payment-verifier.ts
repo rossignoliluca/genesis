@@ -203,7 +203,13 @@ export class PaymentWatcher {
           revenueSource: 'watcher:' + event.from.slice(0, 10),
         });
 
-        for (const h of this.handlers) { try { h(event); } catch {} }
+        for (const h of this.handlers) {
+          try {
+            h(event);
+          } catch (handlerError) {
+            console.error('[PaymentWatcher] Handler error:', handlerError, 'txHash:', event.txHash);
+          }
+        }
       }
       this.lastBlock = currentBlock;
     } catch (e) { console.error('[PaymentWatcher] Poll error:', e); }

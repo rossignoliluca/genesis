@@ -507,6 +507,10 @@ export class AdvancedRouter {
   private metaLearning: MetaLearningEntry[] = [];
   private providerHealth: Map<ExtendedProvider, { available: boolean; lastCheck: number }> = new Map();
 
+  // Rate limiting with token bucket
+  private rateLimiters: Map<ExtendedProvider, { tokens: number; lastRefill: number }> = new Map();
+  private static readonly TOKEN_REFILL_INTERVAL = 60000; // 1 minute
+
   constructor(private config: {
     costOptimize: boolean;
     speedOptimize: boolean;
@@ -568,6 +572,39 @@ export class AdvancedRouter {
 
     this.providerHealth.set(provider, { available, lastCheck: now });
     return available;
+  }
+
+  /**
+   * Enforce rate limiting using token bucket algorithm.
+   * Waits if tokens are exhausted, preventing 429 errors.
+   */
+  private async enforceRateLimit(provider: ExtendedProvider): Promise<void> {
+    const config = PROVIDER_REGISTRY[provider];
+    const rateLimit = config.rateLimit || 60; // Default 60 RPM
+
+    let bucket = this.rateLimiters.get(provider);
+    const now = Date.now();
+
+    if (!bucket) {
+      bucket = { tokens: rateLimit, lastRefill: now };
+      this.rateLimiters.set(provider, bucket);
+    }
+
+    // Refill tokens based on time elapsed
+    const elapsed = now - bucket.lastRefill;
+    const refillAmount = (elapsed / AdvancedRouter.TOKEN_REFILL_INTERVAL) * rateLimit;
+    bucket.tokens = Math.min(rateLimit, bucket.tokens + refillAmount);
+    bucket.lastRefill = now;
+
+    // Wait if no tokens available
+    if (bucket.tokens < 1) {
+      const waitMs = Math.ceil((1 - bucket.tokens) * (AdvancedRouter.TOKEN_REFILL_INTERVAL / rateLimit));
+      console.log(`[AdvancedRouter] Rate limit reached for ${provider}, waiting ${waitMs}ms`);
+      await new Promise(r => setTimeout(r, waitMs));
+      bucket.tokens = 1; // Reset after wait
+    }
+
+    bucket.tokens--;
   }
 
   private async getAvailableProviders(): Promise<ExtendedProvider[]> {
@@ -757,6 +794,9 @@ export class AdvancedRouter {
     prompt: string,
     systemPrompt?: string
   ): Promise<LLMResponse> {
+    // Enforce rate limiting before making the call
+    await this.enforceRateLimit(provider);
+
     const startTime = Date.now();
     const config = PROVIDER_REGISTRY[provider];
 

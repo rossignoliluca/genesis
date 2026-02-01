@@ -14,6 +14,7 @@ import {
   Finding,
   ExplorationSource,
 } from './types.js';
+import { getMCPClient } from '../mcp/index.js';
 
 // ============================================================================
 // Explorer Agent
@@ -22,6 +23,8 @@ import {
 export class ExplorerAgent extends BaseAgent {
   // Track exploration history for novelty detection
   private explorationHistory: Set<string> = new Set();
+  // MCP client for real searches
+  private mcp = getMCPClient();
 
   constructor(bus: MessageBus = messageBus) {
     super({ type: 'explorer' }, bus);
@@ -143,97 +146,184 @@ export class ExplorerAgent extends BaseAgent {
     source: ExplorationSource['type'],
     query: string
   ): Promise<{ findings: Finding[]; metadata: any }> {
-    // In production, these would call actual MCP servers
-    // For now, we return simulated results based on source type
-
     const findings: Finding[] = [];
     const metadata: any = {};
 
-    switch (source) {
-      case 'arxiv':
-        // Would call: mcp__arxiv__search_arxiv
-        findings.push(this.createFinding(
-          `[arxiv] Research on "${query}" - Recent papers and preprints`,
-          source,
-          0.8,
-          true
-        ));
-        metadata.paperCount = 0;
-        break;
+    try {
+      switch (source) {
+        case 'arxiv': {
+          const result = await this.mcp.call('arxiv', 'search_arxiv', {
+            query,
+            max_results: 5,
+          }) as any;
+          if (result?.data) {
+            const papers = Array.isArray(result.data) ? result.data :
+                          (result.data.papers || []);
+            for (const paper of papers.slice(0, 5)) {
+              findings.push(this.createFinding(
+                `[arxiv] ${paper.title || 'Paper'}: ${(paper.summary || paper.abstract || '').slice(0, 200)}...`,
+                source,
+                this.computeRelevance(query, paper.title, paper.summary),
+                true
+              ));
+            }
+            metadata.paperCount = papers.length;
+          }
+          break;
+        }
 
-      case 'semantic-scholar':
-        // Would call: mcp__semantic-scholar__search_semantic_scholar
-        findings.push(this.createFinding(
-          `[semantic-scholar] Academic papers with citations for "${query}"`,
-          source,
-          0.85,
-          true
-        ));
-        metadata.citationDepth = 2;
-        break;
+        case 'semantic-scholar': {
+          const result = await this.mcp.call('semantic-scholar', 'search_semantic_scholar', {
+            query,
+            limit: 5,
+          }) as any;
+          if (result?.data) {
+            const papers = Array.isArray(result.data) ? result.data :
+                          (result.data.papers || []);
+            for (const paper of papers.slice(0, 5)) {
+              const citations = paper.citationCount || 0;
+              findings.push(this.createFinding(
+                `[semantic-scholar] ${paper.title || 'Paper'} (${citations} citations): ${(paper.abstract || '').slice(0, 200)}...`,
+                source,
+                citations > 100 ? 0.9 : citations > 10 ? 0.7 : 0.5,
+                true
+              ));
+            }
+            metadata.citationDepth = 2;
+          }
+          break;
+        }
 
-      case 'brave':
-        // Would call: mcp__brave-search__brave_web_search
-        findings.push(this.createFinding(
-          `[brave] Web results and news for "${query}"`,
-          source,
-          0.7,
-          false
-        ));
-        break;
+        case 'brave': {
+          const result = await this.mcp.call('brave-search', 'brave_web_search', {
+            query,
+            count: 5,
+          }) as any;
+          if (result?.data) {
+            const results = result.data.web?.results || result.data.results || [];
+            for (const item of results.slice(0, 5)) {
+              findings.push(this.createFinding(
+                `[brave] ${item.title || 'Result'}: ${(item.description || item.snippet || '').slice(0, 200)}...`,
+                source,
+                0.7,
+                false
+              ));
+            }
+          }
+          break;
+        }
 
-      case 'gemini':
-        // Would call: mcp__gemini__web_search
-        findings.push(this.createFinding(
-          `[gemini] AI-synthesized search results for "${query}"`,
-          source,
-          0.75,
-          false
-        ));
-        break;
+        case 'gemini': {
+          const result = await this.mcp.call('gemini', 'web_search', {
+            query,
+          }) as any;
+          if (result?.data) {
+            const content = typeof result.data === 'string' ? result.data :
+                           JSON.stringify(result.data).slice(0, 500);
+            findings.push(this.createFinding(
+              `[gemini] ${content.slice(0, 300)}...`,
+              source,
+              0.75,
+              false
+            ));
+          }
+          break;
+        }
 
-      case 'exa':
-        // Would call: mcp__exa__web_search_exa or mcp__exa__get_code_context_exa
-        findings.push(this.createFinding(
-          `[exa] Code context and examples for "${query}"`,
-          source,
-          0.8,
-          true
-        ));
-        break;
+        case 'exa': {
+          const result = await this.mcp.call('exa', 'web_search_exa', {
+            query,
+            numResults: 5,
+          }) as any;
+          if (result?.data) {
+            const results = result.data.results || [];
+            for (const item of results.slice(0, 5)) {
+              findings.push(this.createFinding(
+                `[exa] ${item.title || 'Result'}: ${(item.text || item.snippet || '').slice(0, 200)}...`,
+                source,
+                0.8,
+                true
+              ));
+            }
+          }
+          break;
+        }
 
-      case 'firecrawl':
-        // Would call: mcp__firecrawl__firecrawl_search
-        findings.push(this.createFinding(
-          `[firecrawl] Deep web scraping results for "${query}"`,
-          source,
-          0.65,
-          false
-        ));
-        break;
+        case 'firecrawl': {
+          const result = await this.mcp.call('firecrawl', 'firecrawl_search', {
+            query,
+            limit: 5,
+          }) as any;
+          if (result?.data) {
+            const results = result.data.results || result.data || [];
+            const items = Array.isArray(results) ? results : [results];
+            for (const item of items.slice(0, 5)) {
+              findings.push(this.createFinding(
+                `[firecrawl] ${item.title || item.url || 'Result'}: ${(item.content || item.description || '').slice(0, 200)}...`,
+                source,
+                0.65,
+                false
+              ));
+            }
+          }
+          break;
+        }
 
-      case 'context7':
-        // Would call: mcp__context7__query-docs
-        findings.push(this.createFinding(
-          `[context7] Library documentation for "${query}"`,
-          source,
-          0.9,
-          true
-        ));
-        break;
+        case 'context7': {
+          // context7 requires library resolution first
+          const libResult = await this.mcp.call('context7', 'resolve-library-id', {
+            libraryName: query.split(' ')[0], // Use first word as library name
+          }) as any;
+          if (libResult?.data?.libraryId) {
+            const docsResult = await this.mcp.call('context7', 'query-docs', {
+              libraryId: libResult.data.libraryId,
+              query,
+            }) as any;
+            if (docsResult?.data) {
+              findings.push(this.createFinding(
+                `[context7] ${typeof docsResult.data === 'string' ? docsResult.data.slice(0, 300) : JSON.stringify(docsResult.data).slice(0, 300)}...`,
+                source,
+                0.9,
+                true
+              ));
+            }
+          }
+          break;
+        }
 
-      case 'wolfram':
-        // Would call: mcp__wolfram__wolfram_query
-        findings.push(this.createFinding(
-          `[wolfram] Computational/mathematical results for "${query}"`,
-          source,
-          0.95,
-          true
-        ));
-        break;
+        case 'wolfram': {
+          const result = await this.mcp.call('wolfram', 'wolfram_query', {
+            input: query,
+          }) as any;
+          if (result?.data) {
+            const content = typeof result.data === 'string' ? result.data :
+                           JSON.stringify(result.data).slice(0, 500);
+            findings.push(this.createFinding(
+              `[wolfram] ${content.slice(0, 300)}...`,
+              source,
+              0.95,
+              true
+            ));
+          }
+          break;
+        }
+      }
+    } catch (error) {
+      this.log(`MCP call to ${source} failed: ${error}`);
+      // Return empty findings on error - graceful degradation
     }
 
     return { findings, metadata };
+  }
+
+  private computeRelevance(query: string, title?: string, summary?: string): number {
+    const queryTerms = query.toLowerCase().split(/\s+/);
+    const text = `${title || ''} ${summary || ''}`.toLowerCase();
+    let matches = 0;
+    for (const term of queryTerms) {
+      if (text.includes(term)) matches++;
+    }
+    return queryTerms.length > 0 ? Math.min(0.95, 0.5 + (matches / queryTerms.length) * 0.45) : 0.5;
   }
 
   private createFinding(

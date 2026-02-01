@@ -771,6 +771,12 @@ export class LLMBridge {
       }
     } finally {
       reader.releaseLock();
+      // Properly clean up the stream to prevent connection leaks
+      try {
+        await response.body?.cancel();
+      } catch {
+        // Ignore cancel errors - stream may already be closed
+      }
     }
 
     // Add to history
@@ -900,6 +906,12 @@ export class LLMBridge {
       }
     } finally {
       reader.releaseLock();
+      // Properly clean up the stream to prevent connection leaks
+      try {
+        await response.body?.cancel();
+      } catch {
+        // Ignore cancel errors - stream may already be closed
+      }
     }
 
     // Add to history
@@ -991,6 +1003,12 @@ export class LLMBridge {
       }
     } finally {
       reader.releaseLock();
+      // Properly clean up the stream to prevent connection leaks
+      try {
+        await response.body?.cancel();
+      } catch {
+        // Ignore cancel errors - stream may already be closed
+      }
     }
 
     // Add to history

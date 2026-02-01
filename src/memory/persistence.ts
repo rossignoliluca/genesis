@@ -131,7 +131,7 @@ export class MemoryPersistence {
           const embedService = getEmbeddingService();
           const result = await embedService.embed(episode.content.what);
           const mcp = getMCPClient();
-          await mcp.call('pinecone' as MCPServerName, 'upsert', {
+          await mcp.call('pinecone' as MCPServerName, 'upsert_vectors', {
             vectors: [{
               id: episode.id,
               values: result.vector,
@@ -157,7 +157,7 @@ export class MemoryPersistence {
         try {
           const mcp = getMCPClient();
           // Create episode node
-          await mcp.call('neo4j' as MCPServerName, 'cypher', {
+          await mcp.call('neo4j' as MCPServerName, 'cypher_query', {
             query: `MERGE (e:Episode {id: $id})
                     SET e.what = $what, e.when = datetime($when),
                         e.importance = $importance, e.tags = $tags`,
@@ -173,7 +173,7 @@ export class MemoryPersistence {
 
           // Entity links (who)
           for (const agent of episode.who?.agents || []) {
-            await mcp.call('neo4j' as MCPServerName, 'cypher', {
+            await mcp.call('neo4j' as MCPServerName, 'cypher_query', {
               query: `MERGE (a:Agent {name: $agent})
                       MERGE (e:Episode {id: $eid})
                       MERGE (a)-[:PARTICIPATED_IN]->(e)`,
@@ -234,7 +234,7 @@ export class MemoryPersistence {
           const text = `${concept}: ${definition}`;
           const result = await embedService.embed(text);
           const mcp = getMCPClient();
-          await mcp.call('pinecone' as MCPServerName, 'upsert', {
+          await mcp.call('pinecone' as MCPServerName, 'upsert_vectors', {
             vectors: [{
               id: fact.id,
               values: result.vector,
@@ -259,7 +259,7 @@ export class MemoryPersistence {
       ops.push(async () => {
         try {
           const mcp = getMCPClient();
-          await mcp.call('neo4j' as MCPServerName, 'cypher', {
+          await mcp.call('neo4j' as MCPServerName, 'cypher_query', {
             query: `MERGE (c:Concept {name: $concept})
                     SET c.definition = $definition, c.confidence = $confidence,
                         c.category = $category`,
@@ -274,7 +274,7 @@ export class MemoryPersistence {
 
           // Link to category
           if (fact.category) {
-            await mcp.call('neo4j' as MCPServerName, 'cypher', {
+            await mcp.call('neo4j' as MCPServerName, 'cypher_query', {
               query: `MERGE (cat:Category {name: $cat})
                       MERGE (c:Concept {name: $concept})
                       MERGE (c)-[:BELONGS_TO]->(cat)`,
@@ -346,7 +346,7 @@ export class MemoryPersistence {
     if (!this.config.neo4j) return;
     try {
       const mcp = getMCPClient();
-      await mcp.call('neo4j' as MCPServerName, 'cypher', {
+      await mcp.call('neo4j' as MCPServerName, 'cypher_query', {
         query: `MATCH (a:Episode {id: $cause}), (b:Episode {id: $effect})
                 MERGE (a)-[:CAUSED]->(b)`,
         params: { cause: causeId, effect: effectId },
@@ -364,7 +364,7 @@ export class MemoryPersistence {
     if (!this.config.neo4j) return;
     try {
       const mcp = getMCPClient();
-      await mcp.call('neo4j' as MCPServerName, 'cypher', {
+      await mcp.call('neo4j' as MCPServerName, 'cypher_query', {
         query: `MATCH (a:Episode {id: $prev}), (b:Episode {id: $next})
                 MERGE (a)-[:FOLLOWED_BY]->(b)`,
         params: { prev: prevId, next: nextId },
@@ -382,7 +382,7 @@ export class MemoryPersistence {
     if (!this.config.neo4j) return;
     try {
       const mcp = getMCPClient();
-      await mcp.call('neo4j' as MCPServerName, 'cypher', {
+      await mcp.call('neo4j' as MCPServerName, 'cypher_query', {
         query: `MERGE (a:Concept {name: $from})
                 MERGE (b:Concept {name: $to})
                 MERGE (a)-[:${relationType.toUpperCase().replace(/[^A-Z_]/g, '_')}]->(b)`,

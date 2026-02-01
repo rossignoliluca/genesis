@@ -1382,8 +1382,55 @@ async function cmdMemory(subcommand: string | undefined, options: Record<string,
     return;
   }
 
+  if (subcommand === 'connect') {
+    // v14.9: Test production memory connectivity (Neo4j, Pinecone, Supabase)
+    console.log(c('\n=== TESTING PRODUCTION MEMORY CONNECTIONS (v14.9) ===\n', 'bold'));
+
+    const { getProductionMemory } = await import('./memory-production/index.js');
+    const prodMem = getProductionMemory();
+
+    console.log(c('Initializing connections...', 'dim'));
+    const results = await prodMem.initialize();
+
+    console.log(`  ${c('Pinecone:', 'cyan')}   ${results.vectors ? c('● Connected', 'green') : c('○ Not configured', 'yellow')}`);
+    console.log(`  ${c('Neo4j:', 'cyan')}      ${results.graph ? c('● Connected', 'green') : c('○ Not configured', 'yellow')}`);
+    console.log(`  ${c('PostgreSQL:', 'cyan')} ${results.structured ? c('● Connected', 'green') : c('○ Not configured', 'yellow')}`);
+    console.log();
+
+    if (results.vectors || results.graph || results.structured) {
+      console.log(c('Production memory ready for use!', 'green'));
+    } else {
+      console.log(c('No external databases configured. Set environment variables:', 'yellow'));
+      console.log('  - PINECONE_API_KEY for vector search');
+      console.log('  - NEO4J_URI, NEO4J_PASSWORD for knowledge graph');
+      console.log('  - POSTGRES_CONNECTION_STRING for structured storage');
+    }
+    console.log();
+    return;
+  }
+
+  if (subcommand === 'persist') {
+    // v14.9: Run persistence cycle (flush to external DBs)
+    console.log(c('\n=== PERSISTING MEMORY TO EXTERNAL DBS ===\n', 'bold'));
+
+    const { getMemoryPersistence } = await import('./memory/persistence.js');
+    const persistence = getMemoryPersistence({ verbose: true });
+
+    const stats = persistence.getStats();
+    console.log(`  ${c('Episodic persisted:', 'cyan')}  ${stats.episodicPersisted}`);
+    console.log(`  ${c('Semantic persisted:', 'cyan')}  ${stats.semanticPersisted}`);
+    console.log(`  ${c('Procedural persisted:', 'cyan')} ${stats.proceduralPersisted}`);
+    console.log(`  ${c('Vectors stored:', 'cyan')}       ${stats.vectorsStored}`);
+    console.log(`  ${c('Graph nodes:', 'cyan')}          ${stats.graphNodes}`);
+    console.log(`  ${c('Graph edges:', 'cyan')}          ${stats.graphEdges}`);
+    console.log(`  ${c('Errors:', 'cyan')}               ${stats.errors}`);
+    console.log(`  ${c('Last sync:', 'cyan')}            ${stats.lastSync?.toISOString() || 'Never'}`);
+    console.log();
+    return;
+  }
+
   console.log(c(`Unknown memory subcommand: ${subcommand}`, 'red'));
-  console.log('Use: status, search -q "query", recent');
+  console.log('Use: status, search -q "query", recent, connect, persist');
 }
 
 // ============================================================================

@@ -376,7 +376,7 @@ export class KnowledgeGraph {
 
     try {
       const client = getMCPClient();
-      const result = await client.call('neo4j' as MCPServerName, 'run_cypher_query', {
+      const result = await client.call('neo4j' as MCPServerName, 'cypher_query', {
         query,
         parameters: params || {},
       });

@@ -32,7 +32,7 @@ export interface AlgoraConnector {
   searchBounties(query: string): Promise<AlgoraBounty[]>;
 }
 
-const ALGORA_API = 'https://console.algora.io/api';
+const ALGORA_API = 'https://algora.io/api';
 const TIMEOUT_MS = 15000;
 const RATE_LIMIT_MS = 500;
 

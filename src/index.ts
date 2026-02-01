@@ -1891,6 +1891,100 @@ ${c('Examples:', 'cyan')}
 }
 
 // ============================================================================
+// Bounty Command (v14.7: Autonomous Bounty Hunting)
+// ============================================================================
+
+async function cmdBounty(subcommand: string | undefined, options: Record<string, string>): Promise<void> {
+  const { getBountyHunter } = await import('./economy/generators/bounty-hunter.js');
+  const { getEarningsTracker } = await import('./economy/live/earnings-tracker.js');
+
+  const hunter = getBountyHunter();
+  const earnings = getEarningsTracker();
+
+  switch (subcommand) {
+    case 'scan':
+      // Scan for new bounties
+      console.log(c('Scanning for bounties...', 'cyan'));
+      const discovered = await hunter.scan();
+      console.log(`Found ${discovered.length} new bounties:`);
+      discovered.slice(0, 10).forEach((b, i) => {
+        console.log(`  ${i + 1}. [$${b.reward}] ${b.title.slice(0, 50)} (${b.platform})`);
+      });
+      break;
+
+    case 'list':
+      // List cached bounties
+      const stats = hunter.getStats();
+      console.log(c('Bounty Statistics:', 'cyan'));
+      console.log(`  Discovered: ${stats.bountiesDiscovered}`);
+      console.log(`  Claimed: ${stats.bountiesClaimed}`);
+      console.log(`  Submitted: ${stats.bountiesSubmitted}`);
+      console.log(`  Accepted: ${stats.bountiesAccepted}`);
+      console.log(`  Success Rate: ${(stats.successRate * 100).toFixed(1)}%`);
+      console.log(`  Total Earned: $${stats.totalEarned.toFixed(2)}`);
+      break;
+
+    case 'earnings':
+      // Show earnings summary
+      const summary = earnings.getSummary();
+      console.log(c('Earnings Summary:', 'cyan'));
+      console.log(`  Total Attempts: ${summary.totalAttempts}`);
+      console.log(`  Accepted: ${summary.totalAccepted}`);
+      console.log(`  Rejected: ${summary.totalRejected}`);
+      console.log(`  Total Earned: ${c('$' + summary.totalEarned.toFixed(2), 'green')}`);
+      console.log(`  Total Cost: $${summary.totalCost.toFixed(2)}`);
+      console.log(`  Net Profit: ${c('$' + summary.netProfit.toFixed(2), summary.netProfit >= 0 ? 'green' : 'red')}`);
+      console.log(`  Success Rate: ${(summary.successRate * 100).toFixed(1)}%`);
+      console.log(`  Best Bounty: $${summary.bestBounty.toFixed(2)}`);
+      break;
+
+    case 'select':
+      // Select best bounty to work on
+      const best = hunter.selectBest();
+      if (best) {
+        console.log(c('Best bounty to work on:', 'cyan'));
+        console.log(`  Title: ${best.title}`);
+        console.log(`  Reward: $${best.reward}`);
+        console.log(`  Platform: ${best.platform}`);
+        console.log(`  Category: ${best.category}`);
+        console.log(`  Difficulty: ${best.difficulty}`);
+        console.log(`  URL: ${best.submissionUrl || 'N/A'}`);
+      } else {
+        console.log('No suitable bounties found. Run "genesis bounty scan" first.');
+      }
+      break;
+
+    case 'claim': {
+      // Claim a bounty (start working on it)
+      const bountyId = options.id;
+      if (!bountyId) {
+        console.error('Usage: genesis bounty claim --id <bounty-id>');
+        process.exit(1);
+      }
+      const claimed = await hunter.claim(bountyId);
+      if (claimed) {
+        console.log(c('Bounty claimed! Start working on it.', 'green'));
+      } else {
+        console.error('Failed to claim bounty. Check the ID.');
+      }
+      break;
+    }
+
+    default:
+      console.log(c('Genesis Bounty Hunter', 'cyan'));
+      console.log('');
+      console.log('Usage:');
+      console.log('  genesis bounty scan      Scan for new bounties');
+      console.log('  genesis bounty list      Show bounty statistics');
+      console.log('  genesis bounty earnings  Show earnings summary');
+      console.log('  genesis bounty select    Select best bounty to work on');
+      console.log('  genesis bounty claim --id <id>  Claim a bounty');
+      console.log('');
+      console.log('Supported platforms: Algora, GitHub, Gitcoin, DeWork');
+  }
+}
+
+// ============================================================================
 // Agents Command (v10.4.2: Parallel Agent Execution)
 // ============================================================================
 
@@ -2284,6 +2378,10 @@ async function main(): Promise<void> {
       case 'agent':
         // v14.2: Agentic chat interface with Claude Code-like capabilities
         await cmdAgentic(positional, options);
+        break;
+      case 'bounty':
+        // v14.7: Autonomous bounty hunting
+        await cmdBounty(positional, options);
         break;
       default:
         console.error(c(`Unknown command: ${command}`, 'red'));

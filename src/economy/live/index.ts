@@ -164,3 +164,26 @@ export type {
   ProtocolConfig,
   ExecuteResult,
 } from './defi-executor.js';
+
+// v14.7: PR Pipeline for bounty submissions
+export {
+  PRPipeline,
+  getPRPipeline,
+  createPRPipeline,
+} from './pr-pipeline.js';
+export type {
+  PRSubmission,
+  CodeChange,
+  PRPipelineConfig,
+} from './pr-pipeline.js';
+
+// v14.7: Earnings Tracker for revenue persistence
+export {
+  EarningsTracker,
+  getEarningsTracker,
+  resetEarningsTracker,
+} from './earnings-tracker.js';
+export type {
+  BountyAttempt,
+  EarningsData,
+} from './earnings-tracker.js';

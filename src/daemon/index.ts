@@ -120,6 +120,46 @@ export interface DaemonDependencies {
     resetState: () => void;
   };
 
+  // Neuromodulation system (from src/neuromodulation/)
+  neuromodulation?: {
+    getLevels: () => {
+      dopamine: number;
+      serotonin: number;
+      norepinephrine: number;
+      cortisol: number;
+    };
+    calm: (magnitude: number, cause: string) => void;
+    reward: (magnitude: number, cause: string) => void;
+    threat: (magnitude: number, cause: string) => void;
+    modulate: (modulator: 'dopamine' | 'serotonin' | 'norepinephrine' | 'cortisol', delta: number, cause: string) => void;
+  };
+
+  // Nociception system (from src/nociception/)
+  nociception?: {
+    getState: () => {
+      overallLevel: 'none' | 'discomfort' | 'pain' | 'agony';
+      aggregatePain: number;
+      chronic: boolean;
+    };
+    stimulus: (source: string, intensity: number, message: string) => void;
+    resolve: (signalId: string) => boolean;
+    resolveSource: (source: string) => number;
+    onPain: (handler: (state: { overallLevel: string; aggregatePain: number }) => void) => () => void;
+  };
+
+  // Allostasis system (from src/allostasis/)
+  allostasis?: {
+    getState: () => {
+      energy: number;
+      computationalLoad: number;
+      memoryPressure: number;
+      errorRate: number;
+    };
+    needsRegulation: () => boolean;
+    regulate: () => Promise<{ type: string; reason: string } | null>;
+    registerSensor: (variable: string, callback: () => number) => void;
+  };
+
   // Logger
   log?: (message: string, level?: 'debug' | 'info' | 'warn' | 'error') => void;
 }
@@ -144,6 +184,10 @@ export class Daemon {
   // Dependencies
   private deps: DaemonDependencies;
 
+  // Unsubscribe handlers for nociception/allostasis
+  private nociceptionUnsubscribe: (() => void) | null = null;
+  private allostasisCheckTimer: ReturnType<typeof setInterval> | null = null;
+
   constructor(deps: DaemonDependencies = {}, config: Partial<DaemonConfig> = {}) {
     this.config = { ...DEFAULT_DAEMON_CONFIG, ...config };
     this.deps = deps;
@@ -164,6 +208,12 @@ export class Daemon {
 
     // Setup default tasks
     this.setupDefaultTasks();
+
+    // v13.9: Wire nociception → maintenance (pain triggers repair)
+    this.setupNociceptionWiring();
+
+    // v13.9: Wire allostasis → dream (low energy triggers sleep)
+    this.setupAllostasisWiring();
   }
 
   // ============================================================================
@@ -216,6 +266,18 @@ export class Daemon {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
+    }
+
+    // v13.9: Clean up nociception subscription
+    if (this.nociceptionUnsubscribe) {
+      this.nociceptionUnsubscribe();
+      this.nociceptionUnsubscribe = null;
+    }
+
+    // v13.9: Clean up allostasis timer
+    if (this.allostasisCheckTimer) {
+      clearInterval(this.allostasisCheckTimer);
+      this.allostasisCheckTimer = null;
     }
 
     // Stop components
@@ -652,6 +714,87 @@ export class Daemon {
     }
   }
 
+  /**
+   * v13.9: Wire nociception system to trigger maintenance on pain
+   * When pain signals reach 'pain' or 'agony' level, run maintenance cycle
+   */
+  private setupNociceptionWiring(): void {
+    if (!this.deps.nociception) return;
+
+    this.nociceptionUnsubscribe = this.deps.nociception.onPain((state) => {
+      if (state.overallLevel === 'pain' || state.overallLevel === 'agony') {
+        this.log(`Nociception triggered maintenance: ${state.overallLevel} (intensity: ${state.aggregatePain.toFixed(2)})`, 'warn');
+
+        // Signal neuromodulation if available
+        if (this.deps.neuromodulation) {
+          this.deps.neuromodulation.threat(state.aggregatePain * 0.5, `nociception:${state.overallLevel}`);
+        }
+
+        // Trigger maintenance if not already running
+        if (this.state === 'running') {
+          this.runMaintenance().catch(err => {
+            this.log(`Pain-triggered maintenance failed: ${err}`, 'error');
+          });
+        }
+      } else if (state.overallLevel === 'none' || state.overallLevel === 'discomfort') {
+        // Pain resolved - signal calm
+        if (this.deps.neuromodulation) {
+          this.deps.neuromodulation.calm(0.1, 'nociception:pain-resolved');
+        }
+      }
+    });
+
+    this.log('Nociception → Maintenance wiring established');
+  }
+
+  /**
+   * v13.9: Wire allostasis system to trigger dreams on low energy
+   * When energy drops below threshold and regulation recommends hibernate, start dream
+   */
+  private setupAllostasisWiring(): void {
+    if (!this.deps.allostasis) return;
+
+    // Check allostasis state periodically
+    this.allostasisCheckTimer = setInterval(async () => {
+      if (!this.deps.allostasis || this.state !== 'running') return;
+
+      const alloState = this.deps.allostasis.getState();
+
+      // Low energy threshold - consider dream mode
+      if (alloState.energy < 0.3 && !this.isDreaming()) {
+        if (this.deps.allostasis.needsRegulation()) {
+          const action = await this.deps.allostasis.regulate();
+
+          if (action?.type === 'hibernate') {
+            this.log(`Allostasis recommends hibernate (energy: ${alloState.energy.toFixed(2)}). Triggering dream.`);
+
+            // Signal neuromodulation to prepare for sleep
+            if (this.deps.neuromodulation) {
+              this.deps.neuromodulation.calm(0.3, 'allostasis:low-energy');
+            }
+
+            // Start dream session
+            this.dream().catch(err => {
+              this.log(`Allostasis-triggered dream failed: ${err}`, 'error');
+            });
+          }
+        }
+      }
+
+      // High computational load - signal stress
+      if (alloState.computationalLoad > 0.8 && this.deps.neuromodulation) {
+        this.deps.neuromodulation.threat(0.2, 'allostasis:high-load');
+      }
+
+      // High error rate - signal nociception if available
+      if (alloState.errorRate > 0.1 && this.deps.nociception) {
+        this.deps.nociception.stimulus('cognitive', alloState.errorRate, 'High error rate detected');
+      }
+    }, 30000); // Check every 30 seconds
+
+    this.log('Allostasis → Dream wiring established');
+  }
+
   private buildMaintenanceContext(): MaintenanceContext {
     return {
       checkAgentHealth: this.deps.kernel?.checkAgentHealth,
@@ -818,6 +961,37 @@ export class Daemon {
               this.log(`State repair failed: ${err}`, 'error');
               return 0;
             }
+          }
+        : undefined,
+      // v13.9: Neuromodulation during sleep phases
+      // Biological sleep modulates neurotransmitters differently per phase
+      modulateForSleep: this.deps.neuromodulation
+        ? (phase: 'light' | 'deep' | 'rem' | 'wake') => {
+            const neuro = this.deps.neuromodulation!;
+            switch (phase) {
+              case 'light':
+                // Light sleep: Begin calming, mild cortisol reduction
+                neuro.calm(0.2, 'dream:light-sleep');
+                break;
+              case 'deep':
+                // Deep sleep: Maximum restorative effect
+                // Strong cortisol reduction, serotonin boost, NE reduction
+                neuro.calm(0.4, 'dream:deep-sleep');
+                neuro.modulate('serotonin', 0.15, 'dream:deep-sleep');
+                neuro.modulate('norepinephrine', -0.2, 'dream:deep-sleep');
+                break;
+              case 'rem':
+                // REM: Creativity burst - dopamine spike, low NE for diffuse associations
+                neuro.modulate('dopamine', 0.25, 'dream:rem-creativity');
+                neuro.modulate('norepinephrine', -0.15, 'dream:rem-diffuse');
+                break;
+              case 'wake':
+                // Wake: Return to alert state - NE increase, mild dopamine
+                neuro.modulate('norepinephrine', 0.2, 'dream:wake-alertness');
+                neuro.modulate('dopamine', 0.1, 'dream:wake-motivation');
+                break;
+            }
+            this.log(`Neuromodulation applied for ${phase} phase`, 'debug');
           }
         : undefined,
       log: (message, level) => this.log(message, level),

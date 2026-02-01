@@ -80,6 +80,12 @@ export interface DreamContext {
   checkInvariants?: () => Promise<boolean>;
   repairState?: () => Promise<number>;
 
+  // Neuromodulation (v13.9): Biological sleep modulates neurotransmitters
+  // - Sleep increases serotonin (well-being, patience)
+  // - Sleep decreases cortisol (stress reduction)
+  // - REM boosts dopamine briefly (creativity)
+  modulateForSleep?: (phase: 'light' | 'deep' | 'rem' | 'wake') => void;
+
   // Logger
   log?: (message: string, level?: 'debug' | 'info' | 'warn' | 'error') => void;
 }
@@ -330,6 +336,11 @@ export class DreamService {
 
   private async lightSleepPhase(results: DreamResults, duration: number): Promise<void> {
     // Light sleep: Initial processing, prepare for consolidation
+    // Neuromodulation: Begin sleep-induced calming
+    if (this.context.modulateForSleep) {
+      this.context.modulateForSleep('light');
+    }
+
     // Energy restoration begins
     if (this.context.rechargeEnergy) {
       this.context.rechargeEnergy(0.05); // Small recharge
@@ -344,8 +355,12 @@ export class DreamService {
 
   private async deepSleepPhase(results: DreamResults, duration: number): Promise<void> {
     // Deep sleep: Memory consolidation (episodic → semantic)
-    // This is where the heavy processing happens
+    // Neuromodulation: Maximum cortisol reduction, serotonin boost
+    if (this.context.modulateForSleep) {
+      this.context.modulateForSleep('deep');
+    }
 
+    // This is where the heavy processing happens
     if (!this.context.getEpisodicMemories || !this.context.consolidateMemory) {
       return;
     }
@@ -418,8 +433,12 @@ export class DreamService {
 
   private async remSleepPhase(results: DreamResults, duration: number): Promise<void> {
     // REM sleep: Creative synthesis, novel associations
-    // This is where new ideas emerge from combining memories
+    // Neuromodulation: Dopamine burst for creativity, NE reduction for diffuse associations
+    if (this.context.modulateForSleep) {
+      this.context.modulateForSleep('rem');
+    }
 
+    // This is where new ideas emerge from combining memories
     if (!this.context.getSemanticMemories) {
       return;
     }
@@ -457,6 +476,10 @@ export class DreamService {
 
   private async wakePhase(results: DreamResults): Promise<void> {
     // Wake: Health check and invariant verification
+    // Neuromodulation: Return to baseline, slight NE increase for alertness
+    if (this.context.modulateForSleep) {
+      this.context.modulateForSleep('wake');
+    }
 
     if (this.context.checkInvariants) {
       const allSatisfied = await this.context.checkInvariants();

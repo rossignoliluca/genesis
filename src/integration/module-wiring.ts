@@ -212,6 +212,67 @@ function wireAgents(agents: AgentPool, bus: GenesisEventBus): void {
   // Agent events are already published by genesis.ts
 }
 
+/**
+ * v13.9: Wire daemon with neuromodulation, nociception, and allostasis
+ * This enables:
+ * - Dream phases to modulate neurotransmitters
+ * - Pain signals to trigger maintenance
+ * - Low energy to trigger sleep/dreams
+ */
+function wireDaemon(
+  daemon: Daemon,
+  modules: ModuleRegistry,
+  bus: GenesisEventBus
+): void {
+  // The daemon's constructor now handles internal wiring via dependencies
+  // Forward daemon events to the bus for central awareness
+  daemon.on((event) => {
+    switch (event.type) {
+      case 'dream_started':
+        bus.publish('daemon.dream.started', {
+          source: 'daemon',
+          precision: 1.0,
+          phase: 'started',
+          reason: 'inactivity',
+        });
+        break;
+      case 'dream_completed':
+        bus.publish('daemon.dream.completed', {
+          source: 'daemon',
+          precision: 1.0,
+          phase: 'completed',
+          consolidations: (event.data as any)?.memoriesConsolidated ?? 0,
+          creativeInsights: (event.data as any)?.patternsExtracted ?? 0,
+        });
+        break;
+      case 'dream_phase_changed':
+        bus.publish('daemon.dream.phase_changed', {
+          source: 'daemon',
+          precision: 1.0,
+          phase: 'phase_changed',
+          dreamPhase: (event.data as any)?.phase ?? 'unknown',
+        });
+        break;
+      case 'maintenance_started':
+        bus.publish('daemon.maintenance.started', {
+          source: 'daemon',
+          precision: 1.0,
+          status: 'started',
+        });
+        break;
+      case 'maintenance_completed':
+        bus.publish('daemon.maintenance.completed', {
+          source: 'daemon',
+          precision: 1.0,
+          status: 'completed',
+          issuesFound: (event.data as any)?.issuesFound ?? 0,
+          issuesFixed: (event.data as any)?.issuesFixed ?? 0,
+        });
+        break;
+    }
+  });
+}
+
 // ============================================================================
 // Neuromodulation Effect Integration
 // ============================================================================
@@ -317,6 +378,13 @@ export function wireAllModules(modules: ModuleRegistry): WiringResult {
 
   if (modules.agents) {
     wireAgents(modules.agents, bus);
+    modulesWired++;
+    publishersCreated++;
+  }
+
+  // v13.9: Wire daemon with neuromodulation, nociception, allostasis
+  if (modules.daemon) {
+    wireDaemon(modules.daemon, modules, bus);
     modulesWired++;
     publishersCreated++;
   }

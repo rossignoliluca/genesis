@@ -1621,6 +1621,80 @@ async function cmdAutonomous(subcommand: string | undefined, options: Record<str
   console.log('Use: status, init, balance, approvals, approve, stop, agent, run');
 }
 
+/**
+ * v14.10: Observability stats command
+ */
+async function cmdStats(subcommand: string | undefined, options: Record<string, string>): Promise<void> {
+  const { getMCPMetrics } = await import('./mcp/index.js');
+  const { getMetricsRegistry } = await import('./observability/metrics.js');
+
+  console.log(c('\n=== GENESIS OBSERVABILITY STATS (v14.11) ===\n', 'bold'));
+
+  if (!subcommand || subcommand === 'mcp') {
+    const { mcpCallsTotal, mcpLatency, mcpConnectionsActive, mcpErrorsTotal, registry } = getMCPMetrics();
+
+    console.log(c('MCP Metrics:', 'cyan'));
+    console.log(`  Active connections: ${mcpConnectionsActive.get()}`);
+    console.log();
+
+    // Display Prometheus format
+    console.log(c('Prometheus Export:', 'dim'));
+    console.log(registry.toPrometheus());
+    return;
+  }
+
+  if (subcommand === 'prometheus') {
+    const registry = getMetricsRegistry('genesis');
+    console.log(registry.toPrometheus());
+    return;
+  }
+
+  if (subcommand === 'json') {
+    const { mcpCallsTotal, mcpLatency, mcpConnectionsActive, mcpErrorsTotal } = getMCPMetrics();
+    console.log(JSON.stringify({
+      mcp: {
+        activeConnections: mcpConnectionsActive.get(),
+      },
+      timestamp: new Date().toISOString(),
+    }, null, 2));
+    return;
+  }
+
+  if (subcommand === 'alert') {
+    // Test Slack alerts
+    const { getAlerter } = await import('./observability/alerting.js');
+    const alerter = getAlerter();
+
+    const slackUrl = process.env.SLACK_WEBHOOK_URL;
+    if (!slackUrl) {
+      console.log(c('Slack not configured.', 'yellow'));
+      console.log('Set SLACK_WEBHOOK_URL in your .env file to enable alerts.');
+      return;
+    }
+
+    console.log(c('Sending test alert to Slack...', 'cyan'));
+    const sent = await alerter.info(
+      'Genesis Test Alert',
+      'This is a test alert from Genesis observability system.',
+      { labels: { test: 'true', version: '14.10' } }
+    );
+
+    if (sent) {
+      console.log(c('Test alert sent successfully!', 'green'));
+    } else {
+      console.log(c('Failed to send test alert.', 'red'));
+    }
+    return;
+  }
+
+  console.log(c('Usage:', 'yellow'));
+  console.log('  genesis stats           - Show MCP stats');
+  console.log('  genesis stats mcp       - Show MCP stats');
+  console.log('  genesis stats prometheus - Prometheus format');
+  console.log('  genesis stats json      - JSON format');
+  console.log('  genesis stats alert     - Test Slack alert');
+}
+
 async function cmdHardware(): Promise<void> {
   console.log(c('\n=== HARDWARE PROFILE ===\n', 'bold'));
 
@@ -1765,6 +1839,10 @@ ${c('Commands:', 'bold')}
   ${c('install', 'green')}               Install/update Genesis globally (npm)
   ${c('status', 'green')}                Show MCP servers status
   ${c('hardware', 'green')}              Show hardware profile & router config
+  ${c('stats', 'green')} [subcommand]    v14.10: Observability metrics
+    mcp              MCP call stats (default)
+    prometheus       Prometheus format
+    json             JSON format
   ${c('help', 'green')}                  Show this help
 
 ${c('MCP Servers (13):', 'bold')}
@@ -2285,6 +2363,11 @@ async function cmdInstall(options: Record<string, string>): Promise<void> {
 // ============================================================================
 
 async function main(): Promise<void> {
+  // v14.11: Install graceful shutdown handlers
+  const { installShutdownHandlers, registerDefaultHandlers } = await import('./lifecycle/shutdown.js');
+  installShutdownHandlers();
+  registerDefaultHandlers();
+
   const args = process.argv.slice(2);
   const command = args[0];
 
@@ -2444,6 +2527,10 @@ async function main(): Promise<void> {
       case 'bounty':
         // v14.7: Autonomous bounty hunting
         await cmdBounty(positional, options);
+        break;
+      case 'stats':
+        // v14.10: Observability stats
+        await cmdStats(positional, options);
         break;
       default:
         console.error(c(`Unknown command: ${command}`, 'red'));

@@ -40,6 +40,125 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { MCPServerName } from '../types.js';
 import { randomUUID } from 'crypto';
+import { getMetricsRegistry, Counter, Histogram } from '../observability/metrics.js';
+import { getAlerter } from '../observability/alerting.js';
+import { RateLimiter } from '../lifecycle/rate-limiter.js';
+
+// ============================================================================
+// MCP Rate Limiters (v14.11 - Hardening)
+// Per-provider rate limits to respect API quotas
+// ============================================================================
+
+const PROVIDER_RATE_LIMITS: Record<string, { maxTokens: number; refillRate: number }> = {
+  // OpenAI: 10,000 RPM (tier 2) = 166.67/sec
+  'openai': { maxTokens: 500, refillRate: 166 },
+  // Anthropic: 4,000 RPM = 66.67/sec
+  'anthropic': { maxTokens: 200, refillRate: 66 },
+  // GitHub: 5,000/hour = 1.39/sec
+  'github': { maxTokens: 50, refillRate: 1.4 },
+  // arXiv: 3/second
+  'arxiv': { maxTokens: 10, refillRate: 3 },
+  // Semantic Scholar: 100/second (generous)
+  'semantic-scholar': { maxTokens: 100, refillRate: 100 },
+  // Brave Search: 15/second
+  'brave-search': { maxTokens: 30, refillRate: 15 },
+  // Default for others: 10/second
+  'default': { maxTokens: 50, refillRate: 10 },
+};
+
+const providerRateLimiters: Map<string, RateLimiter> = new Map();
+
+function getProviderRateLimiter(server: string): RateLimiter {
+  if (!providerRateLimiters.has(server)) {
+    const config = PROVIDER_RATE_LIMITS[server] || PROVIDER_RATE_LIMITS['default'];
+    providerRateLimiters.set(server, new RateLimiter(config));
+  }
+  return providerRateLimiters.get(server)!;
+}
+
+// ============================================================================
+// MCP Metrics (v14.10 - Observability)
+// ============================================================================
+
+const metricsRegistry = getMetricsRegistry('genesis');
+
+const mcpCallsTotal = metricsRegistry.counter({
+  name: 'mcp_calls_total',
+  help: 'Total MCP tool calls',
+  labels: ['server', 'tool', 'status'],
+});
+
+const mcpLatency = metricsRegistry.histogram({
+  name: 'mcp_latency_seconds',
+  help: 'MCP call latency in seconds',
+  labels: ['server', 'tool'],
+  buckets: [0.1, 0.5, 1, 2, 5, 10, 30, 60],
+});
+
+const mcpConnectionsActive = metricsRegistry.gauge({
+  name: 'mcp_connections_active',
+  help: 'Active MCP server connections',
+});
+
+const mcpErrorsTotal = metricsRegistry.counter({
+  name: 'mcp_errors_total',
+  help: 'Total MCP errors by type',
+  labels: ['server', 'error_type'],
+});
+
+// Export for CLI stats
+export function getMCPMetrics() {
+  return { mcpCallsTotal, mcpLatency, mcpConnectionsActive, mcpErrorsTotal, registry: metricsRegistry };
+}
+
+// ============================================================================
+// Security: Secret Sanitization (v14.11)
+// ============================================================================
+
+const SECRET_PATTERNS = [
+  /sk-[a-zA-Z0-9-_]{20,}/g,           // OpenAI keys
+  /sk-ant-[a-zA-Z0-9-_]{20,}/g,       // Anthropic keys
+  /ghp_[a-zA-Z0-9]{36}/g,             // GitHub PAT
+  /gho_[a-zA-Z0-9]{36}/g,             // GitHub OAuth
+  /[a-zA-Z0-9]{32,}/g,                // Generic API keys (if looks like key)
+  /Bearer\s+[a-zA-Z0-9-_.]+/gi,       // Bearer tokens
+  /password[=:]\s*["']?[^"'\s]+/gi,   // Passwords in strings
+  /api[_-]?key[=:]\s*["']?[^"'\s]+/gi, // API keys in strings
+];
+
+function sanitizeSecrets(input: string): string {
+  let sanitized = input;
+  for (const pattern of SECRET_PATTERNS) {
+    sanitized = sanitized.replace(pattern, (match) => {
+      // Keep first 4 chars for identification, redact rest
+      if (match.length > 8) {
+        return match.slice(0, 4) + '***REDACTED***';
+      }
+      return '***REDACTED***';
+    });
+  }
+  return sanitized;
+}
+
+function sanitizeObject(obj: Record<string, any>): Record<string, any> {
+  const sanitized: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const lowerKey = key.toLowerCase();
+    // Redact known sensitive keys
+    if (lowerKey.includes('password') || lowerKey.includes('secret') ||
+        lowerKey.includes('token') || lowerKey.includes('key') ||
+        lowerKey.includes('auth') || lowerKey.includes('credential')) {
+      sanitized[key] = '***REDACTED***';
+    } else if (typeof value === 'string') {
+      sanitized[key] = sanitizeSecrets(value);
+    } else if (typeof value === 'object' && value !== null) {
+      sanitized[key] = sanitizeObject(value);
+    } else {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
+}
 
 // ============================================================================
 // Types
@@ -536,6 +655,9 @@ class MCPConnectionManager {
       console.log(`[MCP] Connected to ${server}`);
     }
 
+    // v14.10: Track active connections
+    mcpConnectionsActive.inc();
+
     return {
       client,
       transport,
@@ -547,16 +669,49 @@ class MCPConnectionManager {
   /**
    * Call a tool on an MCP server
    * v7.18: Added timeout wrapper for faster failure
+   * v14.10: Added structured logging with latency tracking
    */
   async callTool<T = any>(
     server: MCPServerName,
     tool: string,
     args: Record<string, any>
   ): Promise<T> {
+    const startTime = performance.now();
+    const callId = `${server}.${tool}.${Date.now().toString(36)}`;
+
+    // v14.11: Rate limiting per provider
+    const rateLimiter = getProviderRateLimiter(server);
+    const rateCheck = rateLimiter.check(server);
+    if (!rateCheck.allowed) {
+      const waitMs = rateCheck.retryAfterMs || 1000;
+      if (this.logCalls) {
+        console.log(JSON.stringify({
+          level: 'warn',
+          time: Date.now(),
+          msg: 'Rate limited, waiting',
+          server,
+          tool,
+          waitMs,
+        }));
+      }
+      // Wait and retry
+      await new Promise(resolve => setTimeout(resolve, waitMs));
+    }
+
     const connection = await this.getConnection(server);
 
     if (this.logCalls) {
-      console.log(`[MCP] ${server}.${tool}(${JSON.stringify(args).slice(0, 100)}...)`);
+      // v14.11: Sanitize args to prevent secret leakage
+      const safeArgs = sanitizeObject(args);
+      console.log(JSON.stringify({
+        level: 'debug',
+        time: Date.now(),
+        msg: 'MCP call started',
+        callId,
+        server,
+        tool,
+        argsPreview: sanitizeSecrets(JSON.stringify(safeArgs).slice(0, 100)),
+      }));
     }
 
     // v7.18: Wrap call in timeout for faster failure (15s default, 30s/120s for heavy ops)
@@ -564,30 +719,131 @@ class MCPConnectionManager {
     const isImageGen = server === 'huggingface' || server === 'stability-ai' || tool.includes('generate') || tool.includes('infer');
     const callTimeout = isImageGen ? 120000 : isHeavyOp ? 30000 : 15000; // 120s for image gen (HF cold start)
 
-    const result = await Promise.race([
-      connection.client.callTool({
-        name: tool,
-        arguments: args,
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`MCP call to ${server}.${tool} timed out after ${callTimeout}ms`)), callTimeout)
-      ),
-    ]);
+    // v14.11: Retry with exponential backoff (3 attempts)
+    const maxRetries = 3;
+    let lastError: Error | null = null;
 
-    // Parse result content
-    const content = result.content as Array<{ type: string; text?: string }>;
-    if (content && content.length > 0) {
-      const first = content[0];
-      if (first.type === 'text' && typeof first.text === 'string') {
-        try {
-          return JSON.parse(first.text) as T;
-        } catch {
-          return first.text as unknown as T;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const result = await Promise.race([
+          connection.client.callTool({
+            name: tool,
+            arguments: args,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`MCP call to ${server}.${tool} timed out after ${callTimeout}ms`)), callTimeout)
+          ),
+        ]);
+
+        const latencyMs = Math.round(performance.now() - startTime);
+
+        // v14.10: Track metrics
+        mcpCallsTotal.inc({ server, tool, status: 'success' });
+        mcpLatency.observe(latencyMs / 1000, { server, tool });
+
+        if (this.logCalls) {
+          console.log(JSON.stringify({
+            level: 'info',
+            time: Date.now(),
+            msg: 'MCP call completed',
+            callId,
+            server,
+            tool,
+            latencyMs,
+            success: true,
+            attempt: attempt + 1,
+          }));
         }
+
+        // Parse result content
+        const content = result.content as Array<{ type: string; text?: string }>;
+        if (content && content.length > 0) {
+          const first = content[0];
+          if (first.type === 'text' && typeof first.text === 'string') {
+            try {
+              return JSON.parse(first.text) as T;
+            } catch {
+              return first.text as unknown as T;
+            }
+          }
+        }
+
+        return result as unknown as T;
+      } catch (error) {
+        lastError = error as Error;
+        const errorMsg = lastError.message || '';
+
+        // v14.11: Only retry on transient errors (timeout, rate limit, server error)
+        const isRetryable = errorMsg.includes('timed out') ||
+                           errorMsg.includes('rate limit') ||
+                           errorMsg.includes('429') ||
+                           errorMsg.includes('503') ||
+                           errorMsg.includes('ECONNRESET');
+
+        if (!isRetryable || attempt === maxRetries - 1) {
+          break; // Don't retry on permanent errors or last attempt
+        }
+
+        // Exponential backoff with jitter: 1s, 2s, 4s
+        const baseDelay = Math.pow(2, attempt) * 1000;
+        const jitter = Math.random() * baseDelay * 0.3;
+        const delay = baseDelay + jitter;
+
+        if (this.logCalls) {
+          console.log(JSON.stringify({
+            level: 'warn',
+            time: Date.now(),
+            msg: 'MCP call failed, retrying',
+            callId,
+            server,
+            tool,
+            attempt: attempt + 1,
+            nextRetryMs: Math.round(delay),
+            error: errorMsg,
+          }));
+        }
+
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
 
-    return result as unknown as T;
+    // All retries failed
+    const latencyMs = Math.round(performance.now() - startTime);
+    const errorType = lastError?.message?.includes('timed out') ? 'timeout' : 'error';
+
+    // v14.10: Track error metrics
+    mcpCallsTotal.inc({ server, tool, status: 'error' });
+    mcpLatency.observe(latencyMs / 1000, { server, tool });
+    mcpErrorsTotal.inc({ server, error_type: errorType });
+
+    // v14.10: Send alert on MCP failures (if Slack configured)
+    try {
+      const alerter = getAlerter();
+      await alerter.warning(
+        `MCP call failed: ${server}.${tool}`,
+        lastError?.message || 'Unknown error',
+        { labels: { server, tool, errorType, latencyMs: String(latencyMs), retries: String(maxRetries) } }
+      );
+    } catch {
+      // Don't fail main operation if alerting fails
+    }
+
+    if (this.logCalls) {
+      console.log(JSON.stringify({
+        level: 'error',
+        time: Date.now(),
+        msg: 'MCP call failed after retries',
+        callId,
+        server,
+        tool,
+        latencyMs,
+        success: false,
+        retries: maxRetries,
+        error: lastError?.message,
+      }));
+    }
+
+    throw lastError || new Error(`MCP call to ${server}.${tool} failed`);
   }
 
   /**
@@ -637,6 +893,8 @@ class MCPConnectionManager {
       }
       connection.connected = false;
       this.connections.delete(server);
+      // v14.10: Track active connections
+      mcpConnectionsActive.dec();
     }
   }
 

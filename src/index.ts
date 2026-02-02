@@ -1628,7 +1628,7 @@ async function cmdStats(subcommand: string | undefined, options: Record<string, 
   const { getMCPMetrics } = await import('./mcp/index.js');
   const { getMetricsRegistry } = await import('./observability/metrics.js');
 
-  console.log(c('\n=== GENESIS OBSERVABILITY STATS (v14.11) ===\n', 'bold'));
+  console.log(c('\n=== GENESIS OBSERVABILITY STATS (v15.0) ===\n', 'bold'));
 
   if (!subcommand || subcommand === 'mcp') {
     const { mcpCallsTotal, mcpLatency, mcpConnectionsActive, mcpErrorsTotal, registry } = getMCPMetrics();

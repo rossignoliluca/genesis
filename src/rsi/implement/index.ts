@@ -587,14 +587,15 @@ export class ImplementationEngine {
               afterHash: this.fileHash(filePath),
             };
           } else {
-            // Create minimal placeholder
-            fs.writeFileSync(filePath, `// TODO: Implement ${change.description}\nexport {};\n`);
+            // v15.0: FAIL instead of creating placeholder
+            // Placeholder files defeat RSI purpose - they pass build but don't implement anything
             return {
               changeId: change.id,
               file: change.file,
-              applied: true,
+              applied: false,
               beforeHash,
-              afterHash: this.fileHash(filePath),
+              afterHash: '',
+              error: 'Code generation failed - cannot create file without valid code',
             };
           }
         }

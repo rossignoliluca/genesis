@@ -18,6 +18,7 @@ import {
   ReviewStatus, MergeStatus, RSIConfig
 } from '../types.js';
 import { getMCPClient } from '../../mcp/index.js';
+import { getObservationEngine } from '../observe/index.js';
 
 // =============================================================================
 // GIT MANAGER
@@ -532,6 +533,9 @@ export class DeploymentEngine {
             stdio: 'pipe',
           });
 
+          // v15.0: Register new capabilities from successfully deployed changes
+          this.registerDeployedCapabilities(plan);
+
           return {
             planId: plan.id,
             success: true,
@@ -579,6 +583,49 @@ export class DeploymentEngine {
         mergeStatus: 'blocked',
         error: `Deployment failed: ${error}`,
       };
+    }
+  }
+
+  /**
+   * Register capabilities from successfully deployed plan (v15.0)
+   * This prevents RSI from repeatedly identifying the same capability gaps
+   */
+  private registerDeployedCapabilities(plan: ImprovementPlan): void {
+    try {
+      const observeEngine = getObservationEngine();
+      const capabilityDetector = observeEngine.getCapabilityDetector();
+
+      // Extract capability names from created files
+      for (const change of plan.changes) {
+        if (change.type === 'create') {
+          // Extract capability from file path
+          // e.g., src/agents/image-processor.ts → image-processor
+          const match = change.file.match(/([a-z-]+)\.ts$/i);
+          if (match) {
+            const capabilityName = match[1];
+            capabilityDetector.registerCapability(capabilityName);
+            console.log(`[RSI Deploy] Registered capability: ${capabilityName}`);
+          }
+        }
+      }
+
+      // Also register from plan description keywords
+      if (plan.targetLimitation?.type === 'capability') {
+        const desc = plan.targetLimitation.description.toLowerCase();
+        const knownCapabilities = [
+          'code-generation', 'self-modification', 'web-scraping',
+          'financial-analysis', 'image-understanding', 'multi-modal',
+          'natural-language', 'reasoning', 'planning',
+        ];
+        for (const cap of knownCapabilities) {
+          if (desc.includes(cap.replace('-', ' ')) || desc.includes(cap)) {
+            capabilityDetector.registerCapability(cap);
+            console.log(`[RSI Deploy] Registered capability from limitation: ${cap}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.log(`[RSI Deploy] Failed to register capabilities: ${error}`);
     }
   }
 

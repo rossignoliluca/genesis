@@ -1760,6 +1760,177 @@ async function cmdHardware(): Promise<void> {
   console.log();
 }
 
+/**
+ * v15.1: RSI (Recursive Self-Improvement) command
+ */
+async function cmdRSI(subcommand: string | undefined, options: Record<string, string>): Promise<void> {
+  const { RSIOrchestrator, DEFAULT_RSI_CONFIG } = await import('./rsi/index.js');
+
+  console.log(c('\n=== GENESIS RSI (Recursive Self-Improvement) v15.1 ===\n', 'bold'));
+
+  const rsi = new RSIOrchestrator({
+    ...DEFAULT_RSI_CONFIG,
+    requireHumanReview: options.auto !== 'true',
+    humanReviewThreshold: (options.threshold as any) || 'high',
+  });
+
+  // Set up event listeners
+  rsi.on('cycle:start', (event) => {
+    console.log(c(`[RSI] Cycle ${event.cycleId} started`, 'cyan'));
+  });
+
+  rsi.on('limitation:detected', (event) => {
+    console.log(`  ${c('→', 'yellow')} Detected: ${event.limitation.description}`);
+  });
+
+  rsi.on('plan:created', (event) => {
+    console.log(`  ${c('→', 'green')} Plan: ${event.plan.name}`);
+    console.log(`    Risk: ${event.plan.safetyAnalysis.riskLevel}`);
+    console.log(`    Changes: ${event.plan.changes.length}`);
+  });
+
+  rsi.on('implementation:complete', (event) => {
+    const status = event.result.success ? c('SUCCESS', 'green') : c('FAILED', 'red');
+    console.log(`  ${c('→', 'cyan')} Implementation: ${status}`);
+    if (!event.result.success) {
+      console.log(`    Error: ${event.result.error}`);
+    }
+  });
+
+  rsi.on('deployment:complete', (event) => {
+    const status = event.result.success ? c('SUCCESS', 'green') : c('FAILED', 'red');
+    console.log(`  ${c('→', 'blue')} Deployment: ${status}`);
+    if (event.result.prUrl) {
+      console.log(`    PR: ${event.result.prUrl}`);
+    }
+  });
+
+  rsi.on('learning:complete', (event) => {
+    console.log(`  ${c('→', 'magenta')} Learning: ${event.outcome.success ? 'Positive' : 'Negative'}`);
+    console.log(`    Lessons: ${event.outcome.lessonsLearned.length}`);
+  });
+
+  rsi.on('cycle:complete', (event) => {
+    const status = event.cycle.status === 'completed' ? c('COMPLETE', 'green') : c(event.cycle.status.toUpperCase(), 'yellow');
+    console.log(c(`[RSI] Cycle ${event.cycleId} ${status}`, 'cyan'));
+    console.log();
+  });
+
+  // Human approval handler (for terminal)
+  rsi.setHumanApprovalHandler(async (request) => {
+    console.log();
+    console.log(c('=== HUMAN APPROVAL REQUIRED ===', 'yellow'));
+    console.log(`Plan: ${request.plan.name}`);
+    console.log(`Risk: ${request.plan.safetyAnalysis.riskLevel}`);
+    console.log(`Question: ${request.question}`);
+    console.log();
+    console.log('Changes:');
+    for (const change of request.plan.changes) {
+      console.log(`  - ${change.type}: ${change.file}`);
+    }
+    console.log();
+
+    // Auto-reject in non-interactive mode, prompt in interactive
+    if (options.auto === 'true') {
+      console.log(c('Auto-mode: Skipping (requires --approve flag for auto-approval)', 'dim'));
+      return { approved: false, feedback: 'Auto-mode without approval' };
+    }
+
+    // Simple Y/N prompt
+    process.stdout.write('Approve? [y/N]: ');
+    return new Promise((resolve) => {
+      const readline = require('readline');
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      rl.question('', (answer: string) => {
+        rl.close();
+        const approved = answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes';
+        resolve({ approved, feedback: approved ? 'Human approved' : 'Human rejected' });
+      });
+    });
+  });
+
+  if (!subcommand || subcommand === 'status') {
+    // Show RSI status
+    const stats = rsi.getStats();
+    const successRate = stats.totalCycles > 0
+      ? stats.successfulCycles / stats.totalCycles
+      : 0;
+    console.log(c('RSI Status:', 'cyan'));
+    console.log(`  Total Cycles:     ${stats.totalCycles}`);
+    console.log(`  Successful:       ${stats.successfulCycles}`);
+    console.log(`  Failed:           ${stats.failedCycles}`);
+    console.log(`  Success Rate:     ${(successRate * 100).toFixed(1)}%`);
+    console.log();
+    console.log(c('Config:', 'cyan'));
+    console.log(`  Human Review:     ${options.auto !== 'true' ? 'Required' : 'Auto'}`);
+    console.log(`  Risk Threshold:   ${options.threshold || 'high'}`);
+    console.log();
+    console.log('Run: genesis rsi run --cycles 1');
+    return;
+  }
+
+  if (subcommand === 'run') {
+    const cycles = parseInt(options.cycles || '1', 10);
+    console.log(`Running ${cycles} RSI cycle(s)...`);
+    console.log();
+
+    for (let i = 0; i < cycles; i++) {
+      console.log(c(`\n--- RSI Cycle ${i + 1}/${cycles} ---\n`, 'bold'));
+
+      try {
+        const result = await rsi.runCycle();
+        console.log(`Cycle result: ${result.status}`);
+
+        if (result.status === 'failed' && result.error) {
+          console.log(c(`Error: ${result.error}`, 'red'));
+        }
+      } catch (error) {
+        console.error(c(`Cycle failed: ${error}`, 'red'));
+      }
+    }
+
+    // Show final stats
+    const finalStats = rsi.getStats();
+    const finalSuccessRate = finalStats.totalCycles > 0
+      ? finalStats.successfulCycles / finalStats.totalCycles
+      : 0;
+    console.log(c('\n=== RSI Summary ===', 'bold'));
+    console.log(`  Total Cycles:  ${finalStats.totalCycles}`);
+    console.log(`  Success Rate:  ${(finalSuccessRate * 100).toFixed(1)}%`);
+    return;
+  }
+
+  if (subcommand === 'observe') {
+    console.log('Detecting limitations and opportunities...');
+    const { getObservationEngine } = await import('./rsi/observe/index.js');
+    const observeEngine = getObservationEngine();
+    const limitations = await observeEngine.detectLimitations();
+    const opportunities = await observeEngine.detectOpportunities();
+
+    console.log(c('\nLimitations:', 'cyan'));
+    if (limitations.length === 0) {
+      console.log('  No limitations detected');
+    } else {
+      for (const l of limitations.slice(0, 5)) {
+        console.log(`  - [${l.severity}] ${l.description}`);
+      }
+    }
+
+    console.log(c('\nOpportunities:', 'cyan'));
+    if (opportunities.length === 0) {
+      console.log('  No opportunities detected');
+    } else {
+      for (const o of opportunities.slice(0, 5)) {
+        console.log(`  - [${o.type}] ${o.description}`);
+      }
+    }
+    return;
+  }
+
+  console.log(c(`Unknown RSI subcommand: ${subcommand}`, 'red'));
+  console.log('Use: status, run --cycles <n>, observe');
+}
+
 function cmdHelp(): void {
   printBanner();
   console.log(`${c('Usage:', 'bold')}
@@ -1835,6 +2006,14 @@ ${c('Commands:', 'bold')}
     types            Type safety issues
     todos            TODO/FIXME items
     history          Show previous analysis
+
+  ${c('rsi', 'green')} [subcommand]       v15.1: Recursive Self-Improvement
+    status           Show RSI status (default)
+    run              Run RSI cycle(s)
+      --cycles <n>   Number of cycles (default: 1)
+      --auto         Auto-mode (no human approval prompts)
+      --threshold    Risk threshold: low, medium, high (default: high)
+    observe          Detect limitations and opportunities
 
   ${c('install', 'green')}               Install/update Genesis globally (npm)
   ${c('status', 'green')}                Show MCP servers status
@@ -2531,6 +2710,11 @@ async function main(): Promise<void> {
       case 'stats':
         // v14.10: Observability stats
         await cmdStats(positional, options);
+        break;
+      case 'rsi':
+      case 'improve':
+        // v15.1: Recursive Self-Improvement
+        await cmdRSI(positional, options);
         break;
       default:
         console.error(c(`Unknown command: ${command}`, 'red'));

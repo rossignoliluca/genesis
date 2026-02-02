@@ -455,6 +455,13 @@ export class ObservationEngine {
   getCurrentMetrics(): PerformanceMetrics {
     return this.performanceMonitor.getCurrentMetrics();
   }
+
+  /**
+   * Get capability detector (v15.0 - for registering new capabilities after deployment)
+   */
+  getCapabilityDetector(): CapabilityDetector {
+    return this.capabilityDetector;
+  }
 }
 
 // =============================================================================

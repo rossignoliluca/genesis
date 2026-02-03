@@ -12,6 +12,10 @@
  * Each level boots only after its predecessor is healthy.
  */
 
+// v16.1.1: Load environment variables BEFORE any module imports
+// This fixes timing issues where modules check process.env at import time
+import 'dotenv/config';
+
 import { FreeEnergyKernel, getFreeEnergyKernel, type FEKState, type FEKStatus } from './kernel/free-energy-kernel.js';
 import { getBrain, type Brain } from './brain/index.js';
 import { CausalReasoner, createAgentCausalModel, type Effect, type CounterfactualResult, type Intervention, type CausalExplanation } from './causal/index.js';

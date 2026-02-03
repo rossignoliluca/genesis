@@ -71,6 +71,7 @@ export class X402Server {
   private usedNonces = new Set<string>();
   private bus = getEventBus();
   private demandMetrics = new Map<string, DemandSignal>();
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null; // v16.1.2: Auto-cleanup
 
   constructor(config: Partial<FacilitatorConfig>) {
     this.config = {
@@ -109,9 +110,28 @@ export class X402Server {
     });
     this.receiptStore = new MemoryReceiptStore();
 
+    // v16.1.2: Start automatic cleanup to prevent memory leaks
+    // Clean up expired challenges and nonces every 60 seconds
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupChallenges();
+    }, 60_000);
+
     console.log(
       `[x402] Server initialized on ${this.config.network} at ${this.config.paymentAddress}`,
     );
+  }
+
+  /**
+   * v16.1.2: Stop the server and clean up resources
+   */
+  stop(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+    this.challenges.clear();
+    this.usedNonces.clear();
+    console.log('[x402] Server stopped');
   }
 
   /**

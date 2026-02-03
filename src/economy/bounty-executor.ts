@@ -412,10 +412,12 @@ export class BountyExecutor {
 
       if (!solution.success) {
         // Record failure for RSI learning
+        // v16.1.2: Fixed hours estimation (was reward/1000, now reward/100 assuming ~$100/hr)
+        const estimatedHours = Math.max(0.5, bounty.reward / 100);
         await this.rsiFeedback.recordFailure(
           bounty as any,
           solution.error || 'Code generation failed',
-          bounty.reward / 1000, // Estimated hours
+          estimatedHours,
           bounty.reward,
         );
 
@@ -496,11 +498,12 @@ export class BountyExecutor {
     } catch (error) {
       console.error(`[BountyExecutor] Error executing bounty:`, error);
 
-      // Record failure
+      // v16.1.2: Fixed hours estimation (was reward/1000, now reward/100 assuming ~$100/hr)
+      const estimatedHours = Math.max(0.5, bounty.reward / 100);
       await this.rsiFeedback.recordFailure(
         bounty as any,
         String(error),
-        bounty.reward / 1000,
+        estimatedHours,
         bounty.reward,
       );
 

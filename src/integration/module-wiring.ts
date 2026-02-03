@@ -187,22 +187,24 @@ function wireAllostasis(allostasis: AllostasisSystem, bus: GenesisEventBus): voi
 
 /**
  * Wire brain to publish cycle events
+ * v16.1.2: Brain events are published by genesis.ts after brain.process()
+ * This function is intentionally minimal - brain lacks an event emitter interface.
  */
 function wireBrain(brain: Brain, bus: GenesisEventBus): void {
-  // The brain doesn't have an event emitter, so we can't wire it directly
-  // Instead, genesis.ts will call publish() after brain.process()
-  // This is a placeholder for future brain event hooks
+  // Brain doesn't have an event emitter - wiring happens in genesis.ts
+  console.debug('[ModuleWiring] Brain wired via genesis.ts (no direct event emitter)');
 }
 
 /**
  * Wire economic system to publish cost/revenue events
+ * v16.1.2: Economic events are published by genesis.ts when costs are recorded
  */
 function wireEconomy(fiber: EconomicFiber, ness: NESSMonitor | undefined, bus: GenesisEventBus): void {
-  // Economic events are already published by genesis.ts when costs are recorded
-  // Wire NESS monitor if available
-  if (ness) {
-    // NESS observe() already returns state - genesis.ts handles the event bus publication
-  }
+  console.debug('[ModuleWiring] Economy wired via genesis.ts (fiber + ness monitor)');
+  // Economic events published by genesis.ts when:
+  // - LLM costs are recorded (economic.cost.recorded)
+  // - Revenue is tracked (economic.revenue.received)
+  // NESS observe() returns state that genesis.ts publishes to bus
 }
 
 /**
@@ -279,14 +281,19 @@ function wireDaemon(
 
 /**
  * Apply neuromodulation effects to module behavior
+ * v16.1.2: Added logging, neuromodulation effects applied in genesis.ts processContext()
  */
 function applyNeuromodulationEffects(
   modules: ModuleRegistry,
   neuromod: NeuromodulationSystem,
 ): void {
   neuromod.onUpdate((levels, effect) => {
-    // The effects are already applied in genesis.ts via processContext
-    // This hook could be used for additional module-specific modulation
+    // Effects applied in genesis.ts via processContext()
+    // This subscriber enables future module-specific modulation
+    console.debug('[ModuleWiring] Neuromodulation update received:', {
+      dopamine: levels.dopamine.toFixed(2),
+      serotonin: levels.serotonin.toFixed(2),
+    });
   });
 }
 
@@ -296,14 +303,18 @@ function applyNeuromodulationEffects(
 
 /**
  * Add consciousness gating to risky operations
- * Note: Main gating is done in genesis.ts process() method
+ * v16.1.2: Main gating is done in genesis.ts process() method
+ * This function sets up future module-specific gating hooks.
  */
 function addConsciousnessGating(
   modules: ModuleRegistry,
   awareness: CentralAwareness,
 ): void {
-  // Genesis.ts handles the main consciousness gating in process()
-  // This could add additional module-specific gates in the future
+  console.debug('[ModuleWiring] Consciousness gating active via genesis.ts process()');
+  // Genesis.ts handles main consciousness gating:
+  // - High-risk tools (bash, edit, payment) require φ > 0.4
+  // - Medium-risk tools require φ > 0.2
+  // Future: Add module-specific gates here
 }
 
 /**

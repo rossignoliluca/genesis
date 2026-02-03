@@ -78,6 +78,7 @@ export interface BusStats {
 export class GenesisEventBus {
   private seq = 0;
   private subscribers = new Map<string, Map<string, SubscriberRecord>>();
+  private prefixSubscribers = new Map<string, Map<string, SubscriberRecord>>(); // v16.1.2: Separate registry for prefix subs
   private history: HistoryEntry[] = [];
   private readonly maxHistory: number;
   private correlationStack: string[] = [];
@@ -154,22 +155,42 @@ export class GenesisEventBus {
   }
 
   private dispatch(topic: string, event: BusEvent): void {
+    // v16.1.2: Dispatch to exact topic subscribers
     const subs = this.subscribers.get(topic);
-    if (!subs || subs.size === 0) return;
+    if (subs && subs.size > 0) {
+      // Sort by priority (descending)
+      const sorted = [...subs.values()].sort((a, b) => b.priority - a.priority);
 
-    // Sort by priority (descending)
-    const sorted = [...subs.values()].sort((a, b) => b.priority - a.priority);
-
-    for (const sub of sorted) {
-      try {
-        const result = sub.handler(event);
-        if (result instanceof Promise) {
-          result.catch((err) => {
-            console.error(`[EventBus] Async handler error on ${topic}:`, err);
-          });
+      for (const sub of sorted) {
+        try {
+          const result = sub.handler(event);
+          if (result instanceof Promise) {
+            result.catch((err) => {
+              console.error(`[EventBus] Async handler error on ${topic}:`, err);
+            });
+          }
+        } catch (err) {
+          console.error(`[EventBus] Sync handler error on ${topic}:`, err);
         }
-      } catch (err) {
-        console.error(`[EventBus] Sync handler error on ${topic}:`, err);
+      }
+    }
+
+    // v16.1.2: Dispatch to prefix subscribers (FIX: no longer overrides dispatch)
+    for (const [prefix, prefixSubs] of this.prefixSubscribers) {
+      if (topic.startsWith(prefix)) {
+        const sorted = [...prefixSubs.values()].sort((a, b) => b.priority - a.priority);
+        for (const sub of sorted) {
+          try {
+            const result = sub.handler(event);
+            if (result instanceof Promise) {
+              result.catch((err) => {
+                console.error(`[EventBus] Prefix handler error on ${prefix}:`, err);
+              });
+            }
+          } catch (err) {
+            console.error(`[EventBus] Prefix handler error on ${prefix}:`, err);
+          }
+        }
       }
     }
   }
@@ -217,6 +238,9 @@ export class GenesisEventBus {
    * Subscribe to multiple topics matching a prefix.
    * E.g., subscribePrefix('kernel.') matches all kernel events.
    *
+   * v16.1.2: Fixed race condition - now uses separate prefixSubscribers registry
+   * instead of overriding dispatch() on each call.
+   *
    * @param prefix - Topic prefix to match
    * @param handler - Function called for matching events
    * @param options - Priority settings
@@ -230,50 +254,26 @@ export class GenesisEventBus {
     const id = options?.id ?? `prefix-${++this.seq}`;
     const priority = options?.priority ?? 0;
 
-    // Store as a special prefix subscription
-    const prefixKey = `__prefix__${prefix}`;
-    if (!this.subscribers.has(prefixKey)) {
-      this.subscribers.set(prefixKey, new Map());
+    // v16.1.2: Use dedicated prefix registry (FIX: no race condition)
+    if (!this.prefixSubscribers.has(prefix)) {
+      this.prefixSubscribers.set(prefix, new Map());
     }
 
-    this.subscribers.get(prefixKey)!.set(id, {
+    this.prefixSubscribers.get(prefix)!.set(id, {
       handler,
       priority,
       async: true,
     });
 
-    // Override dispatch to check prefixes
-    const originalDispatch = this.dispatch.bind(this);
-    this.dispatch = (topic: string, event: BusEvent) => {
-      originalDispatch(topic, event);
-
-      // Check prefix subscriptions
-      for (const [key, subs] of this.subscribers) {
-        if (key.startsWith('__prefix__')) {
-          const p = key.slice('__prefix__'.length);
-          if (topic.startsWith(p)) {
-            for (const sub of subs.values()) {
-              try {
-                const result = sub.handler(event);
-                if (result instanceof Promise) {
-                  result.catch((err) => {
-                    console.error(`[EventBus] Prefix handler error:`, err);
-                  });
-                }
-              } catch (err) {
-                console.error(`[EventBus] Prefix handler error:`, err);
-              }
-            }
-          }
-        }
-      }
-    };
-
     return {
       id,
       topic: prefix,
       unsubscribe: () => {
-        this.subscribers.get(prefixKey)?.delete(id);
+        this.prefixSubscribers.get(prefix)?.delete(id);
+        // Clean up empty prefix maps
+        if (this.prefixSubscribers.get(prefix)?.size === 0) {
+          this.prefixSubscribers.delete(prefix);
+        }
       },
     };
   }
@@ -359,9 +359,16 @@ export class GenesisEventBus {
    * List all active topic subscriptions.
    */
   listTopics(): string[] {
-    return [...this.subscribers.keys()].filter(
-      (k) => !k.startsWith('__prefix__'),
-    );
+    // v16.1.2: No longer need to filter __prefix__ keys (moved to separate registry)
+    return [...this.subscribers.keys()];
+  }
+
+  /**
+   * List all active prefix subscriptions.
+   * v16.1.2: New method to inspect prefix subscriptions
+   */
+  listPrefixes(): string[] {
+    return [...this.prefixSubscribers.keys()];
   }
 
   /**
@@ -370,6 +377,10 @@ export class GenesisEventBus {
   stats(): BusStats {
     let totalSubs = 0;
     for (const subs of this.subscribers.values()) {
+      totalSubs += subs.size;
+    }
+    // v16.1.2: Include prefix subscribers in count
+    for (const subs of this.prefixSubscribers.values()) {
       totalSubs += subs.size;
     }
     return {
@@ -397,6 +408,7 @@ export class GenesisEventBus {
    */
   clear(): void {
     this.subscribers.clear();
+    this.prefixSubscribers.clear(); // v16.1.2: Clear prefix subscribers too
     this.history = [];
     this.correlationStack = [];
   }

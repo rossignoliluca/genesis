@@ -111,14 +111,9 @@ export class X402Client {
       // Check budget
       this.checkBudget(challenge.amount);
 
-      // Emit payment initiated event
-      this.bus.publish('economy.cost.recorded', {
-        source: 'x402-client',
-        precision: 1.0,
-        module: 'x402',
-        amount: Number(challenge.amount) / 1_000_000,
-        category: 'x402-payment',
-      });
+      // v16.1.2: Removed duplicate cost recording
+      // Cost is recorded ONCE when payment completes (line ~145)
+      console.debug('[x402] Payment initiated for challenge:', challenge.challengeId);
 
       // Submit payment
       const txHash = await this.submitPayment(challenge);

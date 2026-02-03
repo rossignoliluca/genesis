@@ -683,36 +683,258 @@ export class PaymentService extends EventEmitter {
     }
   }
 
-  // Provider integration stubs (would integrate with actual Stripe/Coinbase SDKs)
+  // ==========================================================================
+  // Real Provider Integration (Stripe API v2024)
+  // ==========================================================================
+
+  /**
+   * Process payment with Stripe Payment Intents API
+   */
   private async processWithProvider(transaction: Transaction): Promise<{ status: PaymentStatus; externalId?: string }> {
-    // Mock implementation - would use Stripe/Coinbase SDK
-    if (!this.config.stripe?.secretKey && !this.config.coinbase?.apiKey) {
+    if (!this.config.stripe?.secretKey) {
       // Test mode - auto-complete
-      return { status: 'completed', externalId: `mock_${Date.now()}` };
+      console.log('[Payment] No Stripe key, using test mode');
+      return { status: 'completed', externalId: `test_${Date.now()}` };
     }
 
-    // Real implementation would go here
-    return { status: 'completed' };
+    try {
+      // Create Stripe PaymentIntent via REST API
+      const response = await fetch('https://api.stripe.com/v1/payment_intents', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.config.stripe.secretKey}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          amount: String(transaction.amount),
+          currency: transaction.currency.toLowerCase(),
+          description: transaction.description,
+          'metadata[userId]': transaction.userId,
+          'metadata[internalId]': transaction.id,
+          automatic_payment_methods: JSON.stringify({ enabled: true }),
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('[Payment] Stripe error:', error);
+        return { status: 'failed' };
+      }
+
+      const intent = await response.json();
+      console.log(`[Payment] Created PaymentIntent: ${intent.id}`);
+
+      // Map Stripe status to our status
+      const statusMap: Record<string, PaymentStatus> = {
+        'requires_payment_method': 'pending',
+        'requires_confirmation': 'pending',
+        'requires_action': 'processing',
+        'processing': 'processing',
+        'succeeded': 'completed',
+        'canceled': 'cancelled',
+      };
+
+      return {
+        status: statusMap[intent.status] || 'pending',
+        externalId: intent.id,
+      };
+    } catch (error) {
+      console.error('[Payment] Stripe request failed:', error);
+      return { status: 'failed' };
+    }
   }
 
+  /**
+   * Process refund with Stripe Refunds API
+   */
   private async processRefundWithProvider(transaction: Transaction): Promise<void> {
-    // Mock - would use Stripe/Coinbase refund API
+    if (!this.config.stripe?.secretKey || !transaction.externalId) {
+      console.log('[Payment] Refund: No Stripe key or externalId, skipping');
+      return;
+    }
+
+    try {
+      const response = await fetch('https://api.stripe.com/v1/refunds', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.config.stripe.secretKey}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          payment_intent: transaction.externalId,
+          'metadata[reason]': transaction.metadata?.refundReason as string || 'requested',
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error?.message || 'Refund failed');
+      }
+
+      const refund = await response.json();
+      console.log(`[Payment] Created Refund: ${refund.id}`);
+    } catch (error) {
+      console.error('[Payment] Refund failed:', error);
+      throw error;
+    }
   }
 
+  /**
+   * Create subscription with Stripe Subscriptions API
+   */
   private async createSubscriptionWithProvider(subscription: Subscription): Promise<{ externalId?: string }> {
-    // Mock - would create subscription in Stripe
-    return { externalId: `mock_sub_${Date.now()}` };
+    if (!this.config.stripe?.secretKey) {
+      console.log('[Payment] No Stripe key, using test mode for subscription');
+      return { externalId: `test_sub_${Date.now()}` };
+    }
+
+    try {
+      // First, ensure customer exists (or create)
+      const customerId = await this.ensureStripeCustomer(subscription.userId);
+
+      // Create subscription
+      const response = await fetch('https://api.stripe.com/v1/subscriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.config.stripe.secretKey}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          customer: customerId,
+          'items[0][price_data][currency]': subscription.currency.toLowerCase(),
+          'items[0][price_data][product_data][name]': `Genesis ${subscription.planId}`,
+          'items[0][price_data][unit_amount]': String(subscription.pricePerCycle),
+          'items[0][price_data][recurring][interval]': subscription.cycle === 'yearly' ? 'year' : 'month',
+          'metadata[userId]': subscription.userId,
+          'metadata[planId]': subscription.planId,
+          'metadata[internalId]': subscription.id,
+          ...(subscription.trialEnd ? { trial_end: String(Math.floor(subscription.trialEnd.getTime() / 1000)) } : {}),
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error?.message || 'Subscription creation failed');
+      }
+
+      const sub = await response.json();
+      console.log(`[Payment] Created Subscription: ${sub.id}`);
+
+      return { externalId: sub.id };
+    } catch (error) {
+      console.error('[Payment] Subscription creation failed:', error);
+      throw error;
+    }
   }
 
+  /**
+   * Cancel subscription with Stripe
+   */
   private async cancelSubscriptionWithProvider(subscription: Subscription, immediate: boolean): Promise<void> {
-    // Mock - would cancel in Stripe
+    if (!this.config.stripe?.secretKey || !subscription.externalId) {
+      console.log('[Payment] No Stripe key or externalId, skipping cancellation');
+      return;
+    }
+
+    try {
+      if (immediate) {
+        // Delete subscription immediately
+        const response = await fetch(`https://api.stripe.com/v1/subscriptions/${subscription.externalId}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${this.config.stripe.secretKey}`,
+          },
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error?.message || 'Cancellation failed');
+        }
+      } else {
+        // Cancel at period end
+        const response = await fetch(`https://api.stripe.com/v1/subscriptions/${subscription.externalId}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.config.stripe.secretKey}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            cancel_at_period_end: 'true',
+          }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error?.message || 'Cancellation failed');
+        }
+      }
+
+      console.log(`[Payment] Cancelled subscription: ${subscription.externalId}`);
+    } catch (error) {
+      console.error('[Payment] Subscription cancellation failed:', error);
+      throw error;
+    }
   }
 
+  /**
+   * Verify Stripe webhook signature
+   */
   private verifyWebhookSignature(provider: PaymentProvider, payload: string, signature?: string): boolean {
-    if (!signature) return true; // No signature to verify
+    if (!signature) return true;
 
-    // Would verify using provider-specific signature verification
-    return true;
+    if (provider === 'stripe' && this.config.stripe?.webhookSecret) {
+      // Stripe webhook signature verification
+      // Format: t=timestamp,v1=signature
+      const elements = signature.split(',');
+      const timestampStr = elements.find(e => e.startsWith('t='))?.slice(2);
+      const signatureStr = elements.find(e => e.startsWith('v1='))?.slice(3);
+
+      if (!timestampStr || !signatureStr) return false;
+
+      // Check timestamp is within 5 minutes
+      const timestamp = parseInt(timestampStr, 10);
+      const now = Math.floor(Date.now() / 1000);
+      if (Math.abs(now - timestamp) > 300) return false;
+
+      // Compute expected signature
+      const signedPayload = `${timestamp}.${payload}`;
+      const expectedSignature = crypto
+        .createHmac('sha256', this.config.stripe.webhookSecret)
+        .update(signedPayload)
+        .digest('hex');
+
+      return crypto.timingSafeEqual(
+        Buffer.from(signatureStr),
+        Buffer.from(expectedSignature)
+      );
+    }
+
+    return true; // Other providers: not implemented
+  }
+
+  /**
+   * Ensure Stripe customer exists for user
+   */
+  private async ensureStripeCustomer(userId: string): Promise<string> {
+    // In production, you'd store the mapping userId -> stripeCustomerId
+    // For now, create a new customer each time (or search for existing)
+    const response = await fetch('https://api.stripe.com/v1/customers', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.config.stripe!.secretKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        'metadata[userId]': userId,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to create Stripe customer');
+    }
+
+    const customer = await response.json();
+    return customer.id;
   }
 
   private async handleWebhookEvent(event: WebhookEvent): Promise<void> {

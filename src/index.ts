@@ -1941,6 +1941,118 @@ async function cmdRSI(subcommand: string | undefined, options: Record<string, st
   console.log('Use: status, run --cycles <n>, observe');
 }
 
+// =============================================================================
+// BOUNTY COMMAND (v16)
+// =============================================================================
+
+async function cmdBounty(subcommand: string | undefined, options: Record<string, string>): Promise<void> {
+  const { getBountyHunter } = await import('./economy/generators/bounty-hunter.js');
+  const { getBountyExecutor } = await import('./economy/bounty-executor.js');
+
+  console.log(c('\n=== GENESIS BOUNTY HUNTER v16 ===\n', 'bold'));
+
+  const dryRun = options.dry === 'true' || options['dry-run'] === 'true';
+  const executor = getBountyExecutor({ dryRun });
+
+  if (!subcommand || subcommand === 'status') {
+    // Show bounty hunting status
+    const hunter = getBountyHunter();
+    const stats = hunter.getStats();
+    const execStats = executor.getStats();
+
+    console.log(c('Bounty Hunter Status:', 'cyan'));
+    console.log(`  Discovered: ${stats.bountiesDiscovered}`);
+    console.log(`  Claimed:    ${stats.bountiesClaimed}`);
+    console.log(`  Submitted:  ${stats.bountiesSubmitted}`);
+    console.log(`  Accepted:   ${stats.bountiesAccepted}`);
+    console.log(`  Rejected:   ${stats.bountiesRejected}`);
+    console.log(`  Active:     ${stats.activeBounties}`);
+    console.log();
+    console.log(c('Revenue:', 'green'));
+    console.log(`  Total Earned:   $${stats.totalEarned.toFixed(2)}`);
+    console.log(`  Average Reward: $${stats.averageReward.toFixed(2)}`);
+    console.log(`  Best Bounty:    $${stats.bestBounty.toFixed(2)}`);
+    console.log(`  Success Rate:   ${(stats.successRate * 100).toFixed(1)}%`);
+    console.log();
+    console.log(`Active Executions: ${execStats.activeExecutions}`);
+    return;
+  }
+
+  if (subcommand === 'scan') {
+    // Scan for bounties
+    console.log('Scanning for bounties...');
+    const hunter = getBountyHunter();
+    const bounties = await hunter.scan();
+
+    console.log(`\nFound ${bounties.length} bounties:\n`);
+
+    for (const bounty of bounties.slice(0, 10)) {
+      const diffColor = {
+        easy: 'green',
+        medium: 'yellow',
+        hard: 'red',
+        critical: 'magenta',
+      }[bounty.difficulty] || 'white';
+
+      console.log(`  ${c(`[$${bounty.reward}]`, 'green')} ${bounty.title}`);
+      console.log(`    Platform: ${bounty.platform} | Difficulty: ${c(bounty.difficulty, diffColor as any)} | Category: ${bounty.category}`);
+      console.log();
+    }
+
+    if (bounties.length > 10) {
+      console.log(`  ... and ${bounties.length - 10} more`);
+    }
+    return;
+  }
+
+  if (subcommand === 'run' || subcommand === 'execute') {
+    // Execute bounty cycle
+    const cycles = parseInt(options.cycles || '1', 10);
+
+    console.log(`Running ${cycles} bounty execution cycle(s)...`);
+    if (dryRun) {
+      console.log(c('[DRY RUN MODE - No PRs will be submitted]', 'yellow'));
+    }
+    console.log();
+
+    let successCount = 0;
+    let failedCount = 0;
+
+    for (let i = 1; i <= cycles; i++) {
+      console.log(c(`\n--- Cycle ${i}/${cycles} ---\n`, 'bold'));
+
+      const result = await executor.executeLoop();
+
+      if (!result) {
+        console.log(c('No bounties available or already at max concurrent executions', 'yellow'));
+        continue;
+      }
+
+      if (result.status === 'success') {
+        successCount++;
+        console.log(c(`✓ Bounty ${result.bountyId} completed successfully`, 'green'));
+        if (result.submission) {
+          console.log(`  PR: ${result.submission.prUrl}`);
+        }
+        console.log(`  Duration: ${(result.duration / 1000).toFixed(1)}s`);
+      } else if (result.status === 'skipped') {
+        console.log(c(`⊘ Bounty ${result.bountyId} skipped: ${result.error}`, 'yellow'));
+      } else {
+        failedCount++;
+        console.log(c(`✗ Bounty ${result.bountyId} failed: ${result.error}`, 'red'));
+      }
+    }
+
+    console.log(c('\n=== Summary ===', 'bold'));
+    console.log(`  Success: ${successCount}`);
+    console.log(`  Failed:  ${failedCount}`);
+    return;
+  }
+
+  console.log(c(`Unknown bounty subcommand: ${subcommand}`, 'red'));
+  console.log('Use: status, scan, run --cycles <n> [--dry-run]');
+}
+
 function cmdHelp(): void {
   printBanner();
   console.log(`${c('Usage:', 'bold')}
@@ -2025,6 +2137,13 @@ ${c('Commands:', 'bold')}
       --threshold    Risk threshold: low, medium, high (default: high)
       --mock         Use synthetic research (for testing)
     observe          Detect limitations and opportunities
+
+  ${c('bounty', 'green')} [subcommand]    v16: Autonomous Bounty Hunting
+    status           Show bounty hunter stats (default)
+    scan             Scan for available bounties
+    run              Execute bounty completion cycle(s)
+      --cycles <n>   Number of cycles (default: 1)
+      --dry-run      Don't submit PRs (test mode)
 
   ${c('install', 'green')}               Install/update Genesis globally (npm)
   ${c('status', 'green')}                Show MCP servers status
@@ -2216,99 +2335,6 @@ ${c('Examples:', 'cyan')}
 }
 
 // ============================================================================
-// Bounty Command (v14.7: Autonomous Bounty Hunting)
-// ============================================================================
-
-async function cmdBounty(subcommand: string | undefined, options: Record<string, string>): Promise<void> {
-  const { getBountyHunter } = await import('./economy/generators/bounty-hunter.js');
-  const { getEarningsTracker } = await import('./economy/live/earnings-tracker.js');
-
-  const hunter = getBountyHunter();
-  const earnings = getEarningsTracker();
-
-  switch (subcommand) {
-    case 'scan':
-      // Scan for new bounties
-      console.log(c('Scanning for bounties...', 'cyan'));
-      const discovered = await hunter.scan();
-      console.log(`Found ${discovered.length} new bounties:`);
-      discovered.slice(0, 10).forEach((b, i) => {
-        console.log(`  ${i + 1}. [$${b.reward}] ${b.title.slice(0, 50)} (${b.platform})`);
-      });
-      break;
-
-    case 'list':
-      // List cached bounties
-      const stats = hunter.getStats();
-      console.log(c('Bounty Statistics:', 'cyan'));
-      console.log(`  Discovered: ${stats.bountiesDiscovered}`);
-      console.log(`  Claimed: ${stats.bountiesClaimed}`);
-      console.log(`  Submitted: ${stats.bountiesSubmitted}`);
-      console.log(`  Accepted: ${stats.bountiesAccepted}`);
-      console.log(`  Success Rate: ${(stats.successRate * 100).toFixed(1)}%`);
-      console.log(`  Total Earned: $${stats.totalEarned.toFixed(2)}`);
-      break;
-
-    case 'earnings':
-      // Show earnings summary
-      const summary = earnings.getSummary();
-      console.log(c('Earnings Summary:', 'cyan'));
-      console.log(`  Total Attempts: ${summary.totalAttempts}`);
-      console.log(`  Accepted: ${summary.totalAccepted}`);
-      console.log(`  Rejected: ${summary.totalRejected}`);
-      console.log(`  Total Earned: ${c('$' + summary.totalEarned.toFixed(2), 'green')}`);
-      console.log(`  Total Cost: $${summary.totalCost.toFixed(2)}`);
-      console.log(`  Net Profit: ${c('$' + summary.netProfit.toFixed(2), summary.netProfit >= 0 ? 'green' : 'red')}`);
-      console.log(`  Success Rate: ${(summary.successRate * 100).toFixed(1)}%`);
-      console.log(`  Best Bounty: $${summary.bestBounty.toFixed(2)}`);
-      break;
-
-    case 'select':
-      // Select best bounty to work on
-      const best = hunter.selectBest();
-      if (best) {
-        console.log(c('Best bounty to work on:', 'cyan'));
-        console.log(`  Title: ${best.title}`);
-        console.log(`  Reward: $${best.reward}`);
-        console.log(`  Platform: ${best.platform}`);
-        console.log(`  Category: ${best.category}`);
-        console.log(`  Difficulty: ${best.difficulty}`);
-        console.log(`  URL: ${best.submissionUrl || 'N/A'}`);
-      } else {
-        console.log('No suitable bounties found. Run "genesis bounty scan" first.');
-      }
-      break;
-
-    case 'claim': {
-      // Claim a bounty (start working on it)
-      const bountyId = options.id;
-      if (!bountyId) {
-        console.error('Usage: genesis bounty claim --id <bounty-id>');
-        process.exit(1);
-      }
-      const claimed = await hunter.claim(bountyId);
-      if (claimed) {
-        console.log(c('Bounty claimed! Start working on it.', 'green'));
-      } else {
-        console.error('Failed to claim bounty. Check the ID.');
-      }
-      break;
-    }
-
-    default:
-      console.log(c('Genesis Bounty Hunter', 'cyan'));
-      console.log('');
-      console.log('Usage:');
-      console.log('  genesis bounty scan      Scan for new bounties');
-      console.log('  genesis bounty list      Show bounty statistics');
-      console.log('  genesis bounty earnings  Show earnings summary');
-      console.log('  genesis bounty select    Select best bounty to work on');
-      console.log('  genesis bounty claim --id <id>  Claim a bounty');
-      console.log('');
-      console.log('Supported platforms: Algora, GitHub, Gitcoin, DeWork');
-  }
-}
-
 // ============================================================================
 // Agents Command (v10.4.2: Parallel Agent Execution)
 // ============================================================================
@@ -2726,6 +2752,11 @@ async function main(): Promise<void> {
       case 'improve':
         // v15.1: Recursive Self-Improvement
         await cmdRSI(positional, options);
+        break;
+      case 'bounty':
+      case 'hunt':
+        // v16: Autonomous Bounty Execution
+        await cmdBounty(positional, options);
         break;
       default:
         console.error(c(`Unknown command: ${command}`, 'red'));

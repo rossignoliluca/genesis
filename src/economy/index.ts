@@ -645,3 +645,16 @@ export type {
   DefiConnector,
   YieldPool,
 } from './live/index.js';
+
+// v16: Bounty Executor (autonomous revenue generation)
+export {
+  BountyExecutor,
+  BountyCodeGenerator,
+  getBountyExecutor,
+  resetBountyExecutor,
+} from './bounty-executor.js';
+export type {
+  BountyExecutorConfig,
+  GeneratedSolution,
+  ExecutionResult,
+} from './bounty-executor.js';

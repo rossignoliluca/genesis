@@ -1025,6 +1025,168 @@ export class GenesisMCPServer extends EventEmitter {
         };
       },
     });
+
+    // ==========================================================================
+    // x402 Micropayment Tools (Revenue Generation)
+    // ==========================================================================
+
+    // genesis.x402.register_route - Register a payment route for a service
+    this.registerTool({
+      name: 'genesis.x402.register_route',
+      description: 'Register a payment route for an API endpoint. Other AI agents can then pay to access this endpoint via x402 micropayments.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          serviceUrl: {
+            type: 'string',
+            description: 'The URL of the service endpoint',
+          },
+          payeeAddress: {
+            type: 'string',
+            description: 'Wallet address to receive payments (USDC on Base)',
+          },
+          pricePerCall: {
+            type: 'number',
+            description: 'Price per API call in USD (e.g., 0.001 for $0.001)',
+          },
+          escrowRequired: {
+            type: 'boolean',
+            description: 'Whether to require escrow for untrusted payers',
+          },
+        },
+        required: ['serviceUrl', 'payeeAddress', 'pricePerCall'],
+      },
+      requiredScopes: ['economy'],
+      baseCost: 0,
+      supportsStreaming: false,
+      maxExecutionTime: 5000,
+      annotations: { readOnlyHint: false },
+      handler: async (input: any) => {
+        const { getX402Facilitator } = await import('../economy/infrastructure/x402-facilitator.js');
+        const facilitator = getX402Facilitator();
+        facilitator.registerRoute({
+          serviceUrl: input.serviceUrl,
+          payeeAddress: input.payeeAddress,
+          pricePerCall: input.pricePerCall,
+          currency: 'USDC',
+          chain: 'base',
+          escrowRequired: input.escrowRequired ?? false,
+        });
+        return {
+          success: true,
+          data: {
+            message: `Route registered: ${input.serviceUrl}`,
+            header402: facilitator.generate402Header(input.serviceUrl),
+          },
+        };
+      },
+    });
+
+    // genesis.x402.pay - Process a payment for a service
+    this.registerTool({
+      name: 'genesis.x402.pay',
+      description: 'Process an x402 micropayment for accessing a service. Submit payment proof to unlock access.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          serviceUrl: {
+            type: 'string',
+            description: 'The service URL to pay for',
+          },
+          payerAddress: {
+            type: 'string',
+            description: 'Your wallet address',
+          },
+          paymentProof: {
+            type: 'string',
+            description: 'Payment proof (x402-proof:txhash or signed message)',
+          },
+          reputation: {
+            type: 'number',
+            description: 'Your reputation score (0-1) for escrow waiver',
+          },
+        },
+        required: ['serviceUrl', 'payerAddress', 'paymentProof'],
+      },
+      requiredScopes: ['economy'],
+      baseCost: 0.001, // Small fee for processing
+      supportsStreaming: false,
+      maxExecutionTime: 30000, // May need to verify on-chain
+      annotations: { readOnlyHint: false },
+      handler: async (input: any) => {
+        const { getX402Facilitator } = await import('../economy/infrastructure/x402-facilitator.js');
+        const facilitator = getX402Facilitator();
+        const payment = await facilitator.processPayment(
+          input.serviceUrl,
+          input.payerAddress,
+          input.paymentProof,
+          input.reputation
+        );
+        return {
+          success: payment.status !== 'failed',
+          data: {
+            paymentId: payment.id,
+            status: payment.status,
+            amount: payment.amount,
+            fee: payment.facilitationFee,
+            escrowId: payment.escrowId,
+          },
+        };
+      },
+    });
+
+    // genesis.x402.release_escrow - Release escrowed funds
+    this.registerTool({
+      name: 'genesis.x402.release_escrow',
+      description: 'Release escrowed funds to the payee after service delivery is confirmed.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          escrowId: {
+            type: 'string',
+            description: 'The escrow ID to release',
+          },
+        },
+        required: ['escrowId'],
+      },
+      requiredScopes: ['economy'],
+      baseCost: 0,
+      supportsStreaming: false,
+      maxExecutionTime: 5000,
+      annotations: { readOnlyHint: false },
+      handler: async (input: any) => {
+        const { getX402Facilitator } = await import('../economy/infrastructure/x402-facilitator.js');
+        const facilitator = getX402Facilitator();
+        const success = facilitator.releaseEscrow(input.escrowId);
+        return {
+          success,
+          data: { message: success ? 'Escrow released' : 'Failed to release escrow' },
+        };
+      },
+    });
+
+    // genesis.x402.status - Get facilitator statistics
+    this.registerTool({
+      name: 'genesis.x402.status',
+      description: 'Get x402 payment facilitator statistics including volume, fees earned, and active escrows.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+      requiredScopes: ['economy'],
+      baseCost: 0,
+      supportsStreaming: false,
+      maxExecutionTime: 1000,
+      annotations: { readOnlyHint: true },
+      handler: async () => {
+        const { getX402Facilitator } = await import('../economy/infrastructure/x402-facilitator.js');
+        const facilitator = getX402Facilitator();
+        return {
+          success: true,
+          data: facilitator.getStats(),
+        };
+      },
+    });
   }
 
   registerTool(config: ExposedToolConfig): void {

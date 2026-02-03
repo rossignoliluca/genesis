@@ -152,7 +152,13 @@ export class BountyHunter {
 
   /**
    * Select the best bounty to work on next.
-   * Uses expected value: reward × successProbability
+   *
+   * v16: Learning Mode - until we have 3+ successful completions, prioritize:
+   *   1. Easy bounties (high success probability)
+   *   2. Content/translation bounties (lower complexity)
+   *   3. Smaller rewards (less competition)
+   *
+   * After learning phase, uses expected value: reward × successProbability
    */
   selectBest(): Bounty | null {
     const activeClaimed = [...this.bounties.values()]
@@ -162,14 +168,31 @@ export class BountyHunter {
       return null;
     }
 
+    // Check if in learning mode (< 3 successful completions)
+    const stats = this.getStats();
+    const isLearningMode = stats.bountiesAccepted < 3;
+
     const candidates = [...this.bounties.values()]
       .filter(b => b.status === 'open' && this.isViable(b))
-      .map(b => ({
-        bounty: b,
-        expectedValue: b.reward * this.estimateSuccessProbability(b),
-      }))
+      .map(b => {
+        const probability = this.estimateSuccessProbability(b);
+        const expectedValue = b.reward * probability;
+
+        // In learning mode, prioritize probability over reward
+        // Score = probability^2 * reward (weights success heavily)
+        // After learning, use pure expected value
+        const score = isLearningMode
+          ? probability * probability * Math.sqrt(b.reward)  // Heavy weight on probability
+          : expectedValue;
+
+        return { bounty: b, expectedValue, probability, score };
+      })
       .filter(c => c.expectedValue > this.config.minReward * this.config.successProbabilityThreshold)
-      .sort((a, b) => b.expectedValue - a.expectedValue);
+      .sort((a, b) => b.score - a.score);
+
+    if (isLearningMode && candidates.length > 0) {
+      console.log(`[BountyHunter] Learning mode: prioritizing achievable bounties (${stats.bountiesAccepted}/3 completed)`);
+    }
 
     return candidates[0]?.bounty ?? null;
   }

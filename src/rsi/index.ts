@@ -92,6 +92,7 @@ export class RSIOrchestrator extends EventEmitter {
     this.researchEngine = getResearchEngine({
       enabledSources: this.config.defaultSearchSources,
       maxResultsPerSource: this.config.maxResearchResults,
+      mockResearch: this.config.mockResearch,
     });
     this.planEngine = getPlanEngine(this.config);
     this.implementEngine = getImplementationEngine();

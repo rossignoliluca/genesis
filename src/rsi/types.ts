@@ -347,6 +347,9 @@ export interface RSIConfig {
   // Learning
   trackMetrics: string[];
   improvementThreshold: number; // Minimum delta to consider success
+
+  // Testing
+  mockResearch?: boolean; // v15.1: Use synthetic research for testing
 }
 
 export const DEFAULT_RSI_CONFIG: RSIConfig = {

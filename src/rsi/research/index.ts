@@ -28,6 +28,7 @@ export interface ResearchConfig {
   minRelevanceScore: number;
   timeoutMs: number;
   enabledSources: ('arxiv' | 'semantic-scholar' | 'github' | 'web' | 'memory')[];
+  mockResearch?: boolean; // v15.1: Use synthetic research for testing
 }
 
 export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
@@ -35,7 +36,67 @@ export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
   minRelevanceScore: 0.3,
   timeoutMs: 30000,
   enabledSources: ['memory', 'github', 'arxiv', 'web'],
+  mockResearch: false,
 };
+
+// =============================================================================
+// MOCK RESEARCH GENERATOR (v15.1)
+// =============================================================================
+
+const MOCK_RESEARCH_TEMPLATES: Record<string, ResearchSource[]> = {
+  'autonomous-code-generation': [
+    {
+      type: 'paper',
+      url: 'https://arxiv.org/abs/2107.03374',
+      title: 'Evaluating Large Language Models Trained on Code',
+      summary: 'Codex model shows that LLMs can generate functionally correct code from docstrings. Key insight: fine-tuning on code improves generation quality.',
+      relevanceScore: 0.9,
+      retrievedAt: new Date(),
+    },
+    {
+      type: 'code',
+      url: 'https://github.com/microsoft/CodeBERT',
+      title: 'CodeBERT: Pre-trained Model for Programming Languages',
+      summary: 'Bimodal pre-training for code understanding and generation. Approach: contrastive learning between NL and PL.',
+      relevanceScore: 0.85,
+      retrievedAt: new Date(),
+    },
+  ],
+  'formal-verification': [
+    {
+      type: 'paper',
+      url: 'https://arxiv.org/abs/2206.15331',
+      title: 'Formal Verification of ML-Generated Code',
+      summary: 'Using SMT solvers to verify properties of generated code. Key technique: abstract interpretation.',
+      relevanceScore: 0.88,
+      retrievedAt: new Date(),
+    },
+  ],
+  'default': [
+    {
+      type: 'documentation',
+      url: 'https://docs.genesis.ai/improvement',
+      title: 'Genesis Self-Improvement Guide',
+      summary: 'Standard approach: observe metrics, research solutions, implement incrementally, verify invariants.',
+      relevanceScore: 0.7,
+      retrievedAt: new Date(),
+    },
+  ],
+};
+
+export function getMockResearchSources(query: string): ResearchSource[] {
+  const queryLower = query.toLowerCase();
+
+  for (const [key, sources] of Object.entries(MOCK_RESEARCH_TEMPLATES)) {
+    if (key !== 'default' && queryLower.includes(key)) {
+      console.log(`[RSI Research] Using mock sources for: ${key}`);
+      return sources;
+    }
+  }
+
+  console.log(`[RSI Research] Using default mock sources`);
+  return MOCK_RESEARCH_TEMPLATES['default'];
+}
 
 // =============================================================================
 // ARXIV SEARCHER
@@ -522,6 +583,11 @@ export class ResearchEngine {
   }
 
   private async gatherSources(query: string): Promise<ResearchSource[]> {
+    // v15.1: Use mock sources if enabled (for testing)
+    if (this.config.mockResearch) {
+      return getMockResearchSources(query);
+    }
+
     const allSources: ResearchSource[] = [];
     const tasks: Promise<ResearchSource[]>[] = [];
 

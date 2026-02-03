@@ -1768,10 +1768,16 @@ async function cmdRSI(subcommand: string | undefined, options: Record<string, st
 
   console.log(c('\n=== GENESIS RSI (Recursive Self-Improvement) v15.1 ===\n', 'bold'));
 
+  const mockMode = options.mock === 'true';
+  if (mockMode) {
+    console.log(c('[RSI] Running in MOCK mode - using synthetic research', 'yellow'));
+  }
+
   const rsi = new RSIOrchestrator({
     ...DEFAULT_RSI_CONFIG,
     requireHumanReview: options.auto !== 'true',
     humanReviewThreshold: (options.threshold as any) || 'high',
+    mockResearch: mockMode,
   });
 
   // Set up event listeners
@@ -1780,39 +1786,43 @@ async function cmdRSI(subcommand: string | undefined, options: Record<string, st
   });
 
   rsi.on('limitation:detected', (event) => {
-    console.log(`  ${c('→', 'yellow')} Detected: ${event.limitation.description}`);
+    console.log(`  ${c('→', 'yellow')} Detected: ${event.data.description}`);
   });
 
   rsi.on('plan:created', (event) => {
-    console.log(`  ${c('→', 'green')} Plan: ${event.plan.name}`);
-    console.log(`    Risk: ${event.plan.safetyAnalysis.riskLevel}`);
-    console.log(`    Changes: ${event.plan.changes.length}`);
+    console.log(`  ${c('→', 'green')} Plan: ${event.data.name}`);
+    console.log(`    Risk: ${event.data.safetyAnalysis?.riskLevel || 'unknown'}`);
+    console.log(`    Changes: ${event.data.changes?.length || 0}`);
   });
 
-  rsi.on('implementation:complete', (event) => {
-    const status = event.result.success ? c('SUCCESS', 'green') : c('FAILED', 'red');
+  rsi.on('implementation:completed', (event) => {
+    const status = event.data?.success ? c('SUCCESS', 'green') : c('FAILED', 'red');
     console.log(`  ${c('→', 'cyan')} Implementation: ${status}`);
-    if (!event.result.success) {
-      console.log(`    Error: ${event.result.error}`);
+    if (!event.data?.success && event.data?.error) {
+      console.log(`    Error: ${event.data.error}`);
     }
   });
 
-  rsi.on('deployment:complete', (event) => {
-    const status = event.result.success ? c('SUCCESS', 'green') : c('FAILED', 'red');
+  rsi.on('deployment:completed', (event) => {
+    const status = event.data?.success ? c('SUCCESS', 'green') : c('FAILED', 'red');
     console.log(`  ${c('→', 'blue')} Deployment: ${status}`);
-    if (event.result.prUrl) {
-      console.log(`    PR: ${event.result.prUrl}`);
+    if (event.data?.prUrl) {
+      console.log(`    PR: ${event.data.prUrl}`);
     }
   });
 
-  rsi.on('learning:complete', (event) => {
-    console.log(`  ${c('→', 'magenta')} Learning: ${event.outcome.success ? 'Positive' : 'Negative'}`);
-    console.log(`    Lessons: ${event.outcome.lessonsLearned.length}`);
+  rsi.on('learning:recorded', (event) => {
+    console.log(`  ${c('→', 'magenta')} Learning: ${event.data?.success ? 'Positive' : 'Negative'}`);
+    console.log(`    Lessons: ${event.data?.lessonsLearned?.length || 0}`);
   });
 
-  rsi.on('cycle:complete', (event) => {
-    const status = event.cycle.status === 'completed' ? c('COMPLETE', 'green') : c(event.cycle.status.toUpperCase(), 'yellow');
-    console.log(c(`[RSI] Cycle ${event.cycleId} ${status}`, 'cyan'));
+  rsi.on('cycle:completed', (event) => {
+    console.log(c(`[RSI] Cycle ${event.cycleId} COMPLETE`, 'green'));
+    console.log();
+  });
+
+  rsi.on('cycle:failed', (event) => {
+    console.log(c(`[RSI] Cycle ${event.cycleId} FAILED: ${event.data?.error || 'unknown'}`, 'red'));
     console.log();
   });
 
@@ -2013,6 +2023,7 @@ ${c('Commands:', 'bold')}
       --cycles <n>   Number of cycles (default: 1)
       --auto         Auto-mode (no human approval prompts)
       --threshold    Risk threshold: low, medium, high (default: high)
+      --mock         Use synthetic research (for testing)
     observe          Detect limitations and opportunities
 
   ${c('install', 'green')}               Install/update Genesis globally (npm)

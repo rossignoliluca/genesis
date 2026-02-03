@@ -22,6 +22,7 @@ import {
 } from '../types.js';
 import { getMCPClient } from '../../mcp/index.js';
 import { getConsciousnessSystem } from '../../consciousness/index.js';
+import { getMultiModelCodeGenerator, type ConsensusResult } from './multi-model-codegen.js';
 
 // =============================================================================
 // SANDBOX MANAGER
@@ -119,9 +120,10 @@ export class SandboxManager {
 
 export class CodeGenerator {
   private mcp = getMCPClient();
+  private multiModelGenerator = getMultiModelCodeGenerator();
 
   /**
-   * Generate code for a planned change using LLM
+   * Generate code for a planned change using multi-model racing
    */
   async generateCode(change: PlannedChange, sandboxPath: string): Promise<string | null> {
     if (!change.codeSpec) {
@@ -129,7 +131,34 @@ export class CodeGenerator {
     }
 
     try {
-      // Try to use OpenAI for code generation
+      // Use multi-model racing for better code quality
+      console.log(`[RSI Implement] Using multi-model code generation...`);
+      const result = await this.multiModelGenerator.generateWithRacing(change, sandboxPath, {
+        maxModels: 3,
+        timeout: 60000,
+        useConsensus: true,
+      });
+
+      if (result.selectedCode) {
+        console.log(`[RSI Implement] Selected code from ${result.selectedModel} (confidence: ${(result.confidence * 100).toFixed(1)}%)`);
+        return result.selectedCode;
+      }
+
+      // Fallback to single-model if multi-model fails
+      console.log(`[RSI Implement] Multi-model failed, falling back to single model...`);
+      return this.generateCodeSingleModel(change, sandboxPath);
+    } catch (error) {
+      console.log(`[RSI Implement] Multi-model code generation failed: ${error}`);
+      // Fallback to single model
+      return this.generateCodeSingleModel(change, sandboxPath);
+    }
+  }
+
+  /**
+   * Fallback: Generate code using single OpenAI model
+   */
+  private async generateCodeSingleModel(change: PlannedChange, sandboxPath: string): Promise<string | null> {
+    try {
       const result = await this.mcp.call('openai', 'openai_chat', {
         messages: [
           {
@@ -159,15 +188,13 @@ Generate only the code, no markdown fences or explanations.`,
       }) as any;
 
       if (result && result.content) {
-        // Clean up response
         let code = result.content;
-        // Remove markdown code fences if present
         code = code.replace(/^```(?:typescript|ts)?\n?/i, '');
         code = code.replace(/\n?```$/i, '');
         return code.trim();
       }
     } catch (error) {
-      console.log(`[RSI Implement] Code generation failed: ${error}`);
+      console.log(`[RSI Implement] Single-model code generation failed: ${error}`);
     }
 
     return null;

@@ -187,3 +187,40 @@ export type {
   BountyAttempt,
   EarningsData,
 } from './earnings-tracker.js';
+
+// v16: Protocol Registry (15+ DeFi protocols)
+export {
+  PROTOCOLS,
+  TOKENS,
+  RPC_URLS,
+  ERC20_ABI,
+  ERC4626_ABI,
+  AAVE_POOL_ABI,
+  COMPOUND_V3_ABI,
+  getProtocol,
+  getProtocolsByChain,
+  getProtocolsByCategory,
+  getAllProtocols,
+  getProtocolCount,
+  getSupportedChains,
+  getTokenAddress,
+  getRpcUrl,
+  getProtocolStats,
+} from './connectors/protocols.js';
+export type {
+  ProtocolDefinition,
+  SupportedChain,
+} from './connectors/protocols.js';
+
+// v16: Yield Optimizer with Kelly Criterion
+export {
+  YieldOptimizer,
+  getYieldOptimizer,
+  resetYieldOptimizer,
+} from './yield-optimizer.js';
+export type {
+  OptimizationConfig,
+  YieldOpportunity,
+  AllocationPlan,
+  OptimizationResult,
+} from './yield-optimizer.js';

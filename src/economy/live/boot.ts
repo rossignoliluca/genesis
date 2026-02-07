@@ -360,7 +360,11 @@ function buildCurrentState(wallet: LiveWallet): PersistedState {
     currentPhase: controllerState.phase,
     startedAt: controllerState.startedAt,
     allocations,
-    revenueHistory: [], // TODO: wire from fiber
+    revenueHistory: getRevenueTracker().getRecent(100).map(e => ({
+      timestamp: e.timestamp,
+      activityId: e.activityId || e.source,
+      amount: e.amount,
+    })),
     logLipAvg: getEconomicContraction().getLogLipAvg(),
     walletAddress: wallet.getAddress(),
     lastKnownBalance: { eth: '0', usdc: '0' },

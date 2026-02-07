@@ -43,6 +43,7 @@ import { getGenerativeModel } from './generative-model.js';
 import { getVariationalEngine } from './variational-engine.js';
 import { getKeeperExecutor } from './generators/keeper.js';
 import { getBountyHunter } from './generators/bounty-hunter.js';
+import { getBountyExecutor } from './bounty-executor.js';
 import { getMCPMarketplace } from './infrastructure/mcp-marketplace.js';
 import { getX402Facilitator } from './infrastructure/x402-facilitator.js';
 import { getContentEngine } from './generators/content-engine.js';
@@ -224,6 +225,17 @@ const ACTIVITY_PROFILES: ActivityProfile[] = [
     identityRequired: 'none',
     active: true,
   },
+  {
+    id: 'presentation-service',
+    name: 'Presentation Generation API',
+    tier: 'A',
+    capitalRequired: 0,
+    estimatedROI: 5.0,
+    riskLevel: 0.1,
+    cooldownCycles: 1,
+    identityRequired: 'none',
+    active: true,
+  },
 
   // --- TIER B: Network Services ---
   {
@@ -298,7 +310,7 @@ const DEFAULT_PHASES: PhaseConfig[] = [
     minRevenue: 0,
     activitiesUnlocked: [
       'mcp-marketplace', 'x402-facilitator', 'reputation-oracle',
-      'bounty-hunter', 'smart-contract-auditor', 'content-engine', 'keeper',
+      'bounty-hunter', 'smart-contract-auditor', 'content-engine', 'presentation-service', 'keeper',
     ],
   },
   {
@@ -516,6 +528,7 @@ export class AutonomousController {
               'memory-service': 'mcp-api',
               'meta-orchestrator': 'mcp-api',
               'compute-provider': 'mcp-api',
+              'presentation-service': 'presentation',
             };
             tracker.record({
               source: sourceMap[exec.id] ?? 'other',
@@ -891,40 +904,23 @@ export class AutonomousController {
       }
 
       case 'bounty-hunter': {
-        if (this.config.liveMode || isLive()) {
-          // LIVE: Use real DeWork API
-          const dework = getDeworkConnector();
-          const bounties = await dework.scanBounties(['solidity', 'typescript', 'smart-contract', 'ai']);
-          // Check payouts on previously claimed bounties
-          let revenue = 0;
-          for (const b of bounties.filter(b => b.status === 'completed')) {
-            const payout = await dework.getPayoutStatus(b.id);
-            if (payout.paid) {
-              revenue += b.reward;
-            }
-          }
-          // Report discovered opportunities (bounties are worked asynchronously)
-          const viable = bounties.filter(b => b.reward >= 50 && b.status === 'open');
-          if (viable.length > 0) {
-            console.log(`[Live] Found ${viable.length} viable bounties, best: $${viable[0].reward}`);
-          }
-          return revenue > 0 ? { id: activityId, revenue, cost: 0 } : null;
+        const executor = getBountyExecutor({
+          dryRun: !(this.config.liveMode || isLive()),
+        });
+
+        // Execute bounty loop (scan → select → code gen → PR submit)
+        const execResult = await executor.executeLoop();
+        if (execResult?.status === 'success' && execResult.submission) {
+          return { id: activityId, revenue: 0, cost: 0.10 }; // Revenue tracked at merge
         }
 
-        // SIMULATED: Use internal bounty hunter
-        const hunter = getBountyHunter();
-        if (hunter.needsScan()) {
-          await hunter.scan();
+        // Check submitted PRs for merges
+        const revResult = await executor.checkAndRecordRevenue();
+        if (revResult.revenue > 0) {
+          return { id: activityId, revenue: revResult.revenue, cost: 0 };
         }
-        const payouts = await hunter.checkPayouts();
-        const revenue = payouts
-          .filter(p => p.status === 'accepted')
-          .reduce((s, p) => s + (p.payout ?? 0), 0);
-        const best = hunter.selectBest();
-        if (best) {
-          await hunter.claim(best.id);
-        }
-        return revenue > 0 ? { id: activityId, revenue, cost: 0.10 } : null;
+
+        return null;
       }
 
       case 'mcp-marketplace': {
@@ -975,6 +971,17 @@ export class AutonomousController {
         // Collect subscription/tip revenue
         const contentRevenue = await engine.collectRevenue();
         return contentRevenue > 0 ? { id: activityId, revenue: contentRevenue, cost: 0.05 } : null;
+      }
+
+      case 'presentation-service': {
+        // Start the HTTP API server if not already running
+        const { startPresentationAPI, isPresentationAPIRunning } = await import('../presentation/api.js');
+        if (!isPresentationAPIRunning()) {
+          startPresentationAPI();
+          console.log('[Autonomous] Presentation API started');
+        }
+        // Revenue is tracked per-request inside the API handler
+        return { id: activityId, revenue: 0, cost: 0 };
       }
 
       case 'smart-contract-auditor': {

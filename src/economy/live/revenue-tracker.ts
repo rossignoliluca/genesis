@@ -20,6 +20,7 @@ export type RevenueSource =
   | 'audit'             // Smart contract audits
   | 'compute'           // Compute provision
   | 'orchestration'     // Meta-orchestrator fees
+  | 'presentation'      // Presentation generation API
   | 'other';
 
 export interface RevenueEvent {

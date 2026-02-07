@@ -918,20 +918,8 @@ export class BountyExecutor {
         );
 
         if (submission) {
-          // Record potential revenue (map 'token' to 'USD' for revenue tracking)
-          const revenueCurrency = bounty.currency === 'token' ? 'USD' : bounty.currency;
-          this.revenueTracker.record({
-            source: 'bounty',
-            amount: bounty.reward,
-            currency: revenueCurrency,
-            metadata: {
-              bountyId: bounty.id,
-              platform: bounty.platform,
-              prUrl: submission.prUrl,
-              status: 'pending',
-            },
-          });
-
+          // Revenue is recorded only at PR merge by PRPipeline.checkPRStatus()
+          // to avoid double-counting (submission != accepted)
           console.log(`[BountyExecutor] PR submitted: ${submission.prUrl}`);
 
           // v16.2: Update rate-limiting counters

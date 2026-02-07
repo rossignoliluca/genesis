@@ -157,7 +157,9 @@ export type ActionType =
   | 'opportunity.scan'     // Scan web for revenue opportunities
   | 'opportunity.evaluate' // Evaluate feasibility/risk/reward of opportunity
   | 'opportunity.build'    // Build & deploy the opportunity (code/content/service)
-  | 'opportunity.monetize';// Wire payments and go live
+  | 'opportunity.monetize' // Wire payments and go live
+  // v16.0 - Presentation Engine
+  | 'create.presentation'; // Generate institutional-quality PPTX
 
 export const ACTIONS: ActionType[] = [
   'sense.mcp',
@@ -200,6 +202,8 @@ export const ACTIONS: ActionType[] = [
   'opportunity.evaluate',
   'opportunity.build',
   'opportunity.monetize',
+  // v16.0 - Presentation Engine
+  'create.presentation',
 ];
 
 export const ACTION_COUNT = ACTIONS.length;

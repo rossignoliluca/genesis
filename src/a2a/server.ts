@@ -621,8 +621,50 @@ export class A2AServer extends EventEmitter {
     return true;
   }
 
-  private verifySignature(_message: A2AMessage): boolean {
-    return true;
+  /**
+   * v16.1.2: Implement actual signature verification (was stub returning true)
+   * SECURITY: Verifies HMAC signature using sender's public key
+   */
+  private verifySignature(message: A2AMessage): boolean {
+    if (!message.signature) {
+      console.warn('[A2A] Message missing signature from:', message.from);
+      return false;
+    }
+
+    try {
+      const { signature } = message;
+
+      // Verify timestamp is recent (within 5 minutes to prevent replay attacks)
+      const sigTime = new Date(signature.timestamp).getTime();
+      const now = Date.now();
+      const maxAge = 5 * 60 * 1000; // 5 minutes
+
+      if (now - sigTime > maxAge) {
+        console.warn('[A2A] Signature expired:', message.from);
+        return false;
+      }
+
+      // Reconstruct the payload that was signed
+      const data = JSON.stringify({ method: message.method, params: message.params });
+      const payload = `${data}:${signature.nonce}:${signature.timestamp}`;
+
+      // Verify HMAC using the sender's public key
+      // Note: In production, use asymmetric crypto (RSA/Ed25519) instead of HMAC
+      const expectedSig = crypto
+        .createHmac('sha256', signature.publicKey)
+        .update(payload)
+        .digest('hex');
+
+      if (expectedSig !== signature.value) {
+        console.warn('[A2A] Invalid signature from:', message.from);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('[A2A] Signature verification error:', error);
+      return false;
+    }
   }
 
   private sign(data: string): A2ASignature {

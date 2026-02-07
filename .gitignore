@@ -36,3 +36,6 @@ temp/
 *.tmp
 .env.keys
 .genesis/
+
+# Separate repos
+mcp-video-agent/

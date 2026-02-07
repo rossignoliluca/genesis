@@ -222,6 +222,17 @@ export class AutonomousSystem extends EventEmitter {
       return { success: false, error: 'Economy or governance not initialized' };
     }
 
+    // v16.1.2: Validate payment amount
+    if (typeof request.amount !== 'number' || !Number.isFinite(request.amount)) {
+      return { success: false, error: 'Invalid payment amount: must be a finite number' };
+    }
+    if (request.amount <= 0) {
+      return { success: false, error: 'Invalid payment amount: must be positive' };
+    }
+    if (!request.recipient || request.recipient.trim() === '') {
+      return { success: false, error: 'Invalid recipient: cannot be empty' };
+    }
+
     // Check governance
     const permission = await this.governance.governance.checkPermission({
       actor: 'autonomous-system',

@@ -174,3 +174,26 @@ toolRegistry.set('git_push', {
     }, params.cwd as string | undefined);
   },
 });
+
+// Register presentation tool
+import { generatePresentation } from './presentation.js';
+import type { PresentationSpec } from '../presentation/types.js';
+
+toolRegistry.set('presentation', {
+  name: 'presentation',
+  description: 'Generate institutional-quality PPTX presentation from JSON spec',
+  execute: async (params: Record<string, unknown>) => {
+    return generatePresentation(params.spec as PresentationSpec);
+  },
+  validate: (params: Record<string, unknown>) => {
+    const spec = params.spec as PresentationSpec | undefined;
+    if (!spec) return { valid: false, reason: 'Missing spec parameter' };
+    if (!spec.slides || !Array.isArray(spec.slides)) {
+      return { valid: false, reason: 'spec.slides must be an array' };
+    }
+    if (!spec.output_path) {
+      return { valid: false, reason: 'spec.output_path is required' };
+    }
+    return { valid: true };
+  },
+});

@@ -199,10 +199,13 @@ export class ShutdownManager extends EventEmitter {
     const errors: ShutdownError[] = [];
     const phases: PhaseResult[] = [];
 
-    // Create force timeout
-    const forceTimeoutPromise = new Promise<void>((_, reject) => {
+    // v16.1.2: Fixed force timeout - now resolves with timeout marker instead of rejecting
+    // This allows Promise.race() to properly return timeout result
+    let forceTimeoutTriggered = false;
+    const forceTimeoutPromise = new Promise<{ timeout: true }>((resolve) => {
       setTimeout(() => {
-        reject(new Error(`Shutdown timeout after ${this.config.forceTimeoutMs}ms`));
+        forceTimeoutTriggered = true;
+        resolve({ timeout: true });
       }, this.config.forceTimeoutMs);
     });
 
@@ -215,9 +218,18 @@ export class ShutdownManager extends EventEmitter {
             phase,
             duration: Date.now() - startTime,
             hooks: [],
+            timedOut: true,
           })),
         ]);
         phases.push(phaseResult as PhaseResult);
+
+        // v16.1.2: Check if force timeout was triggered
+        if (forceTimeoutTriggered) {
+          if (this.config.logProgress) {
+            console.warn('[ShutdownManager] Force timeout reached at phase:', phase);
+          }
+          break; // Exit phase loop on timeout
+        }
 
         // Special handling for drain phase - wait for in-flight
         if (phase === ShutdownPhase.DRAIN) {
@@ -226,7 +238,7 @@ export class ShutdownManager extends EventEmitter {
       }
     } catch (error) {
       if (this.config.logProgress) {
-        console.error('[ShutdownManager] Force timeout reached, terminating');
+        console.error('[ShutdownManager] Unexpected error during shutdown:', error);
       }
     }
 

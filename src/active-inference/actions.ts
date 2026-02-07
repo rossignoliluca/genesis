@@ -2062,6 +2062,65 @@ registerAction('improve.self', async (context) => {
 });
 
 // ============================================================================
+// PRESENTATION ENGINE (v16.0)
+// ============================================================================
+
+/**
+ * create.presentation: Generate institutional-quality PPTX from JSON spec
+ * Uses the Python presentation engine via TS bridge
+ */
+registerAction('create.presentation', async (context) => {
+  const start = Date.now();
+  try {
+    const { generatePresentation } = await import('../tools/presentation.js');
+    const spec = context.parameters?.spec as any;
+
+    if (!spec) {
+      return {
+        success: false,
+        action: 'create.presentation' as ActionType,
+        error: 'No presentation spec provided in context.parameters.spec',
+        duration: Date.now() - start,
+      };
+    }
+
+    const result = await generatePresentation(spec);
+
+    // Store episode in memory (fire and forget)
+    try {
+      const { getMemorySystem } = await import('../memory/index.js');
+      const memory = getMemorySystem();
+      memory.remember({
+        what: 'Generated presentation',
+        details: {
+          path: result.path,
+          slides: result.slides,
+          charts: result.charts,
+          topic: spec.meta?.title || 'unknown',
+        },
+        importance: 0.7,
+      });
+    } catch {
+      // Memory not available, continue
+    }
+
+    return {
+      success: result.success,
+      action: 'create.presentation' as ActionType,
+      data: result,
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'create.presentation' as ActionType,
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+// ============================================================================
 // Action Executor Manager
 // ============================================================================
 

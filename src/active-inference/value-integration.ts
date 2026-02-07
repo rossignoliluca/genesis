@@ -128,6 +128,8 @@ const AI_TO_WM_ACTION: Record<ActionType, WMActionType> = {
   'opportunity.evaluate': 'query',  // Evaluate feasibility
   'opportunity.build': 'execute',   // Build & deploy
   'opportunity.monetize': 'execute',// Wire payments
+  // v16.0 - Presentation Engine
+  'create.presentation': 'execute', // Generate PPTX
 };
 
 // ============================================================================

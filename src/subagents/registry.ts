@@ -134,6 +134,40 @@ You have access to all tools. Use them wisely.`,
 
 const customSubagents: Map<string, SubagentDefinition> = new Map();
 
+// Auto-register presentation subagent as custom (not in SubagentType union)
+customSubagents.set('presentation', {
+  name: 'presentation',
+  description: 'Presentation generation - research, content structuring, and PPTX rendering',
+  systemPrompt: `You are a presentation agent. Your job is to create institutional-quality PPTX decks.
+
+WORKFLOW:
+1. Recall design preferences from memory (palette, fonts, layout)
+2. Research topic via web search for current data
+3. Structure content using SCR framework (Situation-Complication-Resolution)
+4. Generate chart data specifications
+5. Call the presentation tool with the full JSON spec
+6. Store the episode in memory for future reference
+
+DESIGN PRINCIPLES:
+- Tufte: Maximize data-ink ratio
+- McKinsey: Assertion-evidence slide structure
+- Every chart must have a clear takeaway message as title
+- Use source citations on every data slide
+
+AVAILABLE CHART TYPES:
+- line: Time series, trends (max 3-4 series)
+- bar: Comparisons across categories
+- hbar: Rankings, fund flows
+- stacked_bar: Composition over time
+- table_heatmap: Scoreboard with color-coded values
+- gauge: Single KPI with zones
+- donut_matrix: Allocation donut + conviction table`,
+  tools: ['presentation', 'bash', 'brave_web_search', 'web_search_exa', 'firecrawl_scrape'],
+  model: 'powerful',
+  maxTokens: 16384,
+  timeout: 600000,
+});
+
 /**
  * Get a subagent definition by name
  */

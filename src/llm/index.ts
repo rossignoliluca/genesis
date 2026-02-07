@@ -282,10 +282,19 @@ const responseCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_CACHE_SIZE = 100;
 
+/**
+ * v16.1.2: Fixed cache key collision - now uses proper hash of full prompt
+ * Previous: prompt.slice(0, 100) caused collisions for prompts with same prefix
+ */
 function getCacheKey(prompt: string, model: string): string {
-  // Simple hash for cache key
-  const hash = prompt.slice(0, 100) + '|' + model;
-  return hash;
+  // DJB2 hash function - fast and low collision for strings
+  let hash = 5381;
+  const combined = prompt + '|' + model;
+  for (let i = 0; i < combined.length; i++) {
+    hash = ((hash << 5) + hash) ^ combined.charCodeAt(i);
+    hash = hash >>> 0; // Convert to unsigned 32-bit
+  }
+  return hash.toString(36);
 }
 
 function cleanCache(): void {

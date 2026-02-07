@@ -30,6 +30,8 @@ import {
   FORGETTING_THRESHOLDS,
   calculateForgettingStats,
 } from './forgetting.js';
+import type { MetaMemory } from './meta-memory.js';
+import { getLLMBridge } from '../llm/index.js';
 
 // ============================================================================
 // Default Configuration
@@ -54,6 +56,7 @@ export class ConsolidationService {
   private semanticStore: SemanticStore;
   private proceduralStore: ProceduralStore;
   private config: ConsolidationConfig;
+  private metaMemory: MetaMemory | null;
 
   private backgroundTimer: NodeJS.Timeout | null = null;
   private isConsolidating: boolean = false;
@@ -66,12 +69,14 @@ export class ConsolidationService {
     episodicStore: EpisodicStore,
     semanticStore: SemanticStore,
     proceduralStore: ProceduralStore,
-    config: Partial<ConsolidationConfig> = {}
+    config: Partial<ConsolidationConfig> = {},
+    metaMemory?: MetaMemory
   ) {
     this.episodicStore = episodicStore;
     this.semanticStore = semanticStore;
     this.proceduralStore = proceduralStore;
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.metaMemory = metaMemory || null;
   }
 
   // ============================================================================
@@ -194,6 +199,12 @@ export class ConsolidationService {
             result.semanticCreated++;
             result.newFacts.push(created.id);
             this.logEvent('CONSOLIDATE', created.id, 'semantic');
+            // v14.0: Notify MetaMemory of new fact
+            this.metaMemory?.onFactCreated(created, {
+              type: 'llm_extraction',
+              origin: 'consolidation',
+              reliability: 0.8,
+            });
           }
         } else {
           // Fallback: keyword-based extraction
@@ -203,6 +214,12 @@ export class ConsolidationService {
             result.semanticCreated++;
             result.newFacts.push(created.id);
             this.logEvent('CONSOLIDATE', created.id, 'semantic');
+            // v14.0: Notify MetaMemory of new fact
+            this.metaMemory?.onFactCreated(created, {
+              type: 'consolidation',
+              origin: 'keyword-extraction',
+              reliability: 0.6,
+            });
           }
         }
 
@@ -406,46 +423,31 @@ export class ConsolidationService {
     importance: number;
     tags: string[];
   }>> {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return [];
-
     try {
       const summaries = episodes.map(e =>
         `[${e.when.timestamp.toISOString().slice(0, 10)}] ${e.content.what}`
       ).join('\n');
 
-      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [{
-            role: 'system',
-            content: `Extract atomic factual knowledge from these experiences.
+      const systemPrompt = `Extract atomic factual knowledge from these experiences.
 Return JSON: {"facts": [{"concept": "short_name", "definition": "one sentence factual statement", "confidence": 0.0-1.0, "category": "topic_category", "relations": [{"to": "other_concept", "type": "is_a|part_of|causes|related_to"}]}]}
 Rules:
 - Extract ONLY factual knowledge, not events
 - Each fact should be a general truth learned from the episodes
 - Confidence reflects how certain the fact is (more episodes = higher confidence)
 - Maximum 5 facts per batch
-- Categories should be descriptive (e.g., "programming", "system_design", "user_behavior")`
-          }, {
-            role: 'user',
-            content: summaries
-          }],
-          temperature: 0.2,
-          max_tokens: 800,
-          response_format: { type: 'json_object' },
-        }),
-      });
+- Categories should be descriptive (e.g., "programming", "system_design", "user_behavior")`;
 
-      if (!resp.ok) return [];
-
-      const data = await resp.json() as any;
-      const content = data?.choices?.[0]?.message?.content;
+      // v14.0: Use Genesis LLMBridge instead of hardcoded OpenAI fetch
+      const bridge = getLLMBridge();
+      const response = await bridge.chat(summaries, systemPrompt);
+      const content = response.content;
       if (!content) return [];
 
-      const parsed = JSON.parse(content);
+      // Extract JSON from response (may be wrapped in markdown code blocks)
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return [];
+
+      const parsed = JSON.parse(jsonMatch[0]);
       if (!parsed?.facts || !Array.isArray(parsed.facts)) return [];
 
       return parsed.facts.slice(0, 5).map((f: any) => ({
@@ -717,7 +719,8 @@ export function createConsolidationService(
   episodicStore: EpisodicStore,
   semanticStore: SemanticStore,
   proceduralStore: ProceduralStore,
-  config?: Partial<ConsolidationConfig>
+  config?: Partial<ConsolidationConfig>,
+  metaMemory?: MetaMemory
 ): ConsolidationService {
-  return new ConsolidationService(episodicStore, semanticStore, proceduralStore, config);
+  return new ConsolidationService(episodicStore, semanticStore, proceduralStore, config, metaMemory);
 }

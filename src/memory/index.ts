@@ -150,6 +150,7 @@ import { EpisodicStore, createEpisodicStore, CreateEpisodicOptions } from './epi
 import { SemanticStore, createSemanticStore, CreateSemanticOptions } from './semantic.js';
 import { ProceduralStore, createProceduralStore, CreateProceduralOptions } from './procedural.js';
 import { ConsolidationService, createConsolidationService } from './consolidation.js';
+import { MetaMemory, createMetaMemory } from './meta-memory.js';
 import {
   CognitiveWorkspace,
   createCognitiveWorkspace,
@@ -209,6 +210,7 @@ export class MemorySystem {
   readonly procedural: ProceduralStore;
   readonly consolidation: ConsolidationService;
   readonly workspace: CognitiveWorkspace;  // Memory 2.0
+  readonly metaMemory: MetaMemory;         // v14.0: Metacognitive layer
   private vectorDb: VectorDatabase | null = null;
   private vectorIndexDirty = true;
 
@@ -216,11 +218,13 @@ export class MemorySystem {
     this.episodic = createEpisodicStore(config.episodic);
     this.semantic = createSemanticStore(config.semantic);
     this.procedural = createProceduralStore(config.procedural);
+    this.metaMemory = createMetaMemory();
     this.consolidation = createConsolidationService(
       this.episodic,
       this.semantic,
       this.procedural,
-      config.consolidation
+      config.consolidation,
+      this.metaMemory
     );
 
     // Memory 2.0: Create cognitive workspace
@@ -265,7 +269,14 @@ export class MemorySystem {
    */
   learn(options: CreateSemanticOptions): SemanticMemory {
     this.vectorIndexDirty = true;
-    return this.semantic.createFact(options);
+    const created = this.semantic.createFact(options);
+    // v14.0: Notify MetaMemory of new fact
+    this.metaMemory.onFactCreated(created, {
+      type: 'user_input',
+      origin: 'direct-learn',
+      reliability: 0.9,
+    });
+    return created;
   }
 
   /**

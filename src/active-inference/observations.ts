@@ -24,6 +24,7 @@ import {
 import { getEconomicIntegration } from './economic-integration.js';
 import { getMCPClient } from '../mcp/index.js';
 import { createPhiMonitor } from '../consciousness/phi-monitor.js';
+import type { MetaMemory } from '../memory/meta-memory.js';
 
 // ============================================================================
 // Types for Agent Integration
@@ -77,6 +78,9 @@ export class ObservationGatherer {
   // v13.14: Autopoiesis integration - self-observations feed back into AI loop
   private autopoiesisState: AutopoiesisState | null = null;
 
+  // v14.0: MetaMemory integration for knowledge-gap driven observations
+  private metaMemory: MetaMemory | null = null;
+
   // v10.8: Real MCP data tracking
   private mcpToolResults: Array<{ success: boolean; latency: number; timestamp: number }> = [];
   private lastStripeBalance: number = -1; // -1 = never checked
@@ -106,6 +110,15 @@ export class ObservationGatherer {
     if (sources.phiState) this.getPhiState = sources.phiState;
     if (sources.sensorResult) this.getSensorResult = sources.sensorResult;
     if (sources.worldModelState) this.getWorldModelState = sources.worldModelState;
+  }
+
+  /**
+   * v14.0: Configure MetaMemory for knowledge-gap driven observations.
+   * When MetaMemory reports gaps or contradictions, they influence
+   * coherence and task observations to drive Active Inference exploration.
+   */
+  configureMetaMemory(metaMemory: MetaMemory): void {
+    this.metaMemory = metaMemory;
   }
 
   /**
@@ -324,6 +337,23 @@ export class ObservationGatherer {
       task: this.mapTask(kernelState.taskStatus),
       economic: economicObs,
     };
+
+    // v14.0: MetaMemory integration — knowledge gaps degrade coherence,
+    // contradictions signal pending work to resolve
+    if (this.metaMemory) {
+      const gaps = this.metaMemory.getKnowledgeGaps();
+      const contradictions = this.metaMemory.getContradictions(false);
+
+      // Many knowledge gaps → reduced coherence (world model incomplete)
+      if (gaps.length > 3 && obs.coherence > 0) {
+        obs.coherence = (obs.coherence - 1) as CoherenceObs;
+      }
+
+      // Unresolved contradictions → pending task to investigate
+      if (contradictions.length > 0 && obs.task === 0) {
+        obs.task = 1; // pending — there's metacognitive work to do
+      }
+    }
 
     // v11.0: Compute precision weights from reliability history
     obs.precision = this.computePrecision(kernelState, phiState, sensorResult, worldModelState);

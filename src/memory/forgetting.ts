@@ -27,7 +27,7 @@ import { BaseMemory, ForgettingParams, RetentionResult } from './types.js';
  */
 export const FORGETTING_THRESHOLDS = {
   /** Below this retention, memory is effectively forgotten */
-  FORGET: 0.01,
+  FORGET: 0.15,
 
   /** Below this, memory is weak and at risk */
   WEAK: 0.3,
@@ -375,6 +375,33 @@ export function getMemoriesNeedingReview<T extends BaseMemory>(
     }),
     true // weakest first
   );
+}
+
+/**
+ * v14.0: Get most urgent memories for review, ranked by urgency.
+ * urgency = importance × (1 - currentRetention)
+ * Filters out memories with retention > 0.8 (don't need review).
+ */
+export function getTopMemoriesForReview<T extends BaseMemory>(
+  memories: T[],
+  limit: number = 5
+): T[] {
+  const nowMs = Date.now();
+
+  return memories
+    .map(m => {
+      const retention = calculateRetention(
+        { R0: m.R0, S: m.S },
+        m.lastAccessed.getTime(),
+        nowMs
+      );
+      const urgency = m.importance * (1 - retention);
+      return { memory: m, retention, urgency };
+    })
+    .filter(item => item.retention <= 0.8 && item.retention >= FORGETTING_THRESHOLDS.FORGET)
+    .sort((a, b) => b.urgency - a.urgency)
+    .slice(0, limit)
+    .map(item => item.memory);
 }
 
 // ============================================================================

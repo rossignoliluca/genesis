@@ -27,6 +27,7 @@
 import { registerAction, ActionContext, ActionResult } from './actions.js';
 import { AutonomousLoop } from './autonomous-loop.js';
 import type { MemorySystem, AnticipationContext, WorkingMemoryItem, MemoryReuseMetrics } from '../memory/index.js';
+import { getTopMemoriesForReview, updateStabilityOnRecall } from '../memory/forgetting.js';
 import type { HiddenState, Beliefs } from './types.js';
 
 // ============================================================================
@@ -198,21 +199,58 @@ function registerMemoryActions(memory: MemorySystem, config: MemoryIntegrationCo
     };
   });
 
-  // Enhanced dream.cycle that uses consolidation
+  // Enhanced dream.cycle that uses consolidation + active rehearsal
   registerAction('dream.cycle', async (context: ActionContext): Promise<ActionResult> => {
     try {
+      // v14.0: Active rehearsal — refresh urgent memories before consolidation
+      const allMemories = [
+        ...memory.episodic.getAll(),
+        ...memory.semantic.getAll(),
+        ...memory.procedural.getAll(),
+      ];
+      const urgentMemories = getTopMemoriesForReview(allMemories, 5);
+      let rehearsed = 0;
+      for (const mem of urgentMemories) {
+        const newStability = updateStabilityOnRecall(mem, true);
+        // Update stability in the appropriate store
+        if (mem.type === 'episodic') {
+          memory.episodic.update(mem.id, { S: newStability, lastAccessed: new Date() });
+        } else if (mem.type === 'semantic') {
+          memory.semantic.update(mem.id, { S: newStability, lastAccessed: new Date() });
+        } else if (mem.type === 'procedural') {
+          memory.procedural.update(mem.id, { S: newStability, lastAccessed: new Date() });
+        }
+        rehearsed++;
+      }
+
       const result = await memory.consolidate();
 
-      // Clear workspace to simulate "waking up"
+      // v14.0: Preserve top-3 active items instead of clearing workspace entirely
+      const activeItems = memory.workspace.getActive();
       const stats = memory.workspace.getStats();
+      const preserveIds = new Set(activeItems.slice(0, 3).map(item => item.id));
+
+      // Evict all items except top-3
+      for (const item of activeItems) {
+        if (!preserveIds.has(item.id)) {
+          // Access the buffer directly isn't possible, so we clear and re-add
+        }
+      }
+      // Clear and re-add top items
+      const topItems = activeItems.slice(0, 3).map(i => ({ memory: i.memory, relevance: i.relevance }));
       memory.workspace.clear();
+      for (const item of topItems) {
+        memory.workspace.addToBuffer(item.memory, 'recall', item.relevance);
+      }
 
       return {
         success: true,
         action: 'dream.cycle',
         data: {
           consolidated: result,
-          workspaceCleared: stats.itemCount,
+          workspaceCleared: stats.itemCount - topItems.length,
+          workspacePreserved: topItems.length,
+          rehearsed,
         },
         duration: 0,
       };

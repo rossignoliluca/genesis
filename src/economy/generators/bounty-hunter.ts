@@ -113,14 +113,15 @@ export class BountyHunter {
 
   constructor(config?: Partial<BountyHunterConfig>) {
     this.config = {
-      // v14.5.0: Added algora, gitcoin, github as primary platforms
-      platforms: config?.platforms ?? ['algora', 'github', 'gitcoin', 'dework'],
-      categories: config?.categories ?? ['code', 'audit', 'content', 'research'],
-      minReward: config?.minReward ?? 50,
-      maxDifficulty: config?.maxDifficulty ?? 'hard',
-      maxConcurrentBounties: config?.maxConcurrentBounties ?? 3,
-      successProbabilityThreshold: config?.successProbabilityThreshold ?? 0.3,
-      scanIntervalMs: config?.scanIntervalMs ?? 1800000, // 30 min
+      // v16.2.2: Expanded to include more code bounties
+      // v16.2: Removed gitcoin from defaults (unreliable API)
+      platforms: config?.platforms ?? ['algora', 'github', 'dework'],
+      categories: config?.categories ?? ['code', 'audit', 'content', 'research', 'design', 'translation'],
+      minReward: config?.minReward ?? 25,  // v16.2.2: Lowered from 50 to capture more bounties
+      maxDifficulty: config?.maxDifficulty ?? 'critical', // v16.2.2: Allow critical for high rewards
+      maxConcurrentBounties: config?.maxConcurrentBounties ?? 5, // v16.2.2: Increased from 3
+      successProbabilityThreshold: config?.successProbabilityThreshold ?? 0.2, // v16.2.2: Lowered to attempt more
+      scanIntervalMs: config?.scanIntervalMs ?? 900000, // v16.2.2: 15 min (was 30)
     };
 
     getEconomicFiber().registerModule(this.fiberId);
@@ -131,20 +132,34 @@ export class BountyHunter {
    */
   async scan(): Promise<Bounty[]> {
     const discovered: Bounty[] = [];
+    const platformResults: Record<string, number> = {};
 
     for (const platform of this.config.platforms) {
       try {
         const bounties = await this.scanPlatform(platform);
+        platformResults[platform] = bounties.length;
+
+        let newCount = 0;
         for (const b of bounties) {
           if (!this.bounties.has(b.id) && this.isViable(b)) {
             this.bounties.set(b.id, b);
             discovered.push(b);
+            newCount++;
           }
         }
+
+        console.log(`[BountyHunter] ${platform}: ${bounties.length} bounties found, ${newCount} new viable bounties`);
       } catch (error) {
         console.warn(`[BountyHunter] Scan failed for ${platform}:`, error);
+        platformResults[platform] = 0;
       }
     }
+
+    // Summary logging
+    const totalFound = Object.values(platformResults).reduce((sum, count) => sum + count, 0);
+    console.log(`[BountyHunter] Scan complete: ${totalFound} total bounties from ${this.config.platforms.length} platforms`);
+    console.log(`[BountyHunter] Platform breakdown:`, platformResults);
+    console.log(`[BountyHunter] New viable bounties: ${discovered.length}`);
 
     this.lastScan = Date.now();
     return discovered;
@@ -160,7 +175,7 @@ export class BountyHunter {
    *
    * After learning phase, uses expected value: reward × successProbability
    */
-  selectBest(): Bounty | null {
+  selectBest(options?: { excludeIds?: Set<string>; prioritizeValue?: boolean }): Bounty | null {
     const activeClaimed = [...this.bounties.values()]
       .filter(b => b.status === 'claimed').length;
 
@@ -168,29 +183,47 @@ export class BountyHunter {
       return null;
     }
 
-    // Check if in learning mode (< 3 successful completions)
+    // v16.2.1: Check if in learning mode based on submissions or config
     const stats = this.getStats();
-    const isLearningMode = stats.bountiesAccepted < 3;
+    const isLearningMode = stats.bountiesAccepted < 3 && !options?.prioritizeValue;
 
     const candidates = [...this.bounties.values()]
-      .filter(b => b.status === 'open' && this.isViable(b))
+      .filter(b => {
+        if (b.status !== 'open') return false;
+        if (!this.isViable(b)) return false;
+        // v16.2.1: Skip excluded IDs (already submitted)
+        if (options?.excludeIds?.has(b.id)) return false;
+        return true;
+      })
       .map(b => {
         const probability = this.estimateSuccessProbability(b);
         const expectedValue = b.reward * probability;
 
-        // In learning mode, prioritize probability over reward
-        // Score = probability^2 * reward (weights success heavily)
-        // After learning, use pure expected value
-        const score = isLearningMode
-          ? probability * probability * Math.sqrt(b.reward)  // Heavy weight on probability
-          : expectedValue;
+        // v16.2.1: Three modes:
+        // 1. prioritizeValue=true: Pure reward (for hunting big bounties)
+        // 2. Learning mode: probability-weighted
+        // 3. Normal: expected value
+        let score: number;
+        if (options?.prioritizeValue) {
+          // Prioritize high-value bounties directly
+          score = b.reward * (probability > 0.3 ? 1 : 0.5);
+        } else if (isLearningMode) {
+          // Heavy weight on probability for learning
+          score = probability * probability * Math.sqrt(b.reward);
+        } else {
+          // Pure expected value
+          score = expectedValue;
+        }
 
-        return { bounty: b, expectedValue, probability, score };
+        return { bounty: b, expectedValue, probability, score, reward: b.reward };
       })
       .filter(c => c.expectedValue > this.config.minReward * this.config.successProbabilityThreshold)
       .sort((a, b) => b.score - a.score);
 
-    if (isLearningMode && candidates.length > 0) {
+    if (options?.prioritizeValue && candidates.length > 0) {
+      console.log(`[BountyHunter] Value mode: targeting highest reward bounties`);
+      console.log(`[BountyHunter] Top candidates: ${candidates.slice(0, 3).map(c => `$${c.reward}`).join(', ')}`);
+    } else if (isLearningMode && candidates.length > 0) {
       console.log(`[BountyHunter] Learning mode: prioritizing achievable bounties (${stats.bountiesAccepted}/3 completed)`);
     }
 
@@ -419,8 +452,12 @@ export class BountyHunter {
     const maxIdx = difficultyOrder.indexOf(this.config.maxDifficulty);
     const bountyIdx = difficultyOrder.indexOf(bounty.difficulty);
 
+    // v16.2.2: Cap rewards at $50k - anything higher is likely a false positive
+    const maxReasonableReward = 50000;
+
     return (
       bounty.reward >= this.config.minReward &&
+      bounty.reward <= maxReasonableReward &&
       bountyIdx <= maxIdx &&
       this.config.categories.includes(bounty.category) &&
       (!bounty.deadline || bounty.deadline > Date.now())
@@ -597,11 +634,12 @@ export class BountyHunter {
       }
 
       // For other platforms (layer3, immunefi), return empty for now
-      console.log(`[BountyHunter] Platform ${platform} not yet connected to real API`);
+      console.warn(`[BountyHunter] Platform '${platform}' not yet connected to real API`);
       return [];
     } catch (error) {
-      console.warn(`[BountyHunter] Scan failed for ${platform}:`, error);
-      return [];
+      console.error(`[BountyHunter] Scan error for ${platform}:`, error);
+      // Re-throw to allow caller to handle
+      throw error;
     }
   }
 

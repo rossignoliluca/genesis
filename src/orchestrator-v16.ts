@@ -8,12 +8,13 @@
  * - Revenue tracking and safety
  */
 
-import { getBountyExecutor, BountyExecutor } from './economy/bounty-executor.js';
+import { getBountyExecutor, BountyExecutor, type BountyExecutorConfig } from './economy/bounty-executor.js';
 import { getYieldOptimizer, YieldOptimizer, type AllocationPlan } from './economy/live/yield-optimizer.js';
 import { getRevenueTracker, type RevenueStats } from './economy/live/revenue-tracker.js';
 import { getAlertSystem } from './economy/live/alerts.js';
 import { getLiveWallet } from './economy/live/wallet.js';
 import { getProtocolStats } from './economy/live/connectors/protocols.js';
+import { getRSIOrchestrator, type RSICycle } from './rsi/index.js';
 
 // ============================================================================
 // Types
@@ -88,7 +89,7 @@ const DEFAULT_CONFIG: OrchestratorConfig = {
   yieldIntervalMs: 60 * 60 * 1000, // 1 hour
   rsiIntervalMs: 24 * 60 * 60 * 1000, // 24 hours
 
-  dryRun: true, // Safe by default
+  dryRun: false, // v16.2: Enabled for production autonomous operation
 };
 
 // ============================================================================
@@ -125,8 +126,19 @@ export class GenesisV16Orchestrator {
   async initialize(): Promise<void> {
     console.log('[GenesisV16] Initializing orchestrator...');
 
+    // v16.2: Bounty executor config from environment
+    const bountyConfig: Partial<BountyExecutorConfig> = {
+      dryRun: this.config.dryRun,
+      autoSubmit: true,
+      maxDailySubmissions: parseInt(process.env.BOUNTY_MAX_DAILY || '3', 10),
+      minSubmissionIntervalMs: parseInt(process.env.BOUNTY_COOLDOWN_MS || String(60 * 60 * 1000), 10),
+      repoAllowlist: process.env.BOUNTY_REPO_ALLOWLIST
+        ? process.env.BOUNTY_REPO_ALLOWLIST.split(',').map(s => s.trim())
+        : [],
+    };
+
     if (this.config.enableBounties) {
-      this.bountyExecutor = getBountyExecutor();
+      this.bountyExecutor = getBountyExecutor(bountyConfig);
       console.log('[GenesisV16] Bounty executor initialized');
     }
 
@@ -139,6 +151,12 @@ export class GenesisV16Orchestrator {
       console.log(`[GenesisV16] Yield optimizer initialized (${stats.total} protocols)`);
     }
 
+    // v16.2: Initialize revenue tracker with auto-save
+    const revenueTracker = getRevenueTracker();
+    await revenueTracker.load();
+    revenueTracker.startAutoSave(60000); // Save every 60s
+    console.log('[GenesisV16] Revenue tracker initialized with auto-save');
+
     // Check wallet connection
     const wallet = getLiveWallet();
     if (!wallet.isConnected() && !this.config.dryRun) {
@@ -146,7 +164,33 @@ export class GenesisV16Orchestrator {
       this.config.dryRun = true;
     }
 
-    console.log(`[GenesisV16] Mode: ${this.config.dryRun ? 'DRY RUN' : 'LIVE'}`);
+    if (wallet.isConnected()) {
+      const balances = await wallet.getBalances();
+      const usdcBalance = Number(balances.usdc) / 1e6;
+      console.log(`[GenesisV16] Wallet connected: $${usdcBalance.toFixed(2)} USDC`);
+    } else {
+      console.log('[GenesisV16] Wallet: not connected');
+    }
+
+    // v16.2: Complete startup banner with all safety limits
+    const maxDaily = bountyConfig.maxDailySubmissions ?? 3;
+    const cooldownMin = Math.round((bountyConfig.minSubmissionIntervalMs ?? 3600000) / 60000);
+    const allowlist = bountyConfig.repoAllowlist ?? [];
+    const allowlistMode = allowlist.length > 0
+      ? `RESTRICTED (${allowlist.length} repos)`
+      : 'OPEN (all repos)';
+
+    console.log(`\n╔══════════════════════════════════════════════════════════╗`);
+    console.log(`║  GENESIS v16.2 — Autonomous Revenue System               ║`);
+    console.log(`╠══════════════════════════════════════════════════════════╣`);
+    console.log(`║  Bounties=${this.config.enableBounties ? 'ON' : 'OFF'}, AutoSubmit=ON, DryRun=${this.config.dryRun ? 'ON' : 'OFF'}`.padEnd(59) + `║`);
+    console.log(`║  MaxDaily=${maxDaily}, Cooldown=${cooldownMin}min, PerRepo=2, Validation=70`.padEnd(59) + `║`);
+    console.log(`║  Mode: ${allowlistMode}`.padEnd(59) + `║`);
+    console.log(`╚══════════════════════════════════════════════════════════╝\n`);
+
+    if (allowlist.length === 0) {
+      console.log('[GenesisV16] Mode: OPEN (all repos) — consider setting BOUNTY_REPO_ALLOWLIST');
+    }
   }
 
   /**
@@ -193,6 +237,20 @@ export class GenesisV16Orchestrator {
         console.log(`[GenesisV16] ${msg}`);
         errors.push(msg);
         this.subsystemStats.bounties.failCount++;
+      }
+    }
+
+    // v16.2: Revenue sweep — check submitted PRs for merges
+    if (this.config.enableBounties && this.bountyExecutor) {
+      try {
+        const revResult = await this.bountyExecutor.checkAndRecordRevenue();
+        if (revResult.merged > 0) {
+          console.log(`[GenesisV16] Revenue sweep: ${revResult.merged} merged, $${revResult.revenue} recorded`);
+        }
+      } catch (error) {
+        const msg = `Revenue sweep error: ${error}`;
+        console.log(`[GenesisV16] ${msg}`);
+        errors.push(msg);
       }
     }
 
@@ -285,9 +343,26 @@ export class GenesisV16Orchestrator {
    * Run the RSI subsystem
    */
   private async runRSISubsystem(): Promise<{ success: boolean; improvementsApplied: number }> {
-    // RSI requires careful implementation - returning stub for now
-    console.log('[GenesisV16] RSI subsystem not yet fully integrated');
-    return { success: false, improvementsApplied: 0 };
+    // v16.2: Connect to real RSI orchestrator
+    const rsi = getRSIOrchestrator();
+
+    try {
+      console.log('[GenesisV16] Running RSI cycle...');
+      const cycle: RSICycle = await rsi.runCycle();
+
+      const success = cycle.status === 'completed';
+      const improvementsApplied = cycle.implementation?.changes?.filter(c => c.applied)?.length ?? 0;
+
+      console.log(`[GenesisV16] RSI cycle ${cycle.id.slice(0, 8)}: ${cycle.status}`);
+      if (improvementsApplied > 0) {
+        console.log(`[GenesisV16] Applied ${improvementsApplied} improvements`);
+      }
+
+      return { success, improvementsApplied };
+    } catch (error) {
+      console.error('[GenesisV16] RSI cycle failed:', error);
+      return { success: false, improvementsApplied: 0 };
+    }
   }
 
   /**

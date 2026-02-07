@@ -3,7 +3,10 @@
  *
  * Real connector for bounty discovery using DeWork GraphQL API.
  * No authentication required for read operations.
+ * v16.2: Added retry wrapper for resilience.
  */
+
+import { retry } from '../retry.js';
 
 export interface Bounty {
   id: string;
@@ -53,7 +56,7 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: nu
   }
 }
 
-async function graphqlQuery<T>(query: string, variables: Record<string, unknown> = {}): Promise<T | null> {
+async function graphqlQueryRaw<T>(query: string, variables: Record<string, unknown> = {}): Promise<T | null> {
   await rateLimit();
 
   try {
@@ -71,13 +74,31 @@ async function graphqlQuery<T>(query: string, variables: Record<string, unknown>
 
     if (!response.ok) {
       console.warn('[DeworkConnector] API error:', response.status, response.statusText);
+
+      // Log response body for debugging
+      try {
+        const errorBody = await response.text();
+        console.warn('[DeworkConnector] Error response body:', errorBody);
+      } catch (e) {
+        console.warn('[DeworkConnector] Could not read error response body');
+      }
+
       return null;
     }
 
     const result = await response.json();
 
     if (result.errors) {
-      console.warn('[DeworkConnector] GraphQL errors:', result.errors);
+      console.warn('[DeworkConnector] GraphQL errors:');
+      for (const err of result.errors) {
+        console.warn(`  - ${err.message}`);
+        if (err.path) {
+          console.warn(`    Path: ${err.path.join('.')}`);
+        }
+        if (err.extensions) {
+          console.warn(`    Extensions:`, JSON.stringify(err.extensions));
+        }
+      }
       return null;
     }
 
@@ -90,6 +111,31 @@ async function graphqlQuery<T>(query: string, variables: Record<string, unknown>
     }
     return null;
   }
+}
+
+/**
+ * v16.2: Retry wrapper around graphqlQueryRaw for resilience.
+ */
+async function graphqlQuery<T>(query: string, variables: Record<string, unknown> = {}): Promise<T | null> {
+  const result = await retry(
+    async () => {
+      const data = await graphqlQueryRaw<T>(query, variables);
+      if (data === null) {
+        throw new Error('Dework query returned null');
+      }
+      return data;
+    },
+    {
+      maxRetries: 2,
+      initialDelayMs: 2000,
+      maxDelayMs: 10000,
+      onRetry: (attempt, error, delayMs) => {
+        console.log(`[DeworkConnector] Retry ${attempt}: ${error.message}, waiting ${Math.round(delayMs)}ms`);
+      },
+    }
+  );
+
+  return result.success ? result.data! : null;
 }
 
 function mapTaskToBounty(task: any): Bounty {

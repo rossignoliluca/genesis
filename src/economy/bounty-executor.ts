@@ -17,6 +17,7 @@ import { getRevenueTracker } from './live/revenue-tracker.js';
 import { getBountyRSIFeedback } from './rsi-feedback.js';
 import { getHybridRouter } from '../llm/router.js';
 import { getMCPClient } from '../mcp/index.js';
+import { validateCode, formatValidationResult, type RepoContext } from './code-validator.js';
 
 // ============================================================================
 // Types
@@ -28,6 +29,12 @@ export interface BountyExecutorConfig {
   dryRun: boolean;
   autoSubmit: boolean;
   minConfidenceToSubmit: number; // 0-1
+  /** v16.2: Max PR submissions per day (default: 3) */
+  maxDailySubmissions: number;
+  /** v16.2: Min interval between submissions in ms (default: 60 min) */
+  minSubmissionIntervalMs: number;
+  /** v16.2: Optional repo allowlist — if set, only submit to these repos */
+  repoAllowlist: string[];
 }
 
 export interface GeneratedSolution {
@@ -54,6 +61,7 @@ export interface ExecutionResult {
 export class BountyCodeGenerator {
   private router = getHybridRouter();
   private mcp = getMCPClient();
+  private lastRepoContext: RepoContext | null = null;
 
   /**
    * Generate code solution for a bounty using LLM
@@ -112,6 +120,14 @@ export class BountyCodeGenerator {
   private async gatherContext(bounty: Bounty): Promise<string> {
     const parts: string[] = [];
 
+    // v16.2.5: Initialize repo context for validation
+    this.lastRepoContext = {
+      primaryLanguage: 'Unknown',
+      languages: [],
+      existingFiles: [],
+      targetFiles: [],
+    };
+
     parts.push(`# Bounty: ${bounty.title}`);
     parts.push(`Platform: ${bounty.platform}`);
     parts.push(`Category: ${bounty.category}`);
@@ -121,11 +137,35 @@ export class BountyCodeGenerator {
 
     // If GitHub bounty, fetch repository context
     if (bounty.sourceMetadata?.org && bounty.sourceMetadata?.repo) {
+      const owner = bounty.sourceMetadata.org;
+      const repo = bounty.sourceMetadata.repo;
+
+      // v16.2.4: Get repository info (language, tech stack)
+      try {
+        const repoInfo = await this.mcp.call('github', 'get_repository', {
+          owner,
+          repo,
+        });
+        if (repoInfo?.data) {
+          const r = repoInfo.data;
+          parts.push(`\n## Repository Info:`);
+          parts.push(`- Primary Language: ${r.language || 'Unknown'}`);
+          parts.push(`- Description: ${r.description || 'N/A'}`);
+          if (r.topics?.length > 0) {
+            parts.push(`- Topics: ${r.topics.join(', ')}`);
+          }
+          // v16.2.5: Save language for validation
+          this.lastRepoContext.primaryLanguage = r.language || 'Unknown';
+        }
+      } catch {
+        // Repo info not available
+      }
+
       try {
         // Get README
         const readme = await this.mcp.call('github', 'get_file_contents', {
-          owner: bounty.sourceMetadata.org,
-          repo: bounty.sourceMetadata.repo,
+          owner,
+          repo,
           path: 'README.md',
         });
         if (readme) {
@@ -139,125 +179,290 @@ export class BountyCodeGenerator {
       if (bounty.sourceMetadata.issueNumber) {
         try {
           const issue = await this.mcp.call('github', 'get_issue', {
-            owner: bounty.sourceMetadata.org,
-            repo: bounty.sourceMetadata.repo,
+            owner,
+            repo,
             issue_number: bounty.sourceMetadata.issueNumber,
           });
           if (issue) {
             parts.push(`\n## Issue Details:\n${JSON.stringify(issue, null, 2).slice(0, 3000)}`);
+
+            // v16.2.4: Extract file references from issue body
+            const issueBody = issue.data?.body || '';
+            const fileRefs = this.extractFileReferences(issueBody);
+
+            // v16.2.5: Save target files for validation
+            this.lastRepoContext.targetFiles = fileRefs;
+
+            // Try to read referenced files
+            for (const filePath of fileRefs.slice(0, 3)) { // Max 3 files
+              try {
+                const fileContent = await this.mcp.call('github', 'get_file_contents', {
+                  owner,
+                  repo,
+                  path: filePath,
+                });
+                if (fileContent?.data?.content) {
+                  const decoded = Buffer.from(fileContent.data.content, 'base64').toString('utf-8');
+                  parts.push(`\n## Existing File: ${filePath}\n\`\`\`\n${decoded.slice(0, 3000)}\n\`\`\``);
+                }
+              } catch {
+                // File not accessible
+              }
+            }
           }
         } catch {
           // Issue not available
         }
+      }
+
+      // v16.2.4: Get project structure (key files)
+      try {
+        const tree = await this.mcp.call('github', 'get_repository_tree', {
+          owner,
+          repo,
+          tree_sha: 'HEAD',
+          recursive: false,
+        });
+        if (tree?.data?.tree) {
+          const files = tree.data.tree
+            .filter((f: any) => f.type === 'blob')
+            .map((f: any) => f.path)
+            .slice(0, 20);
+          parts.push(`\n## Repository Structure (root files):\n${files.join('\n')}`);
+          // v16.2.5: Save existing files for validation
+          this.lastRepoContext.existingFiles = files;
+        }
+      } catch {
+        // Tree not available
       }
     }
 
     return parts.join('\n');
   }
 
+  /**
+   * v16.2.4: Extract file references from issue body
+   */
+  private extractFileReferences(text: string): string[] {
+    const patterns = [
+      /`([a-zA-Z0-9_\-./]+\.[a-zA-Z]+)`/g,  // `filename.ext`
+      /in\s+([a-zA-Z0-9_\-./]+\.[a-zA-Z]+)/gi,  // in filename.ext
+      /modify\s+([a-zA-Z0-9_\-./]+\.[a-zA-Z]+)/gi,  // modify filename.ext
+      /file:\s*([a-zA-Z0-9_\-./]+\.[a-zA-Z]+)/gi,  // file: filename.ext
+    ];
+
+    const files = new Set<string>();
+    for (const pattern of patterns) {
+      let match;
+      while ((match = pattern.exec(text)) !== null) {
+        const file = match[1];
+        if (file && !file.includes('..') && file.length < 100) {
+          files.add(file);
+        }
+      }
+    }
+    return [...files];
+  }
+
   private async generateWithRetry(
     bounty: Bounty,
     context: string,
   ): Promise<{ changes: CodeChange[]; description: string } | null> {
-    const systemPrompt = `You are an expert software developer completing bounties.
-Your task is to generate high-quality code that solves the bounty requirements.
+    // v16.2.1: Improved prompt with explicit JSON formatting rules
+    const isContentBounty = bounty.category === 'content' ||
+                            bounty.title.toLowerCase().includes('proposal') ||
+                            bounty.title.toLowerCase().includes('article') ||
+                            bounty.title.toLowerCase().includes('documentation');
 
-IMPORTANT:
-- Generate complete, working code (no placeholders or TODOs)
-- Follow the repository's coding style
+    const systemPrompt = `You are an expert completing bounties for open source projects.
+
+CRITICAL RULES:
+1. JSON FORMAT - Respond ONLY with valid JSON:
+   - No markdown code blocks
+   - Escape newlines as \\n, quotes as \\"
+   - Max 5000 chars per file
+
+2. USE THE REPOSITORY'S LANGUAGE:
+   - If repo is Python, write Python code
+   - If repo is JavaScript/TypeScript, write JS/TS
+   - NEVER use a different language than the repo
+
+3. MODIFY EXISTING FILES when the bounty references them:
+   - Use operation: "update" to modify existing files
+   - Include the COMPLETE file content (not just changes)
+   - Read the existing file content provided in context
+
+4. NO PLACEHOLDER CODE:
+   - No "TODO", "PLACEHOLDER", "Not implemented"
+   - No fake URLs like "example.com"
+   - No empty stub functions
+
+${isContentBounty ? `
+This is a CONTENT bounty. Create:
+- A markdown file with the article/documentation
+- Keep formatting simple (no complex tables)
+` : `
+This is a CODE bounty:
+- Write COMPLETE, WORKING code
+- Use the SAME language as the repository
+- If modifying existing file, include full updated content
 - Include proper error handling
-- Write clear, concise commit messages
+- Follow the repository's coding style
+`}
 
-Respond in JSON format:
-{
-  "changes": [
-    { "path": "path/to/file.ts", "content": "full file content", "operation": "create|update" }
-  ],
-  "description": "PR description explaining the changes"
-}`;
+JSON FORMAT:
+{"changes":[{"path":"path/to/file.ext","content":"complete file content","operation":"create|update"}],"description":"Brief PR description"}`;
 
     const userPrompt = `${context}
 
-Generate the code changes needed to complete this bounty. Be thorough and complete.`;
+Generate the solution. Remember: return ONLY valid JSON, escape all newlines as \\n.`;
 
-    // Try with primary model
-    try {
-      const response = await this.router.execute(userPrompt, systemPrompt);
-      const parsed = this.parseResponse(response.content);
-      if (parsed) return parsed;
-    } catch (error) {
-      console.log(`[BountyCodeGen] Primary model failed: ${error}`);
-    }
+    // v16.2.1: Try multiple times with increasingly specific prompts
+    const attempts = [
+      { prompt: userPrompt },
+      { prompt: userPrompt + '\n\nIMPORTANT: Your previous response had invalid JSON. Return ONLY a JSON object, no markdown.' },
+      { prompt: 'Return a minimal valid JSON solution:\n' + userPrompt },
+    ];
 
-    // Try with fallback (explicit OpenAI)
-    try {
-      const response = await this.router.execute(userPrompt, systemPrompt);
-      const parsed = this.parseResponse(response.content);
-      if (parsed) return parsed;
-    } catch (error) {
-      console.log(`[BountyCodeGen] Fallback model failed: ${error}`);
+    for (let i = 0; i < attempts.length; i++) {
+      try {
+        console.log(`[BountyCodeGen] Attempt ${i + 1}/${attempts.length}...`);
+        const response = await this.router.execute(attempts[i].prompt, systemPrompt);
+        const parsed = this.parseResponse(response.content);
+        if (parsed) {
+          console.log(`[BountyCodeGen] Success on attempt ${i + 1}`);
+          return parsed;
+        }
+      } catch (error) {
+        console.log(`[BountyCodeGen] Attempt ${i + 1} failed: ${error}`);
+      }
     }
 
     return null;
   }
 
   private parseResponse(content: string): { changes: CodeChange[]; description: string } | null {
-    try {
-      // Extract JSON from response (might be wrapped in markdown code blocks)
-      let jsonStr = content;
+    // v16.2.2: Robust JSON parsing with multiple cleanup strategies
+    const cleanupStrategies = [
+      // Strategy 1: Raw extraction
+      (s: string) => s,
+      // Strategy 2: Remove control characters except newlines in strings
+      (s: string) => s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ''),
+      // Strategy 3: Escape newlines inside JSON string values
+      // This handles the common case where LLM outputs literal newlines
+      (s: string) => {
+        // Find all string values and escape newlines within them
+        let inString = false;
+        let escaped = false;
+        let result = '';
+        for (let i = 0; i < s.length; i++) {
+          const c = s[i];
+          if (escaped) {
+            result += c;
+            escaped = false;
+            continue;
+          }
+          if (c === '\\') {
+            escaped = true;
+            result += c;
+            continue;
+          }
+          if (c === '"') {
+            inString = !inString;
+            result += c;
+            continue;
+          }
+          if (inString && c === '\n') {
+            result += '\\n';
+          } else if (inString && c === '\r') {
+            result += '\\r';
+          } else if (inString && c === '\t') {
+            result += '\\t';
+          } else {
+            result += c;
+          }
+        }
+        return result;
+      },
+      // Strategy 4: More aggressive - replace ALL newlines with \n
+      (s: string) => s.replace(/\n/g, '\\n').replace(/\r/g, '\\r'),
+    ];
 
-      // Try to extract from markdown code block first
-      const codeBlockMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
-      if (codeBlockMatch) {
-        jsonStr = codeBlockMatch[1];
-      } else {
-        // Fallback: find outermost JSON object
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-          console.log('[BountyCodeGen] No JSON found in response');
-          console.log('[BountyCodeGen] Response preview:', content.slice(0, 200));
+    // Extract JSON from response
+    let jsonStr = content;
+
+    // Try to extract from markdown code block first
+    const codeBlockMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+    if (codeBlockMatch) {
+      jsonStr = codeBlockMatch[1];
+    } else {
+      // Fallback: find outermost JSON object
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        console.log('[BountyCodeGen] No JSON found in response');
+        console.log('[BountyCodeGen] Response preview:', content.slice(0, 300));
+        return null;
+      }
+      jsonStr = jsonMatch[0];
+    }
+
+    // Try each cleanup strategy
+    let parsed: any = null;
+    for (let i = 0; i < cleanupStrategies.length; i++) {
+      try {
+        const cleaned = cleanupStrategies[i](jsonStr);
+        parsed = JSON.parse(cleaned);
+        if (i > 0) {
+          console.log(`[BountyCodeGen] JSON parsed with cleanup strategy ${i + 1}`);
+        }
+        break;
+      } catch (error) {
+        if (i === cleanupStrategies.length - 1) {
+          console.log('[BountyCodeGen] All JSON parse strategies failed:', String(error));
+          console.log('[BountyCodeGen] Raw JSON preview:', jsonStr.slice(0, 500));
           return null;
         }
-        jsonStr = jsonMatch[0];
       }
+    }
 
-      const parsed = JSON.parse(jsonStr);
+    if (!parsed) return null;
 
-      if (!Array.isArray(parsed.changes)) {
-        console.log('[BountyCodeGen] Response missing "changes" array');
-        return null;
-      }
+    // Handle case where LLM returns changes as a single object instead of array
+    if (parsed.changes && !Array.isArray(parsed.changes)) {
+      parsed.changes = [parsed.changes];
+    }
 
-      if (typeof parsed.description !== 'string') {
-        console.log('[BountyCodeGen] Response missing "description" string');
-        return null;
-      }
-
-      // Validate each change (with flexible field names)
-      const normalizedChanges: CodeChange[] = [];
-      for (const change of parsed.changes) {
-        const path = change.path || change.file || change.filename;
-        const content = change.content || change.code || change.source;
-        const operation = change.operation || change.action || change.type || 'create';
-
-        if (!path || !content) {
-          console.log('[BountyCodeGen] Change missing path or content:', change);
-          continue; // Skip invalid changes instead of failing entirely
-        }
-
-        normalizedChanges.push({ path, content, operation });
-      }
-
-      if (normalizedChanges.length === 0) {
-        console.log('[BountyCodeGen] No valid changes in response');
-        return null;
-      }
-
-      return { changes: normalizedChanges, description: parsed.description };
-    } catch (error) {
-      console.log('[BountyCodeGen] JSON parse error:', String(error));
+    if (!Array.isArray(parsed.changes)) {
+      console.log('[BountyCodeGen] Response missing "changes" array');
       return null;
     }
+
+    // Generate description if missing
+    if (typeof parsed.description !== 'string') {
+      parsed.description = `Automated solution for bounty. Changes: ${parsed.changes.length} file(s).`;
+    }
+
+    // Validate each change (with flexible field names)
+    const normalizedChanges: CodeChange[] = [];
+    for (const change of parsed.changes) {
+      const path = change.path || change.file || change.filename;
+      const changeContent = change.content || change.code || change.source;
+      const operation = change.operation || change.action || change.type || 'create';
+
+      if (!path || !changeContent) {
+        console.log('[BountyCodeGen] Change missing path or content, skipping');
+        continue;
+      }
+
+      normalizedChanges.push({ path, content: changeContent, operation });
+    }
+
+    if (normalizedChanges.length === 0) {
+      console.log('[BountyCodeGen] No valid changes in response');
+      return null;
+    }
+
+    return { changes: normalizedChanges, description: parsed.description };
   }
 
   private async validateSolution(
@@ -269,43 +474,81 @@ Generate the code changes needed to complete this bounty. Be thorough and comple
       return { valid: false, confidence: 0, error: 'No changes generated' };
     }
 
-    // Check for placeholder code
+    // v16.2.5: Use code validator for comprehensive checks
+    const MIN_VALIDATION_SCORE = 70;
+    let worstScore = 100;
+    const allIssues: string[] = [];
+
     for (const change of solution.changes) {
-      if (
-        change.content.includes('// TODO') ||
-        change.content.includes('// PLACEHOLDER') ||
-        change.content.includes('throw new Error("Not implemented")')
-      ) {
-        return { valid: false, confidence: 0, error: 'Solution contains placeholder code' };
+      const result = validateCode(
+        change.content,
+        change.path,
+        this.lastRepoContext || {
+          primaryLanguage: 'Unknown',
+          languages: [],
+          existingFiles: [],
+        }
+      );
+
+      if (result.score < worstScore) {
+        worstScore = result.score;
+      }
+
+      // Collect all errors
+      for (const issue of result.issues) {
+        allIssues.push(`[${change.path}] ${issue.type}: ${issue.message}`);
+      }
+
+      // Log validation result
+      if (!result.valid) {
+        console.log(`[BountyCodeGen] Validation failed for ${change.path}:`);
+        console.log(formatValidationResult(result));
       }
     }
+
+    // Block submission if score too low
+    if (worstScore < MIN_VALIDATION_SCORE) {
+      console.log(`[BountyCodeGen] ❌ Code validation failed (score: ${worstScore}/100, min: ${MIN_VALIDATION_SCORE})`);
+      console.log(`[BountyCodeGen] Issues found:`);
+      allIssues.slice(0, 5).forEach(i => console.log(`  - ${i}`));
+      return {
+        valid: false,
+        confidence: 0,
+        error: `Code validation failed (score: ${worstScore}/100). Issues: ${allIssues.slice(0, 3).join('; ')}`,
+      };
+    }
+
+    console.log(`[BountyCodeGen] ✅ Code validation passed (score: ${worstScore}/100)`);
 
     // Check description quality
     if (solution.description.length < 50) {
       return { valid: false, confidence: 0, error: 'PR description too short' };
     }
 
-    // Estimate confidence based on bounty difficulty
+    // v16.2: Estimate confidence based on bounty difficulty
+    // Increased thresholds to allow more bounties to be attempted
     const difficultyConfidence: Record<string, number> = {
-      easy: 0.8,
-      medium: 0.6,
-      hard: 0.4,
-      critical: 0.2,
+      easy: 0.9,       // Was 0.8
+      medium: 0.75,    // Was 0.6
+      hard: 0.6,       // Was 0.4
+      critical: 0.45,  // Was 0.2 - now passes 0.3 threshold
     };
 
-    const baseConfidence = difficultyConfidence[bounty.difficulty] || 0.5;
+    const baseConfidence = difficultyConfidence[bounty.difficulty] || 0.6;
 
     // Adjust based on category (code bounties have highest confidence)
     const categoryMultiplier: Record<string, number> = {
       code: 1.0,
-      content: 0.9,
-      design: 0.7,
-      audit: 0.5,
-      research: 0.6,
-      translation: 0.8,
+      content: 0.95,   // Was 0.9
+      design: 0.85,    // Was 0.7
+      audit: 0.75,     // Was 0.5
+      research: 0.8,   // Was 0.6
+      translation: 0.9, // Was 0.8
     };
 
-    const confidence = baseConfidence * (categoryMultiplier[bounty.category] || 0.7);
+    // v16.2.5: Factor in validation score
+    const validationMultiplier = worstScore / 100;
+    const confidence = baseConfidence * (categoryMultiplier[bounty.category] || 0.8) * validationMultiplier;
 
     return { valid: true, confidence };
   }
@@ -325,19 +568,74 @@ export class BountyExecutor {
 
   private activeExecutions = new Map<string, Promise<ExecutionResult>>();
 
+  // v16.2.2: Track repos that are blocked (archived, no access, etc.)
+  private blockedRepos = new Set<string>();
+
+  // v16.2: Rate-limiting and circuit breaker state
+  private dailySubmissionCount = 0;
+  private dailyCountResetTime = Date.now();
+  private lastSubmissionTime = 0;
+  private consecutiveRejections = 0;
+  private circuitBreakerPauseUntil = 0;
+
   constructor(config: Partial<BountyExecutorConfig> = {}) {
     this.config = {
       githubUsername: config.githubUsername || process.env.GITHUB_USERNAME || 'genesis-ai',
       maxConcurrentExecutions: config.maxConcurrentExecutions ?? 2,
       dryRun: config.dryRun ?? false,
       autoSubmit: config.autoSubmit ?? true,
-      minConfidenceToSubmit: config.minConfidenceToSubmit ?? 0.5,
+      minConfidenceToSubmit: config.minConfidenceToSubmit ?? 0.3, // v16.2: Lowered from 0.5 to allow more bounties
+      maxDailySubmissions: config.maxDailySubmissions ?? 3,
+      minSubmissionIntervalMs: config.minSubmissionIntervalMs ?? 60 * 60 * 1000, // 60 min
+      repoAllowlist: config.repoAllowlist ?? [],
     };
 
     this.prPipeline = new PRPipeline({
       githubUsername: this.config.githubUsername,
       dryRun: this.config.dryRun,
     });
+
+    // v16.2.2: Load blocked repos from disk
+    this.loadBlockedRepos();
+
+    // v16.2: Bot identity warning
+    const username = this.config.githubUsername;
+    if (!username.toLowerCase().includes('bot') && !username.toLowerCase().includes('ai')) {
+      console.log(`[BountyExecutor] WARNING: Consider using a username that clearly identifies this as a bot (e.g. ${username}-bot)`);
+    }
+  }
+
+  // v16.2.2: Persistence for blocked repos
+  private loadBlockedRepos(): void {
+    try {
+      const fs = require('fs');
+      const path = '.genesis/blocked-repos.json';
+      if (fs.existsSync(path)) {
+        const data = JSON.parse(fs.readFileSync(path, 'utf-8'));
+        if (Array.isArray(data)) {
+          for (const repo of data) {
+            this.blockedRepos.add(repo);
+          }
+          console.log(`[BountyExecutor] Loaded ${this.blockedRepos.size} blocked repos`);
+        }
+      }
+    } catch (e) {
+      // Ignore errors - file may not exist
+    }
+  }
+
+  private saveBlockedRepos(): void {
+    try {
+      const fs = require('fs');
+      const path = '.genesis/blocked-repos.json';
+      const dir = require('path').dirname(path);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(path, JSON.stringify([...this.blockedRepos], null, 2));
+    } catch (e) {
+      console.error('[BountyExecutor] Failed to save blocked repos:', e);
+    }
   }
 
   /**
@@ -346,17 +644,106 @@ export class BountyExecutor {
   async executeLoop(): Promise<ExecutionResult | null> {
     console.log('[BountyExecutor] Starting bounty execution cycle...');
 
+    // v16.2: Reset daily count if new day
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    if (now - this.dailyCountResetTime > dayMs) {
+      this.dailySubmissionCount = 0;
+      this.dailyCountResetTime = now;
+      console.log('[BountyExecutor] Daily submission count reset');
+    }
+
+    // v16.2: Circuit breaker — pause after 3 consecutive rejections
+    if (this.circuitBreakerPauseUntil > now) {
+      const remainingH = ((this.circuitBreakerPauseUntil - now) / (60 * 60 * 1000)).toFixed(1);
+      console.log(`[BountyExecutor] CIRCUIT BREAKER ACTIVE: Paused for ${remainingH}h after ${this.consecutiveRejections} consecutive rejections`);
+      return null;
+    }
+
+    // v16.2: Daily submission limit
+    if (this.dailySubmissionCount >= this.config.maxDailySubmissions) {
+      console.log(`[BountyExecutor] Daily submission limit reached: ${this.dailySubmissionCount}/${this.config.maxDailySubmissions}`);
+      return null;
+    }
+
+    // v16.2: Cooldown between submissions
+    const timeSinceLast = now - this.lastSubmissionTime;
+    if (this.lastSubmissionTime > 0 && timeSinceLast < this.config.minSubmissionIntervalMs) {
+      const remainingMin = ((this.config.minSubmissionIntervalMs - timeSinceLast) / 60000).toFixed(1);
+      console.log(`[BountyExecutor] Cooldown active: ${remainingMin}min remaining`);
+      return null;
+    }
+
     // 1. Scan all platforms for bounties
     console.log('[BountyExecutor] Step 1: Scanning for bounties...');
     await this.hunter.scan();
 
-    // 2. Select best bounty by expected value
+    // v16.2.1: Get already-submitted bounty IDs to avoid duplicates
+    const submittedBountyIds = new Set(
+      this.prPipeline.getAllSubmissions().map(s => s.bountyId)
+    );
+    console.log(`[BountyExecutor] Already submitted: ${submittedBountyIds.size} bounties`);
+
+    // 2. Select best bounty, excluding already submitted
     console.log('[BountyExecutor] Step 2: Selecting best bounty...');
-    const bounty = this.hunter.selectBest();
+
+    // v16.2.1: Prioritize high-value bounties after we have some submissions
+    const prioritizeValue = submittedBountyIds.size >= 3;
+    if (prioritizeValue) {
+      console.log('[BountyExecutor] Experience mode: targeting higher-value bounties');
+    }
+
+    // v16.2.2: Get bounty, filtering out blocked repos
+    let bounty = this.hunter.selectBest({
+      excludeIds: submittedBountyIds,
+      prioritizeValue,
+    });
+
+    // v16.2.2: Check if selected bounty's repo is blocked and try next ones
+    let attempts = 0;
+    const maxAttempts = 10;
+    while (bounty && attempts < maxAttempts) {
+      const repoKey = `${bounty.sourceMetadata?.org}/${bounty.sourceMetadata?.repo}`;
+      if (!this.blockedRepos.has(repoKey)) {
+        break; // Found a valid bounty
+      }
+      console.log(`[BountyExecutor] Skipping blocked repo: ${repoKey}`);
+      // Add this bounty to excluded and try again
+      submittedBountyIds.add(bounty.id);
+      bounty = this.hunter.selectBest({
+        excludeIds: submittedBountyIds,
+        prioritizeValue,
+      });
+      attempts++;
+    }
 
     if (!bounty) {
-      console.log('[BountyExecutor] No suitable bounties found');
+      console.log('[BountyExecutor] No suitable bounties found (all filtered or blocked)');
       return null;
+    }
+
+    // v16.2.1: Also check if this exact bounty URL was submitted
+    const bountyUrl = bounty.submissionUrl || bounty.sourceMetadata?.githubUrl;
+    const alreadySubmittedUrl = this.prPipeline.getAllSubmissions()
+      .some(s => s.prUrl?.includes(bounty!.sourceMetadata?.repo || 'NOMATCH'));
+
+    // v16.2: Repo allowlist check
+    if (this.config.repoAllowlist.length > 0) {
+      const repoKey = `${bounty.sourceMetadata?.org}/${bounty.sourceMetadata?.repo}`;
+      if (!this.config.repoAllowlist.includes(repoKey)) {
+        console.log(`[BountyExecutor] Repo ${repoKey} not in allowlist, skipping`);
+        return null;
+      }
+    }
+
+    if (alreadySubmittedUrl && submittedBountyIds.size > 0) {
+      // v16.2: Lowered per-repo limit from 5 to 2 (be respectful to maintainers)
+      const repoSubmissions = this.prPipeline.getAllSubmissions()
+        .filter(s => s.repo === `${bounty!.sourceMetadata?.org}/${bounty!.sourceMetadata?.repo}`);
+      if (repoSubmissions.length >= 2) {
+        console.log(`[BountyExecutor] Per-repo limit reached (2) for ${bounty.sourceMetadata?.repo}, skipping`);
+        return null;
+      }
     }
 
     console.log(`[BountyExecutor] Selected: ${bounty.title} ($${bounty.reward})`);
@@ -451,6 +838,12 @@ export class BountyExecutor {
           bounty,
           solution.changes,
           solution.description,
+          {
+            confidence: solution.confidence,
+            validationScore: Math.round(solution.confidence * 100),
+            dailyCount: this.dailySubmissionCount + 1,
+            maxDaily: this.config.maxDailySubmissions,
+          },
         );
 
         if (submission) {
@@ -470,6 +863,12 @@ export class BountyExecutor {
 
           console.log(`[BountyExecutor] PR submitted: ${submission.prUrl}`);
 
+          // v16.2: Update rate-limiting counters
+          this.dailySubmissionCount++;
+          this.lastSubmissionTime = Date.now();
+          this.consecutiveRejections = 0; // Reset on successful submission
+          console.log(`[BountyExecutor] Submissions today: ${this.dailySubmissionCount}/${this.config.maxDailySubmissions}`);
+
           return {
             bountyId: bounty.id,
             status: 'success',
@@ -478,6 +877,16 @@ export class BountyExecutor {
             duration: Date.now() - startTime,
           };
         } else {
+          // v16.2.2: Check if this was due to blocked repo (error from pipeline)
+          const repoKey = `${bounty.sourceMetadata?.org}/${bounty.sourceMetadata?.repo}`;
+          const lastError = this.prPipeline.getLastError?.() || '';
+          if (lastError.includes('archived') || lastError.includes('read-only') ||
+              lastError.includes('Repository not found') || lastError.includes('403')) {
+            console.log(`[BountyExecutor] Blocking repo ${repoKey}: ${lastError}`);
+            this.blockedRepos.add(repoKey);
+            this.saveBlockedRepos();
+          }
+
           return {
             bountyId: bounty.id,
             status: 'failed',
@@ -527,6 +936,81 @@ export class BountyExecutor {
       activeExecutions: this.activeExecutions.size,
       hunterStats: this.hunter.getStats(),
     };
+  }
+
+  /**
+   * v16.2: Get submission stats for monitoring and transparency
+   */
+  getSubmissionStats(): {
+    dailySubmissionCount: number;
+    maxDailySubmissions: number;
+    lastSubmissionTime: number;
+    consecutiveRejections: number;
+    circuitBreakerActive: boolean;
+    circuitBreakerPauseUntil: number;
+    repoAllowlist: string[];
+    minSubmissionIntervalMs: number;
+  } {
+    return {
+      dailySubmissionCount: this.dailySubmissionCount,
+      maxDailySubmissions: this.config.maxDailySubmissions,
+      lastSubmissionTime: this.lastSubmissionTime,
+      consecutiveRejections: this.consecutiveRejections,
+      circuitBreakerActive: this.circuitBreakerPauseUntil > Date.now(),
+      circuitBreakerPauseUntil: this.circuitBreakerPauseUntil,
+      repoAllowlist: this.config.repoAllowlist,
+      minSubmissionIntervalMs: this.config.minSubmissionIntervalMs,
+    };
+  }
+
+  /**
+   * v16.2.3: Get PR pipeline for external access
+   */
+  getPRPipeline(): PRPipeline {
+    return this.prPipeline;
+  }
+
+  /**
+   * v16.2.3: Check all submitted PRs for merges and record revenue
+   * Should be called periodically to capture revenue from merged PRs
+   */
+  async checkAndRecordRevenue(): Promise<{ merged: number; revenue: number }> {
+    console.log('[BountyExecutor] Checking PR statuses for merged bounties...');
+
+    const submissions = this.prPipeline.getAllSubmissions();
+    let mergedCount = 0;
+    let totalRevenue = 0;
+
+    for (const sub of submissions) {
+      if (sub.status === 'merged' && sub.revenueRecorded) continue; // Already recorded
+      if (sub.status === 'closed') continue; // Rejected, skip
+
+      try {
+        const updated = await this.prPipeline.checkPRStatus(sub.bountyId);
+        if (updated && updated.status === 'merged' && updated.revenueRecorded) {
+          mergedCount++;
+          totalRevenue += updated.bountyValue;
+          // v16.2: Reset rejection counter on merge (positive signal)
+          this.consecutiveRejections = 0;
+        } else if (updated && updated.status === 'closed') {
+          // v16.2: Track consecutive rejections for circuit breaker
+          this.consecutiveRejections++;
+          console.log(`[BountyExecutor] PR rejected: ${sub.prUrl} (consecutive rejections: ${this.consecutiveRejections})`);
+          if (this.consecutiveRejections >= 3) {
+            this.circuitBreakerPauseUntil = Date.now() + 24 * 60 * 60 * 1000; // 24h pause
+            console.log(`[BountyExecutor] CIRCUIT BREAKER TRIGGERED: 3 consecutive rejections. Pausing for 24h.`);
+          }
+        }
+      } catch (e) {
+        console.warn(`[BountyExecutor] Failed to check PR ${sub.prUrl}:`, e);
+      }
+    }
+
+    if (mergedCount > 0) {
+      console.log(`[BountyExecutor] Found ${mergedCount} merged PRs, $${totalRevenue} revenue recorded`);
+    }
+
+    return { merged: mergedCount, revenue: totalRevenue };
   }
 }
 

@@ -75,6 +75,7 @@ interface GenesisStore extends GenesisState {
   updateKernel: (kernel: Partial<KernelState>) => void;
   updateAgents: (agents: Partial<AgentState>) => void;
   updateEconomy: (economy: Partial<EconomyState>) => void;
+  updateMemory: (memory: Partial<MemoryState>) => void;
   addEvent: (event: { type: string; data: unknown }) => void;
   reset: () => void;
 }
@@ -173,6 +174,12 @@ export const useGenesisStore = create<GenesisStore>((set) => ({
   updateEconomy: (economy) =>
     set((state) => ({
       economy: { ...state.economy, ...economy },
+      lastUpdate: Date.now(),
+    })),
+
+  updateMemory: (memory) =>
+    set((state) => ({
+      memory: { ...state.memory, ...memory },
       lastUpdate: Date.now(),
     })),
 

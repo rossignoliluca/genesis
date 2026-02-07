@@ -10,8 +10,14 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    port: 9876,
-    open: true,
+    port: 3000,
+    open: false,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:9876',
+        changeOrigin: true,
+      },
+    },
   },
   resolve: {
     alias: {

@@ -94,13 +94,23 @@ export default function App() {
   const { consciousness, neuromod, kernel, economy, agents: agentState } = useGenesisStore();
   const { isPlaying, toggleAudio, volume, setVolume } = useAudio();
 
-  // Connect to SSE
-  useSSEConnection('http://localhost:9876');
+  // Connect to real Genesis dashboard server
+  // In dev mode with proxy, use relative URL; otherwise use absolute
+  const genesisUrl = import.meta.env.DEV ? '' : 'http://localhost:9876';
+  useSSEConnection(genesisUrl);
 
-  // Demo simulation
+  // Demo simulation - only when NOT connected to real Genesis
+  const connected = useGenesisStore((s) => s.connected);
+
   useEffect(() => {
+    // Skip demo simulation if connected to real Genesis
+    if (connected) return;
+
     const interval = setInterval(() => {
       const store = useGenesisStore.getState();
+      // Don't simulate if we got connected in the meantime
+      if (store.connected) return;
+
       const phi = store.consciousness.phi;
       const newPhi = phi + (Math.random() - 0.5) * 0.02;
 
@@ -123,7 +133,7 @@ export default function App() {
     }, 150);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [connected]);
 
   // Welcome timeout
   useEffect(() => {
@@ -261,8 +271,8 @@ export default function App() {
           <div className="top-right">
             <div className="status-indicators">
               <div className="indicator">
-                <span className="indicator-dot live" />
-                <span>LIVE</span>
+                <span className={`indicator-dot ${connected ? 'live' : 'demo'}`} />
+                <span>{connected ? 'LIVE' : 'DEMO'}</span>
               </div>
               <div className="indicator">
                 <span className="indicator-label">FE</span>
@@ -1000,6 +1010,12 @@ export default function App() {
         .indicator-dot.live {
           background: #00ff88;
           box-shadow: 0 0 10px rgba(0,255,136,0.5);
+          animation: pulse 2s ease-in-out infinite;
+        }
+
+        .indicator-dot.demo {
+          background: #ffaa00;
+          box-shadow: 0 0 10px rgba(255,170,0,0.5);
           animation: pulse 2s ease-in-out infinite;
         }
 

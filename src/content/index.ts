@@ -131,6 +131,13 @@ export {
   type ContentResearcher,
 } from './orchestrator.js';
 
+// Internal imports for module initialization functions
+import { getContentScheduler } from './scheduler/index.js';
+import { getAnalyticsAggregator } from './analytics/index.js';
+import { getContentOrchestrator, type ContentOrchestrator } from './orchestrator.js';
+import type { ContentScheduler } from './scheduler/index.js';
+import type { AnalyticsAggregator } from './analytics/index.js';
+
 // =============================================================================
 // Event Bus Integration Exports
 // =============================================================================

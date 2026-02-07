@@ -257,7 +257,7 @@ export class TwitterConnector implements BaseConnector {
   private async makeMediaUploadRequest(file: Buffer): Promise<{ media_id_string: string }> {
     const url = 'https://upload.twitter.com/1.1/media/upload.json';
     const formData = new FormData();
-    formData.append('media', new Blob([file]));
+    formData.append('media', new Blob([new Uint8Array(file)]));
     const headers = this.buildAuthHeaders('POST', url);
 
     const response = await fetch(url, { method: 'POST', headers, body: formData });

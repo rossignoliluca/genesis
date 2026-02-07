@@ -44,7 +44,7 @@ export class ContentScheduler {
     }
   }
 
-  async enqueue(content: Omit<ScheduledContent, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+  async enqueue(content: Omit<ScheduledContent, 'id' | 'status' | 'createdAt' | 'updatedAt'>): Promise<string> {
     const id = crypto.randomUUID();
     const now = new Date();
     this.queue.set(id, { id, ...content, status: 'scheduled', createdAt: now, updatedAt: now });

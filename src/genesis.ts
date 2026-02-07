@@ -139,6 +139,19 @@ import { getMCPFinanceManager, type MCPFinanceManager } from './mcp-finance/inde
 // Exotic Computing — thermodynamic, hyperdimensional, reservoir computing
 import { createExoticComputing, type ExoticComputing } from './exotic/index.js';
 
+// Content — multi-platform content creator (social media, SEO, scheduling, analytics)
+import {
+  initContentModule,
+  shutdownContentModule,
+  wireContentModule,
+  getContentOrchestrator,
+  getContentScheduler,
+  getAnalyticsAggregator,
+  type ContentOrchestrator,
+  type ContentScheduler,
+  type AnalyticsAggregator,
+} from './content/index.js';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -220,6 +233,8 @@ export interface GenesisConfig {
   mcpFinance: boolean;
   /** Enable exotic computing (thermodynamic, hyperdimensional, reservoir) */
   exotic: boolean;
+  /** Enable content creator (multi-platform publishing, SEO, scheduling, analytics) */
+  content: boolean;
   /** Confidence threshold below which Brain defers to metacognition */
   deferThreshold: number;
   /** Audit all responses for hallucinations */
@@ -294,6 +309,12 @@ export interface GenesisStatus {
   polymarket: { running: boolean; activeMarkets: number } | null;
   mcpFinance: { cacheSize: number } | null;
   exotic: { thermodynamic: boolean; hyperdimensional: boolean; reservoir: boolean } | null;
+  content: {
+    running: boolean;
+    scheduledItems: number;
+    trackedContent: number;
+    totalRevenue: number;
+  } | null;
   modulesWired: number;
   calibrationError: number;
   uptime: number;
@@ -387,6 +408,11 @@ export class Genesis {
   private mcpFinance: MCPFinanceManager | null = null;
   private exotic: ExoticComputing | null = null;
 
+  // v18.1.0: Content creator module
+  private contentOrchestrator: ContentOrchestrator | null = null;
+  private contentScheduler: ContentScheduler | null = null;
+  private contentAnalytics: AnalyticsAggregator | null = null;
+
   // State
   private booted = false;
   private bootTime = 0;
@@ -434,6 +460,7 @@ export class Genesis {
       polymarket: false,    // v13.12: Prediction markets (requires API)
       mcpFinance: true,     // v13.12: MCP finance servers
       exotic: true,         // v14.2: Exotic computing (thermodynamic, HDC, reservoir)
+      content: true,        // v18.1: Content creator (social media, SEO, scheduling)
       deferThreshold: 0.3,
       auditResponses: true,
     };
@@ -1621,6 +1648,40 @@ export class Genesis {
       console.log('[Genesis] Revenue system started (simulation mode)');
     }
 
+    // v18.1.0: Content Creator Module — multi-platform publishing, SEO, scheduling
+    if (this.config.content) {
+      const { orchestrator, scheduler, analytics } = initContentModule({
+        autoStartScheduler: true,
+        schedulerIntervalMs: 60000,
+      });
+      this.contentOrchestrator = orchestrator;
+      this.contentScheduler = scheduler;
+      this.contentAnalytics = analytics;
+      this.fiber?.registerModule('content');
+
+      // Wire content module to event bus (use any cast for content-specific events)
+      if (this.eventBus) {
+        const bus = this.eventBus as unknown as {
+          publish: (topic: string, event: unknown) => void;
+          subscribe: (topic: string, handler: (event: unknown) => void) => void;
+        };
+        wireContentModule(
+          (topic, event) => bus.publish(topic, event),
+          (topic, handler) => bus.subscribe(topic, handler as (event: unknown) => void),
+        );
+
+        // Wire content revenue to economic fiber
+        bus.subscribe('content.revenue', (event) => {
+          const revenueEvent = event as { amount: number; platform: string };
+          this.fiber?.recordRevenue('content', revenueEvent.amount, `content:${revenueEvent.platform}`);
+          // Dopamine reward for successful monetization
+          this.neuromodulation?.reward(Math.min(0.5, revenueEvent.amount / 100), 'content:revenue');
+        });
+      }
+
+      console.log('[Genesis] Content creator module initialized');
+    }
+
     // v13.12.0: Observatory UI — real-time visualization
     if (this.config.observatory && this.dashboard) {
       this.observatory = createObservatory({
@@ -2655,6 +2716,16 @@ export class Genesis {
         hyperdimensional: true,
         reservoir: true,
       } : null,
+      content: this.contentOrchestrator ? (() => {
+        const schedulerStats = this.contentScheduler?.getStats();
+        const analyticsStats = this.contentAnalytics?.getStats();
+        return {
+          running: true,
+          scheduledItems: schedulerStats?.scheduled ?? 0,
+          trackedContent: analyticsStats?.trackedContent ?? 0,
+          totalRevenue: analyticsStats?.totalRevenue ?? 0,
+        };
+      })() : null,
       modulesWired: this.wiringResult?.modulesWired ?? 0,
       calibrationError: this.getCalibrationError(),
       uptime: this.bootTime > 0 ? Date.now() - this.bootTime : 0,
@@ -2676,6 +2747,14 @@ export class Genesis {
     if (this.centralAwareness) {
       this.centralAwareness.stop();
       this.centralAwareness = null;
+    }
+
+    // v18.1.0: Content module shutdown
+    if (this.contentOrchestrator) {
+      shutdownContentModule();
+      this.contentOrchestrator = null;
+      this.contentScheduler = null;
+      this.contentAnalytics = null;
     }
 
     // L3: Cognitive shutdown
@@ -2840,6 +2919,70 @@ export class Genesis {
     const result = await this.grounding.ground(claim);
     if (this.fiber) this.fiber.recordCost('grounding', 0.01, 'ground');
     return { confidence: result.confidence, level: result.level, needsHuman: this.grounding.needsHuman(result) };
+  }
+
+  // ==========================================================================
+  // Content Interface
+  // ==========================================================================
+
+  /**
+   * Create and publish content across platforms
+   */
+  async createContent(request: import('./content/types.js').ContentRequest): Promise<import('./content/types.js').ContentResult | null> {
+    if (!this.contentOrchestrator) return null;
+    const result = await this.contentOrchestrator.createAndPublish(request);
+    if (this.fiber) this.fiber.recordCost('content', 0.05, `create:${request.type}`);
+    return result;
+  }
+
+  /**
+   * Cross-post content immediately to multiple platforms
+   */
+  async crossPost(
+    content: string,
+    platforms: import('./content/types.js').Platform[],
+    options?: { title?: string; hashtags?: string[] }
+  ): Promise<import('./content/types.js').CrossPostResult | null> {
+    if (!this.contentScheduler) return null;
+    const result = await this.contentScheduler.crossPost(content, platforms, options);
+    if (this.fiber) this.fiber.recordCost('content', 0.02 * platforms.length, 'crosspost');
+    return result;
+  }
+
+  /**
+   * Schedule content for later publishing
+   */
+  async scheduleContent(
+    content: string,
+    platforms: import('./content/types.js').Platform[],
+    publishAt: Date,
+    options?: { title?: string; hashtags?: string[] }
+  ): Promise<string | null> {
+    if (!this.contentScheduler) return null;
+    return this.contentScheduler.enqueue({
+      content,
+      title: options?.title,
+      type: 'post',
+      platforms,
+      publishAt,
+      hashtags: options?.hashtags,
+    });
+  }
+
+  /**
+   * Get content analytics and insights
+   */
+  async getContentInsights(): Promise<import('./content/types.js').ContentInsights | null> {
+    if (!this.contentAnalytics) return null;
+    return this.contentAnalytics.generateInsights();
+  }
+
+  /**
+   * Get aggregated metrics across platforms
+   */
+  async getContentMetrics(since: Date): Promise<import('./content/types.js').AggregatedMetrics | null> {
+    if (!this.contentAnalytics) return null;
+    return this.contentAnalytics.aggregateMetrics(since);
   }
 
   // ==========================================================================

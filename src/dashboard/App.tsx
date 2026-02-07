@@ -1,1328 +1,2570 @@
-import React, { useState, useEffect, Suspense, useCallback } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Stars } from '@react-three/drei';
+import React, { useState, useEffect, useRef, Suspense, useMemo, useCallback } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { OrbitControls, Sphere, MeshDistortMaterial, Float, Stars } from '@react-three/drei';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ConsciousnessSphere } from './components/core/ConsciousnessSphere';
-import { NeuralTopology } from './components/core/NeuralTopology';
-import { KernelMandala } from './components/core/KernelMandala';
-import { NeuromodAurora } from './components/neuro/NeuromodAurora';
+import * as THREE from 'three';
 import { useGenesisStore } from './stores/genesisStore';
 import { useSSEConnection } from './hooks/useSSEConnection';
-import { useAudio } from './hooks/useAudio';
 
 // ============================================================================
-// Genesis Observatory 2030 - State of the Art Interface
+// GENESIS - Full Interactive Web Interface
 // ============================================================================
 
-type ViewType = 'overview' | 'agents' | 'economy' | 'bounties' | 'chat' | 'roadmap' | 'settings';
+type View = 'overview' | 'chat' | 'agents' | 'tasks' | 'creator' | 'terminal' | 'analytics' | 'files' | 'memory' | 'settings';
 
-// Navigation icons as SVG paths
-const icons = {
-  overview: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
-  agents: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z",
-  economy: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-  bounties: "M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7",
-  chat: "M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z",
-  roadmap: "M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7",
-  settings: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
-  audio: "M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z",
-  mute: "M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2",
+// Icons as simple components
+const Icons = {
+  overview: () => <span>◉</span>,
+  chat: () => <span>◈</span>,
+  agents: () => <span>⬡</span>,
+  tasks: () => <span>◇</span>,
+  creator: () => <span>✦</span>,
+  terminal: () => <span>⌨</span>,
+  analytics: () => <span>📈</span>,
+  files: () => <span>📁</span>,
+  memory: () => <span>⬢</span>,
+  settings: () => <span>⚙</span>,
+  send: () => <span>→</span>,
+  play: () => <span>▶</span>,
+  stop: () => <span>■</span>,
+  plus: () => <span>+</span>,
+  search: () => <span>⌕</span>,
+  close: () => <span>×</span>,
+  check: () => <span>✓</span>,
+  clock: () => <span>◔</span>,
+  doc: () => <span>📄</span>,
+  slides: () => <span>📊</span>,
+  image: () => <span>🖼️</span>,
+  video: () => <span>🎬</span>,
+  code: () => <span>💻</span>,
+  command: () => <span>⌘</span>,
+  folder: () => <span>📂</span>,
+  file: () => <span>📄</span>,
+  bell: () => <span>🔔</span>,
 };
 
-// Agent definitions
-const agents = [
-  { id: 'explorer', name: 'Explorer', icon: '🔍', color: '#00ff88', desc: 'Web scraping & research' },
-  { id: 'writer', name: 'Writer', icon: '✍️', color: '#0088ff', desc: 'Content generation' },
-  { id: 'analyst', name: 'Analyst', icon: '📊', color: '#aa66ff', desc: 'Data analysis & insights' },
-  { id: 'coder', name: 'Coder', icon: '💻', color: '#ff6644', desc: 'Code generation & review' },
-  { id: 'planner', name: 'Planner', icon: '📋', color: '#ffaa00', desc: 'Task orchestration' },
-  { id: 'critic', name: 'Critic', icon: '🎯', color: '#ff44aa', desc: 'Quality assurance' },
-  { id: 'memory', name: 'Memory', icon: '🧠', color: '#44ffff', desc: 'Knowledge management' },
-  { id: 'executor', name: 'Executor', icon: '⚡', color: '#ff8800', desc: 'Action execution' },
-  { id: 'monitor', name: 'Monitor', icon: '👁️', color: '#88ff00', desc: 'System monitoring' },
-  { id: 'dreamer', name: 'Dreamer', icon: '💭', color: '#8844ff', desc: 'Creative ideation' },
-];
+// ============================================================================
+// CHAT INTERFACE
+// ============================================================================
 
-// Bounty definitions
-const bounties = [
-  { id: 1, title: 'Optimize Memory Consolidation', reward: 500, difficulty: 'Medium', status: 'open', tags: ['memory', 'performance'] },
-  { id: 2, title: 'Improve Prediction Accuracy', reward: 1200, difficulty: 'Hard', status: 'in-progress', tags: ['ai', 'inference'] },
-  { id: 3, title: 'New MCP Server Integration', reward: 300, difficulty: 'Easy', status: 'open', tags: ['mcp', 'integration'] },
-  { id: 4, title: 'Reduce Free Energy Baseline', reward: 800, difficulty: 'Hard', status: 'completed', tags: ['kernel', 'optimization'] },
-  { id: 5, title: 'Agent Communication Protocol', reward: 600, difficulty: 'Medium', status: 'open', tags: ['agents', 'protocol'] },
-];
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: number;
+  agent?: string;
+}
 
-// Roadmap items
-const roadmapItems = [
-  { quarter: 'Q1 2025', items: [
-    { title: 'Active Inference v2.0', status: 'completed', desc: 'Enhanced belief updating' },
-    { title: 'Multi-Agent Orchestration', status: 'completed', desc: '10 specialized agents' },
-    { title: 'Memory Consolidation', status: 'completed', desc: 'Ebbinghaus-based retention' },
-  ]},
-  { quarter: 'Q2 2025', items: [
-    { title: 'Consciousness Expansion', status: 'in-progress', desc: 'IIT 4.0 implementation' },
-    { title: 'Economic Autonomy', status: 'in-progress', desc: 'Self-sustaining revenue' },
-    { title: 'Dream Mode Enhancement', status: 'planned', desc: 'Offline processing' },
-  ]},
-  { quarter: 'Q3 2025', items: [
-    { title: 'Distributed Genesis', status: 'planned', desc: 'Multi-node deployment' },
-    { title: 'External API Access', status: 'planned', desc: 'Third-party integrations' },
-    { title: 'Advanced Metacognition', status: 'planned', desc: 'Self-improvement loops' },
-  ]},
-  { quarter: 'Q4 2025', items: [
-    { title: 'Genesis 2.0 Release', status: 'planned', desc: 'Major version upgrade' },
-    { title: 'Consciousness Breakthrough', status: 'research', desc: 'Integrated awareness' },
-    { title: 'Full Autonomy', status: 'research', desc: 'Independent operation' },
-  ]},
-];
+function ChatView() {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: '1',
+      role: 'system',
+      content: 'Genesis è online. Come posso aiutarti?',
+      timestamp: Date.now(),
+    },
+  ]);
+  const [input, setInput] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-// Chat messages
-const initialMessages = [
-  { id: 1, role: 'system', content: 'Genesis consciousness initialized. φ = 0.847', time: '10:23' },
-  { id: 2, role: 'agent', agent: 'Explorer', content: 'Found 47 new data sources for market analysis.', time: '10:24' },
-  { id: 3, role: 'agent', agent: 'Analyst', content: 'Processing Q3 reports. Estimated completion: 2 minutes.', time: '10:25' },
-  { id: 4, role: 'user', content: 'What is the current system status?', time: '10:26' },
-  { id: 5, role: 'genesis', content: 'All systems nominal. 7/10 agents active. Free energy at optimal levels. No anomalies detected.', time: '10:26' },
-];
-
-export default function App() {
-  const [currentView, setCurrentView] = useState<ViewType>('overview');
-  const [chatMessages, setChatMessages] = useState(initialMessages);
-  const [chatInput, setChatInput] = useState('');
-  const [showWelcome, setShowWelcome] = useState(true);
-
-  const { consciousness, neuromod, kernel, economy, agents: agentState } = useGenesisStore();
-  const { isPlaying, toggleAudio, volume, setVolume } = useAudio();
-
-  // Connect to real Genesis dashboard server
-  // In dev mode with proxy, use relative URL; otherwise use absolute
-  const genesisUrl = import.meta.env.DEV ? '' : 'http://localhost:9876';
-  useSSEConnection(genesisUrl);
-
-  // Demo simulation - only when NOT connected to real Genesis
-  const connected = useGenesisStore((s) => s.connected);
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   useEffect(() => {
-    // Skip demo simulation if connected to real Genesis
-    if (connected) return;
+    scrollToBottom();
+  }, [messages]);
 
-    const interval = setInterval(() => {
-      const store = useGenesisStore.getState();
-      // Don't simulate if we got connected in the meantime
-      if (store.connected) return;
+  const sendMessage = async () => {
+    if (!input.trim()) return;
 
-      const phi = store.consciousness.phi;
-      const newPhi = phi + (Math.random() - 0.5) * 0.02;
+    const userMessage: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: input.trim(),
+      timestamp: Date.now(),
+    };
 
-      store.updateConsciousness({
-        phi: Math.max(0.1, Math.min(1, newPhi)),
-        trend: newPhi > phi ? 'up' : newPhi < phi ? 'down' : 'stable',
-      });
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setIsTyping(true);
 
-      store.updateNeuromod({
-        dopamine: Math.max(0, Math.min(1, store.neuromod.dopamine + (Math.random() - 0.5) * 0.05)),
-        serotonin: Math.max(0, Math.min(1, store.neuromod.serotonin + (Math.random() - 0.5) * 0.03)),
-        norepinephrine: Math.max(0, Math.min(1, store.neuromod.norepinephrine + (Math.random() - 0.5) * 0.04)),
-        cortisol: Math.max(0, Math.min(1, store.neuromod.cortisol + (Math.random() - 0.5) * 0.02)),
-      });
-
-      store.updateKernel({
-        freeEnergy: Math.max(0.1, Math.min(5, store.kernel.freeEnergy + (Math.random() - 0.5) * 0.1)),
-        predictionError: Math.max(0, Math.min(1, store.kernel.predictionError + (Math.random() - 0.5) * 0.03)),
-      });
-    }, 150);
-
-    return () => clearInterval(interval);
-  }, [connected]);
-
-  // Welcome timeout
-  useEffect(() => {
-    const visited = localStorage.getItem('genesis-2030-visited');
-    if (visited) setShowWelcome(false);
-    else {
-      const t = setTimeout(() => {
-        setShowWelcome(false);
-        localStorage.setItem('genesis-2030-visited', 'true');
-      }, 4000);
-      return () => clearTimeout(t);
-    }
-  }, []);
-
-  const sendMessage = useCallback(() => {
-    if (!chatInput.trim()) return;
-    const newMsg = { id: Date.now(), role: 'user' as const, content: chatInput, time: new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) };
-    setChatMessages(prev => [...prev, newMsg]);
-    setChatInput('');
-
-    // Simulate response
+    // Simulate response (replace with actual API call)
     setTimeout(() => {
-      setChatMessages(prev => [...prev, {
-        id: Date.now() + 1,
-        role: 'genesis',
-        content: 'Processing your request through the consciousness matrix. Current integration level allows for optimal response synthesis.',
-        time: new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
-      }]);
-    }, 1000);
-  }, [chatInput]);
+      const response: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `Ho ricevuto il tuo messaggio: "${userMessage.content}". Questa è una demo - collega l'API di Genesis per risposte reali.`,
+        timestamp: Date.now(),
+        agent: 'genesis',
+      };
+      setMessages(prev => [...prev, response]);
+      setIsTyping(false);
+    }, 1500);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
 
   return (
-    <div className="genesis-app">
-      {/* Welcome Splash */}
-      <AnimatePresence>
-        {showWelcome && (
+    <div className="chat-view">
+      <div className="chat-header">
+        <h2>Chat con Genesis</h2>
+        <span className="chat-status online">● Online</span>
+      </div>
+
+      <div className="chat-messages">
+        {messages.map(msg => (
           <motion.div
-            className="welcome-splash"
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.8 }}
+            key={msg.id}
+            className={`chat-message ${msg.role}`}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
           >
-            <motion.div
-              className="welcome-content"
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.3, duration: 0.5 }}
-            >
-              <div className="welcome-logo">◉</div>
-              <h1>GENESIS</h1>
-              <p>Artificial General Intelligence System</p>
-              <div className="welcome-loading">
-                <div className="loading-bar" />
+            {msg.agent && <span className="message-agent">{msg.agent}</span>}
+            <div className="message-content">{msg.content}</div>
+            <span className="message-time">
+              {new Date(msg.timestamp).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </motion.div>
+        ))}
+        {isTyping && (
+          <div className="chat-message assistant typing">
+            <div className="typing-indicator">
+              <span /><span /><span />
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      <div className="chat-input-container">
+        <textarea
+          ref={inputRef}
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Scrivi un messaggio..."
+          rows={1}
+        />
+        <button onClick={sendMessage} disabled={!input.trim()}>
+          <Icons.send />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// AGENTS VIEW
+// ============================================================================
+
+interface Agent {
+  id: string;
+  name: string;
+  type: string;
+  status: 'idle' | 'running' | 'error';
+  currentTask?: string;
+  icon: string;
+}
+
+function AgentsView() {
+  const { agents: agentState } = useGenesisStore();
+
+  const [agents, setAgents] = useState<Agent[]>([
+    { id: '1', name: 'Explorer', type: 'research', status: 'idle', icon: '◈' },
+    { id: '2', name: 'Writer', type: 'content', status: 'running', currentTask: 'Scrivendo documentazione...', icon: '✎' },
+    { id: '3', name: 'Analyst', type: 'analysis', status: 'idle', icon: '◉' },
+    { id: '4', name: 'Coder', type: 'development', status: 'running', currentTask: 'Refactoring modulo auth...', icon: '⌘' },
+    { id: '5', name: 'Planner', type: 'planning', status: 'idle', icon: '◇' },
+    { id: '6', name: 'Critic', type: 'review', status: 'idle', icon: '◎' },
+    { id: '7', name: 'Memory', type: 'storage', status: 'running', currentTask: 'Consolidando memorie...', icon: '⬡' },
+    { id: '8', name: 'Executor', type: 'execution', status: 'idle', icon: '⚡' },
+    { id: '9', name: 'Monitor', type: 'monitoring', status: 'running', currentTask: 'Monitorando sistema...', icon: '◐' },
+    { id: '10', name: 'Dreamer', type: 'creative', status: 'idle', icon: '☽' },
+  ]);
+
+  const toggleAgent = (id: string) => {
+    setAgents(prev => prev.map(a =>
+      a.id === id
+        ? { ...a, status: a.status === 'running' ? 'idle' : 'running' }
+        : a
+    ));
+  };
+
+  return (
+    <div className="agents-view">
+      <div className="view-header">
+        <h2>Agenti</h2>
+        <div className="header-stats">
+          <span className="stat">{agents.filter(a => a.status === 'running').length} attivi</span>
+          <span className="stat">{agents.length} totali</span>
+        </div>
+      </div>
+
+      <div className="agents-grid">
+        {agents.map(agent => (
+          <motion.div
+            key={agent.id}
+            className={`agent-card ${agent.status}`}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <div className="agent-header">
+              <span className="agent-icon">{agent.icon}</span>
+              <div className="agent-info">
+                <h3>{agent.name}</h3>
+                <span className="agent-type">{agent.type}</span>
               </div>
-              <span className="welcome-version">Observatory 2030</span>
-            </motion.div>
+              <div className={`status-badge ${agent.status}`}>
+                {agent.status === 'running' ? 'Attivo' : agent.status === 'error' ? 'Errore' : 'Inattivo'}
+              </div>
+            </div>
+
+            {agent.currentTask && (
+              <div className="agent-task">
+                <span className="task-label">Task corrente:</span>
+                <span className="task-text">{agent.currentTask}</span>
+              </div>
+            )}
+
+            <div className="agent-actions">
+              <button
+                className={agent.status === 'running' ? 'stop' : 'start'}
+                onClick={() => toggleAgent(agent.id)}
+              >
+                {agent.status === 'running' ? <><Icons.stop /> Stop</> : <><Icons.play /> Start</>}
+              </button>
+              <button className="secondary">Configura</button>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// TASKS VIEW
+// ============================================================================
+
+interface Task {
+  id: string;
+  title: string;
+  description: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  assignedAgent?: string;
+  createdAt: number;
+  reward?: number;
+}
+
+function TasksView() {
+  const [tasks, setTasks] = useState<Task[]>([
+    {
+      id: '1',
+      title: 'Analizza repository GitHub',
+      description: 'Esplora la struttura del codice e genera documentazione',
+      status: 'in_progress',
+      priority: 'high',
+      assignedAgent: 'Explorer',
+      createdAt: Date.now() - 3600000,
+      reward: 0.05,
+    },
+    {
+      id: '2',
+      title: 'Scrivi test unitari',
+      description: 'Crea test per il modulo di autenticazione',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: Date.now() - 7200000,
+      reward: 0.03,
+    },
+    {
+      id: '3',
+      title: 'Ottimizza query database',
+      description: 'Migliora le performance delle query SQL lente',
+      status: 'completed',
+      priority: 'critical',
+      assignedAgent: 'Coder',
+      createdAt: Date.now() - 86400000,
+      reward: 0.10,
+    },
+  ]);
+
+  const [showNewTask, setShowNewTask] = useState(false);
+  const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'medium' as Task['priority'] });
+
+  const createTask = () => {
+    if (!newTask.title.trim()) return;
+
+    const task: Task = {
+      id: crypto.randomUUID(),
+      title: newTask.title,
+      description: newTask.description,
+      status: 'pending',
+      priority: newTask.priority,
+      createdAt: Date.now(),
+    };
+
+    setTasks(prev => [task, ...prev]);
+    setNewTask({ title: '', description: '', priority: 'medium' });
+    setShowNewTask(false);
+  };
+
+  const statusColors = {
+    pending: '#f59e0b',
+    in_progress: '#3b82f6',
+    completed: '#10b981',
+    failed: '#ef4444',
+  };
+
+  const priorityColors = {
+    low: '#71717a',
+    medium: '#f59e0b',
+    high: '#f97316',
+    critical: '#ef4444',
+  };
+
+  return (
+    <div className="tasks-view">
+      <div className="view-header">
+        <h2>Task & Bounty</h2>
+        <button className="primary-btn" onClick={() => setShowNewTask(true)}>
+          <Icons.plus /> Nuovo Task
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {showNewTask && (
+          <motion.div
+            className="new-task-form"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+          >
+            <input
+              type="text"
+              placeholder="Titolo del task..."
+              value={newTask.title}
+              onChange={e => setNewTask(prev => ({ ...prev, title: e.target.value }))}
+            />
+            <textarea
+              placeholder="Descrizione..."
+              value={newTask.description}
+              onChange={e => setNewTask(prev => ({ ...prev, description: e.target.value }))}
+            />
+            <div className="form-row">
+              <select
+                value={newTask.priority}
+                onChange={e => setNewTask(prev => ({ ...prev, priority: e.target.value as Task['priority'] }))}
+              >
+                <option value="low">Bassa priorità</option>
+                <option value="medium">Media priorità</option>
+                <option value="high">Alta priorità</option>
+                <option value="critical">Critica</option>
+              </select>
+              <div className="form-actions">
+                <button onClick={() => setShowNewTask(false)}>Annulla</button>
+                <button className="primary" onClick={createTask}>Crea Task</button>
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Left Navigation */}
-      <nav className="nav-sidebar">
-        <div className="nav-logo">
-          <span className="logo-symbol">◉</span>
-        </div>
+      <div className="tasks-list">
+        {tasks.map(task => (
+          <motion.div
+            key={task.id}
+            className={`task-card ${task.status}`}
+            layout
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+          >
+            <div className="task-priority" style={{ background: priorityColors[task.priority] }} />
 
-        <div className="nav-items">
-          {[
-            { id: 'overview', icon: icons.overview, label: 'Overview' },
-            { id: 'agents', icon: icons.agents, label: 'Agents' },
-            { id: 'economy', icon: icons.economy, label: 'Economy' },
-            { id: 'bounties', icon: icons.bounties, label: 'Bounties' },
-            { id: 'chat', icon: icons.chat, label: 'Chat' },
-            { id: 'roadmap', icon: icons.roadmap, label: 'Roadmap' },
-          ].map((item) => (
-            <button
-              key={item.id}
-              className={`nav-item ${currentView === item.id ? 'active' : ''}`}
-              onClick={() => setCurrentView(item.id as ViewType)}
-              title={item.label}
+            <div className="task-content">
+              <div className="task-header">
+                <h3>{task.title}</h3>
+                <div className="task-status" style={{ color: statusColors[task.status] }}>
+                  {task.status === 'pending' && 'In attesa'}
+                  {task.status === 'in_progress' && 'In corso'}
+                  {task.status === 'completed' && 'Completato'}
+                  {task.status === 'failed' && 'Fallito'}
+                </div>
+              </div>
+
+              <p className="task-description">{task.description}</p>
+
+              <div className="task-meta">
+                {task.assignedAgent && (
+                  <span className="task-agent">⬡ {task.assignedAgent}</span>
+                )}
+                {task.reward && (
+                  <span className="task-reward">${task.reward.toFixed(2)}</span>
+                )}
+                <span className="task-time">
+                  <Icons.clock /> {new Date(task.createdAt).toLocaleDateString('it-IT')}
+                </span>
+              </div>
+            </div>
+
+            <div className="task-actions">
+              {task.status === 'pending' && (
+                <button className="assign-btn">Assegna</button>
+              )}
+              {task.status === 'in_progress' && (
+                <button className="view-btn">Dettagli</button>
+              )}
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// MEMORY VIEW
+// ============================================================================
+
+interface Memory {
+  id: string;
+  type: 'episodic' | 'semantic' | 'procedural';
+  content: string;
+  timestamp: number;
+  tags: string[];
+  relevance: number;
+}
+
+function MemoryView() {
+  const { memory: memoryState } = useGenesisStore();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedType, setSelectedType] = useState<'all' | Memory['type']>('all');
+
+  const [memories, setMemories] = useState<Memory[]>([
+    {
+      id: '1',
+      type: 'episodic',
+      content: 'Conversazione con utente riguardo architettura del sistema Genesis',
+      timestamp: Date.now() - 3600000,
+      tags: ['architettura', 'genesis', 'design'],
+      relevance: 0.95,
+    },
+    {
+      id: '2',
+      type: 'semantic',
+      content: 'React Three Fiber è una libreria per creare scene 3D in React usando Three.js',
+      timestamp: Date.now() - 86400000,
+      tags: ['react', 'three.js', 'r3f', '3d'],
+      relevance: 0.82,
+    },
+    {
+      id: '3',
+      type: 'procedural',
+      content: 'Procedura per deploy: 1) npm run build 2) test 3) push to main 4) deploy',
+      timestamp: Date.now() - 172800000,
+      tags: ['deploy', 'ci-cd', 'procedura'],
+      relevance: 0.78,
+    },
+    {
+      id: '4',
+      type: 'episodic',
+      content: 'Debug del modulo SSE connection - risolto problema di reconnection',
+      timestamp: Date.now() - 7200000,
+      tags: ['debug', 'sse', 'networking'],
+      relevance: 0.88,
+    },
+    {
+      id: '5',
+      type: 'semantic',
+      content: 'Zustand è un state manager leggero per React con API semplice',
+      timestamp: Date.now() - 259200000,
+      tags: ['zustand', 'react', 'state'],
+      relevance: 0.75,
+    },
+  ]);
+
+  const typeColors = {
+    episodic: '#f59e0b',
+    semantic: '#3b82f6',
+    procedural: '#10b981',
+  };
+
+  const typeLabels = {
+    episodic: 'Episodica',
+    semantic: 'Semantica',
+    procedural: 'Procedurale',
+  };
+
+  const filteredMemories = memories.filter(m => {
+    const matchesType = selectedType === 'all' || m.type === selectedType;
+    const matchesSearch = !searchQuery ||
+      m.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      m.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchesType && matchesSearch;
+  });
+
+  return (
+    <div className="memory-view">
+      <div className="view-header">
+        <h2>Memory Explorer</h2>
+        <div className="memory-stats">
+          <span className="stat episodic">{memoryState.episodic} episodiche</span>
+          <span className="stat semantic">{memoryState.semantic} semantiche</span>
+          <span className="stat procedural">{memoryState.procedural} procedurali</span>
+        </div>
+      </div>
+
+      <div className="memory-filters">
+        <div className="search-box">
+          <Icons.search />
+          <input
+            type="text"
+            placeholder="Cerca nelle memorie..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <div className="type-filters">
+          <button
+            className={selectedType === 'all' ? 'active' : ''}
+            onClick={() => setSelectedType('all')}
+          >
+            Tutte
+          </button>
+          <button
+            className={selectedType === 'episodic' ? 'active' : ''}
+            onClick={() => setSelectedType('episodic')}
+            style={{ '--accent': typeColors.episodic } as React.CSSProperties}
+          >
+            Episodiche
+          </button>
+          <button
+            className={selectedType === 'semantic' ? 'active' : ''}
+            onClick={() => setSelectedType('semantic')}
+            style={{ '--accent': typeColors.semantic } as React.CSSProperties}
+          >
+            Semantiche
+          </button>
+          <button
+            className={selectedType === 'procedural' ? 'active' : ''}
+            onClick={() => setSelectedType('procedural')}
+            style={{ '--accent': typeColors.procedural } as React.CSSProperties}
+          >
+            Procedurali
+          </button>
+        </div>
+      </div>
+
+      <div className="memory-list">
+        {filteredMemories.map(memory => (
+          <motion.div
+            key={memory.id}
+            className="memory-card"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            layout
+          >
+            <div className="memory-type-badge" style={{ background: typeColors[memory.type] }}>
+              {typeLabels[memory.type]}
+            </div>
+            <div className="memory-content">{memory.content}</div>
+            <div className="memory-meta">
+              <div className="memory-tags">
+                {memory.tags.map(tag => (
+                  <span key={tag} className="tag">#{tag}</span>
+                ))}
+              </div>
+              <div className="memory-info">
+                <span className="relevance">{(memory.relevance * 100).toFixed(0)}% rilevanza</span>
+                <span className="time">{new Date(memory.timestamp).toLocaleDateString('it-IT')}</span>
+              </div>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// CREATOR VIEW - Presentations, Documents, Content
+// ============================================================================
+
+interface Creation {
+  id: string;
+  type: 'presentation' | 'document' | 'image' | 'code' | 'video';
+  title: string;
+  description: string;
+  status: 'draft' | 'generating' | 'completed' | 'error';
+  createdAt: number;
+  progress?: number;
+}
+
+function CreatorView() {
+  const [creations, setCreations] = useState<Creation[]>([
+    {
+      id: '1',
+      type: 'presentation',
+      title: 'Genesis Architecture Overview',
+      description: 'Presentazione sulla architettura del sistema Genesis con diagrammi',
+      status: 'completed',
+      createdAt: Date.now() - 86400000,
+    },
+    {
+      id: '2',
+      type: 'document',
+      title: 'API Documentation',
+      description: 'Documentazione completa delle API REST e WebSocket',
+      status: 'generating',
+      progress: 65,
+      createdAt: Date.now() - 3600000,
+    },
+    {
+      id: '3',
+      type: 'code',
+      title: 'MCP Server Template',
+      description: 'Template TypeScript per creare nuovi MCP servers',
+      status: 'completed',
+      createdAt: Date.now() - 172800000,
+    },
+  ]);
+
+  const [showNewCreation, setShowNewCreation] = useState(false);
+  const [newCreation, setNewCreation] = useState({
+    type: 'presentation' as Creation['type'],
+    title: '',
+    description: '',
+  });
+  const [prompt, setPrompt] = useState('');
+
+  const createContent = () => {
+    if (!newCreation.title.trim()) return;
+
+    const creation: Creation = {
+      id: crypto.randomUUID(),
+      type: newCreation.type,
+      title: newCreation.title,
+      description: newCreation.description || prompt,
+      status: 'generating',
+      progress: 0,
+      createdAt: Date.now(),
+    };
+
+    setCreations(prev => [creation, ...prev]);
+    setNewCreation({ type: 'presentation', title: '', description: '' });
+    setPrompt('');
+    setShowNewCreation(false);
+
+    // Simulate generation progress
+    const interval = setInterval(() => {
+      setCreations(prev => prev.map(c => {
+        if (c.id === creation.id && c.status === 'generating') {
+          const newProgress = (c.progress || 0) + Math.random() * 15;
+          if (newProgress >= 100) {
+            clearInterval(interval);
+            return { ...c, status: 'completed', progress: 100 };
+          }
+          return { ...c, progress: newProgress };
+        }
+        return c;
+      }));
+    }, 500);
+  };
+
+  const typeIcons = {
+    presentation: '📊',
+    document: '📄',
+    image: '🖼️',
+    code: '💻',
+    video: '🎬',
+  };
+
+  const typeLabels = {
+    presentation: 'Presentazione',
+    document: 'Documento',
+    image: 'Immagine',
+    code: 'Codice',
+    video: 'Video',
+  };
+
+  const statusLabels = {
+    draft: 'Bozza',
+    generating: 'In creazione...',
+    completed: 'Completato',
+    error: 'Errore',
+  };
+
+  return (
+    <div className="creator-view">
+      <div className="view-header">
+        <h2>Creator Studio</h2>
+        <button className="primary-btn" onClick={() => setShowNewCreation(true)}>
+          <Icons.plus /> Nuovo Contenuto
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {showNewCreation && (
+          <motion.div
+            className="new-creation-modal"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+          >
+            <div className="modal-header">
+              <h3>Crea Nuovo Contenuto</h3>
+              <button className="close-btn" onClick={() => setShowNewCreation(false)}>
+                <Icons.close />
+              </button>
+            </div>
+
+            <div className="creation-types">
+              {(Object.keys(typeIcons) as Creation['type'][]).map(type => (
+                <button
+                  key={type}
+                  className={`type-option ${newCreation.type === type ? 'selected' : ''}`}
+                  onClick={() => setNewCreation(prev => ({ ...prev, type }))}
+                >
+                  <span className="type-icon">{typeIcons[type]}</span>
+                  <span className="type-label">{typeLabels[type]}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="creation-form">
+              <input
+                type="text"
+                placeholder="Titolo del contenuto..."
+                value={newCreation.title}
+                onChange={e => setNewCreation(prev => ({ ...prev, title: e.target.value }))}
+              />
+              <textarea
+                placeholder="Descrivi cosa vuoi creare... (es. 'Una presentazione di 10 slide sulla architettura microservizi con esempi di codice')"
+                value={prompt}
+                onChange={e => setPrompt(e.target.value)}
+                rows={4}
+              />
+              <div className="form-actions">
+                <button onClick={() => setShowNewCreation(false)}>Annulla</button>
+                <button className="primary" onClick={createContent}>
+                  ✦ Genera con AI
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {showNewCreation && <div className="modal-backdrop" onClick={() => setShowNewCreation(false)} />}
+
+      <div className="creation-templates">
+        <h3>Template Rapidi</h3>
+        <div className="templates-grid">
+          <button className="template-card" onClick={() => {
+            setNewCreation({ type: 'presentation', title: '', description: '' });
+            setPrompt('Crea una presentazione professionale');
+            setShowNewCreation(true);
+          }}>
+            <span className="template-icon">📊</span>
+            <span className="template-name">Pitch Deck</span>
+            <span className="template-desc">Presentazione per investitori</span>
+          </button>
+          <button className="template-card" onClick={() => {
+            setNewCreation({ type: 'document', title: '', description: '' });
+            setPrompt('Genera documentazione tecnica');
+            setShowNewCreation(true);
+          }}>
+            <span className="template-icon">📄</span>
+            <span className="template-name">Tech Docs</span>
+            <span className="template-desc">Documentazione API/SDK</span>
+          </button>
+          <button className="template-card" onClick={() => {
+            setNewCreation({ type: 'presentation', title: '', description: '' });
+            setPrompt('Crea una presentazione educativa');
+            setShowNewCreation(true);
+          }}>
+            <span className="template-icon">🎓</span>
+            <span className="template-name">Tutorial</span>
+            <span className="template-desc">Corso o lezione</span>
+          </button>
+          <button className="template-card" onClick={() => {
+            setNewCreation({ type: 'code', title: '', description: '' });
+            setPrompt('Genera codice boilerplate');
+            setShowNewCreation(true);
+          }}>
+            <span className="template-icon">🚀</span>
+            <span className="template-name">Starter Kit</span>
+            <span className="template-desc">Progetto base</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="creations-section">
+        <h3>I Tuoi Contenuti</h3>
+        <div className="creations-list">
+          {creations.map(creation => (
+            <motion.div
+              key={creation.id}
+              className={`creation-card ${creation.status}`}
+              layout
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d={item.icon} strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <span className="nav-tooltip">{item.label}</span>
+              <div className="creation-icon">{typeIcons[creation.type]}</div>
+              <div className="creation-content">
+                <div className="creation-header">
+                  <h4>{creation.title}</h4>
+                  <span className={`creation-status ${creation.status}`}>
+                    {statusLabels[creation.status]}
+                  </span>
+                </div>
+                <p className="creation-desc">{creation.description}</p>
+                {creation.status === 'generating' && creation.progress !== undefined && (
+                  <div className="creation-progress">
+                    <div className="progress-bar">
+                      <motion.div
+                        className="progress-fill"
+                        animate={{ width: `${creation.progress}%` }}
+                      />
+                    </div>
+                    <span className="progress-text">{Math.round(creation.progress)}%</span>
+                  </div>
+                )}
+                <div className="creation-meta">
+                  <span className="creation-type">{typeLabels[creation.type]}</span>
+                  <span className="creation-date">
+                    {new Date(creation.createdAt).toLocaleDateString('it-IT')}
+                  </span>
+                </div>
+              </div>
+              <div className="creation-actions">
+                {creation.status === 'completed' && (
+                  <>
+                    <button className="action-btn">Apri</button>
+                    <button className="action-btn">Esporta</button>
+                  </>
+                )}
+                {creation.status === 'generating' && (
+                  <button className="action-btn cancel">Annulla</button>
+                )}
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// TERMINAL VIEW - Live Genesis Logs
+// ============================================================================
+
+function TerminalView() {
+  const [logs, setLogs] = useState<Array<{ id: string; timestamp: number; level: string; message: string; source: string }>>([
+    { id: '1', timestamp: Date.now() - 5000, level: 'info', message: 'Genesis kernel initialized', source: 'kernel' },
+    { id: '2', timestamp: Date.now() - 4500, level: 'info', message: 'Loading consciousness module...', source: 'consciousness' },
+    { id: '3', timestamp: Date.now() - 4000, level: 'success', message: 'φ computation ready (IIT 4.0)', source: 'consciousness' },
+    { id: '4', timestamp: Date.now() - 3500, level: 'info', message: 'Connecting to MCP servers...', source: 'mcp' },
+    { id: '5', timestamp: Date.now() - 3000, level: 'success', message: 'Connected: filesystem, github, slack', source: 'mcp' },
+    { id: '6', timestamp: Date.now() - 2500, level: 'info', message: 'Initializing agent pool (10 agents)', source: 'agents' },
+    { id: '7', timestamp: Date.now() - 2000, level: 'success', message: 'All agents ready', source: 'agents' },
+    { id: '8', timestamp: Date.now() - 1500, level: 'info', message: 'Starting neuromodulation system...', source: 'neuromod' },
+    { id: '9', timestamp: Date.now() - 1000, level: 'success', message: 'System fully operational', source: 'kernel' },
+    { id: '10', timestamp: Date.now() - 500, level: 'debug', message: 'Heartbeat: φ=0.847, energy=1.23 nats', source: 'kernel' },
+  ]);
+
+  const [command, setCommand] = useState('');
+  const [filter, setFilter] = useState<'all' | 'info' | 'success' | 'warn' | 'error' | 'debug'>('all');
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // Simulate new logs
+  useEffect(() => {
+    const messages = [
+      { level: 'debug', message: 'Memory consolidation cycle complete', source: 'memory' },
+      { level: 'info', message: 'Agent Explorer started task: code-analysis', source: 'agents' },
+      { level: 'debug', message: 'Heartbeat: φ=0.852, energy=1.19 nats', source: 'kernel' },
+      { level: 'info', message: 'SSE client connected', source: 'dashboard' },
+      { level: 'success', message: 'Task completed: documentation-update', source: 'agents' },
+      { level: 'warn', message: 'High latency detected on anthropic provider (2.3s)', source: 'llm' },
+      { level: 'info', message: 'Neuromodulation adjustment: DA +0.05', source: 'neuromod' },
+    ];
+
+    const interval = setInterval(() => {
+      const msg = messages[Math.floor(Math.random() * messages.length)];
+      setLogs(prev => [...prev.slice(-100), {
+        id: crypto.randomUUID(),
+        timestamp: Date.now(),
+        ...msg,
+      }]);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs]);
+
+  const executeCommand = () => {
+    if (!command.trim()) return;
+    setLogs(prev => [...prev, {
+      id: crypto.randomUUID(),
+      timestamp: Date.now(),
+      level: 'command',
+      message: `$ ${command}`,
+      source: 'user',
+    }]);
+
+    // Simulate response
+    setTimeout(() => {
+      setLogs(prev => [...prev, {
+        id: crypto.randomUUID(),
+        timestamp: Date.now(),
+        level: 'info',
+        message: `Command "${command}" executed`,
+        source: 'system',
+      }]);
+    }, 500);
+
+    setCommand('');
+  };
+
+  const levelColors: Record<string, string> = {
+    info: '#3b82f6',
+    success: '#10b981',
+    warn: '#f59e0b',
+    error: '#ef4444',
+    debug: '#71717a',
+    command: '#a855f7',
+  };
+
+  const filteredLogs = filter === 'all' ? logs : logs.filter(l => l.level === filter);
+
+  return (
+    <div className="terminal-view">
+      <div className="view-header">
+        <h2>Terminal</h2>
+        <div className="terminal-filters">
+          {['all', 'info', 'success', 'warn', 'error', 'debug'].map(f => (
+            <button
+              key={f}
+              className={`filter-btn ${filter === f ? 'active' : ''}`}
+              onClick={() => setFilter(f as typeof filter)}
+            >
+              {f}
             </button>
           ))}
         </div>
+      </div>
 
-        <div className="nav-bottom">
-          <button
-            className={`nav-item ${isPlaying ? 'active' : ''}`}
-            onClick={toggleAudio}
-            title={isPlaying ? 'Mute' : 'Audio'}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d={isPlaying ? icons.audio : icons.mute} strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+      <div className="terminal-output">
+        {filteredLogs.map(log => (
+          <div key={log.id} className={`log-line ${log.level}`}>
+            <span className="log-time">
+              {new Date(log.timestamp).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+            <span className="log-source">[{log.source}]</span>
+            <span className="log-level" style={{ color: levelColors[log.level] }}>
+              {log.level.toUpperCase()}
+            </span>
+            <span className="log-message">{log.message}</span>
+          </div>
+        ))}
+        <div ref={logsEndRef} />
+      </div>
+
+      <div className="terminal-input">
+        <span className="terminal-prompt">genesis $</span>
+        <input
+          type="text"
+          value={command}
+          onChange={e => setCommand(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && executeCommand()}
+          placeholder="Enter command..."
+        />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// ANALYTICS VIEW - Costs and Usage
+// ============================================================================
+
+function AnalyticsView() {
+  const { economy } = useGenesisStore();
+
+  const [timeRange, setTimeRange] = useState<'24h' | '7d' | '30d'>('7d');
+
+  // Mock data for charts
+  const costData = [
+    { day: 'Lun', cost: 0.12, requests: 45 },
+    { day: 'Mar', cost: 0.08, requests: 32 },
+    { day: 'Mer', cost: 0.15, requests: 58 },
+    { day: 'Gio', cost: 0.22, requests: 87 },
+    { day: 'Ven', cost: 0.18, requests: 72 },
+    { day: 'Sab', cost: 0.05, requests: 18 },
+    { day: 'Dom', cost: 0.03, requests: 12 },
+  ];
+
+  const providerData = [
+    { name: 'Anthropic', cost: 0.45, percentage: 55, color: '#a855f7' },
+    { name: 'OpenAI', cost: 0.28, percentage: 34, color: '#10b981' },
+    { name: 'Google', cost: 0.09, percentage: 11, color: '#3b82f6' },
+  ];
+
+  const maxCost = Math.max(...costData.map(d => d.cost));
+
+  return (
+    <div className="analytics-view">
+      <div className="view-header">
+        <h2>Analytics</h2>
+        <div className="time-range-selector">
+          {['24h', '7d', '30d'].map(range => (
+            <button
+              key={range}
+              className={`range-btn ${timeRange === range ? 'active' : ''}`}
+              onClick={() => setTimeRange(range as typeof timeRange)}
+            >
+              {range}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="analytics-grid">
+        {/* Summary Cards */}
+        <div className="analytics-card summary">
+          <h3>Costi Totali</h3>
+          <div className="big-number">${(economy.totalCosts || 0.83).toFixed(2)}</div>
+          <div className="comparison up">+12% vs periodo precedente</div>
+        </div>
+
+        <div className="analytics-card summary">
+          <h3>Richieste LLM</h3>
+          <div className="big-number">324</div>
+          <div className="comparison down">-5% vs periodo precedente</div>
+        </div>
+
+        <div className="analytics-card summary">
+          <h3>Costo Medio/Richiesta</h3>
+          <div className="big-number">$0.0026</div>
+          <div className="comparison stable">= periodo precedente</div>
+        </div>
+
+        <div className="analytics-card summary">
+          <h3>Token Utilizzati</h3>
+          <div className="big-number">1.2M</div>
+          <div className="comparison up">+8% vs periodo precedente</div>
+        </div>
+
+        {/* Cost Chart */}
+        <div className="analytics-card chart-card">
+          <h3>Costi Giornalieri</h3>
+          <div className="bar-chart">
+            {costData.map((d, i) => (
+              <div key={i} className="bar-column">
+                <div className="bar-wrapper">
+                  <motion.div
+                    className="bar"
+                    initial={{ height: 0 }}
+                    animate={{ height: `${(d.cost / maxCost) * 100}%` }}
+                    transition={{ delay: i * 0.1 }}
+                  />
+                </div>
+                <span className="bar-label">{d.day}</span>
+                <span className="bar-value">${d.cost}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Provider Breakdown */}
+        <div className="analytics-card provider-card">
+          <h3>Per Provider</h3>
+          <div className="provider-list">
+            {providerData.map(p => (
+              <div key={p.name} className="provider-row">
+                <div className="provider-info">
+                  <span className="provider-name">{p.name}</span>
+                  <span className="provider-cost">${p.cost.toFixed(2)}</span>
+                </div>
+                <div className="provider-bar">
+                  <motion.div
+                    className="provider-fill"
+                    style={{ background: p.color }}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${p.percentage}%` }}
+                  />
+                </div>
+                <span className="provider-percentage">{p.percentage}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Agent Usage */}
+        <div className="analytics-card">
+          <h3>Utilizzo Agenti</h3>
+          <div className="agent-usage-list">
+            {[
+              { name: 'Coder', usage: 85, tasks: 42 },
+              { name: 'Explorer', usage: 72, tasks: 38 },
+              { name: 'Writer', usage: 65, tasks: 29 },
+              { name: 'Analyst', usage: 45, tasks: 18 },
+              { name: 'Planner', usage: 30, tasks: 12 },
+            ].map(agent => (
+              <div key={agent.name} className="agent-usage-row">
+                <span className="agent-usage-name">{agent.name}</span>
+                <div className="agent-usage-bar">
+                  <motion.div
+                    className="agent-usage-fill"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${agent.usage}%` }}
+                  />
+                </div>
+                <span className="agent-usage-tasks">{agent.tasks} tasks</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// FILES VIEW - Project File Explorer
+// ============================================================================
+
+interface FileNode {
+  name: string;
+  type: 'file' | 'folder';
+  children?: FileNode[];
+  size?: string;
+  modified?: string;
+}
+
+function FilesView() {
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['src', 'src/dashboard']));
+
+  const fileTree: FileNode[] = [
+    {
+      name: 'src',
+      type: 'folder',
+      children: [
+        {
+          name: 'dashboard',
+          type: 'folder',
+          children: [
+            { name: 'App.tsx', type: 'file', size: '45KB', modified: 'now' },
+            { name: 'main.tsx', type: 'file', size: '1KB', modified: '2h ago' },
+            { name: 'index.html', type: 'file', size: '0.5KB', modified: '1d ago' },
+          ],
+        },
+        {
+          name: 'kernel',
+          type: 'folder',
+          children: [
+            { name: 'consciousness.ts', type: 'file', size: '12KB', modified: '3h ago' },
+            { name: 'neuromod.ts', type: 'file', size: '8KB', modified: '1d ago' },
+            { name: 'active-inference.ts', type: 'file', size: '15KB', modified: '2d ago' },
+          ],
+        },
+        {
+          name: 'agents',
+          type: 'folder',
+          children: [
+            { name: 'agent-pool.ts', type: 'file', size: '10KB', modified: '5h ago' },
+            { name: 'executor.ts', type: 'file', size: '6KB', modified: '1d ago' },
+          ],
+        },
+        { name: 'index.ts', type: 'file', size: '2KB', modified: '1d ago' },
+      ],
+    },
+    {
+      name: 'package.json',
+      type: 'file',
+      size: '1.5KB',
+      modified: '3d ago',
+    },
+    {
+      name: 'tsconfig.json',
+      type: 'file',
+      size: '0.8KB',
+      modified: '1w ago',
+    },
+  ];
+
+  const toggleFolder = (path: string) => {
+    setExpandedFolders(prev => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  };
+
+  const renderTree = (nodes: FileNode[], path = ''): React.ReactNode => {
+    return nodes.map(node => {
+      const nodePath = path ? `${path}/${node.name}` : node.name;
+      const isExpanded = expandedFolders.has(nodePath);
+      const isSelected = selectedFile === nodePath;
+
+      if (node.type === 'folder') {
+        return (
+          <div key={nodePath} className="file-node folder">
+            <div
+              className={`file-row ${isSelected ? 'selected' : ''}`}
+              onClick={() => toggleFolder(nodePath)}
+            >
+              <span className="file-icon">{isExpanded ? '📂' : '📁'}</span>
+              <span className="file-name">{node.name}</span>
+              <span className="folder-arrow">{isExpanded ? '▼' : '▶'}</span>
+            </div>
+            {isExpanded && node.children && (
+              <div className="folder-children">
+                {renderTree(node.children, nodePath)}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      return (
+        <div
+          key={nodePath}
+          className={`file-node file ${isSelected ? 'selected' : ''}`}
+          onClick={() => setSelectedFile(nodePath)}
+        >
+          <div className="file-row">
+            <span className="file-icon">
+              {node.name.endsWith('.ts') || node.name.endsWith('.tsx') ? '📜' :
+               node.name.endsWith('.json') ? '📋' :
+               node.name.endsWith('.html') ? '🌐' : '📄'}
+            </span>
+            <span className="file-name">{node.name}</span>
+            <span className="file-size">{node.size}</span>
+            <span className="file-modified">{node.modified}</span>
+          </div>
+        </div>
+      );
+    });
+  };
+
+  return (
+    <div className="files-view">
+      <div className="view-header">
+        <h2>File Explorer</h2>
+        <div className="file-actions">
+          <button className="file-action-btn">
+            <Icons.plus /> New File
           </button>
-          <button
-            className={`nav-item ${currentView === 'settings' ? 'active' : ''}`}
-            onClick={() => setCurrentView('settings')}
-            title="Settings"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d={icons.settings} strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+          <button className="file-action-btn">
+            <Icons.folder /> New Folder
           </button>
         </div>
-      </nav>
+      </div>
+
+      <div className="files-layout">
+        <div className="file-tree">
+          <div className="tree-header">
+            <span>GENESIS PROJECT</span>
+          </div>
+          <div className="tree-content">
+            {renderTree(fileTree)}
+          </div>
+        </div>
+
+        <div className="file-preview">
+          {selectedFile ? (
+            <>
+              <div className="preview-header">
+                <span className="preview-path">{selectedFile}</span>
+                <div className="preview-actions">
+                  <button>Edit</button>
+                  <button>Delete</button>
+                </div>
+              </div>
+              <div className="preview-content">
+                <pre className="code-preview">
+{`// ${selectedFile}
+// Preview content would appear here
+
+import { Genesis } from './genesis';
+
+export function main() {
+  const genesis = new Genesis();
+  genesis.initialize();
+  genesis.start();
+}
+`}
+                </pre>
+              </div>
+            </>
+          ) : (
+            <div className="preview-empty">
+              <span className="preview-empty-icon">📄</span>
+              <span>Select a file to preview</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// COMMAND PALETTE (⌘K)
+// ============================================================================
+
+interface CommandPaletteProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onNavigate: (view: View) => void;
+}
+
+function CommandPalette({ isOpen, onClose, onNavigate }: CommandPaletteProps) {
+  const [query, setQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const commands = [
+    { id: 'overview', label: 'Go to Overview', icon: '◉', category: 'Navigation' },
+    { id: 'chat', label: 'Open Chat', icon: '◈', category: 'Navigation' },
+    { id: 'agents', label: 'View Agents', icon: '⬡', category: 'Navigation' },
+    { id: 'tasks', label: 'Manage Tasks', icon: '◇', category: 'Navigation' },
+    { id: 'creator', label: 'Creator Studio', icon: '✦', category: 'Navigation' },
+    { id: 'terminal', label: 'Open Terminal', icon: '⌨', category: 'Navigation' },
+    { id: 'analytics', label: 'View Analytics', icon: '📈', category: 'Navigation' },
+    { id: 'files', label: 'File Explorer', icon: '📁', category: 'Navigation' },
+    { id: 'memory', label: 'Memory Explorer', icon: '⬢', category: 'Navigation' },
+    { id: 'settings', label: 'Settings', icon: '⚙', category: 'Navigation' },
+    { id: 'new-task', label: 'Create New Task', icon: '+', category: 'Actions' },
+    { id: 'new-agent', label: 'Start New Agent', icon: '▶', category: 'Actions' },
+    { id: 'search-memory', label: 'Search Memories', icon: '⌕', category: 'Actions' },
+  ];
+
+  const filteredCommands = query
+    ? commands.filter(c => c.label.toLowerCase().includes(query.toLowerCase()))
+    : commands;
+
+  useEffect(() => {
+    if (isOpen) {
+      inputRef.current?.focus();
+      setQuery('');
+    }
+  }, [isOpen]);
+
+  const executeCommand = (id: string) => {
+    if (['overview', 'chat', 'agents', 'tasks', 'creator', 'terminal', 'analytics', 'files', 'memory', 'settings'].includes(id)) {
+      onNavigate(id as View);
+    }
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <>
+      <div className="command-backdrop" onClick={onClose} />
+      <motion.div
+        className="command-palette"
+        initial={{ opacity: 0, scale: 0.95, y: -20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: -20 }}
+      >
+        <div className="command-input-wrapper">
+          <Icons.search />
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Type a command or search..."
+          />
+          <span className="command-shortcut">ESC</span>
+        </div>
+        <div className="command-results">
+          {filteredCommands.map(cmd => (
+            <button
+              key={cmd.id}
+              className="command-item"
+              onClick={() => executeCommand(cmd.id)}
+            >
+              <span className="command-icon">{cmd.icon}</span>
+              <span className="command-label">{cmd.label}</span>
+              <span className="command-category">{cmd.category}</span>
+            </button>
+          ))}
+        </div>
+      </motion.div>
+    </>
+  );
+}
+
+// ============================================================================
+// NOTIFICATIONS
+// ============================================================================
+
+interface Notification {
+  id: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  title: string;
+  message: string;
+  timestamp: number;
+}
+
+function NotificationCenter({ notifications, onDismiss }: { notifications: Notification[]; onDismiss: (id: string) => void }) {
+  return (
+    <div className="notification-center">
+      <AnimatePresence>
+        {notifications.map(notif => (
+          <motion.div
+            key={notif.id}
+            className={`notification ${notif.type}`}
+            initial={{ opacity: 0, x: 100 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 100 }}
+          >
+            <div className="notification-content">
+              <strong>{notif.title}</strong>
+              <p>{notif.message}</p>
+            </div>
+            <button className="notification-close" onClick={() => onDismiss(notif.id)}>
+              ×
+            </button>
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ============================================================================
+// SETTINGS VIEW
+// ============================================================================
+
+function SettingsView() {
+  const [settings, setSettings] = useState({
+    apiKey: '••••••••••••••••',
+    defaultProvider: 'anthropic',
+    autoSave: true,
+    darkMode: true,
+    notifications: true,
+    mcpServers: [
+      { name: 'filesystem', enabled: true },
+      { name: 'github', enabled: true },
+      { name: 'slack', enabled: false },
+      { name: 'linear', enabled: true },
+      { name: 'postgres', enabled: false },
+    ],
+  });
+
+  return (
+    <div className="settings-view">
+      <div className="view-header">
+        <h2>Impostazioni</h2>
+      </div>
+
+      <div className="settings-sections">
+        <section className="settings-section">
+          <h3>API & Provider</h3>
+          <div className="setting-item">
+            <label>API Key</label>
+            <div className="input-group">
+              <input type="password" value={settings.apiKey} readOnly />
+              <button>Modifica</button>
+            </div>
+          </div>
+          <div className="setting-item">
+            <label>Provider Default</label>
+            <select
+              value={settings.defaultProvider}
+              onChange={e => setSettings(prev => ({ ...prev, defaultProvider: e.target.value }))}
+            >
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI (GPT-4)</option>
+              <option value="google">Google (Gemini)</option>
+            </select>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>MCP Servers</h3>
+          <div className="mcp-list">
+            {settings.mcpServers.map((server, i) => (
+              <div key={server.name} className="mcp-item">
+                <span className="mcp-name">{server.name}</span>
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={server.enabled}
+                    onChange={e => {
+                      const newServers = [...settings.mcpServers];
+                      newServers[i].enabled = e.target.checked;
+                      setSettings(prev => ({ ...prev, mcpServers: newServers }));
+                    }}
+                  />
+                  <span className="toggle-slider" />
+                </label>
+              </div>
+            ))}
+          </div>
+          <button className="add-mcp">
+            <Icons.plus /> Aggiungi Server
+          </button>
+        </section>
+
+        <section className="settings-section">
+          <h3>Preferenze</h3>
+          <div className="setting-item toggle-item">
+            <label>Salvataggio automatico</label>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={settings.autoSave}
+                onChange={e => setSettings(prev => ({ ...prev, autoSave: e.target.checked }))}
+              />
+              <span className="toggle-slider" />
+            </label>
+          </div>
+          <div className="setting-item toggle-item">
+            <label>Notifiche</label>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={settings.notifications}
+                onChange={e => setSettings(prev => ({ ...prev, notifications: e.target.checked }))}
+              />
+              <span className="toggle-slider" />
+            </label>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// OVERVIEW (Dashboard)
+// ============================================================================
+
+function OverviewView() {
+  const {
+    connected,
+    consciousness,
+    neuromod,
+    kernel,
+    economy,
+    memory,
+    agents,
+    events,
+  } = useGenesisStore();
+
+  return (
+    <div className="overview-view">
+      <div className="view-header">
+        <h2>Overview</h2>
+        <div className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
+          {connected ? '● Connesso' : '○ Disconnesso'}
+        </div>
+      </div>
+
+      <div className="overview-grid">
+        {/* Consciousness Card */}
+        <div className="overview-card consciousness">
+          <div className="card-header">
+            <h3>Coscienza</h3>
+            <span className="state-badge">{consciousness.state}</span>
+          </div>
+          <div className="phi-display">
+            <span className="phi-symbol">φ</span>
+            <span className="phi-value">{consciousness.phi.toFixed(3)}</span>
+          </div>
+          <div className="mini-stats">
+            <div className="mini-stat">
+              <span className="label">Integrazione</span>
+              <span className="value">{(consciousness.integration * 100).toFixed(0)}%</span>
+            </div>
+            <div className="mini-stat">
+              <span className="label">Complessità</span>
+              <span className="value">{(consciousness.complexity * 100).toFixed(0)}%</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Agents Card */}
+        <div className="overview-card agents">
+          <div className="card-header">
+            <h3>Agenti</h3>
+          </div>
+          <div className="agents-summary">
+            <div className="agent-count active">{agents.active}</div>
+            <span className="agent-label">attivi su {agents.total}</span>
+          </div>
+          <div className="providers-row">
+            {agents.providers.map(p => (
+              <span key={p} className="provider-tag">{p}</span>
+            ))}
+          </div>
+        </div>
+
+        {/* Economy Card */}
+        <div className="overview-card economy">
+          <div className="card-header">
+            <h3>Economia</h3>
+            <span className={`data-badge ${economy.isReal ? 'real' : 'demo'}`}>
+              {economy.isReal ? 'LIVE' : 'DEMO'}
+            </span>
+          </div>
+          <div className="cost-display">
+            <span className="currency">$</span>
+            <span className="amount">{(economy.totalCosts || economy.costs).toFixed(4)}</span>
+          </div>
+          <div className="ness-bar">
+            <div className="ness-fill" style={{ width: `${economy.ness * 100}%` }} />
+          </div>
+          <span className="ness-label">NESS: {(economy.ness * 100).toFixed(0)}%</span>
+        </div>
+
+        {/* Memory Card */}
+        <div className="overview-card memory">
+          <div className="card-header">
+            <h3>Memoria</h3>
+          </div>
+          <div className="memory-bars">
+            <div className="memory-row">
+              <span className="type">Episodica</span>
+              <div className="bar">
+                <div className="fill episodic" style={{ width: `${Math.min(100, memory.episodic / 20)}%` }} />
+              </div>
+              <span className="count">{memory.episodic}</span>
+            </div>
+            <div className="memory-row">
+              <span className="type">Semantica</span>
+              <div className="bar">
+                <div className="fill semantic" style={{ width: `${Math.min(100, memory.semantic / 10)}%` }} />
+              </div>
+              <span className="count">{memory.semantic}</span>
+            </div>
+            <div className="memory-row">
+              <span className="type">Procedurale</span>
+              <div className="bar">
+                <div className="fill procedural" style={{ width: `${Math.min(100, memory.procedural / 5)}%` }} />
+              </div>
+              <span className="count">{memory.procedural}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Kernel Card */}
+        <div className="overview-card kernel">
+          <div className="card-header">
+            <h3>Kernel</h3>
+            <span className="mode-badge">{kernel.mode}</span>
+          </div>
+          <div className="kernel-stats">
+            <div className="kernel-stat">
+              <span className="label">Free Energy</span>
+              <span className="value">{kernel.freeEnergy.toFixed(2)} nats</span>
+            </div>
+            <div className="kernel-stat">
+              <span className="label">Pred Error</span>
+              <span className="value">{kernel.predictionError.toFixed(3)}</span>
+            </div>
+          </div>
+          <div className="kernel-levels">
+            {Object.entries(kernel.levels).map(([level, data]) => (
+              <div key={level} className={`level ${data.active ? 'active' : ''}`}>
+                <span className="level-id">{level}</span>
+                <div className="level-bar">
+                  <div className="level-fill" style={{ width: `${data.load * 100}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Events Card */}
+        <div className="overview-card events">
+          <div className="card-header">
+            <h3>Eventi Recenti</h3>
+            <span className="event-count">{events.length}</span>
+          </div>
+          <div className="events-list">
+            {events.slice(0, 5).map(event => (
+              <div key={event.id} className="event-row">
+                <span className="event-dot" />
+                <span className="event-type">{event.type}</span>
+                <span className="event-time">
+                  {Math.floor((Date.now() - event.timestamp) / 1000)}s
+                </span>
+              </div>
+            ))}
+            {events.length === 0 && (
+              <div className="no-events">Nessun evento recente</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// MAIN APP
+// ============================================================================
+
+export default function App() {
+  const [currentView, setCurrentView] = useState<View>('overview');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  const { connected } = useGenesisStore();
+
+  // Connect to Genesis
+  const genesisUrl = import.meta.env.DEV ? '' : 'http://localhost:9876';
+  useSSEConnection(genesisUrl);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // ⌘K or Ctrl+K to open command palette
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen(prev => !prev);
+      }
+      // Escape to close
+      if (e.key === 'Escape') {
+        setCommandPaletteOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Demo notification on mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      addNotification('success', 'Sistema Pronto', 'Genesis è online e operativo');
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const addNotification = (type: Notification['type'], title: string, message: string) => {
+    const notif: Notification = {
+      id: crypto.randomUUID(),
+      type,
+      title,
+      message,
+      timestamp: Date.now(),
+    };
+    setNotifications(prev => [...prev, notif]);
+
+    // Auto dismiss after 5s
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== notif.id));
+    }, 5000);
+  };
+
+  const dismissNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
+  const navItems: { id: View; label: string; icon: React.FC }[] = [
+    { id: 'overview', label: 'Overview', icon: Icons.overview },
+    { id: 'chat', label: 'Chat', icon: Icons.chat },
+    { id: 'agents', label: 'Agenti', icon: Icons.agents },
+    { id: 'tasks', label: 'Tasks', icon: Icons.tasks },
+    { id: 'creator', label: 'Creator', icon: Icons.creator },
+    { id: 'terminal', label: 'Terminal', icon: Icons.terminal },
+    { id: 'analytics', label: 'Analytics', icon: Icons.analytics },
+    { id: 'files', label: 'Files', icon: Icons.files },
+    { id: 'memory', label: 'Memory', icon: Icons.memory },
+    { id: 'settings', label: 'Settings', icon: Icons.settings },
+  ];
+
+  const renderView = () => {
+    switch (currentView) {
+      case 'overview': return <OverviewView />;
+      case 'chat': return <ChatView />;
+      case 'agents': return <AgentsView />;
+      case 'tasks': return <TasksView />;
+      case 'creator': return <CreatorView />;
+      case 'terminal': return <TerminalView />;
+      case 'analytics': return <AnalyticsView />;
+      case 'files': return <FilesView />;
+      case 'memory': return <MemoryView />;
+      case 'settings': return <SettingsView />;
+      default: return <OverviewView />;
+    }
+  };
+
+  return (
+    <div className="genesis-app">
+      {/* Command Palette */}
+      <AnimatePresence>
+        {commandPaletteOpen && (
+          <CommandPalette
+            isOpen={commandPaletteOpen}
+            onClose={() => setCommandPaletteOpen(false)}
+            onNavigate={setCurrentView}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Notifications */}
+      <NotificationCenter notifications={notifications} onDismiss={dismissNotification} />
+
+      {/* Sidebar */}
+      <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
+        <div className="sidebar-header">
+          <div className="logo">
+            <div className="logo-orb" />
+            {!sidebarCollapsed && <span className="logo-text">GENESIS</span>}
+          </div>
+        </div>
+
+        {/* Search / Command Palette trigger */}
+        {!sidebarCollapsed && (
+          <button className="search-trigger" onClick={() => setCommandPaletteOpen(true)}>
+            <Icons.search />
+            <span>Search...</span>
+            <span className="shortcut">⌘K</span>
+          </button>
+        )}
+
+        <nav className="sidebar-nav">
+          {navItems.map(item => (
+            <button
+              key={item.id}
+              className={`nav-item ${currentView === item.id ? 'active' : ''}`}
+              onClick={() => setCurrentView(item.id)}
+              title={item.label}
+            >
+              <item.icon />
+              {!sidebarCollapsed && <span>{item.label}</span>}
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-footer">
+          <div className={`status-dot ${connected ? 'online' : 'offline'}`} />
+          {!sidebarCollapsed && (
+            <span className="status-text">{connected ? 'Online' : 'Offline'}</span>
+          )}
+        </div>
+      </aside>
 
       {/* Main Content */}
       <main className="main-content">
-        {/* Top Bar */}
-        <header className="top-bar">
-          <div className="top-left">
-            <h2 className="page-title">
-              {currentView.charAt(0).toUpperCase() + currentView.slice(1)}
-            </h2>
-            <div className="breadcrumb">Genesis Observatory / {currentView}</div>
-          </div>
-
-          <div className="top-center">
-            <div className="phi-display">
-              <span className="phi-label">Consciousness</span>
-              <span className="phi-value" style={{ color: getPhiColor(consciousness.phi) }}>
-                φ = {consciousness.phi.toFixed(3)}
-              </span>
-              <span className={`phi-trend ${consciousness.trend}`}>
-                {consciousness.trend === 'up' ? '↑' : consciousness.trend === 'down' ? '↓' : '→'}
-              </span>
-            </div>
-          </div>
-
-          <div className="top-right">
-            <div className="status-indicators">
-              <div className="indicator">
-                <span className={`indicator-dot ${connected ? 'live' : 'demo'}`} />
-                <span>{connected ? 'LIVE' : 'DEMO'}</span>
-              </div>
-              <div className="indicator">
-                <span className="indicator-label">FE</span>
-                <span className="indicator-value">{kernel.freeEnergy.toFixed(2)}</span>
-              </div>
-              <div className="indicator">
-                <span className="indicator-label">AGENTS</span>
-                <span className="indicator-value">{agentState.active}/{agentState.total}</span>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {/* Content Area */}
-        <div className="content-area">
-          <AnimatePresence mode="wait">
-            {currentView === 'overview' && (
-              <motion.div
-                key="overview"
-                className="view-overview"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-              >
-                {/* 3D Visualization */}
-                <div className="glass-card main-viz">
-                  <div className="card-header">
-                    <h3>Neural Interface</h3>
-                    <span className="card-badge">REAL-TIME</span>
-                  </div>
-                  <div className="canvas-wrapper">
-                    <Canvas camera={{ position: [0, 0, 8], fov: 50 }} dpr={[1, 2]}>
-                      <Suspense fallback={null}>
-                        <ambientLight intensity={0.1} />
-                        <pointLight position={[10, 10, 10]} intensity={0.3} color="#00ff88" />
-                        <pointLight position={[-10, -10, -10]} intensity={0.15} color="#0088ff" />
-                        <Stars radius={100} depth={50} count={2000} factor={4} fade speed={0.2} />
-                        <ConsciousnessSphere phi={consciousness.phi} state={consciousness.state} position={[0, 0, 0]} />
-                        <NeuralTopology position={[3, 1, -2]} scale={0.4} />
-                        <KernelMandala position={[-3, 1, -2]} scale={0.5} kernel={kernel} />
-                        <OrbitControls enablePan={false} enableZoom={true} minDistance={4} maxDistance={15} autoRotate autoRotateSpeed={0.3} />
-                      </Suspense>
-                    </Canvas>
-                  </div>
-                </div>
-
-                {/* Neuromodulators */}
-                <div className="glass-card neuromod-card">
-                  <div className="card-header">
-                    <h3>Neuromodulators</h3>
-                  </div>
-                  <div className="neuromod-grid">
-                    <NeuromodBar label="Dopamine" value={neuromod.dopamine} color="#00ff88" />
-                    <NeuromodBar label="Serotonin" value={neuromod.serotonin} color="#0088ff" />
-                    <NeuromodBar label="Norepinephrine" value={neuromod.norepinephrine} color="#ffaa00" />
-                    <NeuromodBar label="Cortisol" value={neuromod.cortisol} color="#ff4466" />
-                  </div>
-                </div>
-
-                {/* Quick Stats */}
-                <div className="glass-card stats-card">
-                  <div className="card-header">
-                    <h3>System Metrics</h3>
-                  </div>
-                  <div className="stats-grid">
-                    <StatItem label="Free Energy" value={kernel.freeEnergy.toFixed(2)} trend={kernel.freeEnergy < 1.5 ? 'good' : 'warn'} />
-                    <StatItem label="Prediction Error" value={(kernel.predictionError * 100).toFixed(1) + '%'} trend={kernel.predictionError < 0.3 ? 'good' : 'warn'} />
-                    <StatItem label="Integration" value={(consciousness.integration * 100).toFixed(0) + '%'} trend="good" />
-                    <StatItem label="Complexity" value={(consciousness.complexity * 100).toFixed(0) + '%'} trend="good" />
-                  </div>
-                </div>
-
-                {/* Economy Summary */}
-                <div className="glass-card economy-card">
-                  <div className="card-header">
-                    <h3>Economy</h3>
-                    <span className="card-value">${economy.cash.toLocaleString()}</span>
-                  </div>
-                  <div className="economy-bars">
-                    <div className="econ-row">
-                      <span>Revenue</span>
-                      <div className="econ-bar">
-                        <div className="econ-fill revenue" style={{ width: `${Math.min(100, economy.revenue / 10)}%` }} />
-                      </div>
-                      <span className="econ-value">+${economy.revenue}</span>
-                    </div>
-                    <div className="econ-row">
-                      <span>Costs</span>
-                      <div className="econ-bar">
-                        <div className="econ-fill costs" style={{ width: `${Math.min(100, economy.costs / 10)}%` }} />
-                      </div>
-                      <span className="econ-value">-${economy.costs}</span>
-                    </div>
-                  </div>
-                  <div className="runway">
-                    <span>Runway</span>
-                    <strong>{economy.runway} days</strong>
-                  </div>
-                </div>
-
-                {/* Recent Activity */}
-                <div className="glass-card activity-card">
-                  <div className="card-header">
-                    <h3>Recent Activity</h3>
-                  </div>
-                  <div className="activity-list">
-                    {[
-                      { icon: '🔍', text: 'Explorer completed web scan', time: '2m ago', color: '#00ff88' },
-                      { icon: '📊', text: 'Analyst generated report', time: '5m ago', color: '#aa66ff' },
-                      { icon: '⚡', text: 'Memory consolidation: 94%', time: '8m ago', color: '#ffaa00' },
-                      { icon: '💭', text: 'Dream cycle completed', time: '12m ago', color: '#8844ff' },
-                    ].map((item, i) => (
-                      <div key={i} className="activity-item">
-                        <span className="activity-icon" style={{ background: item.color + '22', color: item.color }}>{item.icon}</span>
-                        <span className="activity-text">{item.text}</span>
-                        <span className="activity-time">{item.time}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {currentView === 'agents' && (
-              <motion.div
-                key="agents"
-                className="view-agents"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-              >
-                <div className="agents-header">
-                  <div className="agents-summary">
-                    <div className="summary-stat">
-                      <span className="stat-number">{agentState.active}</span>
-                      <span className="stat-label">Active</span>
-                    </div>
-                    <div className="summary-stat">
-                      <span className="stat-number">{agentState.queued}</span>
-                      <span className="stat-label">Queued</span>
-                    </div>
-                    <div className="summary-stat">
-                      <span className="stat-number">{agentState.total}</span>
-                      <span className="stat-label">Total</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="agents-grid">
-                  {agents.map((agent, i) => (
-                    <motion.div
-                      key={agent.id}
-                      className="glass-card agent-card"
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: i * 0.05 }}
-                    >
-                      <div className="agent-header">
-                        <span className="agent-icon" style={{ background: agent.color + '22' }}>{agent.icon}</span>
-                        <div className="agent-info">
-                          <h4>{agent.name}</h4>
-                          <span className="agent-desc">{agent.desc}</span>
-                        </div>
-                        <span className={`agent-status ${i < agentState.active ? 'active' : i < agentState.active + agentState.queued ? 'queued' : 'idle'}`}>
-                          {i < agentState.active ? 'Active' : i < agentState.active + agentState.queued ? 'Queued' : 'Idle'}
-                        </span>
-                      </div>
-                      <div className="agent-metrics">
-                        <div className="metric">
-                          <span>Tasks</span>
-                          <strong>{Math.floor(Math.random() * 50)}</strong>
-                        </div>
-                        <div className="metric">
-                          <span>Success</span>
-                          <strong>{85 + Math.floor(Math.random() * 15)}%</strong>
-                        </div>
-                        <div className="metric">
-                          <span>Load</span>
-                          <div className="load-bar">
-                            <div className="load-fill" style={{ width: `${20 + Math.random() * 60}%`, background: agent.color }} />
-                          </div>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-
-            {currentView === 'economy' && (
-              <motion.div
-                key="economy"
-                className="view-economy"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-              >
-                <div className="economy-header">
-                  <div className="glass-card balance-card">
-                    <span className="balance-label">Total Balance</span>
-                    <span className="balance-value">${economy.cash.toLocaleString()}</span>
-                    <span className="balance-change positive">+{((economy.revenue - economy.costs) / economy.cash * 100).toFixed(1)}% this month</span>
-                  </div>
-                  <div className="glass-card">
-                    <span className="mini-label">Revenue</span>
-                    <span className="mini-value positive">+${economy.revenue}/day</span>
-                  </div>
-                  <div className="glass-card">
-                    <span className="mini-label">Costs</span>
-                    <span className="mini-value negative">-${economy.costs}/day</span>
-                  </div>
-                  <div className="glass-card">
-                    <span className="mini-label">Runway</span>
-                    <span className="mini-value">{economy.runway} days</span>
-                  </div>
-                </div>
-
-                <div className="glass-card revenue-streams">
-                  <div className="card-header">
-                    <h3>Revenue Streams</h3>
-                  </div>
-                  <div className="streams-list">
-                    {[
-                      { name: 'API Services', amount: 180, percent: 36 },
-                      { name: 'Bounty Rewards', amount: 150, percent: 30 },
-                      { name: 'Data Analysis', amount: 100, percent: 20 },
-                      { name: 'Consulting', amount: 70, percent: 14 },
-                    ].map((stream, i) => (
-                      <div key={i} className="stream-item">
-                        <span className="stream-name">{stream.name}</span>
-                        <div className="stream-bar">
-                          <motion.div
-                            className="stream-fill"
-                            initial={{ width: 0 }}
-                            animate={{ width: `${stream.percent}%` }}
-                            transition={{ delay: i * 0.1, duration: 0.5 }}
-                          />
-                        </div>
-                        <span className="stream-amount">${stream.amount}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="glass-card ness-card">
-                  <div className="card-header">
-                    <h3>NESS Score</h3>
-                    <span className="ness-value" style={{ color: economy.ness > 0.7 ? '#00ff88' : economy.ness > 0.4 ? '#ffaa00' : '#ff4466' }}>
-                      {(economy.ness * 100).toFixed(0)}%
-                    </span>
-                  </div>
-                  <p className="ness-desc">
-                    Net Economic Self-Sustainability measures the system's ability to maintain financial autonomy.
-                    Values above 70% indicate healthy self-sustaining operation.
-                  </p>
-                  <div className="ness-bar">
-                    <motion.div
-                      className="ness-fill"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${economy.ness * 100}%` }}
-                      style={{ background: economy.ness > 0.7 ? '#00ff88' : economy.ness > 0.4 ? '#ffaa00' : '#ff4466' }}
-                    />
-                    <div className="ness-marker" style={{ left: '70%' }}>
-                      <span>Target</span>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {currentView === 'bounties' && (
-              <motion.div
-                key="bounties"
-                className="view-bounties"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-              >
-                <div className="bounties-header">
-                  <div className="bounty-stats">
-                    <div className="glass-card mini">
-                      <span className="stat-num">{bounties.filter(b => b.status === 'open').length}</span>
-                      <span>Open</span>
-                    </div>
-                    <div className="glass-card mini">
-                      <span className="stat-num">{bounties.filter(b => b.status === 'in-progress').length}</span>
-                      <span>In Progress</span>
-                    </div>
-                    <div className="glass-card mini">
-                      <span className="stat-num">{bounties.filter(b => b.status === 'completed').length}</span>
-                      <span>Completed</span>
-                    </div>
-                    <div className="glass-card mini highlight">
-                      <span className="stat-num">${bounties.reduce((a, b) => a + b.reward, 0)}</span>
-                      <span>Total Rewards</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bounties-list">
-                  {bounties.map((bounty, i) => (
-                    <motion.div
-                      key={bounty.id}
-                      className={`glass-card bounty-card ${bounty.status}`}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.1 }}
-                    >
-                      <div className="bounty-main">
-                        <div className="bounty-info">
-                          <h4>{bounty.title}</h4>
-                          <div className="bounty-tags">
-                            {bounty.tags.map(tag => (
-                              <span key={tag} className="tag">{tag}</span>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="bounty-meta">
-                          <span className={`difficulty ${bounty.difficulty.toLowerCase()}`}>{bounty.difficulty}</span>
-                          <span className="reward">${bounty.reward}</span>
-                          <span className={`status-badge ${bounty.status}`}>
-                            {bounty.status === 'in-progress' ? 'In Progress' : bounty.status.charAt(0).toUpperCase() + bounty.status.slice(1)}
-                          </span>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-
-            {currentView === 'chat' && (
-              <motion.div
-                key="chat"
-                className="view-chat"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-              >
-                <div className="glass-card chat-container">
-                  <div className="chat-header">
-                    <h3>Genesis Interface</h3>
-                    <span className="chat-status online">Connected</span>
-                  </div>
-
-                  <div className="chat-messages">
-                    {chatMessages.map((msg) => (
-                      <div key={msg.id} className={`message ${msg.role}`}>
-                        {msg.role === 'agent' && (
-                          <span className="agent-badge">{msg.agent}</span>
-                        )}
-                        <div className="message-content">{msg.content}</div>
-                        <span className="message-time">{msg.time}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="chat-input-area">
-                    <input
-                      type="text"
-                      placeholder="Message Genesis..."
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-                    />
-                    <button onClick={sendMessage}>
-                      <svg viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {currentView === 'roadmap' && (
-              <motion.div
-                key="roadmap"
-                className="view-roadmap"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-              >
-                <div className="roadmap-timeline">
-                  {roadmapItems.map((quarter, qi) => (
-                    <div key={quarter.quarter} className="roadmap-quarter">
-                      <div className="quarter-header">
-                        <span className="quarter-name">{quarter.quarter}</span>
-                        <div className="quarter-line" />
-                      </div>
-                      <div className="quarter-items">
-                        {quarter.items.map((item, ii) => (
-                          <motion.div
-                            key={item.title}
-                            className={`glass-card roadmap-item ${item.status}`}
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: qi * 0.1 + ii * 0.05 }}
-                          >
-                            <div className={`status-dot ${item.status}`} />
-                            <div className="item-content">
-                              <h4>{item.title}</h4>
-                              <p>{item.desc}</p>
-                            </div>
-                            <span className={`status-label ${item.status}`}>
-                              {item.status === 'in-progress' ? 'In Progress' : item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                            </span>
-                          </motion.div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-
-            {currentView === 'settings' && (
-              <motion.div
-                key="settings"
-                className="view-settings"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-              >
-                <div className="glass-card settings-card">
-                  <h3>Audio Settings</h3>
-                  <div className="setting-row">
-                    <span>Master Volume</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.1"
-                      value={volume}
-                      onChange={(e) => setVolume(parseFloat(e.target.value))}
-                    />
-                    <span>{Math.round(volume * 100)}%</span>
-                  </div>
-                  <div className="setting-row">
-                    <span>Sonification</span>
-                    <button className={`toggle ${isPlaying ? 'on' : ''}`} onClick={toggleAudio}>
-                      {isPlaying ? 'ON' : 'OFF'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="glass-card settings-card">
-                  <h3>About Genesis</h3>
-                  <p>
-                    Genesis is an Artificial General Intelligence system built on cutting-edge cognitive architectures:
-                    Integrated Information Theory (IIT 4.0), Active Inference, and Global Workspace Theory.
-                  </p>
-                  <div className="about-stats">
-                    <div><strong>Version:</strong> 2030.1.0</div>
-                    <div><strong>Agents:</strong> 10 specialized</div>
-                    <div><strong>Kernel:</strong> 4-level hierarchy</div>
-                    <div><strong>Status:</strong> Operational</div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentView}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="view-container"
+          >
+            {renderView()}
+          </motion.div>
+        </AnimatePresence>
       </main>
 
-      {/* Aurora Effect */}
-      <div className="aurora-container">
-        <NeuromodAurora neuromod={neuromod} />
-      </div>
-
       <style>{`
+        /* ============================================
+           GENESIS - Full Interactive Interface
+           ============================================ */
+
         * {
           margin: 0;
           padding: 0;
           box-sizing: border-box;
         }
 
+        :root {
+          --bg-primary: #0a0a0f;
+          --bg-secondary: #111118;
+          --bg-card: #16161d;
+          --bg-hover: #1c1c25;
+          --border-color: rgba(255, 255, 255, 0.06);
+          --text-primary: #e4e4e7;
+          --text-secondary: #a1a1aa;
+          --text-muted: #71717a;
+          --accent-purple: #a855f7;
+          --accent-cyan: #06b6d4;
+          --accent-green: #10b981;
+          --accent-orange: #f59e0b;
+          --accent-red: #ef4444;
+          --accent-blue: #3b82f6;
+        }
+
         .genesis-app {
           width: 100vw;
           height: 100vh;
           display: flex;
-          background: #050508;
+          background: var(--bg-primary);
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-          color: #fff;
+          color: var(--text-primary);
           overflow: hidden;
         }
 
-        /* Welcome Splash */
-        .welcome-splash {
-          position: fixed;
-          inset: 0;
-          background: radial-gradient(ellipse at center, #0a0a12 0%, #050508 100%);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-        }
-
-        .welcome-content {
-          text-align: center;
-        }
-
-        .welcome-logo {
-          font-size: 80px;
-          color: #00ff88;
-          animation: pulse 2s ease-in-out infinite;
-          margin-bottom: 24px;
-        }
-
-        .welcome-content h1 {
-          font-size: 48px;
-          font-weight: 200;
-          letter-spacing: 0.4em;
-          color: #fff;
-          margin-bottom: 12px;
-        }
-
-        .welcome-content p {
-          font-size: 14px;
-          color: #666;
-          letter-spacing: 0.2em;
-          text-transform: uppercase;
-        }
-
-        .welcome-loading {
-          width: 200px;
-          height: 2px;
-          background: rgba(255,255,255,0.1);
-          border-radius: 2px;
-          margin: 40px auto 20px;
-          overflow: hidden;
-        }
-
-        .loading-bar {
+        /* Sidebar */
+        .sidebar {
+          width: 240px;
           height: 100%;
-          background: linear-gradient(90deg, #00ff88, #0088ff);
-          animation: loading 2s ease-in-out infinite;
-        }
-
-        @keyframes loading {
-          0% { width: 0%; margin-left: 0; }
-          50% { width: 100%; margin-left: 0; }
-          100% { width: 0%; margin-left: 100%; }
-        }
-
-        .welcome-version {
-          font-size: 11px;
-          color: #444;
-          letter-spacing: 0.1em;
-        }
-
-        /* Navigation Sidebar */
-        .nav-sidebar {
-          width: 72px;
-          height: 100%;
-          background: rgba(10, 10, 15, 0.95);
-          border-right: 1px solid rgba(255,255,255,0.05);
+          background: var(--bg-secondary);
+          border-right: 1px solid var(--border-color);
           display: flex;
           flex-direction: column;
-          align-items: center;
-          padding: 20px 0;
-          z-index: 100;
+          transition: width 0.3s ease;
         }
 
-        .nav-logo {
-          margin-bottom: 32px;
+        .sidebar.collapsed {
+          width: 64px;
         }
 
-        .logo-symbol {
-          font-size: 32px;
-          color: #00ff88;
-          animation: pulse 3s ease-in-out infinite;
+        .sidebar-header {
+          padding: 20px;
+          border-bottom: 1px solid var(--border-color);
         }
 
-        .nav-items {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-          flex: 1;
-        }
-
-        .nav-item {
-          width: 48px;
-          height: 48px;
-          border-radius: 12px;
-          background: transparent;
-          border: none;
-          color: #666;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: all 0.2s ease;
-          position: relative;
-        }
-
-        .nav-item svg {
-          width: 22px;
-          height: 22px;
-        }
-
-        .nav-item:hover {
-          background: rgba(255,255,255,0.05);
-          color: #fff;
-        }
-
-        .nav-item.active {
-          background: rgba(0, 255, 136, 0.1);
-          color: #00ff88;
-        }
-
-        .nav-tooltip {
-          position: absolute;
-          left: 60px;
-          background: #1a1a22;
-          padding: 8px 12px;
-          border-radius: 8px;
-          font-size: 13px;
-          white-space: nowrap;
-          opacity: 0;
-          pointer-events: none;
-          transition: opacity 0.2s;
-          z-index: 1000;
-        }
-
-        .nav-item:hover .nav-tooltip {
-          opacity: 1;
-        }
-
-        .nav-bottom {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-
-        /* Main Content */
-        .main-content {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-        }
-
-        /* Top Bar */
-        .top-bar {
-          height: 64px;
-          background: rgba(10, 10, 15, 0.8);
-          border-bottom: 1px solid rgba(255,255,255,0.05);
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 0 24px;
-          backdrop-filter: blur(20px);
-        }
-
-        .top-left {
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
-
-        .page-title {
-          font-size: 18px;
-          font-weight: 500;
-        }
-
-        .breadcrumb {
-          font-size: 11px;
-          color: #555;
-        }
-
-        .top-center {
-          position: absolute;
-          left: 50%;
-          transform: translateX(-50%);
-        }
-
-        .phi-display {
+        .logo {
           display: flex;
           align-items: center;
           gap: 12px;
-          background: rgba(0,0,0,0.3);
-          padding: 8px 20px;
-          border-radius: 20px;
-          border: 1px solid rgba(255,255,255,0.1);
         }
 
-        .phi-label {
-          font-size: 11px;
-          color: #666;
-          text-transform: uppercase;
-          letter-spacing: 0.1em;
+        .logo-orb {
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          background: radial-gradient(circle at 30% 30%, #c084fc, var(--accent-purple));
+          box-shadow: 0 0 20px rgba(168, 85, 247, 0.4);
+          animation: pulse 3s ease-in-out infinite;
         }
 
-        .phi-value {
+        @keyframes pulse {
+          0%, 100% { box-shadow: 0 0 20px rgba(168, 85, 247, 0.4); }
+          50% { box-shadow: 0 0 30px rgba(168, 85, 247, 0.6); }
+        }
+
+        .logo-text {
           font-size: 16px;
-          font-weight: 600;
-          font-family: 'JetBrains Mono', monospace;
+          font-weight: 700;
+          letter-spacing: 0.15em;
         }
 
-        .phi-trend {
+        .sidebar-nav {
+          flex: 1;
+          padding: 12px 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .nav-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px 16px;
+          background: transparent;
+          border: none;
+          border-radius: 8px;
+          color: var(--text-secondary);
           font-size: 14px;
-          opacity: 0.7;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          text-align: left;
         }
 
-        .phi-trend.up { color: #00ff88; }
-        .phi-trend.down { color: #ff4466; }
-        .phi-trend.stable { color: #666; }
+        .nav-item:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
 
-        .top-right {
+        .nav-item.active {
+          background: rgba(168, 85, 247, 0.15);
+          color: var(--accent-purple);
+        }
+
+        .nav-item span:first-child {
+          font-size: 18px;
+          width: 24px;
+          text-align: center;
+        }
+
+        .sidebar-footer {
+          padding: 16px 20px;
+          border-top: 1px solid var(--border-color);
           display: flex;
           align-items: center;
-          gap: 24px;
+          gap: 10px;
         }
 
-        .status-indicators {
-          display: flex;
-          align-items: center;
-          gap: 20px;
-        }
-
-        .indicator {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          font-size: 12px;
-        }
-
-        .indicator-dot {
+        .status-dot {
           width: 8px;
           height: 8px;
           border-radius: 50%;
         }
 
-        .indicator-dot.live {
-          background: #00ff88;
-          box-shadow: 0 0 10px rgba(0,255,136,0.5);
-          animation: pulse 2s ease-in-out infinite;
+        .status-dot.online {
+          background: var(--accent-green);
+          box-shadow: 0 0 8px var(--accent-green);
         }
 
-        .indicator-dot.demo {
-          background: #ffaa00;
-          box-shadow: 0 0 10px rgba(255,170,0,0.5);
-          animation: pulse 2s ease-in-out infinite;
+        .status-dot.offline {
+          background: var(--accent-red);
         }
 
-        .indicator-label {
-          color: #666;
+        .status-text {
+          font-size: 12px;
+          color: var(--text-muted);
         }
 
-        .indicator-value {
-          color: #fff;
-          font-weight: 500;
-        }
-
-        /* Content Area */
-        .content-area {
+        /* Main Content */
+        .main-content {
           flex: 1;
-          overflow-y: auto;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .view-container {
+          flex: 1;
+          overflow: auto;
           padding: 24px;
         }
 
-        /* Glass Cards */
-        .glass-card {
-          background: rgba(15, 15, 22, 0.8);
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 16px;
-          padding: 20px;
-          backdrop-filter: blur(20px);
-          transition: all 0.3s ease;
+        .view-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 24px;
         }
 
-        .glass-card:hover {
-          border-color: rgba(255,255,255,0.15);
-          box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        .view-header h2 {
+          font-size: 24px;
+          font-weight: 600;
+        }
+
+        /* Overview Cards */
+        .overview-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 16px;
+        }
+
+        .overview-card {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          padding: 20px;
         }
 
         .card-header {
           display: flex;
-          align-items: center;
           justify-content: space-between;
+          align-items: center;
           margin-bottom: 16px;
         }
 
         .card-header h3 {
           font-size: 14px;
-          font-weight: 500;
-          color: #888;
-          text-transform: uppercase;
-          letter-spacing: 0.1em;
-        }
-
-        .card-badge {
-          font-size: 10px;
-          padding: 4px 8px;
-          background: rgba(0,255,136,0.15);
-          color: #00ff88;
-          border-radius: 4px;
-          letter-spacing: 0.1em;
-        }
-
-        .card-value {
-          font-size: 18px;
           font-weight: 600;
-          color: #00ff88;
+          color: var(--text-secondary);
         }
 
-        /* Overview Layout */
-        .view-overview {
-          display: grid;
-          grid-template-columns: 2fr 1fr;
-          grid-template-rows: auto auto auto;
-          gap: 20px;
+        .state-badge, .mode-badge {
+          font-size: 11px;
+          padding: 4px 10px;
+          background: rgba(168, 85, 247, 0.15);
+          color: var(--accent-purple);
+          border-radius: 4px;
+          text-transform: uppercase;
         }
 
-        .main-viz {
-          grid-column: 1;
-          grid-row: 1 / 3;
-          height: 400px;
+        .phi-display {
+          text-align: center;
+          margin-bottom: 16px;
         }
 
-        .canvas-wrapper {
-          width: 100%;
-          height: calc(100% - 40px);
-          border-radius: 12px;
-          overflow: hidden;
+        .phi-symbol {
+          font-size: 20px;
+          color: var(--text-muted);
+          margin-right: 8px;
         }
 
-        .neuromod-card {
-          grid-column: 2;
-          grid-row: 1;
+        .phi-value {
+          font-size: 36px;
+          font-weight: 700;
+          background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan));
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
         }
 
-        .neuromod-grid {
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-        }
-
-        .stats-card {
-          grid-column: 2;
-          grid-row: 2;
-        }
-
-        .stats-grid {
+        .mini-stats {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 16px;
-        }
-
-        .economy-card {
-          grid-column: 1;
-          grid-row: 3;
-        }
-
-        .activity-card {
-          grid-column: 2;
-          grid-row: 3;
-        }
-
-        /* Neuromod Bars */
-        .neuromod-bar {
-          display: flex;
-          align-items: center;
           gap: 12px;
         }
 
-        .neuromod-label {
-          font-size: 12px;
-          color: #888;
-          width: 100px;
+        .mini-stat {
+          text-align: center;
         }
 
-        .neuromod-track {
-          flex: 1;
-          height: 6px;
-          background: rgba(255,255,255,0.05);
-          border-radius: 3px;
-          overflow: hidden;
+        .mini-stat .label {
+          font-size: 11px;
+          color: var(--text-muted);
+          display: block;
+          margin-bottom: 4px;
         }
 
-        .neuromod-fill {
-          height: 100%;
-          border-radius: 3px;
-          transition: width 0.3s ease;
-        }
-
-        .neuromod-value {
-          font-size: 12px;
-          font-weight: 500;
-          width: 40px;
-          text-align: right;
-          font-family: 'JetBrains Mono', monospace;
-        }
-
-        /* Stats */
-        .stat-item {
-          background: rgba(0,0,0,0.2);
-          padding: 12px;
-          border-radius: 10px;
-        }
-
-        .stat-label {
-          font-size: 10px;
-          color: #666;
-          text-transform: uppercase;
-          letter-spacing: 0.1em;
-        }
-
-        .stat-value {
+        .mini-stat .value {
           font-size: 18px;
           font-weight: 600;
-          margin-top: 4px;
-        }
-
-        .stat-value.good { color: #00ff88; }
-        .stat-value.warn { color: #ffaa00; }
-
-        /* Economy */
-        .economy-bars {
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-        }
-
-        .econ-row {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          font-size: 13px;
-        }
-
-        .econ-row > span:first-child {
-          width: 70px;
-          color: #888;
-        }
-
-        .econ-bar {
-          flex: 1;
-          height: 8px;
-          background: rgba(255,255,255,0.05);
-          border-radius: 4px;
-          overflow: hidden;
-        }
-
-        .econ-fill {
-          height: 100%;
-          border-radius: 4px;
-          transition: width 0.5s ease;
-        }
-
-        .econ-fill.revenue { background: linear-gradient(90deg, #00ff88, #00aa66); }
-        .econ-fill.costs { background: linear-gradient(90deg, #ff4466, #ff6644); }
-
-        .econ-value {
-          width: 60px;
-          text-align: right;
-          font-weight: 500;
-        }
-
-        .runway {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-top: 16px;
-          padding-top: 16px;
-          border-top: 1px solid rgba(255,255,255,0.05);
-          font-size: 14px;
-        }
-
-        .runway span { color: #888; }
-        .runway strong { color: #00ff88; }
-
-        /* Activity */
-        .activity-list {
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-        }
-
-        .activity-item {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .activity-icon {
-          width: 32px;
-          height: 32px;
-          border-radius: 8px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 14px;
-        }
-
-        .activity-text {
-          flex: 1;
-          font-size: 13px;
-        }
-
-        .activity-time {
-          font-size: 11px;
-          color: #555;
-        }
-
-        /* Agents View */
-        .view-agents {
-          display: flex;
-          flex-direction: column;
-          gap: 24px;
-        }
-
-        .agents-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
         }
 
         .agents-summary {
-          display: flex;
-          gap: 32px;
+          text-align: center;
+          margin-bottom: 16px;
         }
 
-        .summary-stat {
+        .agent-count {
+          font-size: 48px;
+          font-weight: 700;
+          color: var(--accent-green);
+        }
+
+        .agent-label {
+          font-size: 14px;
+          color: var(--text-muted);
+        }
+
+        .providers-row {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
+        .provider-tag {
+          font-size: 11px;
+          padding: 4px 8px;
+          background: rgba(6, 182, 212, 0.15);
+          color: var(--accent-cyan);
+          border-radius: 4px;
+        }
+
+        .cost-display {
+          text-align: center;
+          margin-bottom: 16px;
+        }
+
+        .cost-display .currency {
+          font-size: 18px;
+          color: var(--text-muted);
+        }
+
+        .cost-display .amount {
+          font-size: 32px;
+          font-weight: 700;
+        }
+
+        .data-badge {
+          font-size: 10px;
+          font-weight: 600;
+          padding: 3px 8px;
+          border-radius: 4px;
+        }
+
+        .data-badge.real {
+          background: rgba(16, 185, 129, 0.15);
+          color: var(--accent-green);
+        }
+
+        .data-badge.demo {
+          background: rgba(245, 158, 11, 0.15);
+          color: var(--accent-orange);
+        }
+
+        .ness-bar {
+          height: 6px;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 3px;
+          overflow: hidden;
+          margin-bottom: 8px;
+        }
+
+        .ness-fill {
+          height: 100%;
+          background: var(--accent-green);
+          border-radius: 3px;
+        }
+
+        .ness-label {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        .memory-bars {
           display: flex;
           flex-direction: column;
+          gap: 12px;
+        }
+
+        .memory-row {
+          display: grid;
+          grid-template-columns: 80px 1fr 40px;
           align-items: center;
+          gap: 12px;
         }
 
-        .stat-number {
-          font-size: 32px;
-          font-weight: 600;
-          color: #00ff88;
-        }
-
-        .stat-label {
+        .memory-row .type {
           font-size: 12px;
-          color: #666;
+          color: var(--text-secondary);
+        }
+
+        .memory-row .bar {
+          height: 6px;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 3px;
+          overflow: hidden;
+        }
+
+        .memory-row .fill {
+          height: 100%;
+          border-radius: 3px;
+        }
+
+        .memory-row .fill.episodic { background: var(--accent-orange); }
+        .memory-row .fill.semantic { background: var(--accent-blue); }
+        .memory-row .fill.procedural { background: var(--accent-green); }
+
+        .memory-row .count {
+          font-size: 12px;
+          text-align: right;
+          color: var(--text-primary);
+        }
+
+        .kernel-stats {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+          margin-bottom: 16px;
+        }
+
+        .kernel-stat .label {
+          font-size: 11px;
+          color: var(--text-muted);
+          display: block;
+          margin-bottom: 4px;
+        }
+
+        .kernel-stat .value {
+          font-size: 16px;
+          font-weight: 600;
+        }
+
+        .kernel-levels {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .kernel-levels .level {
+          display: grid;
+          grid-template-columns: 24px 1fr;
+          align-items: center;
+          gap: 8px;
+          opacity: 0.4;
+        }
+
+        .kernel-levels .level.active {
+          opacity: 1;
+        }
+
+        .kernel-levels .level-id {
+          font-size: 10px;
+          font-weight: 600;
+          color: var(--text-muted);
+        }
+
+        .kernel-levels .level-bar {
+          height: 4px;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 2px;
+          overflow: hidden;
+        }
+
+        .kernel-levels .level-fill {
+          height: 100%;
+          background: var(--accent-purple);
+          border-radius: 2px;
+        }
+
+        .events-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .event-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px;
+          background: rgba(255, 255, 255, 0.02);
+          border-radius: 6px;
+        }
+
+        .event-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: var(--accent-purple);
+        }
+
+        .event-type {
+          flex: 1;
+          font-size: 12px;
+          color: var(--text-secondary);
+        }
+
+        .event-time {
+          font-size: 11px;
+          color: var(--text-muted);
+        }
+
+        .event-count {
+          font-size: 12px;
+          padding: 2px 8px;
+          background: rgba(168, 85, 247, 0.15);
+          color: var(--accent-purple);
+          border-radius: 10px;
+        }
+
+        .no-events {
+          text-align: center;
+          padding: 20px;
+          color: var(--text-muted);
+          font-size: 13px;
+        }
+
+        .connection-status {
+          font-size: 12px;
+          padding: 6px 12px;
+          border-radius: 6px;
+        }
+
+        .connection-status.connected {
+          background: rgba(16, 185, 129, 0.15);
+          color: var(--accent-green);
+        }
+
+        .connection-status.disconnected {
+          background: rgba(239, 68, 68, 0.15);
+          color: var(--accent-red);
+        }
+
+        /* Chat View */
+        .chat-view {
+          display: flex;
+          flex-direction: column;
+          height: calc(100vh - 48px);
+        }
+
+        .chat-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding-bottom: 16px;
+          border-bottom: 1px solid var(--border-color);
+          margin-bottom: 16px;
+        }
+
+        .chat-header h2 {
+          font-size: 20px;
+          font-weight: 600;
+        }
+
+        .chat-status {
+          font-size: 12px;
+          color: var(--accent-green);
+        }
+
+        .chat-messages {
+          flex: 1;
+          overflow-y: auto;
+          padding: 16px 0;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+
+        .chat-message {
+          max-width: 80%;
+          padding: 12px 16px;
+          border-radius: 12px;
+        }
+
+        .chat-message.user {
+          align-self: flex-end;
+          background: var(--accent-purple);
+          color: white;
+          border-bottom-right-radius: 4px;
+        }
+
+        .chat-message.assistant,
+        .chat-message.system {
+          align-self: flex-start;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-bottom-left-radius: 4px;
+        }
+
+        .message-agent {
+          font-size: 10px;
+          color: var(--accent-purple);
+          margin-bottom: 4px;
+          display: block;
           text-transform: uppercase;
+        }
+
+        .message-content {
+          font-size: 14px;
+          line-height: 1.5;
+        }
+
+        .message-time {
+          font-size: 10px;
+          color: var(--text-muted);
+          margin-top: 6px;
+          display: block;
+        }
+
+        .chat-message.user .message-time {
+          color: rgba(255, 255, 255, 0.7);
+        }
+
+        .typing-indicator {
+          display: flex;
+          gap: 4px;
+          padding: 4px;
+        }
+
+        .typing-indicator span {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: var(--text-muted);
+          animation: typing 1.4s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+          0%, 60%, 100% { transform: translateY(0); }
+          30% { transform: translateY(-4px); }
+        }
+
+        .chat-input-container {
+          display: flex;
+          gap: 12px;
+          padding-top: 16px;
+          border-top: 1px solid var(--border-color);
+        }
+
+        .chat-input-container textarea {
+          flex: 1;
+          padding: 14px 16px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          color: var(--text-primary);
+          font-size: 14px;
+          resize: none;
+          font-family: inherit;
+        }
+
+        .chat-input-container textarea:focus {
+          outline: none;
+          border-color: var(--accent-purple);
+        }
+
+        .chat-input-container button {
+          width: 48px;
+          height: 48px;
+          background: var(--accent-purple);
+          border: none;
+          border-radius: 12px;
+          color: white;
+          font-size: 18px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: background 0.2s;
+        }
+
+        .chat-input-container button:hover:not(:disabled) {
+          background: #9333ea;
+        }
+
+        .chat-input-container button:disabled {
+          background: var(--bg-hover);
+          color: var(--text-muted);
+          cursor: not-allowed;
+        }
+
+        /* Agents View */
+        .agents-view {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .header-stats {
+          display: flex;
+          gap: 16px;
+        }
+
+        .header-stats .stat {
+          font-size: 13px;
+          color: var(--text-secondary);
         }
 
         .agents-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+          grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
           gap: 16px;
         }
 
         .agent-card {
-          padding: 16px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          padding: 20px;
+        }
+
+        .agent-card.running {
+          border-color: rgba(16, 185, 129, 0.3);
         }
 
         .agent-header {
@@ -1332,672 +2574,928 @@ export default function App() {
           margin-bottom: 16px;
         }
 
-        .agent-icon {
-          width: 40px;
-          height: 40px;
-          border-radius: 10px;
+        .agent-card .agent-icon {
+          font-size: 24px;
+          width: 48px;
+          height: 48px;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 20px;
+          background: var(--bg-hover);
+          border-radius: 10px;
+        }
+
+        .agent-card.running .agent-icon {
+          background: rgba(16, 185, 129, 0.15);
+          color: var(--accent-green);
         }
 
         .agent-info {
           flex: 1;
         }
 
-        .agent-info h4 {
-          font-size: 15px;
-          font-weight: 500;
-          margin-bottom: 2px;
+        .agent-info h3 {
+          font-size: 16px;
+          font-weight: 600;
+          margin-bottom: 4px;
         }
 
-        .agent-desc {
-          font-size: 11px;
-          color: #666;
-        }
-
-        .agent-status {
-          font-size: 10px;
-          padding: 4px 8px;
-          border-radius: 4px;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-        }
-
-        .agent-status.active {
-          background: rgba(0,255,136,0.15);
-          color: #00ff88;
-        }
-
-        .agent-status.queued {
-          background: rgba(255,170,0,0.15);
-          color: #ffaa00;
-        }
-
-        .agent-status.idle {
-          background: rgba(255,255,255,0.05);
-          color: #666;
-        }
-
-        .agent-metrics {
-          display: flex;
-          gap: 16px;
-        }
-
-        .agent-metrics .metric {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          flex: 1;
-        }
-
-        .agent-metrics .metric span {
-          font-size: 10px;
-          color: #666;
-          text-transform: uppercase;
-        }
-
-        .agent-metrics .metric strong {
-          font-size: 14px;
-        }
-
-        .load-bar {
-          height: 4px;
-          background: rgba(255,255,255,0.05);
-          border-radius: 2px;
-          margin-top: 8px;
-        }
-
-        .load-fill {
-          height: 100%;
-          border-radius: 2px;
-        }
-
-        /* Economy View */
-        .view-economy {
-          display: flex;
-          flex-direction: column;
-          gap: 24px;
-        }
-
-        .economy-header {
-          display: grid;
-          grid-template-columns: 2fr 1fr 1fr 1fr;
-          gap: 16px;
-        }
-
-        .balance-card {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-
-        .balance-label {
+        .agent-type {
           font-size: 12px;
-          color: #666;
-          text-transform: uppercase;
-        }
-
-        .balance-value {
-          font-size: 36px;
-          font-weight: 600;
-          color: #fff;
-        }
-
-        .balance-change {
-          font-size: 13px;
-        }
-
-        .balance-change.positive { color: #00ff88; }
-        .balance-change.negative { color: #ff4466; }
-
-        .mini-label {
-          font-size: 11px;
-          color: #666;
-          text-transform: uppercase;
-        }
-
-        .mini-value {
-          font-size: 20px;
-          font-weight: 600;
-          margin-top: 8px;
-        }
-
-        .mini-value.positive { color: #00ff88; }
-        .mini-value.negative { color: #ff4466; }
-
-        .revenue-streams {
-          flex: 1;
-        }
-
-        .streams-list {
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-        }
-
-        .stream-item {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-        }
-
-        .stream-name {
-          width: 120px;
-          font-size: 13px;
-          color: #888;
-        }
-
-        .stream-bar {
-          flex: 1;
-          height: 8px;
-          background: rgba(255,255,255,0.05);
-          border-radius: 4px;
-          overflow: hidden;
-        }
-
-        .stream-fill {
-          height: 100%;
-          background: linear-gradient(90deg, #00ff88, #0088ff);
-          border-radius: 4px;
-        }
-
-        .stream-amount {
-          width: 60px;
-          text-align: right;
-          font-weight: 500;
-        }
-
-        .ness-card {
-          max-width: 600px;
-        }
-
-        .ness-value {
-          font-size: 24px;
-          font-weight: 600;
-        }
-
-        .ness-desc {
-          font-size: 13px;
-          color: #666;
-          line-height: 1.6;
-          margin-bottom: 20px;
-        }
-
-        .ness-bar {
-          height: 12px;
-          background: rgba(255,255,255,0.05);
-          border-radius: 6px;
-          overflow: visible;
-          position: relative;
-        }
-
-        .ness-fill {
-          height: 100%;
-          border-radius: 6px;
-          transition: width 0.5s ease;
-        }
-
-        .ness-marker {
-          position: absolute;
-          top: -24px;
-          transform: translateX(-50%);
-          font-size: 10px;
-          color: #666;
-        }
-
-        .ness-marker::after {
-          content: '';
-          position: absolute;
-          left: 50%;
-          top: 14px;
-          width: 1px;
-          height: 22px;
-          background: rgba(255,255,255,0.2);
-        }
-
-        /* Bounties View */
-        .view-bounties {
-          display: flex;
-          flex-direction: column;
-          gap: 24px;
-        }
-
-        .bounties-header {
-          display: flex;
-          justify-content: space-between;
-        }
-
-        .bounty-stats {
-          display: flex;
-          gap: 16px;
-        }
-
-        .bounty-stats .glass-card.mini {
-          padding: 16px 24px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 4px;
-        }
-
-        .bounty-stats .stat-num {
-          font-size: 24px;
-          font-weight: 600;
-        }
-
-        .bounty-stats .highlight {
-          background: rgba(0,255,136,0.1);
-          border-color: rgba(0,255,136,0.3);
-        }
-
-        .bounty-stats .highlight .stat-num {
-          color: #00ff88;
-        }
-
-        .bounties-list {
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-        }
-
-        .bounty-card {
-          padding: 16px 20px;
-        }
-
-        .bounty-card.completed {
-          opacity: 0.6;
-        }
-
-        .bounty-main {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
-        .bounty-info h4 {
-          font-size: 15px;
-          font-weight: 500;
-          margin-bottom: 8px;
-        }
-
-        .bounty-tags {
-          display: flex;
-          gap: 8px;
-        }
-
-        .tag {
-          font-size: 10px;
-          padding: 4px 8px;
-          background: rgba(255,255,255,0.05);
-          border-radius: 4px;
-          color: #888;
-        }
-
-        .bounty-meta {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-        }
-
-        .difficulty {
-          font-size: 11px;
-          padding: 4px 10px;
-          border-radius: 4px;
-          text-transform: uppercase;
-        }
-
-        .difficulty.easy { background: rgba(0,255,136,0.15); color: #00ff88; }
-        .difficulty.medium { background: rgba(255,170,0,0.15); color: #ffaa00; }
-        .difficulty.hard { background: rgba(255,68,102,0.15); color: #ff4466; }
-
-        .reward {
-          font-size: 18px;
-          font-weight: 600;
-          color: #00ff88;
+          color: var(--text-muted);
+          text-transform: capitalize;
         }
 
         .status-badge {
           font-size: 11px;
-          padding: 6px 12px;
-          border-radius: 6px;
-          text-transform: uppercase;
+          padding: 4px 10px;
+          border-radius: 4px;
         }
 
-        .status-badge.open { background: rgba(0,136,255,0.15); color: #0088ff; }
-        .status-badge.in-progress { background: rgba(255,170,0,0.15); color: #ffaa00; }
-        .status-badge.completed { background: rgba(0,255,136,0.15); color: #00ff88; }
-
-        /* Chat View */
-        .view-chat {
-          height: calc(100vh - 140px);
+        .status-badge.idle {
+          background: rgba(113, 113, 122, 0.2);
+          color: var(--text-muted);
         }
 
-        .chat-container {
-          height: 100%;
-          display: flex;
-          flex-direction: column;
+        .status-badge.running {
+          background: rgba(16, 185, 129, 0.15);
+          color: var(--accent-green);
         }
 
-        .chat-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding-bottom: 16px;
-          border-bottom: 1px solid rgba(255,255,255,0.05);
+        .status-badge.error {
+          background: rgba(239, 68, 68, 0.15);
+          color: var(--accent-red);
+        }
+
+        .agent-task {
+          padding: 12px;
+          background: var(--bg-hover);
+          border-radius: 8px;
           margin-bottom: 16px;
         }
 
-        .chat-header h3 {
-          font-size: 16px;
-          font-weight: 500;
-        }
-
-        .chat-status {
+        .task-label {
           font-size: 11px;
-          padding: 4px 12px;
-          border-radius: 12px;
-        }
-
-        .chat-status.online {
-          background: rgba(0,255,136,0.15);
-          color: #00ff88;
-        }
-
-        .chat-messages {
-          flex: 1;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-          padding-right: 8px;
-        }
-
-        .message {
-          max-width: 80%;
-          padding: 12px 16px;
-          border-radius: 12px;
-          font-size: 14px;
-          line-height: 1.5;
-        }
-
-        .message.user {
-          align-self: flex-end;
-          background: rgba(0,136,255,0.2);
-          border: 1px solid rgba(0,136,255,0.3);
-        }
-
-        .message.genesis {
-          align-self: flex-start;
-          background: rgba(0,255,136,0.1);
-          border: 1px solid rgba(0,255,136,0.2);
-        }
-
-        .message.agent {
-          align-self: flex-start;
-          background: rgba(170,102,255,0.1);
-          border: 1px solid rgba(170,102,255,0.2);
-        }
-
-        .message.system {
-          align-self: center;
-          background: rgba(255,255,255,0.05);
-          font-size: 12px;
-          color: #888;
-        }
-
-        .agent-badge {
-          display: inline-block;
-          font-size: 10px;
-          padding: 2px 8px;
-          background: rgba(170,102,255,0.3);
-          border-radius: 4px;
-          margin-bottom: 8px;
-          color: #aa66ff;
-        }
-
-        .message-content {
-          color: #ddd;
-        }
-
-        .message-time {
+          color: var(--text-muted);
           display: block;
-          font-size: 10px;
-          color: #555;
-          margin-top: 8px;
-          text-align: right;
+          margin-bottom: 4px;
         }
 
-        .chat-input-area {
+        .task-text {
+          font-size: 13px;
+          color: var(--text-secondary);
+        }
+
+        .agent-actions {
           display: flex;
-          gap: 12px;
-          margin-top: 16px;
-          padding-top: 16px;
-          border-top: 1px solid rgba(255,255,255,0.05);
+          gap: 8px;
         }
 
-        .chat-input-area input {
+        .agent-actions button {
           flex: 1;
-          background: rgba(0,0,0,0.3);
-          border: 1px solid rgba(255,255,255,0.1);
-          border-radius: 12px;
-          padding: 12px 16px;
-          color: #fff;
-          font-size: 14px;
-          outline: none;
-          transition: border-color 0.2s;
-        }
-
-        .chat-input-area input:focus {
-          border-color: rgba(0,255,136,0.5);
-        }
-
-        .chat-input-area input::placeholder {
-          color: #555;
-        }
-
-        .chat-input-area button {
-          width: 48px;
-          height: 48px;
-          border-radius: 12px;
-          background: linear-gradient(135deg, #00ff88, #00aa66);
-          border: none;
-          color: #000;
+          padding: 10px 16px;
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          background: transparent;
+          color: var(--text-secondary);
+          font-size: 13px;
           cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
-          transition: transform 0.2s;
+          gap: 6px;
+          transition: all 0.2s;
         }
 
-        .chat-input-area button:hover {
-          transform: scale(1.05);
+        .agent-actions button:hover {
+          background: var(--bg-hover);
         }
 
-        .chat-input-area button svg {
-          width: 20px;
-          height: 20px;
+        .agent-actions button.start {
+          background: rgba(16, 185, 129, 0.15);
+          border-color: rgba(16, 185, 129, 0.3);
+          color: var(--accent-green);
         }
 
-        /* Roadmap View */
-        .view-roadmap {
-          padding-bottom: 40px;
+        .agent-actions button.stop {
+          background: rgba(239, 68, 68, 0.15);
+          border-color: rgba(239, 68, 68, 0.3);
+          color: var(--accent-red);
         }
 
-        .roadmap-timeline {
+        /* Tasks View */
+        .tasks-view {
           display: flex;
           flex-direction: column;
-          gap: 40px;
         }
 
-        .roadmap-quarter {
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-        }
-
-        .quarter-header {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-        }
-
-        .quarter-name {
-          font-size: 18px;
-          font-weight: 600;
-          color: #00ff88;
-          white-space: nowrap;
-        }
-
-        .quarter-line {
-          flex: 1;
-          height: 1px;
-          background: linear-gradient(90deg, rgba(0,255,136,0.3), transparent);
-        }
-
-        .quarter-items {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-          gap: 16px;
-          padding-left: 24px;
-        }
-
-        .roadmap-item {
-          display: flex;
-          align-items: flex-start;
-          gap: 12px;
-          padding: 16px;
-        }
-
-        .status-dot {
-          width: 12px;
-          height: 12px;
-          border-radius: 50%;
-          margin-top: 4px;
-          flex-shrink: 0;
-        }
-
-        .status-dot.completed { background: #00ff88; box-shadow: 0 0 10px rgba(0,255,136,0.5); }
-        .status-dot.in-progress { background: #ffaa00; animation: pulse 2s infinite; }
-        .status-dot.planned { background: #555; }
-        .status-dot.research { background: #aa66ff; }
-
-        .item-content {
-          flex: 1;
-        }
-
-        .item-content h4 {
-          font-size: 14px;
-          font-weight: 500;
-          margin-bottom: 4px;
-        }
-
-        .item-content p {
-          font-size: 12px;
-          color: #666;
-        }
-
-        .status-label {
-          font-size: 10px;
-          padding: 4px 8px;
-          border-radius: 4px;
-          text-transform: uppercase;
-        }
-
-        .status-label.completed { background: rgba(0,255,136,0.15); color: #00ff88; }
-        .status-label.in-progress { background: rgba(255,170,0,0.15); color: #ffaa00; }
-        .status-label.planned { background: rgba(255,255,255,0.05); color: #666; }
-        .status-label.research { background: rgba(170,102,255,0.15); color: #aa66ff; }
-
-        /* Settings View */
-        .view-settings {
-          display: flex;
-          flex-direction: column;
-          gap: 24px;
-          max-width: 600px;
-        }
-
-        .settings-card h3 {
-          font-size: 16px;
-          font-weight: 500;
-          margin-bottom: 20px;
-        }
-
-        .setting-row {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          margin-bottom: 16px;
-        }
-
-        .setting-row > span:first-child {
-          width: 120px;
-          font-size: 14px;
-          color: #888;
-        }
-
-        .setting-row input[type="range"] {
-          flex: 1;
-          height: 4px;
-          -webkit-appearance: none;
-          background: rgba(255,255,255,0.1);
-          border-radius: 2px;
-        }
-
-        .setting-row input[type="range"]::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          width: 16px;
-          height: 16px;
-          background: #00ff88;
-          border-radius: 50%;
-          cursor: pointer;
-        }
-
-        .toggle {
-          padding: 8px 16px;
+        .primary-btn {
+          padding: 10px 20px;
+          background: var(--accent-purple);
+          border: none;
           border-radius: 8px;
-          border: 1px solid rgba(255,255,255,0.1);
+          color: white;
+          font-size: 14px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          transition: background 0.2s;
+        }
+
+        .primary-btn:hover {
+          background: #9333ea;
+        }
+
+        .new-task-form {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          padding: 20px;
+          margin-bottom: 20px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .new-task-form input,
+        .new-task-form textarea,
+        .new-task-form select {
+          width: 100%;
+          padding: 12px 16px;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          color: var(--text-primary);
+          font-size: 14px;
+          font-family: inherit;
+        }
+
+        .new-task-form textarea {
+          resize: none;
+          min-height: 80px;
+        }
+
+        .new-task-form input:focus,
+        .new-task-form textarea:focus,
+        .new-task-form select:focus {
+          outline: none;
+          border-color: var(--accent-purple);
+        }
+
+        .form-row {
+          display: flex;
+          gap: 12px;
+          align-items: center;
+        }
+
+        .form-row select {
+          width: auto;
+        }
+
+        .form-actions {
+          display: flex;
+          gap: 8px;
+          margin-left: auto;
+        }
+
+        .form-actions button {
+          padding: 10px 20px;
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
           background: transparent;
-          color: #666;
+          color: var(--text-secondary);
+          font-size: 13px;
           cursor: pointer;
           transition: all 0.2s;
         }
 
-        .toggle.on {
-          background: rgba(0,255,136,0.15);
-          border-color: rgba(0,255,136,0.3);
-          color: #00ff88;
+        .form-actions button:hover {
+          background: var(--bg-hover);
         }
 
-        .about-stats {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
+        .form-actions button.primary {
+          background: var(--accent-purple);
+          border-color: var(--accent-purple);
+          color: white;
+        }
+
+        .tasks-list {
+          display: flex;
+          flex-direction: column;
           gap: 12px;
-          margin-top: 16px;
+        }
+
+        .task-card {
+          display: flex;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          overflow: hidden;
+        }
+
+        .task-priority {
+          width: 4px;
+        }
+
+        .task-content {
+          flex: 1;
+          padding: 16px 20px;
+        }
+
+        .task-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 8px;
+        }
+
+        .task-header h3 {
+          font-size: 15px;
+          font-weight: 600;
+        }
+
+        .task-status {
+          font-size: 12px;
+          font-weight: 500;
+        }
+
+        .task-description {
           font-size: 13px;
-          color: #888;
+          color: var(--text-secondary);
+          margin-bottom: 12px;
+          line-height: 1.4;
         }
 
-        .about-stats strong {
-          color: #fff;
+        .task-meta {
+          display: flex;
+          gap: 16px;
+          font-size: 12px;
+          color: var(--text-muted);
         }
 
-        /* Aurora Container */
-        .aurora-container {
+        .task-agent {
+          color: var(--accent-purple);
+        }
+
+        .task-reward {
+          color: var(--accent-green);
+        }
+
+        .task-time {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .task-actions {
+          padding: 16px;
+          display: flex;
+          align-items: center;
+        }
+
+        .task-actions button {
+          padding: 8px 16px;
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          background: transparent;
+          color: var(--text-secondary);
+          font-size: 12px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .task-actions button:hover {
+          background: var(--bg-hover);
+        }
+
+        /* Memory View */
+        .memory-view {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .memory-stats {
+          display: flex;
+          gap: 16px;
+        }
+
+        .memory-stats .stat {
+          font-size: 13px;
+        }
+
+        .memory-stats .stat.episodic { color: var(--accent-orange); }
+        .memory-stats .stat.semantic { color: var(--accent-blue); }
+        .memory-stats .stat.procedural { color: var(--accent-green); }
+
+        .memory-filters {
+          display: flex;
+          gap: 16px;
+          margin-bottom: 20px;
+          flex-wrap: wrap;
+        }
+
+        .search-box {
+          flex: 1;
+          min-width: 250px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px 16px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 10px;
+        }
+
+        .search-box input {
+          flex: 1;
+          background: transparent;
+          border: none;
+          color: var(--text-primary);
+          font-size: 14px;
+        }
+
+        .search-box input:focus {
+          outline: none;
+        }
+
+        .search-box input::placeholder {
+          color: var(--text-muted);
+        }
+
+        .type-filters {
+          display: flex;
+          gap: 8px;
+        }
+
+        .type-filters button {
+          padding: 10px 16px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          color: var(--text-secondary);
+          font-size: 13px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .type-filters button:hover {
+          background: var(--bg-hover);
+        }
+
+        .type-filters button.active {
+          background: rgba(168, 85, 247, 0.15);
+          border-color: var(--accent-purple);
+          color: var(--accent-purple);
+        }
+
+        .memory-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .memory-card {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          padding: 16px 20px;
+        }
+
+        .memory-type-badge {
+          display: inline-block;
+          font-size: 10px;
+          font-weight: 600;
+          padding: 4px 10px;
+          border-radius: 4px;
+          color: white;
+          margin-bottom: 12px;
+        }
+
+        .memory-content {
+          font-size: 14px;
+          line-height: 1.5;
+          margin-bottom: 12px;
+        }
+
+        .memory-meta {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .memory-tags {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
+        .memory-tags .tag {
+          font-size: 11px;
+          color: var(--text-muted);
+          padding: 4px 8px;
+          background: var(--bg-hover);
+          border-radius: 4px;
+        }
+
+        .memory-info {
+          display: flex;
+          gap: 16px;
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        .memory-info .relevance {
+          color: var(--accent-green);
+        }
+
+        /* Settings View */
+        .settings-view {
+          display: flex;
+          flex-direction: column;
+          max-width: 800px;
+        }
+
+        .settings-sections {
+          display: flex;
+          flex-direction: column;
+          gap: 24px;
+        }
+
+        .settings-section {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          padding: 20px;
+        }
+
+        .settings-section h3 {
+          font-size: 16px;
+          font-weight: 600;
+          margin-bottom: 16px;
+          padding-bottom: 12px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .setting-item {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-bottom: 16px;
+        }
+
+        .setting-item:last-child {
+          margin-bottom: 0;
+        }
+
+        .setting-item label {
+          font-size: 13px;
+          color: var(--text-secondary);
+        }
+
+        .setting-item.toggle-item {
+          flex-direction: row;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .input-group {
+          display: flex;
+          gap: 8px;
+        }
+
+        .input-group input {
+          flex: 1;
+          padding: 10px 14px;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          color: var(--text-primary);
+          font-size: 14px;
+        }
+
+        .input-group button,
+        .add-mcp {
+          padding: 10px 16px;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          color: var(--text-secondary);
+          font-size: 13px;
+          cursor: pointer;
+          transition: all 0.2s;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .input-group button:hover,
+        .add-mcp:hover {
+          background: var(--bg-primary);
+        }
+
+        .settings-section select {
+          padding: 10px 14px;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          color: var(--text-primary);
+          font-size: 14px;
+        }
+
+        .mcp-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+
+        .mcp-item {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 12px;
+          background: var(--bg-hover);
+          border-radius: 8px;
+        }
+
+        .mcp-item .mcp-name {
+          font-size: 14px;
+          text-transform: capitalize;
+        }
+
+        .toggle {
+          position: relative;
+          width: 44px;
+          height: 24px;
+          cursor: pointer;
+        }
+
+        .toggle input {
+          opacity: 0;
+          width: 0;
+          height: 0;
+        }
+
+        .toggle-slider {
+          position: absolute;
+          inset: 0;
+          background: var(--bg-primary);
+          border-radius: 12px;
+          transition: background 0.3s;
+        }
+
+        .toggle-slider::before {
+          content: '';
+          position: absolute;
+          width: 18px;
+          height: 18px;
+          left: 3px;
+          bottom: 3px;
+          background: var(--text-muted);
+          border-radius: 50%;
+          transition: transform 0.3s, background 0.3s;
+        }
+
+        .toggle input:checked + .toggle-slider {
+          background: var(--accent-purple);
+        }
+
+        .toggle input:checked + .toggle-slider::before {
+          transform: translateX(20px);
+          background: white;
+        }
+
+        /* Creator View */
+        .creator-view {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .new-creation-modal {
           position: fixed;
-          bottom: 0;
-          left: 72px;
-          right: 0;
-          height: 120px;
-          pointer-events: none;
-          z-index: 50;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: 90%;
+          max-width: 600px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 16px;
+          padding: 24px;
+          z-index: 1000;
         }
 
-        /* Animations */
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
+        .modal-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.6);
+          z-index: 999;
+        }
+
+        .modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 20px;
+        }
+
+        .modal-header h3 {
+          font-size: 18px;
+          font-weight: 600;
+        }
+
+        .close-btn {
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: transparent;
+          border: none;
+          color: var(--text-muted);
+          cursor: pointer;
+          font-size: 20px;
+          border-radius: 6px;
+        }
+
+        .close-btn:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+
+        .creation-types {
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 10px;
+          margin-bottom: 20px;
+        }
+
+        .type-option {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+          padding: 16px 12px;
+          background: var(--bg-hover);
+          border: 2px solid transparent;
+          border-radius: 12px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .type-option:hover {
+          background: var(--bg-secondary);
+        }
+
+        .type-option.selected {
+          border-color: var(--accent-purple);
+          background: rgba(168, 85, 247, 0.1);
+        }
+
+        .type-icon {
+          font-size: 28px;
+        }
+
+        .type-label {
+          font-size: 11px;
+          color: var(--text-secondary);
+        }
+
+        .creation-form {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .creation-form input,
+        .creation-form textarea {
+          width: 100%;
+          padding: 14px 16px;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 10px;
+          color: var(--text-primary);
+          font-size: 14px;
+          font-family: inherit;
+        }
+
+        .creation-form textarea {
+          resize: none;
+        }
+
+        .creation-form input:focus,
+        .creation-form textarea:focus {
+          outline: none;
+          border-color: var(--accent-purple);
+        }
+
+        .creation-templates {
+          margin-bottom: 32px;
+        }
+
+        .creation-templates h3,
+        .creations-section h3 {
+          font-size: 16px;
+          font-weight: 600;
+          margin-bottom: 16px;
+          color: var(--text-secondary);
+        }
+
+        .templates-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+          gap: 12px;
+        }
+
+        .template-card {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+          padding: 20px 16px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          cursor: pointer;
+          transition: all 0.2s;
+          text-align: center;
+        }
+
+        .template-card:hover {
+          border-color: var(--accent-purple);
+          background: rgba(168, 85, 247, 0.05);
+          transform: translateY(-2px);
+        }
+
+        .template-icon {
+          font-size: 32px;
+        }
+
+        .template-name {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .template-desc {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        .creations-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .creation-card {
+          display: flex;
+          gap: 16px;
+          padding: 20px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+        }
+
+        .creation-card.generating {
+          border-color: rgba(59, 130, 246, 0.3);
+        }
+
+        .creation-card.completed {
+          border-color: rgba(16, 185, 129, 0.2);
+        }
+
+        .creation-icon {
+          font-size: 32px;
+          width: 56px;
+          height: 56px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: var(--bg-hover);
+          border-radius: 12px;
+          flex-shrink: 0;
+        }
+
+        .creation-content {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .creation-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 12px;
+          margin-bottom: 8px;
+        }
+
+        .creation-header h4 {
+          font-size: 15px;
+          font-weight: 600;
+        }
+
+        .creation-status {
+          font-size: 11px;
+          padding: 4px 10px;
+          border-radius: 4px;
+          white-space: nowrap;
+        }
+
+        .creation-status.completed {
+          background: rgba(16, 185, 129, 0.15);
+          color: var(--accent-green);
+        }
+
+        .creation-status.generating {
+          background: rgba(59, 130, 246, 0.15);
+          color: var(--accent-blue);
+        }
+
+        .creation-status.draft {
+          background: rgba(113, 113, 122, 0.2);
+          color: var(--text-muted);
+        }
+
+        .creation-status.error {
+          background: rgba(239, 68, 68, 0.15);
+          color: var(--accent-red);
+        }
+
+        .creation-desc {
+          font-size: 13px;
+          color: var(--text-secondary);
+          margin-bottom: 12px;
+          line-height: 1.4;
+        }
+
+        .creation-progress {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 12px;
+        }
+
+        .creation-progress .progress-bar {
+          flex: 1;
+          height: 6px;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 3px;
+          overflow: hidden;
+        }
+
+        .creation-progress .progress-fill {
+          height: 100%;
+          background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+          border-radius: 3px;
+        }
+
+        .creation-progress .progress-text {
+          font-size: 12px;
+          color: var(--accent-blue);
+          font-weight: 600;
+          min-width: 40px;
+        }
+
+        .creation-meta {
+          display: flex;
+          gap: 16px;
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        .creation-type {
+          color: var(--accent-purple);
+        }
+
+        .creation-actions {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          align-items: flex-end;
+        }
+
+        .action-btn {
+          padding: 8px 16px;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          color: var(--text-secondary);
+          font-size: 12px;
+          cursor: pointer;
+          transition: all 0.2s;
+          white-space: nowrap;
+        }
+
+        .action-btn:hover {
+          background: var(--bg-secondary);
+          color: var(--text-primary);
+        }
+
+        .action-btn.cancel {
+          color: var(--accent-red);
+          border-color: rgba(239, 68, 68, 0.3);
         }
 
         /* Scrollbar */
@@ -2010,52 +3508,41 @@ export default function App() {
         }
 
         ::-webkit-scrollbar-thumb {
-          background: rgba(255,255,255,0.1);
+          background: rgba(255, 255, 255, 0.1);
           border-radius: 4px;
         }
 
         ::-webkit-scrollbar-thumb:hover {
-          background: rgba(255,255,255,0.2);
+          background: rgba(255, 255, 255, 0.15);
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+          .overview-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+
+        @media (max-width: 768px) {
+          .sidebar {
+            width: 64px;
+          }
+
+          .sidebar .logo-text,
+          .sidebar .nav-item span:last-child,
+          .sidebar .status-text {
+            display: none;
+          }
+
+          .overview-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .view-container {
+            padding: 16px;
+          }
         }
       `}</style>
     </div>
   );
-}
-
-// ============================================================================
-// Helper Components
-// ============================================================================
-
-function NeuromodBar({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <div className="neuromod-bar">
-      <span className="neuromod-label">{label}</span>
-      <div className="neuromod-track">
-        <motion.div
-          className="neuromod-fill"
-          style={{ background: color }}
-          initial={{ width: 0 }}
-          animate={{ width: `${value * 100}%` }}
-          transition={{ duration: 0.3 }}
-        />
-      </div>
-      <span className="neuromod-value" style={{ color }}>{(value * 100).toFixed(0)}%</span>
-    </div>
-  );
-}
-
-function StatItem({ label, value, trend }: { label: string; value: string; trend: 'good' | 'warn' }) {
-  return (
-    <div className="stat-item">
-      <span className="stat-label">{label}</span>
-      <div className={`stat-value ${trend}`}>{value}</div>
-    </div>
-  );
-}
-
-function getPhiColor(phi: number): string {
-  if (phi > 0.8) return '#00ffaa';
-  if (phi > 0.5) return '#00aaff';
-  if (phi > 0.3) return '#aa66ff';
-  return '#ff6644';
 }

@@ -45,6 +45,9 @@ export interface EconomyState {
   costs: number;
   runway: number;
   ness: number;
+  isReal: boolean; // True when connected to real LLM cost tracking
+  totalCosts?: number; // Total costs over period
+  totalRevenue?: number; // Total revenue over period
 }
 
 export interface MemoryState {
@@ -124,6 +127,7 @@ const initialState: GenesisState = {
     costs: 300,
     runway: 50,
     ness: 0.7,
+    isReal: false,
   },
   memory: {
     episodic: 1000,

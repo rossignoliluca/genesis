@@ -33,7 +33,125 @@ from templates import (
     build_text_slide,
     build_sources_slide,
     build_back_cover,
+    build_section_divider,
+    build_kpi_dashboard,
+    build_news_slide,
+    build_image_slide,
+    build_dual_chart_slide,
+    build_callout_slide,
 )
+
+
+def _normalize_chart_spec(chart_spec: dict):
+    """
+    Normalize chart spec to match the format expected by charts.py renderers.
+    Handles: annotations, reference_line, gauge zones, bar data formats.
+    """
+    chart_type = chart_spec.get("type", "")
+    data = chart_spec.get("data", {})
+    config = chart_spec.get("config", {})
+    labels = data.get("labels", [])
+
+    # 1. Convert reference_line → hlines
+    ref = config.pop("reference_line", None)
+    if ref:
+        hlines = config.get("hlines", [])
+        hlines.append({
+            "y": ref["value"],
+            "label": ref.get("label", ""),
+            "color": ref.get("color", "#F0B90B"),
+            "style": "--"
+        })
+        config["hlines"] = hlines
+
+    # 2. Convert x/y annotations → xy tuples
+    for ann in config.get("annotations", []):
+        if "xy" not in ann and "x" in ann and "y" in ann:
+            x_val = ann.pop("x")
+            y_val = ann.pop("y")
+
+            if chart_type in ("bar", "line", "stacked_bar"):
+                # Integer x-axis; convert label to index
+                if isinstance(x_val, str) and x_val in labels:
+                    x_val = labels.index(x_val)
+                ann["xy"] = (x_val, y_val)
+            elif chart_type in ("hbar",):
+                # Hbar: x=value, y=label → convert y to index
+                if isinstance(y_val, str) and y_val in labels:
+                    y_val = labels.index(y_val)
+                ann["xy"] = (x_val, y_val)
+            else:
+                ann["xy"] = (x_val, y_val)
+
+    # 3. Normalize gauge data: range → start/end, max → max_value
+    if chart_type == "gauge":
+        if "max" in data and "max_value" not in data:
+            data["max_value"] = data.pop("max")
+        for zone in data.get("zones", []):
+            if "range" in zone and "start" not in zone:
+                r = zone.pop("range")
+                zone["start"] = r[0]
+                zone["end"] = r[1]
+            # Ensure border color exists
+            if "border" not in zone:
+                zone["border"] = zone.get("color", "#666666")
+
+    # 4. Normalize donut_matrix: convert allocations to donut+matrix format
+    if chart_type == "donut_matrix":
+        allocs = data.get("allocations", [])
+        if allocs and "donut" not in data:
+            default_colors = [
+                "#003366", "#117ACA", "#5B9BD5", "#2E865F",
+                "#E8792B", "#B8860B", "#666666", "#A5A5A5"
+            ]
+            data["donut"] = {
+                "labels": [f"{a['name']}\n{a.get('pct', a.get('value', 0))}%" for a in allocs],
+                "sizes": [a.get("pct", a.get("value", 0)) for a in allocs],
+                "colors": default_colors[:len(allocs)],
+                "center_text": "Model\nPortfolio"
+            }
+            conv_map = {"Very High": "OW+", "High": "OW", "Medium": "N", "Low": "UW"}
+            data["matrix"] = {
+                "headers": ["Asset Class", "View", "Chg", "Rationale"],
+                "rows": [
+                    [a["name"], conv_map.get(a.get("conviction", "Medium"), "N"),
+                     "—", a.get("change", "")]
+                    for a in allocs
+                ]
+            }
+            data.pop("allocations", None)
+
+
+def _normalize_table_heatmap(chart_spec: dict):
+    """Convert inline '---' separator rows to separators index list."""
+    data = chart_spec.get("data", {})
+    rows = data.get("rows", [])
+    if not rows:
+        return
+
+    # Find separator rows (first cell is "---")
+    sep_indices = []
+    clean_rows = []
+    offset = 0
+    for i, row in enumerate(rows):
+        if row[0] in ("---", "—"):
+            sep_indices.append(i - offset)
+            offset += 1
+        else:
+            clean_rows.append(row)
+
+    if sep_indices:
+        data["rows"] = clean_rows
+        data["separators"] = sep_indices
+
+    # Set sensible defaults for 6-column scoreboard
+    config = chart_spec.get("config", {})
+    headers = data.get("headers", [])
+    if len(headers) == 6 and "col_widths" not in config:
+        config["col_widths"] = [2.2, 1.2, 0.9, 0.9, 0.9, 1.2]
+        config["color_cols"] = [2, 3, 4, 5]
+        config["signal_col"] = 5
+        chart_spec["config"] = config
 
 
 def generate(spec: dict) -> dict:
@@ -94,6 +212,12 @@ def generate(spec: dict) -> dict:
     prs.slide_width = Inches(slide_w)
     prs.slide_height = Inches(slide_h)
 
+    # Background images (AI-generated or custom)
+    bg_images = meta.get("bg_images", {})
+    bg_cover = bg_images.get("cover")
+    bg_content = bg_images.get("content")
+    bg_chart = bg_images.get("chart", bg_content)  # fallback to content bg
+
     # Track stats
     slide_count = 0
     chart_count = 0
@@ -106,12 +230,12 @@ def generate(spec: dict) -> dict:
         content = slide_spec.get("content", {})
 
         if slide_type == "cover":
-            build_cover(prs, content, palette)
+            build_cover(prs, content, palette, bg_image=bg_cover)
             slide_count += 1
 
         elif slide_type == "executive_summary":
             page_num += 1
-            build_executive_summary(prs, content, palette, meta, page_num)
+            build_executive_summary(prs, content, palette, meta, page_num, bg_image=bg_content)
             slide_count += 1
 
         elif slide_type == "chart":
@@ -119,26 +243,75 @@ def generate(spec: dict) -> dict:
             chart_spec = slide_spec.get("chart", {})
             chart_num = slide_spec.get("chart_num", chart_count + 1)
 
+            # Normalize chart spec to match renderer expectations
+            _normalize_chart_spec(chart_spec)
+
+            # Special: table_heatmap separator row normalization
+            if chart_spec.get("type") == "table_heatmap":
+                _normalize_table_heatmap(chart_spec)
+
             # Render the chart
             chart_path = render_chart(chart_spec, palette, chart_dir)
             chart_count += 1
 
             # Build the slide
-            build_chart_slide(prs, content, chart_path, chart_num, palette, meta, page_num)
+            build_chart_slide(prs, content, chart_path, chart_num, palette, meta, page_num, bg_image=bg_chart)
             slide_count += 1
 
         elif slide_type == "text":
             page_num += 1
-            build_text_slide(prs, content, palette, meta, page_num)
+            build_text_slide(prs, content, palette, meta, page_num, bg_image=bg_content)
             slide_count += 1
 
         elif slide_type == "sources":
             page_num += 1
-            build_sources_slide(prs, content, palette, meta, page_num)
+            # Normalize list sources to newline-separated strings
+            for key in ("left_sources", "right_sources"):
+                if isinstance(content.get(key), list):
+                    content[key] = "\n".join(f"• {s}" for s in content[key])
+            build_sources_slide(prs, content, palette, meta, page_num, bg_image=bg_content)
+            slide_count += 1
+
+        elif slide_type == "section_divider":
+            # Section dividers use per-slide bg_image if provided, else cover bg
+            divider_bg = slide_spec.get("bg_image") or bg_cover
+            build_section_divider(prs, content, palette, bg_image=divider_bg)
+            slide_count += 1
+
+        elif slide_type == "kpi_dashboard":
+            page_num += 1
+            build_kpi_dashboard(prs, content, palette, meta, page_num, bg_image=bg_content)
+            slide_count += 1
+
+        elif slide_type == "news":
+            page_num += 1
+            build_news_slide(prs, content, palette, meta, page_num, bg_image=bg_content)
+            slide_count += 1
+
+        elif slide_type == "image":
+            page_num += 1
+            build_image_slide(prs, content, palette, meta, page_num, bg_image=bg_content)
+            slide_count += 1
+
+        elif slide_type == "dual_chart":
+            page_num += 1
+            chart_specs = slide_spec.get("charts", [])
+            chart_paths_dual = []
+            for cs in chart_specs:
+                _normalize_chart_spec(cs)
+                cp = render_chart(cs, palette, chart_dir)
+                chart_paths_dual.append(cp)
+                chart_count += 1
+            build_dual_chart_slide(prs, content, chart_paths_dual, palette, meta, page_num, bg_image=bg_chart)
+            slide_count += 1
+
+        elif slide_type == "callout":
+            page_num += 1
+            build_callout_slide(prs, content, palette, meta, page_num, bg_image=bg_content)
             slide_count += 1
 
         elif slide_type == "back_cover":
-            build_back_cover(prs, content, palette)
+            build_back_cover(prs, content, palette, bg_image=bg_cover)
             slide_count += 1
 
         else:

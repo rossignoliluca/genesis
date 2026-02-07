@@ -14,6 +14,16 @@
 import { getEconomicSystem, TreasuryBalance, EconomicSystem } from '../economy/index.js';
 import { getEconomicFiber } from '../economy/fiber.js';
 import { getObservationGatherer } from './observations.js';
+import * as fs from 'fs';
+import * as path from 'path';
+
+// ============================================================================
+// Cost Persistence Path
+// ============================================================================
+
+const GENESIS_DATA_DIR = path.join(process.cwd(), '.genesis');
+const COSTS_FILE = path.join(GENESIS_DATA_DIR, 'llm-costs.json');
+const REVENUE_FILE = path.join(GENESIS_DATA_DIR, 'revenue.json');
 
 // ============================================================================
 // Types
@@ -75,6 +85,59 @@ export interface EconomicGoal {
 export class CostTracker {
   private costs: CostRecord[] = [];
   private readonly maxHistory = 10000;
+  private saveTimer: NodeJS.Timeout | null = null;
+  private dirty = false;
+
+  constructor() {
+    this.load();
+  }
+
+  /**
+   * Load costs from disk
+   */
+  private load(): void {
+    try {
+      if (fs.existsSync(COSTS_FILE)) {
+        const data = fs.readFileSync(COSTS_FILE, 'utf-8');
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) {
+          this.costs = parsed;
+        }
+      }
+    } catch (err) {
+      console.warn('[CostTracker] Failed to load costs:', err);
+    }
+  }
+
+  /**
+   * Save costs to disk (debounced)
+   */
+  private scheduleSave(): void {
+    this.dirty = true;
+    if (this.saveTimer) return;
+
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      if (this.dirty) {
+        this.saveNow();
+      }
+    }, 5000); // Save every 5 seconds max
+  }
+
+  /**
+   * Force immediate save
+   */
+  saveNow(): void {
+    try {
+      if (!fs.existsSync(GENESIS_DATA_DIR)) {
+        fs.mkdirSync(GENESIS_DATA_DIR, { recursive: true });
+      }
+      fs.writeFileSync(COSTS_FILE, JSON.stringify(this.costs, null, 2));
+      this.dirty = false;
+    } catch (err) {
+      console.warn('[CostTracker] Failed to save costs:', err);
+    }
+  }
 
   /**
    * Record a cost
@@ -89,6 +152,9 @@ export class CostTracker {
     if (this.costs.length > this.maxHistory) {
       this.costs = this.costs.slice(-this.maxHistory);
     }
+
+    // Schedule save to disk
+    this.scheduleSave();
   }
 
   /**
@@ -178,6 +244,59 @@ export class CostTracker {
 export class RevenueTracker {
   private revenue: RevenueRecord[] = [];
   private readonly maxHistory = 10000;
+  private saveTimer: NodeJS.Timeout | null = null;
+  private dirty = false;
+
+  constructor() {
+    this.load();
+  }
+
+  /**
+   * Load revenue from disk
+   */
+  private load(): void {
+    try {
+      if (fs.existsSync(REVENUE_FILE)) {
+        const data = fs.readFileSync(REVENUE_FILE, 'utf-8');
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) {
+          this.revenue = parsed;
+        }
+      }
+    } catch (err) {
+      console.warn('[RevenueTracker] Failed to load revenue:', err);
+    }
+  }
+
+  /**
+   * Save revenue to disk (debounced)
+   */
+  private scheduleSave(): void {
+    this.dirty = true;
+    if (this.saveTimer) return;
+
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      if (this.dirty) {
+        this.saveNow();
+      }
+    }, 5000);
+  }
+
+  /**
+   * Force immediate save
+   */
+  saveNow(): void {
+    try {
+      if (!fs.existsSync(GENESIS_DATA_DIR)) {
+        fs.mkdirSync(GENESIS_DATA_DIR, { recursive: true });
+      }
+      fs.writeFileSync(REVENUE_FILE, JSON.stringify(this.revenue, null, 2));
+      this.dirty = false;
+    } catch (err) {
+      console.warn('[RevenueTracker] Failed to save revenue:', err);
+    }
+  }
 
   /**
    * Record revenue
@@ -191,6 +310,9 @@ export class RevenueTracker {
     if (this.revenue.length > this.maxHistory) {
       this.revenue = this.revenue.slice(-this.maxHistory);
     }
+
+    // Schedule save to disk
+    this.scheduleSave();
   }
 
   /**

@@ -1,14 +1,163 @@
 """
-Genesis Presentation Engine — Slide Templates
+Genesis Presentation Engine — Slide Templates (v2: Next-Gen)
 
-Parameterized slide builders for PPTX generation.
-Each function receives content from JSON spec and palette from design.py.
+AI-generated backgrounds, glassmorphism cards, glow accents,
+dark-mode-aware rendering. The future of financial presentations.
 """
 
-from pptx.util import Inches, Pt
+import os
+from pptx.util import Inches, Pt, Emu
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
-from design import rgb
+from pptx.oxml.ns import qn
+from lxml import etree
+from design import rgb, is_dark
+
+
+# ============================================================================
+# Low-Level Visual Primitives
+# ============================================================================
+
+def _set_shape_alpha(shape, alpha_pct: int):
+    """
+    Set fill transparency on a shape (0=transparent, 100=opaque).
+    Uses direct XML manipulation on the shape's spPr element.
+    """
+    spPr = shape._element.spPr
+    solid = spPr.find(qn('a:solidFill'))
+    if solid is None:
+        return
+    clr = solid.find(qn('a:srgbClr'))
+    if clr is None:
+        return
+    # Remove existing alpha if any
+    for existing in clr.findall(qn('a:alpha')):
+        clr.remove(existing)
+    alpha = etree.SubElement(clr, qn('a:alpha'))
+    alpha.set('val', str(alpha_pct * 1000))  # PowerPoint uses 0-100000
+
+
+def add_slide_bg(slide, prs, palette, bg_image=None):
+    """Add background to slide — AI image or solid color."""
+    slide_w = prs.slide_width
+    slide_h = prs.slide_height
+
+    if bg_image and os.path.exists(bg_image):
+        slide.shapes.add_picture(bg_image, Emu(0), Emu(0), slide_w, slide_h)
+    else:
+        bg = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), slide_w, slide_h
+        )
+        bg.fill.solid()
+        bg.fill.fore_color.rgb = rgb(palette.slide_bg)
+        bg.line.fill.background()
+
+
+def add_glass_card(slide, left, top, width, height, palette, alpha_pct=75):
+    """
+    Semi-transparent glassmorphism card.
+    Creates a frosted-glass rectangle for overlaying on AI backgrounds.
+    """
+    card = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        Inches(left), Inches(top), Inches(width), Inches(height)
+    )
+    card.fill.solid()
+    card.fill.fore_color.rgb = rgb(palette.card_bg)
+    card.line.color.rgb = rgb(palette.card_border)
+    card.line.width = Pt(0.5)
+    _set_shape_alpha(card, alpha_pct)
+    return card
+
+
+def add_glow_line(slide, left, top, width, palette, color=None):
+    """Accent glow line — a bright thin line for visual separation."""
+    c = color or palette.gold
+    line = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE,
+        Inches(left), Inches(top), Inches(width), Pt(2)
+    )
+    line.fill.solid()
+    line.fill.fore_color.rgb = rgb(c)
+    line.line.fill.background()
+    return line
+
+
+def add_hyperlink_run(paragraph, text, url, font_size=10, color="#00D4FF", bold=False, italic=False):
+    """
+    Add a clickable hyperlink run to a paragraph.
+    Opens URL when clicked in presentation mode.
+    """
+    run = paragraph.add_run()
+    run.text = text
+    run.font.size = Pt(font_size)
+    run.font.color.rgb = rgb(color)
+    run.font.bold = bold
+    run.font.italic = italic
+    run.font.underline = True
+    if url:
+        run.hyperlink.address = url
+    return run
+
+
+def add_video_button(slide, url, label="▶ Watch Video", left=10.5, top=0.7,
+                     width=2.2, height=0.4, palette=None):
+    """
+    Add a clickable video link button — opens video URL in browser.
+    Styled as a pill-shaped button with play icon.
+    """
+    btn = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        Inches(left), Inches(top), Inches(width), Inches(height)
+    )
+    btn.fill.solid()
+    btn.fill.fore_color.rgb = rgb(palette.red if palette else "#CC0000")
+    btn.line.fill.background()
+
+    # Add hyperlink to the shape
+    btn.click_action.hyperlink.address = url
+
+    tf = btn.text_frame
+    tf.word_wrap = False
+    p = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.CENTER
+    p.space_before = Pt(2)
+    r = p.add_run()
+    r.text = label
+    r.font.size = Pt(10)
+    r.font.bold = True
+    r.font.color.rgb = rgb("#FFFFFF")
+    r.font.name = "Arial"
+    return btn
+
+
+def add_link_button(slide, url, label="🔗 Open Link", left=10.5, top=0.7,
+                    width=2.2, height=0.35, color=None, palette=None):
+    """
+    Generic clickable link button — opens URL in browser during presentation.
+    """
+    c = color or (palette.chart_primary if palette else "#003366")
+    btn = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        Inches(left), Inches(top), Inches(width), Inches(height)
+    )
+    btn.fill.solid()
+    btn.fill.fore_color.rgb = rgb(c)
+    btn.line.fill.background()
+    btn.click_action.hyperlink.address = url
+
+    tf = btn.text_frame
+    tf.word_wrap = False
+    p = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.CENTER
+    p.space_before = Pt(1)
+    r = p.add_run()
+    r.text = label
+    r.font.size = Pt(9)
+    r.font.bold = True
+    r.font.color.rgb = rgb("#FFFFFF")
+    r.font.name = "Arial"
+    return btn
 
 
 # ============================================================================
@@ -16,7 +165,7 @@ from design import rgb
 # ============================================================================
 
 def add_header_bar(slide, palette, meta: dict):
-    """Navy bar at top with branding."""
+    """Navy bar at top with branding — works on both light and dark."""
     slide_w = Inches(meta.get("slide_width", 13.333))
 
     bar = slide.shapes.add_shape(
@@ -68,26 +217,30 @@ def add_header_bar(slide, palette, meta: dict):
 
 
 def add_section_line(slide, palette):
-    """Short accent line below header."""
+    """Short accent line below header — gold on dark, navy on light."""
+    dark = is_dark(palette)
+    color = palette.gold if dark else palette.navy
     line = slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE, Inches(0.6), Inches(0.58), Inches(1.2), Pt(3)
     )
     line.fill.solid()
-    line.fill.fore_color.rgb = rgb(palette.navy)
+    line.fill.fore_color.rgb = rgb(color)
     line.line.fill.background()
 
 
 def add_footer(slide, palette, meta: dict, page_num: int):
     """Footer with page number."""
     slide_w_in = meta.get("slide_width", 13.333)
+    dark = is_dark(palette)
 
-    # Thin gray line
+    # Thin line
     line_width = slide_w_in - 1.2
+    line_color = palette.card_border if dark else palette.light_gray
     line = slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE, Inches(0.6), Inches(7.0), Inches(line_width), Pt(1)
     )
     line.fill.solid()
-    line.fill.fore_color.rgb = rgb(palette.light_gray)
+    line.fill.fore_color.rgb = rgb(line_color)
     line.line.fill.background()
 
     # Left: branding
@@ -123,7 +276,7 @@ def add_footer(slide, palette, meta: dict, page_num: int):
 
 
 def add_slide_title(slide, title: str, subtitle: str = None, tag: str = None, palette=None):
-    """Assertion-evidence title block."""
+    """Assertion-evidence title block — uses title_color for dark/light awareness."""
     tb = slide.shapes.add_textbox(Inches(0.6), Inches(0.7), Inches(11.5), Inches(0.8))
     tf = tb.text_frame
     tf.word_wrap = True
@@ -132,7 +285,7 @@ def add_slide_title(slide, title: str, subtitle: str = None, tag: str = None, pa
     run.text = title
     run.font.size = Pt(22)
     run.font.bold = True
-    run.font.color.rgb = rgb(palette.navy)
+    run.font.color.rgb = rgb(palette.title_color)
     run.font.name = "Arial"
 
     if subtitle:
@@ -157,7 +310,7 @@ def add_slide_title(slide, title: str, subtitle: str = None, tag: str = None, pa
 
 
 def add_chart_tag(slide, chart_num: int, left: float = 0.4, top: float = 2.15, palette=None):
-    """Orange chart number badge."""
+    """Chart number badge with glow accent."""
     tag_shape = slide.shapes.add_shape(
         MSO_SHAPE.ROUNDED_RECTANGLE, Inches(left), Inches(top),
         Inches(0.9), Inches(0.28)
@@ -184,9 +337,10 @@ def add_chart_image(slide, img_path: str, left: float = 0.4, top: float = 2.5,
     )
 
 
-def make_content_slide(prs, palette, meta: dict, page_num: int):
-    """Create blank slide with header, section line, footer."""
+def make_content_slide(prs, palette, meta: dict, page_num: int, bg_image=None):
+    """Create slide with AI background (or solid dark bg), header, section line, footer."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank layout
+    add_slide_bg(slide, prs, palette, bg_image)
     add_header_bar(slide, palette, meta)
     add_section_line(slide, palette)
     add_footer(slide, palette, meta, page_num)
@@ -197,28 +351,31 @@ def make_content_slide(prs, palette, meta: dict, page_num: int):
 # Slide Builders
 # ============================================================================
 
-def build_cover(prs, content: dict, palette):
+def build_cover(prs, content: dict, palette, bg_image=None):
     """
-    Full-bleed cover slide.
-
-    content:
-      company: "CROSSINVEST SA"
-      tagline: "WEALTH MANAGEMENT SINCE 1985"
-      headline: "Weekly Strategy Report"
-      subheadline: "The Week in Charts"
-      date_range: "3 — 7 February 2026  |  Week 6"
-      theme: "Five Regime Shifts Reshaping Markets"
-      footer_text: "Via Pretorio 1  |  CH-6900 Lugano  |  FINMA Regulated"
+    Full-bleed cover slide with AI-generated background.
+    Falls back to solid navy if no bg_image.
     """
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide_w = prs.slide_width
     slide_h = prs.slide_height
 
-    # Full navy background
-    bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), slide_w, slide_h)
-    bg.fill.solid()
-    bg.fill.fore_color.rgb = rgb(palette.navy)
-    bg.line.fill.background()
+    # Background: AI image or solid navy
+    if bg_image and os.path.exists(bg_image):
+        slide.shapes.add_picture(bg_image, Emu(0), Emu(0), slide_w, slide_h)
+        # Add a dark overlay for text readability
+        overlay = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), slide_w, slide_h
+        )
+        overlay.fill.solid()
+        overlay.fill.fore_color.rgb = rgb("#000000")
+        overlay.line.fill.background()
+        _set_shape_alpha(overlay, 40)  # 40% opaque black overlay
+    else:
+        bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), slide_w, slide_h)
+        bg.fill.solid()
+        bg.fill.fore_color.rgb = rgb(palette.navy)
+        bg.line.fill.background()
 
     # Gold accent bars
     for y_pos in [0, 7.38]:
@@ -251,40 +408,43 @@ def build_cover(prs, content: dict, palette):
         r.font.size = Pt(size)
         r.font.bold = bold
         r.font.name = "Arial"
-        if color.startswith("#"):
-            r.font.color.rgb = rgb(color)
-        else:
-            r.font.color.rgb = rgb(color)
+        r.font.color.rgb = rgb(color) if isinstance(color, str) and color.startswith("#") else rgb(color)
 
     # Separator line under tagline
-    sep = slide.shapes.add_shape(
-        MSO_SHAPE.RECTANGLE, Inches(0.8), Inches(2.35), Inches(2.5), Pt(2)
-    )
-    sep.fill.solid()
-    sep.fill.fore_color.rgb = rgb(palette.gold)
-    sep.line.fill.background()
+    add_glow_line(slide, 0.8, 2.35, 2.5, palette)
 
 
-def build_executive_summary(prs, content: dict, palette, meta: dict, page_num: int):
+def build_executive_summary(prs, content: dict, palette, meta: dict, page_num: int, bg_image=None):
     """
-    SCR-format executive summary.
-
-    content:
-      title: "Five simultaneous regime shifts..."
-      tag: "#macro #strategy"
-      sections: [
-        {"label": "S", "text": "SITUATION — ...", "color": "#0C2340"},
-        {"label": "C", "text": "COMPLICATION — ...", "color": "#CC0000"},
-        {"label": "R", "text": "RESOLUTION — ...", "color": "#2E865F"},
-        {"label": "", "text": "Closing paragraph...", "color": "#2C3E50"},
-      ]
+    SCR-format executive summary with glassmorphism cards.
     """
-    slide = make_content_slide(prs, palette, meta, page_num)
+    slide = make_content_slide(prs, palette, meta, page_num, bg_image)
     add_slide_title(slide, content.get("title", ""), tag=content.get("tag"), palette=palette)
 
-    y_pos = 2.3
+    dark = is_dark(palette)
+    y_pos = 2.2
+
     for section in content.get("sections", []):
-        tb = slide.shapes.add_textbox(Inches(0.6), Inches(y_pos), Inches(12.0), Inches(1.1))
+        height = section.get("height", 1.15)
+
+        # Add glassmorphism card behind each section
+        if dark:
+            add_glass_card(slide, 0.4, y_pos - 0.1, 12.4, height, palette, alpha_pct=70)
+
+        # Colored left accent bar for SCR sections
+        label = section.get("label", "")
+        if label in ("S", "C", "R"):
+            accent_colors = {"S": palette.chart_primary, "C": palette.red, "R": palette.green}
+            accent = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE,
+                Inches(0.45), Inches(y_pos - 0.05),
+                Inches(0.08), Inches(height - 0.1)
+            )
+            accent.fill.solid()
+            accent.fill.fore_color.rgb = rgb(accent_colors.get(label, palette.gold))
+            accent.line.fill.background()
+
+        tb = slide.shapes.add_textbox(Inches(0.7), Inches(y_pos), Inches(11.8), Inches(height))
         tf = tb.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
@@ -295,19 +455,13 @@ def build_executive_summary(prs, content: dict, palette, meta: dict, page_num: i
         run.font.size = Pt(11)
         run.font.color.rgb = rgb(palette.body_text)
         run.font.name = "Arial"
-        y_pos += section.get("height", 1.15)
+        y_pos += height
 
 
-def build_chart_slide(prs, content: dict, chart_path: str, chart_num: int, palette, meta: dict, page_num: int):
-    """
-    Standard chart slide with assertion title + chart image.
-
-    content:
-      title: "Dow +2.5% while Nasdaq -1.8%..."
-      tag: "#scoreboard #divergence"
-      chart_dims: {left, top, width, height}  (optional overrides)
-    """
-    slide = make_content_slide(prs, palette, meta, page_num)
+def build_chart_slide(prs, content: dict, chart_path: str, chart_num: int,
+                      palette, meta: dict, page_num: int, bg_image=None):
+    """Chart slide with assertion title + chart image on AI background."""
+    slide = make_content_slide(prs, palette, meta, page_num, bg_image)
     add_slide_title(slide, content.get("title", ""), tag=content.get("tag"), palette=palette)
     add_chart_tag(slide, chart_num, palette=palette)
 
@@ -320,34 +474,39 @@ def build_chart_slide(prs, content: dict, chart_path: str, chart_num: int, palet
         height=dims.get("height", 4.5),
     )
 
+    # Optional: interactive link button (e.g. to Bloomberg chart, CNBC video)
+    link_url = content.get("link_url", "")
+    if link_url:
+        link_label = content.get("link_label", "📊 Interactive Chart")
+        add_link_button(slide, link_url, label=link_label,
+                        left=10.5, top=2.15, width=2.2, height=0.32,
+                        palette=palette)
 
-def build_text_slide(prs, content: dict, palette, meta: dict, page_num: int):
-    """
-    Two-column text slide (opportunities/risks, what to watch).
 
-    content:
-      title: "Next week: ..."
-      tag: "#outlook"
-      left_title: "OPPORTUNITIES"
-      left_color: "#2E865F"
-      left_items: ["item 1", "item 2", ...]
-      left_icon: "→"
-      right_title: "KEY RISKS"
-      right_color: "#CC0000"
-      right_items: ["risk 1", "risk 2", ...]
-      right_icon: "⚠"
+def build_text_slide(prs, content: dict, palette, meta: dict, page_num: int, bg_image=None):
     """
-    slide = make_content_slide(prs, palette, meta, page_num)
+    Two-column text slide with glassmorphism cards.
+    """
+    slide = make_content_slide(prs, palette, meta, page_num, bg_image)
     add_slide_title(slide, content.get("title", ""), tag=content.get("tag"), palette=palette)
+
+    dark = is_dark(palette)
+
+    # Glassmorphism cards for each column
+    if dark:
+        add_glass_card(slide, 0.4, 2.05, 5.8, 4.6, palette, alpha_pct=65)
+        add_glass_card(slide, 6.8, 2.05, 5.8, 4.6, palette, alpha_pct=65)
 
     for side, x_start in [("left", 0.6), ("right", 7.0)]:
         col_title = content.get(f"{side}_title", "")
         col_color = content.get(f"{side}_color", palette.body_text)
         items = content.get(f"{side}_items", [])
-        icon = content.get(f"{side}_icon", "→" if side == "left" else "⚠")
+        icon = content.get(f"{side}_icon", "+" if side == "left" else "!")
 
         if col_title:
-            title_box = slide.shapes.add_textbox(Inches(x_start), Inches(2.2), Inches(5.5), Inches(0.4))
+            title_box = slide.shapes.add_textbox(
+                Inches(x_start), Inches(2.2), Inches(5.5), Inches(0.4)
+            )
             tf = title_box.text_frame
             p = tf.paragraphs[0]
             r = p.add_run()
@@ -358,7 +517,9 @@ def build_text_slide(prs, content: dict, palette, meta: dict, page_num: int):
 
         y_item = 2.7
         for item in items:
-            tb = slide.shapes.add_textbox(Inches(x_start), Inches(y_item), Inches(5.5), Inches(0.35))
+            tb = slide.shapes.add_textbox(
+                Inches(x_start), Inches(y_item), Inches(5.3), Inches(0.45)
+            )
             tf = tb.text_frame
             tf.word_wrap = True
             p = tf.paragraphs[0]
@@ -369,27 +530,27 @@ def build_text_slide(prs, content: dict, palette, meta: dict, page_num: int):
             run.font.color.rgb = rgb(palette.body_text)
             y_item += 0.55
 
-    # Vertical separator
+    # Vertical separator with glow
+    sep_color = palette.card_border if dark else palette.light_gray
     sep = slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE, Inches(6.5), Inches(2.3), Pt(1.5), Inches(4.2)
     )
     sep.fill.solid()
-    sep.fill.fore_color.rgb = rgb(palette.light_gray)
+    sep.fill.fore_color.rgb = rgb(sep_color)
     sep.line.fill.background()
 
 
-def build_sources_slide(prs, content: dict, palette, meta: dict, page_num: int):
-    """
-    Data sources and disclaimer slide.
-
-    content:
-      title: "Data Sources & Methodology"
-      left_sources: "Source 1\n\nSource 2\n\n..."
-      right_sources: "Source A\n\nSource B\n\n..."
-      disclaimer: "This document..."
-    """
-    slide = make_content_slide(prs, palette, meta, page_num)
+def build_sources_slide(prs, content: dict, palette, meta: dict, page_num: int, bg_image=None):
+    """Data sources and disclaimer slide."""
+    slide = make_content_slide(prs, palette, meta, page_num, bg_image)
     add_slide_title(slide, content.get("title", "Data Sources & Methodology"), palette=palette)
+
+    dark = is_dark(palette)
+
+    # Glass cards for source columns
+    if dark:
+        add_glass_card(slide, 0.4, 1.8, 5.8, 4.4, palette, alpha_pct=60)
+        add_glass_card(slide, 6.8, 1.8, 5.8, 4.4, palette, alpha_pct=60)
 
     # Left column
     tb_l = slide.shapes.add_textbox(Inches(0.6), Inches(2.0), Inches(5.8), Inches(4.2))
@@ -414,11 +575,12 @@ def build_sources_slide(prs, content: dict, palette, meta: dict, page_num: int):
     r_r.font.color.rgb = rgb(palette.body_text)
 
     # Separator
+    sep_color = palette.card_border if dark else palette.light_gray
     sep = slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE, Inches(6.5), Inches(2.1), Pt(1), Inches(3.8)
     )
     sep.fill.solid()
-    sep.fill.fore_color.rgb = rgb(palette.light_gray)
+    sep.fill.fore_color.rgb = rgb(sep_color)
     sep.line.fill.background()
 
     # Disclaimer
@@ -436,36 +598,31 @@ def build_sources_slide(prs, content: dict, palette, meta: dict, page_num: int):
         r_d.font.color.rgb = rgb(palette.source_color)
 
 
-def build_back_cover(prs, content: dict, palette):
-    """
-    Navy back cover with contact details.
-
-    content:
-      company: "CROSSINVEST SA"
-      tagline: "Wealth Management Since 1985"
-      contact_lines: ["Via Pretorio 1", "+41 91 973 28 00", "info@crossinvest.ch"]
-      closing: "Thank you for your confidence"
-      regulatory: "FINMA Regulated | Member of SAAM..."
-      copyright: "© 2026 Crossinvest SA. All rights reserved."
-    """
+def build_back_cover(prs, content: dict, palette, bg_image=None):
+    """Navy back cover with contact details and optional AI background."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide_w = prs.slide_width
     slide_h = prs.slide_height
 
-    # Full navy background
-    bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), slide_w, slide_h)
-    bg.fill.solid()
-    bg.fill.fore_color.rgb = rgb(palette.navy)
-    bg.line.fill.background()
+    # Background
+    if bg_image and os.path.exists(bg_image):
+        slide.shapes.add_picture(bg_image, Emu(0), Emu(0), slide_w, slide_h)
+        overlay = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), slide_w, slide_h
+        )
+        overlay.fill.solid()
+        overlay.fill.fore_color.rgb = rgb("#000000")
+        overlay.line.fill.background()
+        _set_shape_alpha(overlay, 50)
+    else:
+        bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), slide_w, slide_h)
+        bg.fill.solid()
+        bg.fill.fore_color.rgb = rgb(palette.navy)
+        bg.line.fill.background()
 
     # Gold accent lines
     for y_pos in [2.0, 5.5]:
-        bar = slide.shapes.add_shape(
-            MSO_SHAPE.RECTANGLE, Inches(4.5), Inches(y_pos), Inches(4.333), Pt(2)
-        )
-        bar.fill.solid()
-        bar.fill.fore_color.rgb = rgb(palette.gold)
-        bar.line.fill.background()
+        add_glow_line(slide, 4.5, y_pos, 4.333, palette)
 
     # Company name
     tb1 = slide.shapes.add_textbox(Inches(0), Inches(2.3), prs.slide_width, Inches(0.8))
@@ -529,3 +686,544 @@ def build_back_cover(prs, content: dict, palette):
             r.text = text
             r.font.size = Pt(size)
             r.font.color.rgb = rgb("#8899AA")
+
+
+def build_section_divider(prs, content: dict, palette, bg_image=None):
+    """
+    Full-bleed section divider slide with AI background.
+
+    content:
+      section_num: "01"
+      title: "GLOBAL MACRO"
+      subtitle: "Economic Indicators, Central Banks & Growth Outlook"
+    """
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    slide_w = prs.slide_width
+    slide_h = prs.slide_height
+
+    # Background: AI image or solid navy
+    if bg_image and os.path.exists(bg_image):
+        slide.shapes.add_picture(bg_image, Emu(0), Emu(0), slide_w, slide_h)
+        # Dark overlay for readability
+        overlay = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), slide_w, slide_h
+        )
+        overlay.fill.solid()
+        overlay.fill.fore_color.rgb = rgb("#000000")
+        overlay.line.fill.background()
+        _set_shape_alpha(overlay, 45)
+    else:
+        bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), slide_w, slide_h)
+        bg.fill.solid()
+        bg.fill.fore_color.rgb = rgb(palette.navy)
+        bg.line.fill.background()
+
+    # Gold accent line
+    add_glow_line(slide, 1.0, 2.8, 3.0, palette)
+
+    # Section number (large, gold)
+    num = content.get("section_num", "")
+    if num:
+        tb_num = slide.shapes.add_textbox(Inches(1.0), Inches(1.8), Inches(3), Inches(1.0))
+        tf = tb_num.text_frame
+        p = tf.paragraphs[0]
+        r = p.add_run()
+        r.text = num
+        r.font.size = Pt(72)
+        r.font.bold = True
+        r.font.color.rgb = rgb(palette.gold)
+        r.font.name = "Arial"
+
+    # Section title (large, white)
+    title = content.get("title", "")
+    if title:
+        tb_t = slide.shapes.add_textbox(Inches(1.0), Inches(3.1), Inches(11), Inches(1.2))
+        tf = tb_t.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        r = p.add_run()
+        r.text = title
+        r.font.size = Pt(44)
+        r.font.bold = True
+        r.font.color.rgb = rgb(palette.white)
+        r.font.name = "Arial"
+
+    # Subtitle
+    subtitle = content.get("subtitle", "")
+    if subtitle:
+        tb_s = slide.shapes.add_textbox(Inches(1.0), Inches(4.4), Inches(10), Inches(0.8))
+        tf = tb_s.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        r = p.add_run()
+        r.text = subtitle
+        r.font.size = Pt(16)
+        r.font.color.rgb = rgb("#AABBCC")
+        r.font.name = "Arial"
+
+    # Bottom gold line
+    add_glow_line(slide, 1.0, 5.5, 11.3, palette)
+
+    # Optional video link for section intro
+    video_url = content.get("video_url", "")
+    if video_url:
+        video_label = content.get("video_label", "▶ Section Overview")
+        add_video_button(slide, video_url, label=video_label,
+                         left=1.0, top=5.8, width=2.5, height=0.4,
+                         palette=palette)
+
+    # Company branding bottom-right
+    tb_brand = slide.shapes.add_textbox(Inches(9), Inches(6.6), Inches(4), Inches(0.35))
+    tf = tb_brand.text_frame
+    p = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.RIGHT
+    r = p.add_run()
+    r.text = "CROSSINVEST SA  |  Weekly Strategy"
+    r.font.size = Pt(9)
+    r.font.color.rgb = rgb(palette.gold)
+
+
+def build_kpi_dashboard(prs, content: dict, palette, meta: dict, page_num: int, bg_image=None):
+    """
+    KPI Dashboard with glass cards showing key metrics.
+
+    content:
+      title: "Market Dashboard"
+      tag: "WEEKLY SNAPSHOT"
+      kpis: [
+        {"label": "DOW JONES", "value": "50,115", "change": "+2.5%", "positive": true},
+        {"label": "S&P 500", "value": "6,932", "change": "+1.2%", "positive": true},
+        ...
+      ]
+    """
+    slide = make_content_slide(prs, palette, meta, page_num, bg_image)
+    add_slide_title(slide, content.get("title", "Market Dashboard"),
+                    tag=content.get("tag"), palette=palette)
+
+    dark = is_dark(palette)
+    kpis = content.get("kpis", [])
+
+    # Calculate grid layout: max 4 per row
+    cols = min(len(kpis), 4)
+    rows_count = (len(kpis) + cols - 1) // cols
+
+    card_w = 2.8
+    card_h = 1.8
+    gap = 0.25
+    total_w = cols * card_w + (cols - 1) * gap
+    start_x = (13.333 - total_w) / 2
+    start_y = 2.3
+
+    for idx, kpi in enumerate(kpis):
+        row = idx // cols
+        col = idx % cols
+        x = start_x + col * (card_w + gap)
+        y = start_y + row * (card_h + gap)
+
+        # Glass card
+        add_glass_card(slide, x, y, card_w, card_h, palette,
+                       alpha_pct=70 if dark else 100)
+
+        # Label (small, gold)
+        tb_label = slide.shapes.add_textbox(
+            Inches(x + 0.2), Inches(y + 0.15), Inches(card_w - 0.4), Inches(0.3)
+        )
+        tf = tb_label.text_frame
+        p = tf.paragraphs[0]
+        r = p.add_run()
+        r.text = kpi.get("label", "")
+        r.font.size = Pt(9)
+        r.font.bold = True
+        r.font.color.rgb = rgb(palette.gold)
+
+        # Hero value (large, white)
+        tb_val = slide.shapes.add_textbox(
+            Inches(x + 0.2), Inches(y + 0.45), Inches(card_w - 0.4), Inches(0.7)
+        )
+        tf = tb_val.text_frame
+        p = tf.paragraphs[0]
+        r = p.add_run()
+        r.text = kpi.get("value", "")
+        r.font.size = Pt(28)
+        r.font.bold = True
+        r.font.color.rgb = rgb(palette.title_color)
+        r.font.name = "Arial"
+
+        # Change (color-coded)
+        change = kpi.get("change", "")
+        positive = kpi.get("positive", True)
+        tb_chg = slide.shapes.add_textbox(
+            Inches(x + 0.2), Inches(y + 1.2), Inches(card_w - 0.4), Inches(0.35)
+        )
+        tf = tb_chg.text_frame
+        p = tf.paragraphs[0]
+        r = p.add_run()
+        r.text = change
+        r.font.size = Pt(14)
+        r.font.bold = True
+        r.font.color.rgb = rgb(palette.green if positive else palette.red)
+
+
+def build_news_slide(prs, content: dict, palette, meta: dict, page_num: int, bg_image=None):
+    """
+    News slide with headline, source, summary, and market impact.
+
+    content:
+      title: "Key News This Week"
+      stories: [
+        {
+          "headline": "Trump Announces 25% Tariffs on EU Steel",
+          "source": "Reuters | Feb 5, 2026",
+          "summary": "President Trump...",
+          "impact": "Markets dropped 1.2% on the announcement...",
+          "sentiment": "negative"  # positive, negative, neutral
+        },
+        ...
+      ]
+    """
+    slide = make_content_slide(prs, palette, meta, page_num, bg_image)
+    add_slide_title(slide, content.get("title", "Key News"),
+                    tag=content.get("tag"), palette=palette)
+
+    dark = is_dark(palette)
+    stories = content.get("stories", [])
+    y_pos = 2.2
+
+    for story in stories[:3]:  # max 3 stories per slide
+        height = 1.5
+
+        # Glass card for each story
+        if dark:
+            add_glass_card(slide, 0.4, y_pos - 0.05, 12.4, height, palette, alpha_pct=65)
+
+        # Sentiment indicator bar (left edge)
+        sentiment = story.get("sentiment", "neutral")
+        sent_colors = {"positive": palette.green, "negative": palette.red, "neutral": palette.orange}
+        accent = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE,
+            Inches(0.45), Inches(y_pos),
+            Inches(0.06), Inches(height - 0.1)
+        )
+        accent.fill.solid()
+        accent.fill.fore_color.rgb = rgb(sent_colors.get(sentiment, palette.orange))
+        accent.line.fill.background()
+
+        # Headline (bold, large — clickable if url provided)
+        tb_h = slide.shapes.add_textbox(
+            Inches(0.7), Inches(y_pos + 0.05), Inches(11.8), Inches(0.35)
+        )
+        tf = tb_h.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+
+        headline_url = story.get("url", "")
+        if headline_url:
+            add_hyperlink_run(p, story.get("headline", ""), headline_url,
+                              font_size=13, color=palette.title_color, bold=True)
+        else:
+            r = p.add_run()
+            r.text = story.get("headline", "")
+            r.font.size = Pt(13)
+            r.font.bold = True
+            r.font.color.rgb = rgb(palette.title_color)
+
+        # Video link button (if video_url provided)
+        video_url = story.get("video_url", "")
+        if video_url:
+            add_video_button(slide, video_url, label="▶ Watch",
+                             left=11.5, top=y_pos + 0.05, width=1.3, height=0.32,
+                             palette=palette)
+
+        # Source (small, gray — clickable if source_url provided)
+        tb_src = slide.shapes.add_textbox(
+            Inches(0.7), Inches(y_pos + 0.4), Inches(6), Inches(0.25)
+        )
+        tf = tb_src.text_frame
+        p = tf.paragraphs[0]
+        source_url = story.get("source_url", "")
+        if source_url:
+            add_hyperlink_run(p, story.get("source", ""), source_url,
+                              font_size=8, color=palette.source_color, italic=True)
+        else:
+            r = p.add_run()
+            r.text = story.get("source", "")
+            r.font.size = Pt(8)
+            r.font.italic = True
+            r.font.color.rgb = rgb(palette.source_color)
+
+        # Summary + Impact (two columns)
+        summary = story.get("summary", "")
+        impact = story.get("impact", "")
+
+        if summary:
+            tb_sum = slide.shapes.add_textbox(
+                Inches(0.7), Inches(y_pos + 0.7), Inches(6.5), Inches(0.65)
+            )
+            tf = tb_sum.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            p.line_spacing = Pt(13)
+            r = p.add_run()
+            r.text = summary
+            r.font.size = Pt(9)
+            r.font.color.rgb = rgb(palette.body_text)
+
+        if impact:
+            tb_imp = slide.shapes.add_textbox(
+                Inches(7.5), Inches(y_pos + 0.7), Inches(5.2), Inches(0.65)
+            )
+            tf = tb_imp.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            p.line_spacing = Pt(13)
+            r = p.add_run()
+            r.text = impact
+            r.font.size = Pt(9)
+            r.font.bold = True
+            r.font.color.rgb = rgb(sent_colors.get(sentiment, palette.body_text))
+
+        y_pos += height + 0.1
+
+
+def build_image_slide(prs, content: dict, palette, meta: dict, page_num: int, bg_image=None):
+    """
+    Embed a real image (web screenshot, chart, infographic) on a slide.
+    The image is the hero element — full width with optional caption and source.
+
+    content:
+      title: "S&P 500 Year-to-Date Performance"
+      tag: "REAL-TIME DATA"
+      image_path: "/tmp/real_charts/sp500_ytd.png"
+      caption: "Source: TradingView | Data as of Feb 7, 2026"
+      source_url: "https://www.tradingview.com/..."
+      commentary: "Optional analysis text below the image"
+    """
+    slide = make_content_slide(prs, palette, meta, page_num, bg_image)
+    add_slide_title(slide, content.get("title", ""), tag=content.get("tag"), palette=palette)
+
+    dark = is_dark(palette)
+    image_path = content.get("image_path", "")
+
+    if image_path and os.path.exists(image_path):
+        # Glass card frame around the image
+        if dark:
+            add_glass_card(slide, 0.3, 2.1, 12.7, 4.2, palette, alpha_pct=50)
+
+        # Embed image — centered, max width
+        img_left = content.get("img_left", 0.4)
+        img_top = content.get("img_top", 2.2)
+        img_width = content.get("img_width", 12.5)
+        img_height = content.get("img_height", 3.9)
+        slide.shapes.add_picture(
+            image_path,
+            Inches(img_left), Inches(img_top),
+            Inches(img_width), Inches(img_height)
+        )
+    else:
+        # Fallback: show a "no image" message
+        tb = slide.shapes.add_textbox(Inches(3), Inches(3.5), Inches(7), Inches(1))
+        tf = tb.text_frame
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        r = p.add_run()
+        r.text = f"[Image not found: {image_path}]"
+        r.font.size = Pt(14)
+        r.font.color.rgb = rgb(palette.source_color)
+
+    # Caption / source attribution
+    caption = content.get("caption", "")
+    if caption:
+        tb_cap = slide.shapes.add_textbox(Inches(0.6), Inches(6.3), Inches(8), Inches(0.3))
+        tf = tb_cap.text_frame
+        p = tf.paragraphs[0]
+        source_url = content.get("source_url", "")
+        if source_url:
+            add_hyperlink_run(p, caption, source_url,
+                              font_size=8, color=palette.source_color, italic=True)
+        else:
+            r = p.add_run()
+            r.text = caption
+            r.font.size = Pt(8)
+            r.font.italic = True
+            r.font.color.rgb = rgb(palette.source_color)
+
+    # Optional commentary text
+    commentary = content.get("commentary", "")
+    if commentary:
+        if dark:
+            add_glass_card(slide, 0.3, 6.1, 12.7, 0.7, palette, alpha_pct=60)
+        tb_comm = slide.shapes.add_textbox(Inches(0.6), Inches(6.15), Inches(12), Inches(0.6))
+        tf = tb_comm.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        r = p.add_run()
+        r.text = commentary
+        r.font.size = Pt(10)
+        r.font.color.rgb = rgb(palette.body_text)
+
+    # Link button if source_url provided
+    link_url = content.get("source_url", "")
+    if link_url:
+        add_link_button(slide, link_url, label="📊 Live Chart",
+                        left=10.5, top=6.3, width=2.2, height=0.32,
+                        palette=palette)
+
+
+def build_dual_chart_slide(prs, content: dict, chart_paths: list, palette,
+                           meta: dict, page_num: int, bg_image=None):
+    """
+    Side-by-side dual chart comparison slide.
+
+    content:
+      title: "Gold vs Bitcoin: Diverging Safe Havens"
+      tag: "CROSS-ASSET"
+      left_label: "Gold: +14.4% YTD"
+      right_label: "Bitcoin: -20.5% YTD"
+    chart_paths: ["/path/to/left_chart.png", "/path/to/right_chart.png"]
+    """
+    slide = make_content_slide(prs, palette, meta, page_num, bg_image)
+    add_slide_title(slide, content.get("title", ""), tag=content.get("tag"), palette=palette)
+
+    dark = is_dark(palette)
+
+    # Left chart
+    if len(chart_paths) > 0 and os.path.exists(chart_paths[0]):
+        if dark:
+            add_glass_card(slide, 0.3, 2.3, 6.2, 4.0, palette, alpha_pct=50)
+        slide.shapes.add_picture(
+            chart_paths[0], Inches(0.4), Inches(2.4), Inches(6.0), Inches(3.7)
+        )
+
+    # Right chart
+    if len(chart_paths) > 1 and os.path.exists(chart_paths[1]):
+        if dark:
+            add_glass_card(slide, 6.8, 2.3, 6.2, 4.0, palette, alpha_pct=50)
+        slide.shapes.add_picture(
+            chart_paths[1], Inches(6.9), Inches(2.4), Inches(6.0), Inches(3.7)
+        )
+
+    # Labels
+    for i, (x_start, key) in enumerate([(0.4, "left_label"), (6.9, "right_label")]):
+        label = content.get(key, "")
+        if label:
+            tb = slide.shapes.add_textbox(
+                Inches(x_start), Inches(2.05), Inches(6.0), Inches(0.3)
+            )
+            tf = tb.text_frame
+            p = tf.paragraphs[0]
+            p.alignment = PP_ALIGN.CENTER
+            r = p.add_run()
+            r.text = label
+            r.font.size = Pt(11)
+            r.font.bold = True
+            r.font.color.rgb = rgb(palette.gold)
+
+    # Vertical separator
+    sep_color = palette.gold if dark else palette.navy
+    sep = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, Inches(6.55), Inches(2.5), Pt(2), Inches(3.5)
+    )
+    sep.fill.solid()
+    sep.fill.fore_color.rgb = rgb(sep_color)
+    sep.line.fill.background()
+
+
+def build_callout_slide(prs, content: dict, palette, meta: dict, page_num: int, bg_image=None):
+    """
+    Big callout slide — one hero number/quote with context.
+    JPMorgan "Guide to Markets" style: huge number + explanation.
+
+    content:
+      title: "Key Metric"
+      tag: "WEEKLY HIGHLIGHT"
+      hero_number: "$4,965"
+      hero_label: "Gold Price ($/oz)"
+      hero_color: "#F0B90B"  (optional, default gold)
+      context_left: "JPM Target: $6,300"
+      context_right: "+14.4% YTD"
+      commentary: "Gold's best start to a year since 1980..."
+    """
+    slide = make_content_slide(prs, palette, meta, page_num, bg_image)
+    add_slide_title(slide, content.get("title", ""), tag=content.get("tag"), palette=palette)
+
+    dark = is_dark(palette)
+    hero_color = content.get("hero_color", palette.gold)
+
+    # Glass card for hero section
+    if dark:
+        add_glass_card(slide, 1.5, 2.2, 10.3, 3.8, palette, alpha_pct=65)
+
+    # Hero number (massive)
+    hero = content.get("hero_number", "")
+    if hero:
+        tb_hero = slide.shapes.add_textbox(
+            Inches(0), Inches(2.4), Inches(13.333), Inches(1.5)
+        )
+        tf = tb_hero.text_frame
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        r = p.add_run()
+        r.text = hero
+        r.font.size = Pt(72)
+        r.font.bold = True
+        r.font.color.rgb = rgb(hero_color)
+        r.font.name = "Arial"
+
+    # Hero label
+    hero_label = content.get("hero_label", "")
+    if hero_label:
+        tb_label = slide.shapes.add_textbox(
+            Inches(0), Inches(3.8), Inches(13.333), Inches(0.5)
+        )
+        tf = tb_label.text_frame
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        r = p.add_run()
+        r.text = hero_label
+        r.font.size = Pt(18)
+        r.font.color.rgb = rgb(palette.body_text)
+
+    # Context: left and right metrics
+    ctx_left = content.get("context_left", "")
+    ctx_right = content.get("context_right", "")
+
+    if ctx_left:
+        tb_cl = slide.shapes.add_textbox(Inches(2), Inches(4.5), Inches(4.5), Inches(0.5))
+        tf = tb_cl.text_frame
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        r = p.add_run()
+        r.text = ctx_left
+        r.font.size = Pt(16)
+        r.font.bold = True
+        r.font.color.rgb = rgb(palette.chart_primary)
+
+    if ctx_right:
+        tb_cr = slide.shapes.add_textbox(Inches(6.8), Inches(4.5), Inches(4.5), Inches(0.5))
+        tf = tb_cr.text_frame
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        r = p.add_run()
+        r.text = ctx_right
+        r.font.size = Pt(16)
+        r.font.bold = True
+        r.font.color.rgb = rgb(palette.green)
+
+    # Glow accent line
+    add_glow_line(slide, 3, 4.35, 7.3, palette, color=hero_color)
+
+    # Commentary text
+    commentary = content.get("commentary", "")
+    if commentary:
+        if dark:
+            add_glass_card(slide, 1.5, 5.2, 10.3, 1.2, palette, alpha_pct=55)
+        tb_comm = slide.shapes.add_textbox(Inches(2), Inches(5.3), Inches(9.3), Inches(1.0))
+        tf = tb_comm.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        p.line_spacing = Pt(16)
+        r = p.add_run()
+        r.text = commentary
+        r.font.size = Pt(12)
+        r.font.color.rgb = rgb(palette.body_text)

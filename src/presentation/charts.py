@@ -10,6 +10,11 @@ import numpy as np
 from matplotlib.patches import FancyBboxPatch
 
 
+def _is_dark(palette) -> bool:
+    """Check if palette is dark mode."""
+    return palette.fig_bg not in ("#FFFFFF", "#FAFBFC")
+
+
 def render_chart(chart_spec: dict, palette, output_dir: str) -> str:
     """
     Dispatch to the appropriate chart renderer.
@@ -36,6 +41,7 @@ def render_chart(chart_spec: dict, palette, output_dir: str) -> str:
         "table_heatmap": render_table_heatmap,
         "gauge": render_gauge,
         "donut_matrix": render_donut_matrix,
+        "waterfall": render_waterfall,
     }
 
     renderer = renderers.get(chart_type)
@@ -94,6 +100,8 @@ def render_line(data: dict, config: dict, palette, source: str, output_path: str
 
     markers = ["o", "s", "^", "D", "v", "p", "*"]
 
+    dark = _is_dark(palette)
+
     for i, series in enumerate(data["series"]):
         color = series.get("color", palette.chart_primary if i == 0 else palette.chart_secondary)
         marker = markers[i % len(markers)]
@@ -101,15 +109,22 @@ def render_line(data: dict, config: dict, palette, source: str, output_path: str
         lw = series.get("linewidth", 2.5)
         label = series.get("name", f"Series {i+1}")
 
+        # Glow effect on dark backgrounds: wide semi-transparent line behind
+        if dark:
+            ax.plot(x, series["values"], color=color, linewidth=lw * 3.5,
+                    alpha=0.12, zorder=3 - i, linestyle=line_style)
+
         ax.plot(x, series["values"], color=color, linewidth=lw, marker=marker,
                 markersize=6, label=label, zorder=5 - i, linestyle=line_style)
 
-        if config.get("fill", False):
-            baseline = config.get("baseline", 0)
-            ax.fill_between(x, series["values"], baseline, alpha=0.08, color=color)
+        fill_alpha = 0.15 if dark else 0.08
+        if config.get("fill", False) or dark:
+            baseline = config.get("baseline", min(v for s in data["series"] for v in s["values"]) if dark else 0)
+            ax.fill_between(x, series["values"], baseline, alpha=fill_alpha, color=color)
 
     if "baseline" in config:
-        ax.axhline(y=config["baseline"], color="#CCCCCC", linestyle="--", linewidth=0.8)
+        bl_color = "#2A3A4A" if dark else "#CCCCCC"
+        ax.axhline(y=config["baseline"], color=bl_color, linestyle="--", linewidth=0.8)
 
     ax.set_xticks(list(x))
     ax.set_xticklabels(labels, fontsize=9, rotation=config.get("x_rotation", 0),
@@ -163,12 +178,18 @@ def render_line(data: dict, config: dict, palette, source: str, output_path: str
         )
 
     if len(data["series"]) > 1:
-        ax.legend(loc=config.get("legend_loc", "upper left"), fontsize=10, framealpha=0.9)
+        legend_bg = palette.chart_bg if dark else "white"
+        legend_text = palette.body_text if dark else "black"
+        leg = ax.legend(loc=config.get("legend_loc", "upper left"), fontsize=10,
+                        framealpha=0.85, facecolor=legend_bg, edgecolor=palette.card_border if dark else "#CCCCCC")
+        if dark:
+            for text in leg.get_texts():
+                text.set_color(legend_text)
 
     if source:
         add_source_text(ax, source, palette)
 
-    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.white)
+    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
     plt.close(fig)
     return output_path
 
@@ -227,7 +248,9 @@ def render_bar(data: dict, config: dict, palette, source: str, output_path: str)
                             f"${val}B", ha="center", va="bottom", fontsize=10,
                             fontweight="bold", color=color_txt)
 
-    ax.axhline(y=0, color=palette.navy, linewidth=1.2)
+    dark_bar = _is_dark(palette)
+    zero_color = palette.body_text if dark_bar else palette.navy
+    ax.axhline(y=0, color=zero_color, linewidth=1.2)
     ax.set_xticks(x)
     ax.set_xticklabels(labels, fontsize=12, fontweight="bold")
 
@@ -235,8 +258,23 @@ def render_bar(data: dict, config: dict, palette, source: str, output_path: str)
         ax.set_ylabel(config["ylabel"], fontsize=11, fontweight="bold")
     if config.get("ylim"):
         ax.set_ylim(config["ylim"])
+
+    # Horizontal reference lines
+    for hline in config.get("hlines", []):
+        ax.axhline(y=hline["y"], color=hline.get("color", palette.gold),
+                   linestyle=hline.get("style", "--"), linewidth=1.5, alpha=0.7)
+        if hline.get("label"):
+            ax.text(len(labels) - 0.5, hline["y"] + (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.02,
+                    hline["label"], fontsize=9, color=hline.get("color", palette.gold),
+                    fontweight="bold", ha="right")
+
     if n_groups > 1:
-        ax.legend(loc=config.get("legend_loc", "upper left"), fontsize=10, framealpha=0.9)
+        leg_bg = palette.chart_bg if dark_bar else "white"
+        leg = ax.legend(loc=config.get("legend_loc", "upper left"), fontsize=10,
+                        framealpha=0.85, facecolor=leg_bg, edgecolor=palette.card_border if dark_bar else "#CCCCCC")
+        if dark_bar:
+            for text in leg.get_texts():
+                text.set_color(palette.body_text)
 
     # Annotations
     for ann in config.get("annotations", []):
@@ -259,7 +297,7 @@ def render_bar(data: dict, config: dict, palette, source: str, output_path: str)
     if source:
         add_source_text(ax, source, palette)
 
-    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.white)
+    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
     plt.close(fig)
     return output_path
 
@@ -303,7 +341,8 @@ def render_hbar(data: dict, config: dict, palette, source: str, output_path: str
 
     ax.set_yticks(list(y_pos))
     ax.set_yticklabels(labels, fontsize=11, fontweight="bold")
-    ax.axvline(x=0, color=palette.navy, linewidth=1.2)
+    hbar_zero = palette.body_text if _is_dark(palette) else palette.navy
+    ax.axvline(x=0, color=hbar_zero, linewidth=1.2)
 
     if config.get("xlabel"):
         ax.set_xlabel(config["xlabel"], fontsize=11, fontweight="bold")
@@ -333,7 +372,7 @@ def render_hbar(data: dict, config: dict, palette, source: str, output_path: str
     if source:
         add_source_text(ax, source, palette)
 
-    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.white)
+    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
     plt.close(fig)
     return output_path
 
@@ -377,12 +416,14 @@ def render_stacked_bar(data: dict, config: dict, palette, source: str, output_pa
         bottoms = bottoms + np.array(vals)
 
     # Show totals above bars
+    dark_stacked = _is_dark(palette)
+    total_text_color = palette.body_text if dark_stacked else palette.navy
     if config.get("show_totals", True):
         prefix = config.get("total_prefix", "€")
         suffix = config.get("total_suffix", "B")
         for xi, total in zip(x, bottoms):
             ax.text(xi, total + 3, f"{prefix}{int(total)}{suffix}", ha="center", va="bottom",
-                    fontsize=9, fontweight="bold", color=palette.navy)
+                    fontsize=9, fontweight="bold", color=total_text_color)
 
     ax.set_xticks(x)
     ax.set_xticklabels(labels, fontsize=10, fontweight="bold")
@@ -390,8 +431,13 @@ def render_stacked_bar(data: dict, config: dict, palette, source: str, output_pa
         ax.set_ylabel(config["ylabel"], fontsize=11, fontweight="bold")
     if config.get("ylim"):
         ax.set_ylim(config["ylim"])
-    ax.legend(loc=config.get("legend_loc", "upper left"), fontsize=9, framealpha=0.9,
-              ncol=config.get("legend_ncol", len(stacks)))
+    sleg_bg = palette.chart_bg if dark_stacked else "white"
+    sleg = ax.legend(loc=config.get("legend_loc", "upper left"), fontsize=9, framealpha=0.85,
+                     ncol=config.get("legend_ncol", len(stacks)),
+                     facecolor=sleg_bg, edgecolor=palette.card_border if dark_stacked else "#CCCCCC")
+    if dark_stacked:
+        for text in sleg.get_texts():
+            text.set_color(palette.body_text)
 
     for ann in config.get("annotations", []):
         bbox_props = None
@@ -406,7 +452,7 @@ def render_stacked_bar(data: dict, config: dict, palette, source: str, output_pa
     if source:
         add_source_text(ax, source, palette)
 
-    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.white)
+    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
     plt.close(fig)
     return output_path
 
@@ -443,12 +489,16 @@ def render_table_heatmap(data: dict, config: dict, palette, source: str, output_
     ax.set_xlim(0, n_cols)
     ax.set_ylim(0, n_rows)
     ax.axis("off")
-    fig.patch.set_facecolor(palette.white)
-    ax.set_facecolor(palette.white)
+    fig.patch.set_facecolor(palette.fig_bg)
+    ax.set_facecolor(palette.fig_bg)
 
     col_widths = config.get("col_widths", [n_cols / n_cols] * n_cols)
     color_cols = set(config.get("color_cols", list(range(3, n_cols))))
     signal_col = config.get("signal_col", n_cols - 1)
+
+    dark = _is_dark(palette)
+    cell_bg = palette.chart_bg if dark else palette.white
+    cell_border = "#1E2D42" if dark else "#EEEEEE"
 
     col_x = [0]
     for w in col_widths[:-1]:
@@ -457,19 +507,34 @@ def render_table_heatmap(data: dict, config: dict, palette, source: str, output_
     row_h = 0.85
 
     def val_color(val_str, is_signal=False):
-        if is_signal:
-            if val_str == "Overbought":
-                return "#FFF3E0"
-            elif val_str == "Oversold":
-                return "#E3F2FD"
+        if dark:
+            if is_signal:
+                if val_str == "Overbought":
+                    return "#2D2010"
+                elif val_str == "Oversold":
+                    return "#102030"
+                return cell_bg
+            if not val_str or val_str == "\u2014":
+                return cell_bg
+            if val_str.startswith("+"):
+                return "#0D2D10"
+            elif val_str.startswith("-"):
+                return "#2D0D10"
+            return cell_bg
+        else:
+            if is_signal:
+                if val_str == "Overbought":
+                    return "#FFF3E0"
+                elif val_str == "Oversold":
+                    return "#E3F2FD"
+                return palette.white
+            if not val_str or val_str == "\u2014":
+                return palette.white
+            if val_str.startswith("+"):
+                return "#E8F5E9"
+            elif val_str.startswith("-"):
+                return "#FFEBEE"
             return palette.white
-        if not val_str or val_str == "\u2014":
-            return palette.white
-        if val_str.startswith("+"):
-            return "#E8F5E9"
-        elif val_str.startswith("-"):
-            return "#FFEBEE"
-        return palette.white
 
     def text_color(val_str, is_signal=False):
         if is_signal:
@@ -508,10 +573,10 @@ def render_table_heatmap(data: dict, config: dict, palette, source: str, output_
 
         for j, cell in enumerate(row):
             is_sig = (j == signal_col)
-            bg = val_color(cell, is_sig) if j in color_cols else palette.white
+            bg = val_color(cell, is_sig) if j in color_cols else cell_bg
             rect = FancyBboxPatch(
                 (col_x[j] + 0.02, y - row_h / 2 + 0.15), col_widths[j] - 0.04, row_h - 0.1,
-                boxstyle="round,pad=0.02", facecolor=bg, edgecolor="#EEEEEE", linewidth=0.3,
+                boxstyle="round,pad=0.02", facecolor=bg, edgecolor=cell_border, linewidth=0.3,
             )
             ax.add_patch(rect)
 
@@ -526,7 +591,7 @@ def render_table_heatmap(data: dict, config: dict, palette, source: str, output_
     if source:
         add_source_text(ax, source, palette)
 
-    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.white)
+    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
     plt.close(fig)
     return output_path
 
@@ -558,8 +623,8 @@ def render_gauge(data: dict, config: dict, palette, source: str, output_path: st
     ax.set_xlim(-0.5, max_val + 0.5)
     ax.set_ylim(-1.5, 4.5)
     ax.axis("off")
-    fig.patch.set_facecolor(palette.white)
-    ax.set_facecolor(palette.white)
+    fig.patch.set_facecolor(palette.fig_bg)
+    ax.set_facecolor(palette.fig_bg)
 
     bar_y = 2.0
     bar_h = 1.2
@@ -587,9 +652,10 @@ def render_gauge(data: dict, config: dict, palette, source: str, output_path: st
     ax.plot(value, bar_y - 0.15, "v", color=palette.red, markersize=25, zorder=10)
     ax.plot(value, bar_y + bar_h + 0.15, "^", color=palette.red, markersize=25, zorder=10)
 
+    gauge_box_bg = "#2D0D10" if _is_dark(palette) else "#FFEBEE"
     ax.text(value, bar_y - 0.55, f"CURRENT: {value} / {max_val}",
             ha="center", va="top", fontsize=16, fontweight="bold", color=palette.red,
-            bbox=dict(boxstyle="round,pad=0.4", facecolor="#FFEBEE",
+            bbox=dict(boxstyle="round,pad=0.4", facecolor=gauge_box_bg,
                      edgecolor=palette.red, linewidth=2))
 
     # Scale markers
@@ -597,9 +663,10 @@ def render_gauge(data: dict, config: dict, palette, source: str, output_path: st
         ax.text(i, bar_y - 0.05, str(i), ha="center", va="top", fontsize=8, color=palette.gray)
 
     # Title
+    gauge_title_color = palette.title_color if hasattr(palette, 'title_color') else palette.navy
     if config.get("title"):
         ax.text(max_val / 2, 4.2, config["title"], ha="center", va="center",
-                fontsize=18, fontweight="bold", color=palette.navy)
+                fontsize=18, fontweight="bold", color=gauge_title_color)
     if config.get("subtitle"):
         ax.text(max_val / 2, 3.75, config["subtitle"], ha="center", va="center",
                 fontsize=12, color=palette.red, fontweight="bold")
@@ -616,7 +683,7 @@ def render_gauge(data: dict, config: dict, palette, source: str, output_path: st
     if source:
         add_source_text(ax, source, palette)
 
-    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.white)
+    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
     plt.close(fig)
     return output_path
 
@@ -646,11 +713,11 @@ def render_donut_matrix(data: dict, config: dict, palette, source: str, output_p
     """
     plt = _get_plt()
     fig = plt.figure(figsize=tuple(config.get("figsize", [14, 5.5])))
-    fig.patch.set_facecolor(palette.white)
+    fig.patch.set_facecolor(palette.fig_bg)
 
     # LEFT: Donut
     ax1 = fig.add_axes([0.02, 0.05, 0.42, 0.9])
-    ax1.set_facecolor(palette.white)
+    ax1.set_facecolor(palette.fig_bg)
 
     donut = data.get("donut", {})
     labels = donut.get("labels", [])
@@ -659,10 +726,11 @@ def render_donut_matrix(data: dict, config: dict, palette, source: str, output_p
                       palette.green, palette.orange, palette.gold, palette.gray]
     colors_pie = donut.get("colors", default_colors[:len(sizes)])
 
+    edge_color = palette.fig_bg if _is_dark(palette) else palette.white
     wedges, _, _ = ax1.pie(
         sizes, labels=None, autopct="", startangle=90,
         colors=colors_pie, pctdistance=0.8,
-        wedgeprops=dict(width=0.4, edgecolor=palette.white, linewidth=2),
+        wedgeprops=dict(width=0.4, edgecolor=edge_color, linewidth=2),
     )
 
     for i, (wedge, label) in enumerate(zip(wedges, labels)):
@@ -673,18 +741,20 @@ def render_donut_matrix(data: dict, config: dict, palette, source: str, output_p
         ax1.text(x, y, label, ha=ha, va="center", fontsize=8.5, fontweight="bold",
                  color=colors_pie[i % len(colors_pie)])
 
+    donut_title_color = palette.title_color if hasattr(palette, 'title_color') else palette.navy
     center_text = donut.get("center_text", "")
     if center_text:
         ax1.text(0, 0, center_text, ha="center", va="center",
-                 fontsize=10, fontweight="bold", color=palette.navy)
+                 fontsize=10, fontweight="bold", color=donut_title_color)
 
     ax1.set_title(config.get("donut_title", "Strategic Allocation"),
-                  fontsize=12, fontweight="bold", color=palette.navy, pad=10)
+                  fontsize=12, fontweight="bold", color=donut_title_color, pad=10)
 
     # RIGHT: Conviction matrix
+    dark = _is_dark(palette)
     ax2 = fig.add_axes([0.50, 0.05, 0.48, 0.9])
     ax2.axis("off")
-    ax2.set_facecolor(palette.white)
+    ax2.set_facecolor(palette.fig_bg)
     ax2.set_xlim(0, 10)
     ax2.set_ylim(0, 10)
 
@@ -695,8 +765,9 @@ def render_donut_matrix(data: dict, config: dict, palette, source: str, output_p
     col_w = [2.3, 1.2, 0.8, 5.7]
     row_h = 0.95
 
+    matrix_title_color = palette.title_color if hasattr(palette, 'title_color') else palette.navy
     ax2.text(5, 9.7, config.get("matrix_title", "Conviction Matrix"),
-             fontsize=12, fontweight="bold", color=palette.navy, ha="center")
+             fontsize=12, fontweight="bold", color=matrix_title_color, ha="center")
 
     # Header
     y = 9.0
@@ -712,15 +783,20 @@ def render_donut_matrix(data: dict, config: dict, palette, source: str, output_p
                  color=palette.white)
 
     # Data rows
+    cell_bg_default = palette.chart_bg if dark else palette.white
+    cell_edge = "#1E2D42" if dark else "#EEEEEE"
     for i, row in enumerate(rows):
         y = 8.0 - i * row_h
         view = row[1] if len(row) > 1 else ""
-        bg = "#E8F5E9" if view == "OW" else ("#FFEBEE" if view == "UW" else palette.white)
+        if dark:
+            bg = "#0D2D10" if view == "OW" else ("#2D0D10" if view == "UW" else cell_bg_default)
+        else:
+            bg = "#E8F5E9" if view == "OW" else ("#FFEBEE" if view == "UW" else palette.white)
 
         for j, cell in enumerate(row):
             rect = FancyBboxPatch(
                 (col_x[j], y - row_h / 2 + 0.05), col_w[j] - 0.05, row_h - 0.1,
-                boxstyle="round,pad=0.02", facecolor=bg, edgecolor="#EEEEEE", linewidth=0.3,
+                boxstyle="round,pad=0.02", facecolor=bg, edgecolor=cell_edge, linewidth=0.3,
             )
             ax2.add_patch(rect)
 
@@ -743,6 +819,90 @@ def render_donut_matrix(data: dict, config: dict, palette, source: str, output_p
     if source:
         add_source_text(ax2, source, palette)
 
-    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.white)
+    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
+    plt.close(fig)
+    return output_path
+
+
+# ============================================================================
+# Waterfall Chart (attribution analysis)
+# ============================================================================
+
+def render_waterfall(data: dict, config: dict, palette, source: str, output_path: str) -> str:
+    """
+    Waterfall chart for attribution / decomposition analysis.
+
+    data:
+      labels: ["Start", "Equities", "Bonds", "FX", "Alt", "End"]
+      values: [100, 5.2, -1.3, 0.8, 2.1, 106.8]
+      is_total: [true, false, false, false, false, true]
+    """
+    plt = _get_plt()
+    figsize = tuple(config.get("figsize", [14, 5.5]))
+    fig, ax = plt.subplots(figsize=figsize)
+
+    labels = data["labels"]
+    values = data["values"]
+    is_total = data.get("is_total", [i == 0 or i == len(values) - 1 for i in range(len(values))])
+
+    dark = _is_dark(palette)
+    n = len(values)
+    x = np.arange(n)
+
+    bottoms = []
+    running = 0
+    for i, (v, total) in enumerate(zip(values, is_total)):
+        if total:
+            bottoms.append(0)
+            running = v
+        else:
+            if v >= 0:
+                bottoms.append(running)
+                running += v
+            else:
+                running += v
+                bottoms.append(running)
+
+    bar_colors = []
+    for i, (v, total) in enumerate(zip(values, is_total)):
+        if total:
+            bar_colors.append(palette.chart_primary)
+        elif v >= 0:
+            bar_colors.append(palette.green)
+        else:
+            bar_colors.append(palette.red)
+
+    display_values = [v if total else abs(v) for v, total in zip(values, is_total)]
+    bars = ax.bar(x, display_values, bottom=bottoms, color=bar_colors,
+                  width=0.6, edgecolor="white", linewidth=0.5, zorder=3)
+
+    if config.get("show_connectors", True):
+        for i in range(n - 1):
+            top = values[i] if is_total[i] else bottoms[i] + display_values[i]
+            conn_color = palette.body_text if dark else "#AAAAAA"
+            ax.plot([x[i] + 0.3, x[i + 1] - 0.3], [top, top],
+                    color=conn_color, linewidth=0.8, linestyle="--", alpha=0.5)
+
+    for bar, v, b, total in zip(bars, values, bottoms, is_total):
+        y_pos = b + abs(v) + (max(values) - min(values)) * 0.02
+        label_color = palette.body_text if dark else "#333333"
+        prefix = "+" if v > 0 and not total else ""
+        suffix = config.get("value_suffix", "")
+        ax.text(bar.get_x() + bar.get_width() / 2, y_pos,
+                f"{prefix}{v}{suffix}", ha="center", va="bottom",
+                fontsize=10, fontweight="bold", color=label_color)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, fontsize=11, fontweight="bold")
+    zero_color = palette.body_text if dark else palette.navy
+    ax.axhline(y=0, color=zero_color, linewidth=0.8)
+
+    if config.get("ylabel"):
+        ax.set_ylabel(config["ylabel"], fontsize=11, fontweight="bold")
+
+    if source:
+        add_source_text(ax, source, palette)
+
+    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
     plt.close(fig)
     return output_path

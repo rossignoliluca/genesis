@@ -37,6 +37,13 @@ class ColorPalette:
 
     # Backgrounds
     chart_bg: str = "#FAFBFC"
+    fig_bg: str = "#FFFFFF"  # matplotlib figure facecolor (separate from PPTX white)
+    slide_bg: str = "#FFFFFF"  # PPTX content slide background
+
+    # Dark-mode-aware semantic colors
+    title_color: str = "#0C2340"  # slide title text (navy for light, white for dark)
+    card_bg: str = "#F5F5F5"  # glassmorphism card background
+    card_border: str = "#E0E0E0"  # card border color
 
     # Extended palette for multi-series charts
     extra_colors: list = field(default_factory=lambda: [
@@ -46,7 +53,14 @@ class ColorPalette:
 
 # Pre-built palettes
 PALETTES: Dict[str, ColorPalette] = {
-    "crossinvest_navy_gold": ColorPalette(),  # Default
+    # Real Crossinvest SA branding from crossinvest.ch
+    "crossinvest_navy_gold": ColorPalette(
+        navy="#24618e",
+        gold="#B8860B",
+        chart_primary="#24618e",
+        chart_secondary="#3566bb",
+        chart_bg="#FAFBFC",
+    ),
     "corporate_blue": ColorPalette(
         navy="#1B365D", gold="#C5A55A", chart_primary="#2C5F8A",
         chart_secondary="#4A90D9", green="#28A745", red="#DC3545",
@@ -55,6 +69,30 @@ PALETTES: Dict[str, ColorPalette] = {
         navy="#1A1A1A", gold="#888888", chart_primary="#333333",
         chart_secondary="#666666", green="#2D6A2D", red="#8B0000",
         chart_bg="#FFFFFF",
+    ),
+    # Premium dark mode — 2026 social media / institutional style
+    # Deep navy chart backgrounds, bright saturated accents, high contrast
+    # PPTX slides keep navy/gold theme; charts get dark bg via fig_bg/chart_bg
+    "crossinvest_dark": ColorPalette(
+        navy="#0D2137",
+        gold="#F0B90B",
+        white="#FFFFFF",
+        chart_primary="#00D4FF",
+        chart_secondary="#7B61FF",
+        green="#00E676",
+        red="#FF5252",
+        orange="#FFB74D",
+        body_text="#E8EDF3",
+        gray="#8899AA",
+        source_color="#5A7B8D",
+        light_gray="#1E2D42",
+        chart_bg="#0F1B2D",
+        fig_bg="#0A1628",
+        slide_bg="#0D1B2A",
+        title_color="#FFFFFF",
+        card_bg="#152238",
+        card_border="#1E3454",
+        extra_colors=["#FF6EC7", "#00BFA5", "#FFCA28", "#448AFF", "#FF7043", "#CE93D8"],
     ),
 }
 
@@ -68,6 +106,11 @@ def rgb(hex_str: str) -> RGBColor:
 def get_palette(name: str = "crossinvest_navy_gold") -> ColorPalette:
     """Get a named palette or return default."""
     return PALETTES.get(name, PALETTES["crossinvest_navy_gold"])
+
+
+def is_dark(palette: ColorPalette) -> bool:
+    """Check if palette is dark mode."""
+    return palette.fig_bg not in ("#FFFFFF", "#FAFBFC")
 
 
 # ============================================================================
@@ -137,17 +180,21 @@ def setup_matplotlib(palette: Optional[ColorPalette] = None):
     if palette is None:
         palette = get_palette()
 
+    is_dark = palette.fig_bg not in ("#FFFFFF", "#FAFBFC")
+    grid_color = "#1E2D42" if is_dark else "#CCCCCC"
+    grid_alpha = 0.5 if is_dark else 0.3
+
     plt.rcParams.update({
         "font.family": "Arial",
         "font.size": 10,
         "axes.facecolor": palette.chart_bg,
-        "figure.facecolor": palette.white,
+        "figure.facecolor": palette.fig_bg,
         "axes.edgecolor": palette.gray,
         "axes.linewidth": 0.8,
         "axes.grid": True,
-        "grid.color": "#CCCCCC",
+        "grid.color": grid_color,
         "grid.linestyle": "--",
-        "grid.alpha": 0.3,
+        "grid.alpha": grid_alpha,
         "axes.spines.top": False,
         "axes.spines.right": False,
         "xtick.color": palette.body_text,

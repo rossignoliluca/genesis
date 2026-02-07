@@ -150,8 +150,21 @@ export function useSSEConnection(dashboardUrl: string) {
       });
     }
 
-    // Update economy (from LLM costs as proxy)
-    if (metrics.llm) {
+    // Update economy
+    if ((metrics as any).economy) {
+      const econ = (metrics as any).economy;
+      updateEconomy({
+        cash: econ.cash ?? 0,
+        revenue: econ.revenue ?? 0,
+        costs: econ.costs ?? 0,
+        runway: econ.runway ?? 0,
+        ness: econ.ness ?? 0.5,
+        isReal: econ.isReal ?? false, // True when connected to real LLM costs
+        totalCosts: econ.totalCosts ?? 0,
+        totalRevenue: econ.totalRevenue ?? 0,
+      });
+    } else if (metrics.llm) {
+      // Fallback: use LLM costs as proxy
       const currentEconomy = useGenesisStore.getState().economy;
       updateEconomy({
         cash: currentEconomy.cash,
@@ -159,6 +172,7 @@ export function useSSEConnection(dashboardUrl: string) {
         costs: metrics.llm.totalCost ?? 0,
         runway: currentEconomy.runway,
         ness: currentEconomy.ness,
+        isReal: false,
       });
     }
   }, [updateConsciousness, updateKernel, updateAgents, updateMemory, updateEconomy]);
@@ -222,6 +236,22 @@ export function useSSEConnection(dashboardUrl: string) {
           updateNeuromod({ cortisol });
           addEvent({ type: eventType, data });
         }
+        break;
+
+      case 'economy':
+        if (action === 'update') {
+          updateEconomy({
+            cash: data.cash ?? 0,
+            revenue: data.revenue ?? 0,
+            costs: data.costs ?? 0,
+            runway: data.runway ?? 0,
+            ness: data.ness ?? 0.5,
+            isReal: data.isReal ?? false,
+            totalCosts: data.totalCosts ?? 0,
+            totalRevenue: data.totalRevenue ?? 0,
+          });
+        }
+        addEvent({ type: eventType, data });
         break;
 
       default:

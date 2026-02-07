@@ -32,6 +32,7 @@ import type { ThinkingEngine } from '../thinking/index.js';
 import type { CausalReasoner } from '../causal/index.js';
 import type { GovernanceSystem } from '../governance/index.js';
 import type { MCPClientManager } from '../mcp/client-manager.js';
+import type { AutonomousLoop } from '../active-inference/autonomous-loop.js';
 
 // ============================================================================
 // Types
@@ -64,6 +65,9 @@ export interface ModuleRegistry {
   governance?: GovernanceSystem;
   fiber?: EconomicFiber;
   ness?: NESSMonitor;
+
+  // v17.0: Active Inference
+  activeInference?: AutonomousLoop;
 }
 
 export interface WiringResult {
@@ -235,6 +239,58 @@ function wireEconomy(fiber: EconomicFiber, ness: NESSMonitor | undefined, bus: G
  */
 function wireAgents(agents: AgentPool, bus: GenesisEventBus): void {
   // Agent events are already published by genesis.ts
+}
+
+/**
+ * v17.0: Wire Active Inference loop to event bus
+ * Active Inference emits its own events, but we subscribe to forward key metrics
+ */
+function wireActiveInference(
+  activeInference: AutonomousLoop,
+  worldModel: WorldModelSystem | undefined,
+  bus: GenesisEventBus
+): void {
+  // Subscribe to cycle events and forward key metrics
+  activeInference.onCycle((cycle, action, beliefs) => {
+    // Forward cycle completion to world model (bidirectional coupling)
+    if (worldModel) {
+      try {
+        // Update world model with current beliefs
+        const state = activeInference.getMostLikelyState();
+        worldModel.updateState?.('active-inference', {
+          viability: state.viability,
+          worldState: state.worldState,
+          coupling: state.coupling,
+          goalProgress: state.goalProgress,
+          economic: state.economic,
+          lastAction: action,
+          cycle,
+        });
+      } catch { /* world model update is optional */ }
+    }
+
+    // Emit cycle completion event
+    bus.publish('active-inference.cycle.completed', {
+      source: 'active-inference',
+      precision: 1.0,
+      cycle,
+      action,
+      beliefs: activeInference.getMostLikelyState(),
+    });
+  });
+
+  // Subscribe to stop events
+  activeInference.onStop((reason, stats) => {
+    bus.publish('active-inference.loop.stopped', {
+      source: 'active-inference',
+      precision: 1.0,
+      reason,
+      cycles: stats.cycles,
+      avgSurprise: stats.avgSurprise,
+    });
+  });
+
+  console.debug('[ModuleWiring] Active Inference wired to event bus');
 }
 
 /**
@@ -420,6 +476,13 @@ export function wireAllModules(modules: ModuleRegistry): WiringResult {
   // v13.9: Wire daemon with neuromodulation, nociception, allostasis
   if (modules.daemon) {
     wireDaemon(modules.daemon, modules, bus);
+    modulesWired++;
+    publishersCreated++;
+  }
+
+  // v17.0: Wire Active Inference loop
+  if (modules.activeInference) {
+    wireActiveInference(modules.activeInference, modules.worldModel, bus);
     modulesWired++;
     publishersCreated++;
   }

@@ -14,6 +14,7 @@ import { ExperienceReplayBuffer, createExperienceReplayBuffer } from './experien
 import { AllostasisSystem, createAllostasisSystem } from '../allostasis/index.js';
 import { createDreamService, DreamService } from '../daemon/dream-mode.js';
 import { ConformalPredictor, createFreeEnergyConformalPredictor } from '../uncertainty/conformal.js';
+import { getEventBus, type GenesisEventBus } from '../bus/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -124,6 +125,9 @@ export class AutonomousLoop {
   private lastObservationTime: number = 0;
   private observationCacheTTL: number = 2000; // Refresh every 2s max
 
+  // v17.0: Event bus integration for central awareness
+  private eventBus: GenesisEventBus | null = null;
+
   constructor(config: Partial<AutonomousLoopConfig> = {}) {
     this.config = { ...DEFAULT_LOOP_CONFIG, ...config };
 
@@ -177,6 +181,14 @@ export class AutonomousLoop {
 
     // v11.4: Initialize conformal predictor for calibrated uncertainty
     this.conformal = createFreeEnergyConformalPredictor();
+
+    // v17.0: Connect to event bus for central awareness
+    try {
+      this.eventBus = getEventBus();
+    } catch {
+      // Event bus may not be initialized yet
+      this.eventBus = null;
+    }
 
     // Subscribe to engine events
     this.engine.on(this.handleEngineEvent.bind(this));
@@ -274,6 +286,13 @@ export class AutonomousLoop {
   async cycle(): Promise<ActionType> {
     this.cycleCount++;
 
+    // v17.0: Emit cycle started event
+    this.eventBus?.publish('active-inference.cycle.started', {
+      source: 'active-inference',
+      precision: 1.0,
+      cycle: this.cycleCount,
+    });
+
     // 1. Gather observations (v12.0: non-blocking with cache)
     const obs = await this.gatherNonBlocking();
 
@@ -329,6 +348,24 @@ export class AutonomousLoop {
       beliefs = this.engine.getBeliefs();
     }
 
+    // v17.0: Emit belief updated event
+    const mostLikelyState = this.engine.getMostLikelyState();
+    this.eventBus?.publish('active-inference.belief.updated', {
+      source: 'active-inference',
+      precision: 0.9,
+      cycle: this.cycleCount,
+      beliefs: mostLikelyState,
+    });
+
+    // v17.0: Emit action selected event
+    this.eventBus?.publish('active-inference.action.selected', {
+      source: 'active-inference',
+      precision: 0.95,
+      cycle: this.cycleCount,
+      action,
+      beliefs: mostLikelyState,
+    });
+
     // 2b. v11.4: Reset preferences to avoid permanent drift
     if (this.lastAllostaticDelta) {
       this.engine.resetPreferences();
@@ -363,6 +400,19 @@ export class AutonomousLoop {
     const surprise = this.engine.getStats().averageSurprise;
     const outcome: 'positive' | 'negative' | 'neutral' = result.success ? 'positive' : 'negative';
     this.engine.recordLearningEvent(action, surprise, outcome);
+
+    // v17.0: Emit surprise detected event (when surprise is notable)
+    if (surprise > 2.0) {
+      this.eventBus?.publish('active-inference.surprise.detected', {
+        source: 'active-inference',
+        precision: 1.0,
+        cycle: this.cycleCount,
+        surprise,
+        threshold: 2.0,
+        action,
+        outcome,
+      });
+    }
 
     // 5a. v11.0: Store experience in replay buffer
     if (this.previousObservation) {

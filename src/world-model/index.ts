@@ -121,6 +121,9 @@ export class WorldModelSystem {
   private pendingConsolidation: LatentState[] = [];
   private dreamHistory: DreamResult[] = [];
 
+  // v17.0: External state updates (from Active Inference, etc.)
+  private externalStates: Map<string, Record<string, unknown>> = new Map();
+
   // Consistency check timer
   private consistencyTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -229,6 +232,62 @@ export class WorldModelSystem {
    */
   interpolate(a: LatentState, b: LatentState, t: number): LatentState {
     return this.decoder.interpolate(a, b, t);
+  }
+
+  // ============================================================================
+  // v17.0: External State Updates (Active Inference Coupling)
+  // ============================================================================
+
+  /**
+   * Update world model with external state information
+   * Used for bidirectional coupling with Active Inference
+   */
+  updateState(source: string, state: Record<string, unknown>): void {
+    this.externalStates.set(source, state);
+
+    // Emit update event
+    this.emit({
+      type: 'state_predicted',
+      timestamp: new Date(),
+      data: { source, state, external: true },
+    });
+
+    // If we have Active Inference beliefs, use them to update predictions
+    if (source === 'active-inference' && state.viability && state.worldState) {
+      // Convert beliefs to latent state influence
+      const influence = this.beliefsToLatentInfluence(state);
+      if (influence) {
+        this.predictor.applyExternalInfluence?.(influence);
+      }
+    }
+  }
+
+  /**
+   * Get external state by source
+   */
+  getExternalState(source: string): Record<string, unknown> | undefined {
+    return this.externalStates.get(source);
+  }
+
+  /**
+   * Convert Active Inference beliefs to latent space influence
+   */
+  private beliefsToLatentInfluence(beliefs: Record<string, unknown>): number[] | null {
+    // Map belief dimensions to latent dimensions
+    const viabilityMap: Record<string, number> = { critical: 0, low: 0.25, medium: 0.5, high: 0.75, optimal: 1 };
+    const worldStateMap: Record<string, number> = { unknown: 0, stable: 0.5, changing: 0.75, hostile: 1 };
+
+    const viability = viabilityMap[beliefs.viability as string] ?? 0.5;
+    const worldState = worldStateMap[beliefs.worldState as string] ?? 0.5;
+
+    // Create 64-dimensional influence vector (matching latent dim)
+    const influence = new Array(64).fill(0);
+    // First few dimensions encode belief state
+    influence[0] = viability;
+    influence[1] = worldState;
+    influence[2] = beliefs.economic === 'growing' ? 1 : beliefs.economic === 'stable' ? 0.5 : 0;
+
+    return influence;
   }
 
   // ============================================================================

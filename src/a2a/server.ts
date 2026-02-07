@@ -9,6 +9,7 @@ import { EventEmitter } from 'events';
 import * as http from 'http';
 import * as https from 'https';
 import * as crypto from 'crypto';
+import { getRevenueTracker } from '../payments/revenue-tracker.js';
 import {
   A2AAgentId,
   A2AMessage,
@@ -451,6 +452,22 @@ export class A2AServer extends EventEmitter {
       task.status = 'completed';
       task.progress = 100;
       this.metrics.tasksCompleted++;
+
+      // v17.0: Record revenue from A2A task
+      const capability = this.capabilities.find(c => c.id === task.request.capabilityId);
+      if (capability?.pricing?.basePrice) {
+        try {
+          const revenueTracker = getRevenueTracker();
+          revenueTracker.recordCost({
+            category: 'other',
+            amount: -capability.pricing.basePrice, // Negative cost = revenue
+            description: `A2A task revenue: ${task.request.capabilityId}`,
+            provider: task.from,
+            metadata: { taskId: task.request.id, capability: capability.name },
+          });
+          this.emit('revenue', capability.pricing.basePrice, `a2a:${task.request.capabilityId}`);
+        } catch { /* revenue tracking is optional */ }
+      }
 
       const taskResult: TaskResult = {
         taskId: task.request.id,

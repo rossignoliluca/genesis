@@ -133,6 +133,41 @@ export interface SurpriseEvent extends BusEvent {
 }
 
 // ============================================================================
+// v17.0: Active Inference Loop Events
+// ============================================================================
+
+export interface ActiveInferenceCycleEvent extends BusEvent {
+  cycle: number;
+  action?: string;
+  beliefs?: Record<string, string>;
+}
+
+export interface ActiveInferenceBeliefEvent extends BusEvent {
+  cycle: number;
+  beliefs: Record<string, string>;
+}
+
+export interface ActiveInferenceActionEvent extends BusEvent {
+  cycle: number;
+  action: string;
+  beliefs: Record<string, string>;
+}
+
+export interface ActiveInferenceSurpriseEvent extends BusEvent {
+  cycle: number;
+  surprise: number;
+  threshold: number;
+  action: string;
+  outcome: string;
+}
+
+export interface ActiveInferenceStoppedEvent extends BusEvent {
+  reason: string;
+  cycles: number;
+  avgSurprise: number;
+}
+
+// ============================================================================
 // Neuromodulation Events
 // ============================================================================
 
@@ -651,6 +686,14 @@ export interface GenesisEventMap {
   'inference.policy.inferred': PolicyInferredEvent;
   'inference.action.selected': ActionSelectedEvent;
   'inference.surprise.high': SurpriseEvent;
+
+  // v17.0: Active Inference Loop Events
+  'active-inference.cycle.started': ActiveInferenceCycleEvent;
+  'active-inference.cycle.completed': ActiveInferenceCycleEvent;
+  'active-inference.belief.updated': ActiveInferenceBeliefEvent;
+  'active-inference.action.selected': ActiveInferenceActionEvent;
+  'active-inference.surprise.detected': ActiveInferenceSurpriseEvent;
+  'active-inference.loop.stopped': ActiveInferenceStoppedEvent;
 
   // --- Neuromodulation Events ---
   'neuromod.levels.changed': NeuromodLevelsEvent;

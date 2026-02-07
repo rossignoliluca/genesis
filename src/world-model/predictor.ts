@@ -101,6 +101,9 @@ export class WorldModelPredictor {
   private entities: Map<string, WorldEntity> = new Map();
   private relations: Map<string, EntityRelation> = new Map();
 
+  // v17.0: External influence from Active Inference
+  private externalInfluence: number[] | null = null;
+
   constructor(config: Partial<WorldModelConfig> = {}) {
     this.config = { ...DEFAULT_WORLD_MODEL_CONFIG, ...config };
     this.encoder = createLatentEncoder();
@@ -154,6 +157,25 @@ export class WorldModelPredictor {
   }
 
   // ============================================================================
+  // v17.0: External Influence (Active Inference Coupling)
+  // ============================================================================
+
+  /**
+   * Apply external influence from Active Inference beliefs
+   * This biases predictions based on the current cognitive state
+   */
+  applyExternalInfluence(influence: number[]): void {
+    this.externalInfluence = influence;
+  }
+
+  /**
+   * Clear external influence
+   */
+  clearExternalInfluence(): void {
+    this.externalInfluence = null;
+  }
+
+  // ============================================================================
   // Single-Step Prediction
   // ============================================================================
 
@@ -170,7 +192,15 @@ export class WorldModelPredictor {
     }
 
     // Apply transition
-    const nextVector = this.applyTransition(currentState.vector, weights, action);
+    let nextVector = this.applyTransition(currentState.vector, weights, action);
+
+    // v17.0: Apply external influence from Active Inference if present
+    if (this.externalInfluence && this.externalInfluence.length > 0) {
+      const influenceWeight = 0.1; // Subtle influence
+      nextVector = nextVector.map((v, i) =>
+        v + (this.externalInfluence![i % this.externalInfluence!.length] || 0) * influenceWeight
+      );
+    }
 
     // Calculate uncertainty
     const uncertainty = this.calculateUncertainty(currentState, action);

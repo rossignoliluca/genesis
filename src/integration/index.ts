@@ -184,7 +184,7 @@ function recordStreamingCost(metrics: StreamMetrics, provider: string, model: st
       metrics.outputTokens,
       model
     );
-  } catch { /* economic system not initialized */ }
+  } catch (e) { console.debug('[Integration] Economic system not initialized:', (e as Error)?.message); }
 
   // Record to Payments RevenueTracker (P&L reporting)
   try {
@@ -203,7 +203,7 @@ function recordStreamingCost(metrics: StreamMetrics, provider: string, model: st
         racingSaved: metrics.racingSaved,
       },
     });
-  } catch { /* payments not initialized */ }
+  } catch (e) { console.debug('[Integration] Payments not initialized:', (e as Error)?.message); }
 }
 
 // ============================================================================
@@ -229,7 +229,7 @@ function emitLatencyObservation(metrics: StreamMetrics, provider: string, model:
         error: metrics.state === 'error' ? 'Stream failed' : undefined,
       }),
     });
-  } catch { /* active-inference not initialized */ }
+  } catch (e) { console.debug('[Integration] Active-inference not initialized:', (e as Error)?.message); }
 
   // Also update the LatencyTracker's observation into the economic system
   try {
@@ -261,7 +261,7 @@ function emitLatencyObservation(metrics: StreamMetrics, provider: string, model:
         });
       }
     }
-  } catch { /* tracker not ready */ }
+  } catch (e) { console.debug('[Integration] Tracker not ready:', (e as Error)?.message); }
 }
 
 // ============================================================================
@@ -289,7 +289,7 @@ function updateConsciousnessFromRacing(metrics: StreamMetrics): void {
       tokensPerSecond: metrics.tokensPerSecond,
       timestamp: Date.now(),
     });
-  } catch { /* consciousness not initialized */ }
+  } catch (e) { console.debug('[Integration] Consciousness not initialized:', (e as Error)?.message); }
 
   // Also feed into the Brain's metrics if brain is active
   try {
@@ -307,7 +307,7 @@ function updateConsciousnessFromRacing(metrics: StreamMetrics): void {
         parallelToolSaved: metrics.parallelToolSaved || 0,
       });
     }
-  } catch { /* brain not active */ }
+  } catch (e) { console.debug('[Integration] Brain not active:', (e as Error)?.message); }
 }
 
 // ============================================================================

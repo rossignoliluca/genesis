@@ -185,8 +185,8 @@ export class AutonomousLoop {
     // v17.0: Connect to event bus for central awareness
     try {
       this.eventBus = getEventBus();
-    } catch {
-      // Event bus may not be initialized yet
+    } catch (e) {
+      console.debug('[AI Loop] Event bus not initialized:', (e as Error)?.message);
       this.eventBus = null;
     }
 
@@ -331,7 +331,7 @@ export class AutonomousLoop {
           this.updateHomeostaticMemory('memory', thresholds.memory, memPressure);
         }
       }
-    } catch { /* allostasis is optional */ }
+    } catch (e) { console.debug('[AI Loop] Allostasis optional:', (e as Error)?.message); }
 
     // 2. Run inference (beliefs + policy + action)
     let action: ActionType;
@@ -637,7 +637,7 @@ export class AutonomousLoop {
                    exp.outcome,
                    exp.surprise > 5 ? 'high-surprise' : 'notable'],
           });
-        } catch { /* episodic encoding is non-fatal */ }
+        } catch (e) { console.debug('[AI Loop] Episodic encoding failed:', (e as Error)?.message); }
       }
     }
   }
@@ -664,7 +664,8 @@ export class AutonomousLoop {
         error: errorFact ? parseFloat(errorFact.content?.definition || '0.4') || 0.4 : 0.4,
         memory: memoryFact ? parseFloat(memoryFact.content?.definition || '0.7') || 0.7 : 0.7,
       };
-    } catch {
+    } catch (e) {
+      console.debug('[AI Loop] Thresholds fallback:', (e as Error)?.message);
       return { energy: 0.3, error: 0.4, memory: 0.7 };
     }
   }
@@ -691,7 +692,7 @@ export class AutonomousLoop {
         confidence: 0.85,
         tags: ['homeostasis', 'learned-threshold', sensor],
       });
-    } catch { /* threshold learning is non-fatal */ }
+    } catch (e) { console.debug('[AI Loop] Threshold learning failed:', (e as Error)?.message); }
   }
 
   /**
@@ -717,7 +718,7 @@ export class AutonomousLoop {
       const { getFreeEnergyKernel } = require('../kernel/free-energy-kernel.js');
       const fek = getFreeEnergyKernel();
       if (fek?.setMode) fek.setMode('dreaming');
-    } catch { /* FEK may not be available */ }
+    } catch (e) { console.debug('[AI Loop] FEK not available:', (e as Error)?.message); }
 
     // v11.4: Delegate to DreamService for NREM/SWS/REM phases
     // DreamService handles: episodic consolidation, pattern extraction, creative synthesis
@@ -730,7 +731,7 @@ export class AutonomousLoop {
         const { getFreeEnergyKernel } = require('../kernel/free-energy-kernel.js');
         const fek = getFreeEnergyKernel();
         if (fek?.setMode) fek.setMode('awake');
-      } catch { /* non-fatal */ }
+      } catch (e) { console.debug('[AI Loop] FEK mode restore failed:', (e as Error)?.message); }
     }).catch(() => {
       // Fallback: direct 3× replay if DreamService fails
       for (let iter = 0; iter < 3; iter++) {

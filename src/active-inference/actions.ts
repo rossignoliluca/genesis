@@ -249,8 +249,8 @@ registerAction('plan.goals', async (context) => {
       if (jsonMatch) {
         steps = JSON.parse(jsonMatch[0]);
       }
-    } catch {
-      // LLM didn't return valid JSON, use defaults
+    } catch (e) {
+      console.debug('[Actions] LLM JSON parse failed, using defaults:', (e as Error)?.message);
       steps = [
         { step: 'Scan for revenue opportunities', action: 'opportunity.scan', priority: 'high' },
         { step: 'Evaluate best opportunity', action: 'opportunity.evaluate', priority: 'high' },
@@ -265,8 +265,8 @@ registerAction('plan.goals', async (context) => {
       data: { goal, steps, source: 'llm' },
       duration: Date.now() - start,
     };
-  } catch {
-    // LLM not available, use heuristic defaults
+  } catch (e) {
+    console.debug('[Actions] LLM not available, using heuristics:', (e as Error)?.message);
     return {
       success: true,
       action: 'plan.goals',
@@ -583,8 +583,8 @@ registerAction('adapt.code', async (context) => {
         { cwd, timeout: 5000 }
       );
       analysis.totalFiles = parseInt(fileCount.trim(), 10) || 0;
-    } catch {
-      // Fallback if find fails
+    } catch (e) {
+      console.debug('[Actions] File count failed:', (e as Error)?.message);
       analysis.totalFiles = -1;
     }
 
@@ -595,7 +595,8 @@ registerAction('adapt.code', async (context) => {
         { cwd, timeout: 5000 }
       );
       analysis.recentChanges = gitLog.trim().split('\n').filter(Boolean);
-    } catch {
+    } catch (e) {
+      console.debug('[Actions] Git history read failed:', (e as Error)?.message);
       analysis.recentChanges = ['Unable to read git history'];
     }
 
@@ -657,7 +658,8 @@ registerAction('git.push', async (context) => {
         { cwd, timeout: 5000 }
       );
       results.branch = branch.trim() || 'detached';
-    } catch {
+    } catch (e) {
+      console.debug('[Actions] Git branch check failed:', (e as Error)?.message);
       results.branch = 'unknown';
     }
 
@@ -671,7 +673,8 @@ registerAction('git.push', async (context) => {
       // Filter out untracked files (??) - they don't affect push safety
       const trackedChanges = allChanges.filter(line => !line.startsWith('??'));
       results.status = trackedChanges.length === 0 ? 'clean' : `${trackedChanges.length} tracked changes`;
-    } catch {
+    } catch (e) {
+      console.debug('[Actions] Git status check failed:', (e as Error)?.message);
       results.status = 'unknown';
     }
 
@@ -684,8 +687,8 @@ registerAction('git.push', async (context) => {
       const [ahead, behind] = aheadBehind.trim().split(/\s+/).map(n => parseInt(n, 10) || 0);
       results.ahead = ahead;
       results.behind = behind;
-    } catch {
-      // No upstream or error
+    } catch (e) {
+      console.debug('[Actions] Git ahead/behind check failed:', (e as Error)?.message);
     }
 
     // Only push if:

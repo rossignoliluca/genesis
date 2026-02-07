@@ -84,7 +84,7 @@ export async function observeCode(): Promise<SelfObservation[]> {
             count++;
           }
         }
-      } catch { /* ignore */ }
+      } catch (e) { console.debug('[Autopoiesis] Dir scan failed:', (e as Error)?.message); }
       return count;
     };
 
@@ -108,7 +108,7 @@ export async function observeCode(): Promise<SelfObservation[]> {
         value: Math.round(buildAge / 3600000),
         trend: buildAge < 86400000 ? 'stable' : 'degrading',
       });
-    } catch { /* dist doesn't exist */ }
+    } catch (e) { console.debug('[Autopoiesis] Dist check skipped:', (e as Error)?.message); }
 
     // Check for learned model
     const modelPath = path.resolve(process.cwd(), '.genesis/learned-model-72h.json');
@@ -120,7 +120,7 @@ export async function observeCode(): Promise<SelfObservation[]> {
         metric: 'learned_model_size_kb',
         value: Math.round(modelStat.size / 1024),
       });
-    } catch { /* model doesn't exist */ }
+    } catch (e) { console.debug('[Autopoiesis] Model check skipped:', (e as Error)?.message); }
 
   } catch (error) {
     observations.push({

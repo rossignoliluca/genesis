@@ -40,7 +40,7 @@ export class GitManager {
     try {
       // Ensure we're on a clean state
       execSync('git stash', { cwd: this.cwd, stdio: 'pipe' });
-    } catch { /* no changes to stash */ }
+    } catch (e) { console.debug('[RSI Git] No changes to stash:', (e as Error)?.message); }
 
     try {
       // Create and checkout new branch
@@ -166,10 +166,11 @@ export class GitManager {
   returnToMain(): void {
     try {
       execSync('git checkout main', { cwd: this.cwd, stdio: 'pipe' });
-    } catch {
+    } catch (e) {
+      console.debug('[RSI Git] Main checkout failed, trying master:', (e as Error)?.message);
       try {
         execSync('git checkout master', { cwd: this.cwd, stdio: 'pipe' });
-      } catch { /* ignore */ }
+      } catch (e2) { console.debug('[RSI Git] Master checkout also failed:', (e2 as Error)?.message); }
     }
   }
 
@@ -332,7 +333,7 @@ export class PRManager {
       if (match) {
         return match[1];
       }
-    } catch { /* ignore */ }
+    } catch (e) { console.debug('[RSI Deploy] Owner lookup failed:', (e as Error)?.message); }
 
     return 'lucarossignoli'; // Default fallback
   }
@@ -349,7 +350,7 @@ export class PRManager {
       if (match) {
         return match[1];
       }
-    } catch { /* ignore */ }
+    } catch (e) { console.debug('[RSI Deploy] Repo lookup failed:', (e as Error)?.message); }
 
     return 'genesis'; // Default fallback
   }
@@ -572,7 +573,7 @@ export class DeploymentEngine {
       // Attempt to return to main branch
       try {
         this.gitManager.returnToMain();
-      } catch { /* ignore */ }
+      } catch (e) { console.debug('[RSI Deploy] Cleanup failed:', (e as Error)?.message); }
 
       return {
         planId: plan.id,

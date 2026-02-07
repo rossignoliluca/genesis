@@ -184,6 +184,15 @@ export class CognitiveWorkspace {
   // Anticipation tracking
   private anticipatedIds: Set<string> = new Set();
 
+  // v14.0: Coactivation matrix — tracks which items are accessed together
+  private coactivationMatrix: Map<string, Map<string, number>> = new Map();
+
+  // v14.0: Anticipation outcome log for adaptive pre-loading
+  private anticipationLog: Map<string, { preloaded: string[]; hits: number; total: number }> = new Map();
+
+  // v14.0: Spreading activation constant
+  private static readonly SPREAD_FACTOR = 0.15;
+
   // Auto-curation timer
   private curationTimer?: ReturnType<typeof setInterval>;
 
@@ -234,20 +243,24 @@ export class CognitiveWorkspace {
 
     const query = searchTerms.join(' ');
 
+    // v14.0: Adaptive depth based on past anticipation accuracy
+    const contextKey = query.slice(0, 50) || 'default';
+    const depth = this.getAdaptiveAnticipationDepth(contextKey);
+
     if (query && query.length > 0) {
       // Search each store
       if (this.episodicStore) {
-        const episodes = this.episodicStore.search(query, this.config.anticipationDepth);
+        const episodes = this.episodicStore.search(query, depth);
         anticipated.push(...episodes);
       }
 
       if (this.semanticStore) {
-        const facts = this.semanticStore.search(query, this.config.anticipationDepth);
+        const facts = this.semanticStore.search(query, depth);
         anticipated.push(...facts);
       }
 
       if (this.proceduralStore) {
-        const skills = this.proceduralStore.search(query, this.config.anticipationDepth);
+        const skills = this.proceduralStore.search(query, depth);
         anticipated.push(...skills);
       }
     }
@@ -262,6 +275,7 @@ export class CognitiveWorkspace {
 
     // Calculate relevance scores
     const items: WorkingMemoryItem[] = [];
+    const preloadedIds: string[] = [];
     for (const memory of anticipated) {
       // Skip if already in buffer
       if (this.buffer.has(memory.id)) continue;
@@ -271,59 +285,130 @@ export class CognitiveWorkspace {
 
       const item = this.addToBuffer(memory, 'anticipate', relevance);
       items.push(item);
+      preloadedIds.push(memory.id);
 
       // Track for anticipation metrics
       this.anticipatedIds.add(memory.id);
     }
 
+    // v14.0: Track what was preloaded for outcome measurement
+    this.trackAnticipation(contextKey, preloadedIds);
+
     return items;
   }
 
   /**
+   * v14.0: Calculate structured similarity between two working memory items.
+   * Multi-dimensional scoring replaces JSON.stringify matching.
+   */
+  private calculateStructuredSimilarity(a: WorkingMemoryItem, b: WorkingMemoryItem): number {
+    const memA = a.memory;
+    const memB = b.memory;
+
+    // 1. Type match (0.25 weight)
+    const typeMatch = memA.type === memB.type ? 1.0 : 0.0;
+
+    // 2. Concept/tag overlap — Jaccard on arrays (0.35 weight)
+    const tagsA = new Set(memA.tags || []);
+    const tagsB = new Set(memB.tags || []);
+    let conceptOverlap = 0;
+    if (tagsA.size > 0 || tagsB.size > 0) {
+      const intersection = [...tagsA].filter(t => tagsB.has(t)).length;
+      const union = new Set([...tagsA, ...tagsB]).size;
+      conceptOverlap = union > 0 ? intersection / union : 0;
+    }
+
+    // 3. Temporal proximity (0.20 weight) — exp decay over 1 day
+    const timeA = memA.lastAccessed?.getTime?.() || memA.created?.getTime?.() || Date.now();
+    const timeB = memB.lastAccessed?.getTime?.() || memB.created?.getTime?.() || Date.now();
+    const temporalProx = Math.exp(-Math.abs(timeA - timeB) / 86400000);
+
+    // 4. Access recency similarity (0.05 weight) — exp decay over 1 hour
+    const accessA = a.lastAccessed.getTime();
+    const accessB = b.lastAccessed.getTime();
+    const accessRecency = Math.exp(-Math.abs(accessA - accessB) / 3600000);
+
+    // 5. Coactivation history (0.15 weight)
+    const coactivation = this.getCoactivation(a.id, b.id);
+
+    return 0.25 * typeMatch +
+           0.35 * conceptOverlap +
+           0.20 * temporalProx +
+           0.05 * accessRecency +
+           0.15 * coactivation;
+  }
+
+  /**
+   * Get coactivation strength between two items
+   */
+  private getCoactivation(idA: string, idB: string): number {
+    return this.coactivationMatrix.get(idA)?.get(idB) ||
+           this.coactivationMatrix.get(idB)?.get(idA) || 0;
+  }
+
+  /**
+   * Update coactivation matrix when an item is accessed
+   */
+  private updateCoactivation(accessedId: string): void {
+    for (const [otherId] of this.buffer) {
+      if (otherId === accessedId) continue;
+      // Ensure entry exists
+      if (!this.coactivationMatrix.has(accessedId)) {
+        this.coactivationMatrix.set(accessedId, new Map());
+      }
+      const row = this.coactivationMatrix.get(accessedId)!;
+      const current = row.get(otherId) || 0;
+      row.set(otherId, Math.min(1.0, current + 0.1));
+    }
+  }
+
+  /**
    * Calculate relevance of a memory to the current context
+   * v14.0: Structured multi-dimensional scoring
    */
   private calculateRelevance(memory: Memory, context: AnticipationContext): number {
-    let relevance = 0.5; // Base relevance
-    let factors = 1;
+    let score = 0;
 
-    // Task/goal match
-    if (context.task || context.goal) {
-      const target = (context.task || '') + ' ' + (context.goal || '');
-      const content = JSON.stringify(memory).toLowerCase();
-      const targetTerms = target.toLowerCase().split(/\s+/);
-      const matches = targetTerms.filter(t => t.length > 2 && content.includes(t)).length;
-      relevance += (matches / Math.max(targetTerms.length, 1)) * 0.3;
-      factors++;
+    // 1. Tag/keyword overlap with context (0.35 weight)
+    const contextTerms = new Set([
+      ...(context.keywords || []),
+      ...(context.tags || []),
+      ...(context.recentTopics || []),
+    ].map(t => t.toLowerCase()));
+    const memoryTags = new Set((memory.tags || []).map(t => t.toLowerCase()));
+    if (contextTerms.size > 0) {
+      const intersection = [...memoryTags].filter(t => contextTerms.has(t)).length;
+      // Also check task/goal words against tags
+      const taskWords = ((context.task || '') + ' ' + (context.goal || ''))
+        .toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      const taskMatches = taskWords.filter(w => memoryTags.has(w)).length;
+      const totalMatches = intersection + taskMatches;
+      const totalPossible = Math.max(contextTerms.size + taskWords.length, 1);
+      score += 0.35 * Math.min(1, totalMatches / totalPossible * 2); // *2 because partial match is OK
     }
 
-    // Keyword match
-    if (context.keywords && context.keywords.length > 0) {
-      const content = JSON.stringify(memory).toLowerCase();
-      const matches = context.keywords.filter(k => content.includes(k.toLowerCase())).length;
-      relevance += (matches / context.keywords.length) * 0.2;
-      factors++;
+    // 2. Temporal recency (0.20 weight) — recent memories more relevant
+    const ageMs = Date.now() - (memory.lastAccessed?.getTime?.() || memory.created?.getTime?.() || Date.now());
+    const recency = Math.exp(-ageMs / (24 * 3600000)); // 1-day decay
+    score += 0.20 * recency;
+
+    // 3. Type match with context (0.15 weight) — procedural more relevant for task contexts
+    if (context.task && memory.type === 'procedural') score += 0.15;
+    else if (context.recentTopics && memory.type === 'semantic') score += 0.12;
+    else if (memory.type === 'episodic') score += 0.08;
+
+    // 4. Importance (0.15 weight)
+    score += 0.15 * memory.importance;
+
+    // 5. Coactivation with currently active items (0.15 weight)
+    let maxCoactivation = 0;
+    for (const [activeId] of this.buffer) {
+      const coact = this.getCoactivation(memory.id, activeId);
+      if (coact > maxCoactivation) maxCoactivation = coact;
     }
+    score += 0.15 * maxCoactivation;
 
-    // Tag match
-    if (context.tags && context.tags.length > 0) {
-      const memoryTags = memory.tags || [];
-      const matches = context.tags.filter(t => memoryTags.includes(t)).length;
-      relevance += (matches / context.tags.length) * 0.3;
-      factors++;
-    }
-
-    // Recency boost for episodic
-    if (memory.type === 'episodic') {
-      const episodic = memory as EpisodicMemory;
-      const ageHours = (Date.now() - episodic.when.timestamp.getTime()) / (1000 * 60 * 60);
-      if (ageHours < 1) relevance += 0.2;
-      else if (ageHours < 24) relevance += 0.1;
-    }
-
-    // Importance factor
-    relevance += memory.importance * 0.2;
-
-    return Math.min(1, relevance / factors);
+    return Math.min(1, score);
   }
 
   // ============================================================================
@@ -366,6 +451,7 @@ export class CognitiveWorkspace {
 
   /**
    * Access a memory in working memory (boosts activation)
+   * v14.0: Now includes spreading activation to related items
    */
   access(id: string): WorkingMemoryItem | undefined {
     const item = this.buffer.get(id);
@@ -378,6 +464,21 @@ export class CognitiveWorkspace {
     item.activation = Math.min(1, item.activation + this.config.boostOnAccess);
     item.accessCount++;
     item.lastAccessed = new Date();
+
+    // v14.0: Spreading activation — propagate to similar items
+    for (const [otherId, otherItem] of this.buffer) {
+      if (otherId === id) continue;
+      const similarity = this.calculateStructuredSimilarity(item, otherItem);
+      if (similarity > this.config.associationStrength) {
+        otherItem.activation = Math.min(
+          1.0,
+          otherItem.activation + CognitiveWorkspace.SPREAD_FACTOR * similarity * item.activation
+        );
+      }
+    }
+
+    // v14.0: Update coactivation matrix
+    this.updateCoactivation(id);
 
     // Track metrics
     this.metrics.totalRecalls++;
@@ -546,14 +647,18 @@ export class CognitiveWorkspace {
 
   /**
    * Evict the item with lowest activation
+   * v14.0: Added recency bonus to eviction score
    */
   private evictLowest(): WorkingMemoryItem | undefined {
     let lowest: WorkingMemoryItem | undefined;
     let lowestScore = Infinity;
+    const now = Date.now();
 
     for (const item of this.buffer.values()) {
-      // Score = activation * relevance * importance
-      const score = item.activation * item.relevance * item.memory.importance;
+      // v14.0: Score includes recency bonus (10-minute decay)
+      const timeSinceAccess = now - item.lastAccessed.getTime();
+      const recencyBonus = 1 + 0.3 * Math.exp(-timeSinceAccess / 600000);
+      const score = item.activation * item.relevance * item.memory.importance * recencyBonus;
       if (score < lowestScore) {
         lowestScore = score;
         lowest = item;
@@ -690,6 +795,58 @@ export class CognitiveWorkspace {
   shutdown(): void {
     this.stopAutoCuration();
     this.clear();
+  }
+
+  // ============================================================================
+  // v14.0: Adaptive Anticipation
+  // ============================================================================
+
+  /**
+   * Record outcome of an anticipation cycle.
+   * Compares pre-loaded memories against actually used memories
+   * to adapt future pre-loading behavior.
+   */
+  recordAnticipationOutcome(contextKey: string, usedMemoryIds: string[]): void {
+    const entry = this.anticipationLog.get(contextKey);
+    if (!entry || entry.preloaded.length === 0) return;
+
+    const usedSet = new Set(usedMemoryIds);
+    const hits = entry.preloaded.filter(id => usedSet.has(id)).length;
+
+    entry.hits += hits;
+    entry.total++;
+    this.anticipationLog.set(contextKey, entry);
+  }
+
+  /**
+   * Get adaptive anticipation depth for a context.
+   * Reduces pre-loading for contexts with low hit rates,
+   * increases for contexts with high hit rates.
+   */
+  getAdaptiveAnticipationDepth(contextKey: string): number {
+    const entry = this.anticipationLog.get(contextKey);
+    if (!entry || entry.total < 3) return this.config.anticipationDepth;
+
+    const hitRate = entry.hits / Math.max(entry.preloaded.length * entry.total, 1);
+
+    if (hitRate < 0.2) {
+      return Math.max(2, Math.floor(this.config.anticipationDepth / 2));
+    } else if (hitRate > 0.6) {
+      return Math.min(15, Math.floor(this.config.anticipationDepth * 1.5));
+    }
+    return this.config.anticipationDepth;
+  }
+
+  /**
+   * Track which items were pre-loaded for a context
+   */
+  trackAnticipation(contextKey: string, preloadedIds: string[]): void {
+    const existing = this.anticipationLog.get(contextKey);
+    if (existing) {
+      existing.preloaded = preloadedIds;
+    } else {
+      this.anticipationLog.set(contextKey, { preloaded: preloadedIds, hits: 0, total: 0 });
+    }
   }
 }
 

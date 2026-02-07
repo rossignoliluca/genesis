@@ -8,7 +8,13 @@
  */
 
 import { EventEmitter } from 'events';
+import { writeFile, readFile, mkdir } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
+import { homedir } from 'node:os';
 import { getPaymentService, PaymentService } from './payment-service.js';
+
+const STATE_DIR = process.env.GENESIS_STATE_DIR || join(homedir(), '.genesis');
+const COSTS_FILE = 'costs-data.json';
 
 // ============================================================================
 // Types
@@ -79,12 +85,87 @@ export class RevenueTracker extends EventEmitter {
   };
   private costBuffer: CostEntry[] = [];
   private flushInterval: NodeJS.Timeout | null = null;
+  // v16.2.0: Persistence support
+  private filePath: string;
+  private dirty = false;
+  private saveTimer: NodeJS.Timeout | null = null;
 
   constructor() {
     super();
+    this.filePath = join(STATE_DIR, COSTS_FILE);
     this.paymentService = getPaymentService();
     this.setupEventListeners();
     this.startCostBufferFlush();
+  }
+
+  // ==========================================================================
+  // v16.2.0: Persistence Methods
+  // ==========================================================================
+
+  /**
+   * Load costs from disk
+   */
+  async load(): Promise<void> {
+    try {
+      const raw = await readFile(this.filePath, 'utf-8');
+      const data = JSON.parse(raw);
+      this.costs = (data.costs ?? []).map((c: CostEntry) => ({
+        ...c,
+        timestamp: new Date(c.timestamp),
+      }));
+      this.profitTarget = data.profitTarget ?? this.profitTarget;
+      console.log(`[RevenueTracker] Loaded ${this.costs.length} cost entries`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.warn('[RevenueTracker] Failed to load:', error);
+      }
+      // Start fresh
+    }
+  }
+
+  /**
+   * Save costs to disk
+   */
+  async save(): Promise<void> {
+    try {
+      await mkdir(dirname(this.filePath), { recursive: true });
+      const data = {
+        version: 1,
+        costs: this.costs,
+        profitTarget: this.profitTarget,
+        savedAt: new Date().toISOString(),
+      };
+      const tmpPath = this.filePath + '.tmp';
+      await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
+      const { rename } = await import('node:fs/promises');
+      await rename(tmpPath, this.filePath);
+      this.dirty = false;
+    } catch (error) {
+      console.error('[RevenueTracker] Failed to save:', error);
+    }
+  }
+
+  /**
+   * Start auto-save on interval
+   */
+  startAutoSave(intervalMs: number = 60000): void {
+    if (this.saveTimer) return;
+    this.saveTimer = setInterval(async () => {
+      if (this.dirty) {
+        await this.save();
+      }
+    }, intervalMs);
+    console.log(`[RevenueTracker] Auto-save started, interval=${intervalMs}ms`);
+  }
+
+  /**
+   * Stop auto-save
+   */
+  stopAutoSave(): void {
+    if (this.saveTimer) {
+      clearInterval(this.saveTimer);
+      this.saveTimer = null;
+    }
   }
 
   // ==========================================================================
@@ -189,6 +270,7 @@ export class RevenueTracker extends EventEmitter {
     };
 
     this.costBuffer.push(cost);
+    this.dirty = true; // v16.2.0: Mark for persistence
     this.emit('cost:recorded', cost);
 
     // Check profit margin after cost
@@ -437,6 +519,9 @@ export class RevenueTracker extends EventEmitter {
    * Cleanup
    */
   destroy(): void {
+    // v16.2.0: Stop auto-save
+    this.stopAutoSave();
+
     if (this.flushInterval) {
       clearInterval(this.flushInterval);
       this.flushInterval = null;

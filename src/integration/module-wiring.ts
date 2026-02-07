@@ -79,20 +79,43 @@ export interface WiringResult {
 
 /**
  * Wire consciousness module to publish φ updates
+ * v16.2.0: Added bidirectional feedback to neuromodulation
  */
-function wireConsciousness(consciousness: ConsciousnessSystem, bus: GenesisEventBus): void {
+function wireConsciousness(
+  consciousness: ConsciousnessSystem,
+  bus: GenesisEventBus,
+  neuromodulation?: NeuromodulationSystem
+): void {
   // Subscribe to consciousness events and forward to bus
   consciousness.on((event) => {
     const eventType = (event as any).type || 'update';
 
     if (eventType === 'phi_updated' || eventType.includes('phi')) {
+      const phi = (event as any).phi ?? 0.5;
+
       bus.publish('consciousness.phi.updated', {
         source: 'consciousness',
         precision: 0.9,
-        phi: (event as any).phi ?? 0.5,
+        phi,
         previousPhi: (event as any).previousPhi ?? 0.5,
         delta: (event as any).delta ?? 0,
       });
+
+      // v16.2.0: Bidirectional feedback - φ modulates neurotransmitters
+      if (neuromodulation) {
+        // Low phi → increase norepinephrine (alertness needed)
+        if (phi < 0.3) {
+          neuromodulation.modulate('norepinephrine', 0.1, 'phi-low-alert');
+        }
+        // High phi → boost dopamine (reward for coherence)
+        if (phi > 0.7) {
+          neuromodulation.modulate('dopamine', 0.05, 'phi-high-reward');
+        }
+        // Very low phi → increase cortisol (stress response)
+        if (phi < 0.2) {
+          neuromodulation.modulate('cortisol', 0.15, 'phi-critical-stress');
+        }
+      }
     }
 
     if (eventType === 'attention_shifted' || eventType.includes('attention')) {
@@ -351,8 +374,9 @@ export function wireAllModules(modules: ModuleRegistry): WiringResult {
   awareness.start();
 
   // Wire each module
+  // v16.2.0: Pass neuromodulation for bidirectional φ feedback
   if (modules.consciousness) {
-    wireConsciousness(modules.consciousness, bus);
+    wireConsciousness(modules.consciousness, bus, modules.neuromodulation);
     modulesWired++;
     publishersCreated++;
   }

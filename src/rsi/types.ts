@@ -353,8 +353,8 @@ export interface RSIConfig {
 }
 
 export const DEFAULT_RSI_CONFIG: RSIConfig = {
-  enabled: false,           // Disabled by default for safety
-  autoRun: false,
+  enabled: true,            // v16.2.0: Enabled for autonomous operation
+  autoRun: true,            // v16.2.0: Auto-run RSI cycles
   minPhiForImprovement: 0.3,
   minConfidenceForAction: 0.7,
   maxRiskLevel: 'medium',

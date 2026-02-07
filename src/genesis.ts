@@ -1483,6 +1483,10 @@ export class Genesis {
       this.revenueTracker = getRevenueTracker();
       this.fiber?.registerModule('payments');
 
+      // v16.2.0: Initialize revenue tracker persistence
+      await this.revenueTracker.load();
+      this.revenueTracker.startAutoSave(60000); // Auto-save every minute
+
       // Wire revenue tracker → economic fiber (revenue feeds into sustainability)
       this.revenueTracker.on('revenue', (amount: number, source: string) => {
         this.fiber?.recordRevenue('payments', amount, source);

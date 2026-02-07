@@ -401,8 +401,8 @@ export class FinanceBusWiring {
       ...data,
     };
 
-    // Cast to any for internal finance events not yet in GenesisEventMap
-    // TODO: Add all finance event topics to GenesisEventMap for full type safety
+    // v18.0: Finance events now typed in GenesisEventMap (src/bus/events.ts)
+    // Using cast for flexibility with dynamic topic strings
     (this.bus as { publish: (topic: string, data: unknown) => void }).publish(topic, event);
   }
 

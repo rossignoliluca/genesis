@@ -444,6 +444,56 @@ export interface RegimeChangeEvent extends BusEvent {
   confidence: number;
 }
 
+// v18.0: Additional Finance Events
+export interface FinanceCostRecordedEvent extends BusEvent {
+  amount: number;
+  category: string;
+  provider?: string;
+  model?: string;
+}
+
+export interface TradingHaltedEvent extends BusEvent {
+  symbol: string;
+  reason: string;
+  regime: string;
+}
+
+export interface PortfolioRebalancedEvent extends BusEvent {
+  symbol: string;
+  adjustments: number;
+  newAllocation: number;
+}
+
+export interface RiskLimitExceededEvent extends BusEvent {
+  symbol: string;
+  riskLevel: number;
+  drawdown: number;
+  positionSizes: number;
+}
+
+export interface OpportunityDetectedEvent extends BusEvent {
+  symbol: string;
+  type: string;
+  expectedReturn: number;
+  confidence: number;
+}
+
+export interface RiskAdjustmentEvent extends BusEvent {
+  symbol: string;
+  adjustment: string;
+  reason: string;
+}
+
+export interface ExplorationIncreasedEvent extends BusEvent {
+  symbol: string;
+  reason: string;
+}
+
+export interface CautiousModeEvent extends BusEvent {
+  symbol: string;
+  duration: number;
+}
+
 // ============================================================================
 // Polymarket Events
 // ============================================================================
@@ -767,6 +817,15 @@ export interface GenesisEventMap {
   'finance.position.closed': PositionClosedEvent;
   'finance.drawdown.alert': DrawdownAlertEvent;
   'finance.regime.changed': RegimeChangeEvent;
+  // v18.0: Additional finance events
+  'finance.cost.recorded': FinanceCostRecordedEvent;
+  'finance.trading.halted': TradingHaltedEvent;
+  'finance.portfolio.rebalanced': PortfolioRebalancedEvent;
+  'finance.risk.limit_exceeded': RiskLimitExceededEvent;
+  'finance.opportunity.detected': OpportunityDetectedEvent;
+  'finance.risk.adjustment': RiskAdjustmentEvent;
+  'finance.exploration.increased': ExplorationIncreasedEvent;
+  'finance.mode.cautious': CautiousModeEvent;
 
   // --- Polymarket Events ---
   'polymarket.market.discovered': PolymarketDiscoveredEvent;

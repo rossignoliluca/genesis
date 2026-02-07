@@ -571,6 +571,10 @@ export class BountyExecutor {
   // v16.2.2: Track repos that are blocked (archived, no access, etc.)
   private blockedRepos = new Set<string>();
 
+  // v16.2.3: Per-repo rejection tracking for learning
+  private repoRejections = new Map<string, number>();
+  private lowPriorityRepos = new Set<string>();
+
   // v16.2: Rate-limiting and circuit breaker state
   private dailySubmissionCount = 0;
   private dailyCountResetTime = Date.now();
@@ -597,6 +601,9 @@ export class BountyExecutor {
 
     // v16.2.2: Load blocked repos from disk
     this.loadBlockedRepos();
+
+    // v16.2.3: Load per-repo rejection data
+    this.loadRepoRejections();
 
     // v16.2: Bot identity warning
     const username = this.config.githubUsername;
@@ -635,6 +642,48 @@ export class BountyExecutor {
       fs.writeFileSync(path, JSON.stringify([...this.blockedRepos], null, 2));
     } catch (e) {
       console.error('[BountyExecutor] Failed to save blocked repos:', e);
+    }
+  }
+
+  // v16.2.3: Per-repo rejection persistence
+  private loadRepoRejections(): void {
+    try {
+      const fs = require('fs');
+      const filePath = '.genesis/repo-rejections.json';
+      if (fs.existsSync(filePath)) {
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        if (data.rejections) {
+          for (const [repo, count] of Object.entries(data.rejections)) {
+            this.repoRejections.set(repo, count as number);
+            if ((count as number) >= 2) {
+              this.blockedRepos.add(repo);
+            } else if ((count as number) >= 1) {
+              this.lowPriorityRepos.add(repo);
+            }
+          }
+          console.log(`[BountyExecutor] Loaded rejections for ${this.repoRejections.size} repos (${this.lowPriorityRepos.size} low-priority, blocked via rejections: ${[...this.repoRejections.entries()].filter(([, c]) => c >= 2).length})`);
+        }
+      }
+    } catch {
+      // File may not exist yet
+    }
+  }
+
+  private saveRepoRejections(): void {
+    try {
+      const fs = require('fs');
+      const filePath = '.genesis/repo-rejections.json';
+      const dir = require('path').dirname(filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const rejections: Record<string, number> = {};
+      for (const [repo, count] of this.repoRejections) {
+        rejections[repo] = count;
+      }
+      fs.writeFileSync(filePath, JSON.stringify({ rejections }, null, 2));
+    } catch (e) {
+      console.error('[BountyExecutor] Failed to save repo rejections:', e);
     }
   }
 
@@ -720,6 +769,28 @@ export class BountyExecutor {
     if (!bounty) {
       console.log('[BountyExecutor] No suitable bounties found (all filtered or blocked)');
       return null;
+    }
+
+    // v16.2.3: If selected bounty is from a low-priority repo, try to find a better alternative
+    const selectedRepoKey = `${bounty.sourceMetadata?.org}/${bounty.sourceMetadata?.repo}`;
+    if (this.lowPriorityRepos.has(selectedRepoKey)) {
+      console.log(`[BountyExecutor] Selected bounty is from low-priority repo: ${selectedRepoKey}`);
+      // Try to find an alternative from a non-deprioritized repo
+      const tempExclude = new Set(submittedBountyIds);
+      tempExclude.add(bounty.id);
+      const alternative = this.hunter.selectBest({
+        excludeIds: tempExclude,
+        prioritizeValue,
+      });
+      if (alternative) {
+        const altRepoKey = `${alternative.sourceMetadata?.org}/${alternative.sourceMetadata?.repo}`;
+        if (!this.lowPriorityRepos.has(altRepoKey) && !this.blockedRepos.has(altRepoKey)) {
+          console.log(`[BountyExecutor] Found better alternative: ${alternative.title} from ${altRepoKey}`);
+          bounty = alternative;
+        } else {
+          console.log(`[BountyExecutor] No better alternative found, proceeding with low-priority repo`);
+        }
+      }
     }
 
     // v16.2.1: Also check if this exact bounty URL was submitted
@@ -999,6 +1070,25 @@ export class BountyExecutor {
           if (this.consecutiveRejections >= 3) {
             this.circuitBreakerPauseUntil = Date.now() + 24 * 60 * 60 * 1000; // 24h pause
             console.log(`[BountyExecutor] CIRCUIT BREAKER TRIGGERED: 3 consecutive rejections. Pausing for 24h.`);
+          }
+
+          // v16.2.3: Per-repo rejection tracking
+          const rejectedRepo = sub.repo;
+          if (rejectedRepo) {
+            const prevCount = this.repoRejections.get(rejectedRepo) || 0;
+            const newCount = prevCount + 1;
+            this.repoRejections.set(rejectedRepo, newCount);
+
+            if (newCount >= 2) {
+              this.blockedRepos.add(rejectedRepo);
+              this.lowPriorityRepos.delete(rejectedRepo);
+              this.saveBlockedRepos();
+              console.log(`[BountyExecutor] Repo ${rejectedRepo} BLOCKED after ${newCount} rejections`);
+            } else if (newCount >= 1) {
+              this.lowPriorityRepos.add(rejectedRepo);
+              console.log(`[BountyExecutor] Repo ${rejectedRepo} deprioritized after ${newCount} rejection(s)`);
+            }
+            this.saveRepoRejections();
           }
         }
       } catch (e) {

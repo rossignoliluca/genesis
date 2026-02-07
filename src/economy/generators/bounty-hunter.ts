@@ -452,8 +452,8 @@ export class BountyHunter {
     const maxIdx = difficultyOrder.indexOf(this.config.maxDifficulty);
     const bountyIdx = difficultyOrder.indexOf(bounty.difficulty);
 
-    // v16.2.2: Cap rewards at $50k - anything higher is likely a false positive
-    const maxReasonableReward = 50000;
+    // v16.2.3: Cap rewards at $10k - anything higher is likely a false positive (grant proposals, etc.)
+    const maxReasonableReward = 10000;
 
     return (
       bounty.reward >= this.config.minReward &&
@@ -516,13 +516,13 @@ export class BountyHunter {
         const deworkBounties = await connector.scanBounties(tags);
 
         return deworkBounties
-          .filter(b => b.reward >= this.config.minReward)
+          .filter(b => this.applyTokenDiscount(b.reward, b.currency) >= this.config.minReward)
           .map((b: DeworkBounty) => ({
             id: `dework:${b.id}`,
             platform: 'dework' as const,
             title: b.title,
             description: b.description || '',
-            reward: b.reward,
+            reward: this.applyTokenDiscount(b.reward, b.currency),
             currency: this.mapCurrency(b.currency),
             difficulty: this.inferDifficulty(b.reward),
             category: this.inferCategory(b.tags),
@@ -578,13 +578,13 @@ export class BountyHunter {
         });
 
         return gitcoinBounties
-          .filter(b => b.reward >= this.config.minReward)
+          .filter(b => this.applyTokenDiscount(b.reward, b.currency) >= this.config.minReward)
           .map((b: GitcoinBounty) => ({
             id: `gitcoin:${b.id}`,
             platform: 'gitcoin' as const,
             title: b.title,
             description: b.description || '',
-            reward: b.reward,
+            reward: this.applyTokenDiscount(b.reward, b.currency),
             currency: this.mapCurrency(b.currency),
             difficulty: this.mapGitcoinDifficulty(b.experienceLevel),
             category: this.inferCategory(b.tags),
@@ -608,13 +608,13 @@ export class BountyHunter {
         const githubBounties = await connector.scanBounties();
 
         return githubBounties
-          .filter(b => b.reward >= this.config.minReward && b.status === 'open')
+          .filter(b => this.applyTokenDiscount(b.reward, b.currency) >= this.config.minReward && b.status === 'open')
           .map((b: GitHubBounty) => ({
             id: b.id,
             platform: 'github' as const,
             title: b.title,
             description: b.description || '',
-            reward: b.reward,
+            reward: this.applyTokenDiscount(b.reward, b.currency),
             currency: this.mapCurrency(b.currency),
             difficulty: this.inferDifficulty(b.reward),
             category: 'code' as const, // GitHub bounties are typically code
@@ -675,6 +675,17 @@ export class BountyHunter {
     if (c === 'ETH') return 'ETH';
     if (c === 'USD') return 'USD';
     return 'token';
+  }
+
+  /**
+   * v16.2.3: Apply discount for non-USD token currencies.
+   * Unknown tokens are valued at 10% of face value since 1:1 USD parity is unlikely.
+   */
+  private applyTokenDiscount(reward: number, currency: string | undefined): number {
+    if (this.mapCurrency(currency) === 'token') {
+      return reward * 0.1;
+    }
+    return reward;
   }
 }
 

@@ -33,6 +33,22 @@ export interface GitHubBountyConnector {
 const GITHUB_API = 'https://api.github.com';
 const TIMEOUT_MS = 15000;
 const RATE_LIMIT_MS = 1000;
+const MAX_BOUNTY_REWARD = 10000;
+
+const REPO_BLACKLIST_PATTERNS = [
+  /grant[-_]?proposal/i,
+  /judging/i,
+  /challenges?$/i,
+  /competition/i,
+  /\brfp\b/i,
+  /governance[-_]?forum/i,
+  /awards?$/i,
+  /application/i,
+];
+
+function isBlacklistedRepo(repoName: string): boolean {
+  return REPO_BLACKLIST_PATTERNS.some(pattern => pattern.test(repoName));
+}
 
 let lastRequestTime = 0;
 
@@ -104,13 +120,13 @@ function extractReward(text: string): { amount: number; currency: string } {
       if (text.toLowerCase().includes('eth')) {
         currency = 'ETH';
         // Convert ETH to USD estimate (rough)
-        return { amount: amount * 2000, currency: 'ETH' };
+        return { amount: Math.min(amount * 2000, MAX_BOUNTY_REWARD), currency: 'ETH' };
       }
       if (text.toLowerCase().includes('usdc')) {
         currency = 'USDC';
       }
 
-      return { amount, currency };
+      return { amount: Math.min(amount, MAX_BOUNTY_REWARD), currency };
     }
   }
 
@@ -208,7 +224,9 @@ async function scanBounties(labels?: string[]): Promise<GitHubBounty[]> {
           .filter(issue => issue.state === 'open')
           .map(mapIssueToBoounty)
           // Filter out zero-reward issues (no bounty amount found)
-          .filter(b => b.reward > 0);
+          .filter(b => b.reward > 0)
+          // Filter out blacklisted repos (grant proposals, challenges, etc.)
+          .filter(b => !isBlacklistedRepo(b.repo));
 
         allBounties.push(...bounties);
       }

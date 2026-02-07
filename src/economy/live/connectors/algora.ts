@@ -121,22 +121,74 @@ function mapStatus(status: string): 'open' | 'claimed' | 'completed' | 'cancelle
   }
 }
 
+const HARDCODED_ORGS = [
+  'calcom',
+  'twentyhq',
+  'formbricks',
+  'triggerdotdev',
+  'dubinc',
+  'infisical',
+  'documenso',
+  'latitude-dev',
+  'boxyhq',
+];
+
+/**
+ * Discover Algora orgs dynamically from the public bounties API.
+ * Returns unique org slugs from currently open bounties.
+ */
+async function discoverAlgoraOrgs(): Promise<string[]> {
+  try {
+    await rateLimit();
+    const response = await fetchWithTimeout(
+      `${ALGORA_API}/bounties?limit=100&status=open`,
+      {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+      },
+      TIMEOUT_MS
+    );
+
+    if (!response.ok) {
+      console.warn(`[AlgoraConnector] Discovery API error: ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json() as AlgoraApiResponse;
+    if (data.items && Array.isArray(data.items)) {
+      const orgSlugs = [...new Set(data.items.map(b => b.org_slug).filter(Boolean))];
+      console.log(`[AlgoraConnector] Discovered ${orgSlugs.length} orgs from open bounties`);
+      return orgSlugs;
+    }
+  } catch (error) {
+    console.warn('[AlgoraConnector] Org discovery failed:', error);
+  }
+  return [];
+}
+
 /**
  * Scan bounties from specific orgs
  */
 async function scanBounties(orgs?: string[]): Promise<AlgoraBounty[]> {
-  const targetOrgs = orgs || [
-    // Popular orgs with active bounties
-    'calcom',
-    'twentyhq',
-    'formbricks',
-    'triggerdotdev',
-    'dubinc',
-    'infisical',
-    'documenso',
-    'latitude-dev',
-    'boxyhq',
-  ];
+  // Priority: 1) explicit param, 2) env var, 3) dynamic discovery, 4) hardcoded fallback
+  let targetOrgs: string[];
+
+  if (orgs && orgs.length > 0) {
+    targetOrgs = orgs;
+  } else if (process.env.ALGORA_ORGS) {
+    targetOrgs = process.env.ALGORA_ORGS.split(',').map(s => s.trim()).filter(Boolean);
+    console.log(`[AlgoraConnector] Using ${targetOrgs.length} orgs from ALGORA_ORGS env var`);
+  } else {
+    const discovered = await discoverAlgoraOrgs();
+    if (discovered.length > 0) {
+      // Merge discovered with hardcoded to ensure coverage
+      targetOrgs = [...new Set([...discovered, ...HARDCODED_ORGS])];
+      console.log(`[AlgoraConnector] Using ${targetOrgs.length} orgs (${discovered.length} discovered + hardcoded)`);
+    } else {
+      targetOrgs = HARDCODED_ORGS;
+      console.log(`[AlgoraConnector] Fallback to ${targetOrgs.length} hardcoded orgs`);
+    }
+  }
 
   const allBounties: AlgoraBounty[] = [];
 

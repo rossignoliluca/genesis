@@ -296,3 +296,16 @@ export async function getInsights() {
   const analytics = getAnalyticsAggregator();
   return analytics.generateInsights();
 }
+
+// =============================================================================
+// Strategy Wiring (Market Strategist Integration)
+// =============================================================================
+
+export {
+  briefToSocialContent,
+  publishMarketBrief,
+  generateWeeklyContentCalendar,
+  type MarketBriefSummary,
+  type ContentStrategyConfig,
+  type ContentCalendarEntry,
+} from './strategy-wiring.js';

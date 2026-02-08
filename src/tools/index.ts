@@ -212,3 +212,214 @@ toolRegistry.set('market_strategist', {
   },
   validate: () => ({ valid: true }),
 });
+
+// =============================================================================
+// Content Module Tools
+// =============================================================================
+
+import {
+  getContentOrchestrator,
+  getContentScheduler,
+  getAnalyticsAggregator,
+  getSEOEngine,
+  type ContentRequest,
+  type Platform,
+  type ContentType,
+} from '../content/index.js';
+
+toolRegistry.set('content_create', {
+  name: 'content_create',
+  description: 'Create and publish content across multiple platforms (Twitter, LinkedIn, Mastodon, Bluesky)',
+  execute: async (params: Record<string, unknown>) => {
+    const orchestrator = getContentOrchestrator();
+    const request: ContentRequest = {
+      topic: params.topic as string,
+      type: (params.type as ContentType) || 'article',
+      platforms: (params.platforms as Platform[]) || ['twitter', 'linkedin'],
+      keywords: params.keywords as string[] | undefined,
+      tone: params.tone as 'professional' | 'casual' | 'technical' | 'educational' | undefined,
+      targetLength: params.targetLength as number | undefined,
+      seoOptimize: params.seoOptimize as boolean | undefined,
+      schedule: params.schedule ? new Date(params.schedule as string) : undefined,
+      crossPost: params.crossPost as boolean | undefined,
+    };
+    return orchestrator.createAndPublish(request);
+  },
+  validate: (params: Record<string, unknown>) => {
+    if (!params.topic) return { valid: false, reason: 'Missing topic parameter' };
+    return { valid: true };
+  },
+});
+
+toolRegistry.set('content_schedule', {
+  name: 'content_schedule',
+  description: 'Schedule content for later publishing',
+  execute: async (params: Record<string, unknown>) => {
+    const scheduler = getContentScheduler();
+    return scheduler.enqueue({
+      content: params.content as string,
+      title: params.title as string | undefined,
+      type: (params.type as ContentType) || 'post',
+      platforms: (params.platforms as Platform[]) || ['twitter'],
+      publishAt: new Date(params.publishAt as string),
+      hashtags: params.hashtags as string[] | undefined,
+    });
+  },
+  validate: (params: Record<string, unknown>) => {
+    if (!params.content) return { valid: false, reason: 'Missing content parameter' };
+    if (!params.publishAt) return { valid: false, reason: 'Missing publishAt parameter' };
+    return { valid: true };
+  },
+});
+
+toolRegistry.set('content_crosspost', {
+  name: 'content_crosspost',
+  description: 'Cross-post content to multiple platforms immediately',
+  execute: async (params: Record<string, unknown>) => {
+    const scheduler = getContentScheduler();
+    return scheduler.crossPost(
+      params.content as string,
+      (params.platforms as Platform[]) || ['twitter', 'linkedin'],
+      {
+        title: params.title as string | undefined,
+        hashtags: params.hashtags as string[] | undefined,
+      },
+    );
+  },
+  validate: (params: Record<string, unknown>) => {
+    if (!params.content) return { valid: false, reason: 'Missing content parameter' };
+    return { valid: true };
+  },
+});
+
+toolRegistry.set('content_analytics', {
+  name: 'content_analytics',
+  description: 'Get content analytics and insights',
+  execute: async (params: Record<string, unknown>) => {
+    const analytics = getAnalyticsAggregator();
+    const since = params.since ? new Date(params.since as string) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [metrics, insights] = await Promise.all([
+      analytics.aggregateMetrics(since),
+      analytics.generateInsights(),
+    ]);
+
+    return { metrics, insights, stats: analytics.getStats() };
+  },
+});
+
+toolRegistry.set('content_seo', {
+  name: 'content_seo',
+  description: 'Analyze and optimize content for SEO',
+  execute: async (params: Record<string, unknown>) => {
+    const seo = getSEOEngine();
+    const content = params.content as string;
+    const title = params.title as string;
+    const keywords = params.keywords as string[] | undefined;
+
+    // Research keywords if not provided
+    const researchedKeywords = keywords || (await seo.researchKeywords(title)).map(k => k.keyword).slice(0, 5);
+
+    // Calculate SEO score
+    const score = seo.calculateSEOScore({
+      id: 'analysis',
+      title,
+      content,
+      type: 'article',
+      keywords: researchedKeywords,
+      hashtags: [],
+      createdAt: new Date(),
+    });
+
+    // Generate optimizations
+    const optimizedTitle = seo.optimizeTitle(title, researchedKeywords);
+    const metaDescription = seo.generateMetaDescription(content, researchedKeywords);
+    const hashtags = seo.generateHashtags(content, researchedKeywords, 5);
+
+    return {
+      score,
+      optimizedTitle,
+      metaDescription,
+      hashtags,
+      keywords: researchedKeywords,
+    };
+  },
+  validate: (params: Record<string, unknown>) => {
+    if (!params.content) return { valid: false, reason: 'Missing content parameter' };
+    if (!params.title) return { valid: false, reason: 'Missing title parameter' };
+    return { valid: true };
+  },
+});
+
+toolRegistry.set('content_queue', {
+  name: 'content_queue',
+  description: 'Get the content scheduling queue',
+  execute: async () => {
+    const scheduler = getContentScheduler();
+    return {
+      queue: await scheduler.getQueue(),
+      stats: scheduler.getStats(),
+    };
+  },
+});
+
+// =============================================================================
+// Market Strategy + Content Integration Tool
+// =============================================================================
+
+import {
+  publishMarketBrief,
+  briefToSocialContent,
+  generateWeeklyContentCalendar,
+  type MarketBriefSummary,
+  type ContentStrategyConfig,
+} from '../content/index.js';
+
+toolRegistry.set('market_to_social', {
+  name: 'market_to_social',
+  description: 'Convert market strategy brief to social media content and optionally publish',
+  execute: async (params: Record<string, unknown>) => {
+    const brief = params.brief as MarketBriefSummary;
+    const config = params.config as Partial<ContentStrategyConfig> | undefined;
+
+    // Generate content for all platforms
+    const content = briefToSocialContent(brief, config);
+
+    // Optionally publish
+    if (params.publish) {
+      const result = await publishMarketBrief(brief, config);
+      return { content, publishResult: result };
+    }
+
+    return { content };
+  },
+  validate: (params: Record<string, unknown>) => {
+    const brief = params.brief as MarketBriefSummary | undefined;
+    if (!brief) return { valid: false, reason: 'Missing brief parameter' };
+    if (!brief.week) return { valid: false, reason: 'Brief must have week field' };
+    if (!brief.sentiment) return { valid: false, reason: 'Brief must have sentiment field' };
+    return { valid: true };
+  },
+});
+
+toolRegistry.set('content_calendar', {
+  name: 'content_calendar',
+  description: 'Generate a weekly content calendar with optimal posting times',
+  execute: async (params: Record<string, unknown>) => {
+    const briefs = params.briefs as MarketBriefSummary[] | undefined;
+    const baseDate = params.baseDate ? new Date(params.baseDate as string) : new Date();
+
+    if (briefs && briefs.length > 0) {
+      return generateWeeklyContentCalendar(briefs, baseDate);
+    }
+
+    // Return optimal posting times for each platform
+    const scheduler = getContentScheduler();
+    return {
+      twitter: scheduler.getOptimalTime('twitter'),
+      linkedin: scheduler.getOptimalTime('linkedin'),
+      mastodon: scheduler.getOptimalTime('mastodon'),
+      bluesky: scheduler.getOptimalTime('bluesky'),
+    };
+  },
+});

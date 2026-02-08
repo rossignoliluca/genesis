@@ -483,6 +483,86 @@ describe('Content Module Initialization', () => {
 });
 
 // =============================================================================
+// Strategy Wiring Tests
+// =============================================================================
+
+import {
+  briefToSocialContent,
+  generateWeeklyContentCalendar,
+  type MarketBriefSummary,
+} from '../src/content/index.js';
+
+describe('Strategy Wiring', () => {
+  const mockBrief: MarketBriefSummary = {
+    week: 'W06-2026',
+    date: '2026-02-08',
+    sentiment: { overall: 'bullish', score: 0.72 },
+    themes: ['AI momentum', 'Rate cut expectations', 'Tech earnings'],
+    narratives: [
+      { title: 'AI Rally Continues', thesis: 'AI-related stocks continue outperformance.', horizon: 'short' },
+      { title: 'Fed Pivot Watch', thesis: 'Markets pricing in rate cuts for Q2.', horizon: 'medium' },
+    ],
+    positioning: [
+      { assetClass: 'Equities', position: 'overweight', rationale: 'Strong earnings momentum' },
+      { assetClass: 'Bonds', position: 'neutral', rationale: 'Duration risk balanced' },
+    ],
+    risks: ['Inflation resurgence', 'Geopolitical tensions'],
+    opportunities: ['AI infrastructure', 'Emerging markets recovery'],
+  };
+
+  it('should convert brief to Twitter thread', () => {
+    const content = briefToSocialContent(mockBrief);
+
+    expect(content.twitter).toBeDefined();
+    expect(content.twitter.length).toBeGreaterThan(1);
+    expect(content.twitter[0]).toContain('Weekly Market Strategy');
+    expect(content.twitter[0]).toContain('BULLISH');
+  });
+
+  it('should convert brief to LinkedIn post', () => {
+    const content = briefToSocialContent(mockBrief);
+
+    expect(content.linkedin).toBeDefined();
+    expect(content.linkedin.length).toBeGreaterThan(200);
+    expect(content.linkedin).toContain('Market Sentiment: BULLISH');
+    expect(content.linkedin).toContain('TACTICAL POSITIONING');
+  });
+
+  it('should convert brief to Bluesky thread', () => {
+    const content = briefToSocialContent(mockBrief);
+
+    expect(content.bluesky).toBeDefined();
+    expect(content.bluesky.length).toBeGreaterThan(1);
+    expect(content.bluesky[0]).toContain('Weekly Market Strategy');
+  });
+
+  it('should generate hashtags from themes', () => {
+    const content = briefToSocialContent(mockBrief, { includeHashtags: true });
+
+    // Check that hashtags are included in the Twitter thread
+    const lastTweet = content.twitter[content.twitter.length - 1];
+    expect(lastTweet).toMatch(/#\w+/);
+  });
+
+  it('should respect character limits for Twitter', () => {
+    const content = briefToSocialContent(mockBrief);
+
+    for (const tweet of content.twitter) {
+      expect(tweet.length).toBeLessThanOrEqual(280);
+    }
+  });
+
+  it('should generate weekly content calendar', () => {
+    const calendar = generateWeeklyContentCalendar([mockBrief]);
+
+    expect(calendar.length).toBeGreaterThan(0);
+    expect(calendar[0].type).toBe('market-brief');
+    expect(calendar[0].platforms).toBeDefined();
+    expect(calendar[0].scheduledFor).toBeInstanceOf(Date);
+  });
+});
+
+// =============================================================================
 // Import vitest mock function
 // =============================================================================
 

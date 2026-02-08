@@ -929,3 +929,17 @@ export type {
   ModelPerformance,
   ModelSelection,
 } from './model-selector.js';
+
+// v20.0: Bounty Orchestrator (Ultimate Integrated System)
+export {
+  BountyOrchestrator,
+  getBountyOrchestrator,
+  resetBountyOrchestrator,
+} from './bounty-orchestrator.js';
+export type {
+  OrchestratorConfig,
+  OrchestratorState,
+  ActiveBounty,
+  BountyEvent,
+  BountyEventType,
+} from './bounty-orchestrator.js';

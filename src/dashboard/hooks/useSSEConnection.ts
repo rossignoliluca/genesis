@@ -100,7 +100,19 @@ export function useSSEConnection(dashboardUrl: string) {
     addEmergentPattern,
     addHealingEvent,
     addVerifiedClaim,
-    addEvent
+    addEvent,
+    // Chat actions
+    updateChat,
+    appendToStreamingMessage,
+    setStreamingMessage,
+    finalizeStreamingMessage,
+    addActiveToolCall,
+    updateToolCall,
+    clearActiveToolCalls,
+    setIsStreaming,
+    addConversation,
+    addChatMessage,
+    addGeneratedDocument,
   } = useGenesisStore();
 
   // Map kernel state to consciousness state
@@ -779,6 +791,90 @@ export function useSSEConnection(dashboardUrl: string) {
         addEvent({ type: eventType, data });
         break;
 
+      case 'chat':
+        switch (action) {
+          case 'token':
+            appendToStreamingMessage(data.content ?? '');
+            break;
+          case 'tool_call':
+            addActiveToolCall({
+              id: data.id ?? crypto.randomUUID(),
+              tool: data.tool ?? 'unknown',
+              server: data.server,
+              input: data.input ?? {},
+              status: data.status ?? 'running',
+            });
+            break;
+          case 'tool_result':
+            updateToolCall(data.id ?? data.tool, {
+              status: data.error ? 'error' : 'success',
+              output: data.output,
+              duration: data.duration ?? 0,
+              error: data.error,
+            });
+            break;
+          case 'thinking':
+            const currentStreaming = useGenesisStore.getState().chat.streamingMessage;
+            if (currentStreaming) {
+              const thinking = currentStreaming.thinking || [];
+              setStreamingMessage({
+                ...currentStreaming,
+                thinking: [...thinking, {
+                  id: crypto.randomUUID(),
+                  content: data.content ?? '',
+                  visible: data.visible ?? true,
+                }],
+              });
+            }
+            break;
+          case 'done':
+            setStreamingMessage({
+              ...useGenesisStore.getState().chat.streamingMessage,
+              tokens: data.tokens,
+              latency: data.latency,
+              model: data.model,
+            });
+            finalizeStreamingMessage();
+            break;
+          case 'error':
+            setIsStreaming(false);
+            setStreamingMessage(null);
+            clearActiveToolCalls();
+            break;
+          case 'session_created':
+            addConversation({
+              id: data.id ?? crypto.randomUUID(),
+              title: data.title ?? `Chat ${new Date().toLocaleDateString()}`,
+              messages: [],
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              context: {},
+            });
+            break;
+        }
+        addEvent({ type: eventType, data });
+        break;
+
+      case 'document':
+        switch (action) {
+          case 'progress':
+            updateChat({ isGeneratingDocument: true });
+            break;
+          case 'complete':
+            addGeneratedDocument({
+              id: data.documentId ?? crypto.randomUUID(),
+              conversationId: data.conversationId ?? '',
+              type: data.type ?? 'report',
+              format: data.format ?? 'md',
+              path: data.path ?? '',
+              createdAt: Date.now(),
+              metadata: data.metadata,
+            });
+            break;
+        }
+        addEvent({ type: eventType, data });
+        break;
+
       default:
         // Generic event
         addEvent({ type: eventType, data });
@@ -792,7 +888,11 @@ export function useSSEConnection(dashboardUrl: string) {
     addPainStimulus, addWorldPrediction, addConsistencyViolation, addDaemonTask,
     addFinancePosition, addTradingSignal, addRevenueOpportunity,
     addContentItem, addContentInsight, addEmergentPattern, addHealingEvent, addVerifiedClaim,
-    addEvent
+    addEvent,
+    // Chat actions
+    updateChat, appendToStreamingMessage, setStreamingMessage, finalizeStreamingMessage,
+    addActiveToolCall, updateToolCall, clearActiveToolCalls, setIsStreaming,
+    addConversation, addChatMessage, addGeneratedDocument,
   ]);
 
   useEffect(() => {
@@ -857,7 +957,7 @@ export function useSSEConnection(dashboardUrl: string) {
           'consciousness', 'kernel', 'neuromodulation', 'allostasis', 'nociception',
           'metrics', 'selfimprovement', 'coderag', 'learning', 'active-inference',
           'worldmodel', 'daemon', 'finance', 'revenue', 'content', 'swarm',
-          'healing', 'grounding', 'neuromod', 'pain'
+          'healing', 'grounding', 'neuromod', 'pain', 'chat', 'document'
         ].forEach(category => {
           eventSource.addEventListener(category, (event: MessageEvent) => {
             if (!mounted) return;

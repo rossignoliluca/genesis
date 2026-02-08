@@ -27,6 +27,9 @@ import {
   EventLog,
 } from './components/library';
 
+// Chat Hub Component
+import { ChatHubView } from './components/chat';
+
 // ============================================================================
 // GENESIS - Full Interactive Web Interface
 // ============================================================================
@@ -8552,6 +8555,7 @@ export default function App() {
   const navItems: { id: View; label: string; icon: React.FC; section?: string }[] = [
     // Genesis Core
     { id: 'overview', label: 'Overview', icon: Icons.overview, section: 'genesis' },
+    { id: 'chat', label: 'Chat Hub', icon: Icons.chat, section: 'genesis' },
     { id: 'consciousness', label: 'Consciousness', icon: Icons.consciousness, section: 'genesis' },
     { id: 'neuromod', label: 'Neuromod', icon: Icons.neuromod, section: 'genesis' },
     { id: 'ness', label: 'NESS Economy', icon: Icons.ness, section: 'genesis' },
@@ -8581,7 +8585,6 @@ export default function App() {
     { id: 'revenue', label: 'Revenue', icon: Icons.revenue, section: 'finance' },
     { id: 'content', label: 'Content', icon: Icons.content, section: 'finance' },
     // Development
-    { id: 'chat', label: 'Chat', icon: Icons.chat, section: 'dev' },
     { id: 'terminal', label: 'Terminal', icon: Icons.terminal, section: 'dev' },
     { id: 'files', label: 'Files', icon: Icons.files, section: 'dev' },
     { id: 'playground', label: 'Playground', icon: Icons.playground, section: 'dev' },
@@ -8600,7 +8603,7 @@ export default function App() {
       case 'consciousness': return <ConsciousnessControlCenter />;
       case 'neuromod': return <NeuromodulationDashboard />;
       case 'ness': return <NESSEconomicDashboard />;
-      case 'chat': return <ChatView />;
+      case 'chat': return <ChatHubView dashboardUrl="http://localhost:9876" />;
       case 'agents': return <AgentsView />;
       case 'tasks': return <TasksView />;
       case 'creator': return <CreatorView />;

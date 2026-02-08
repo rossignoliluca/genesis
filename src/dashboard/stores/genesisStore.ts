@@ -402,6 +402,129 @@ export interface GroundingState {
   recentClaims: VerifiedClaim[];
 }
 
+// ============================================================================
+// Chat Types
+// ============================================================================
+
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  type: 'file' | 'image' | 'code' | 'memory';
+  content?: string;
+  path?: string;
+  mimeType?: string;
+}
+
+export interface ChatCodeBlock {
+  language: string;
+  code: string;
+  filename?: string;
+}
+
+export interface ChatToolCall {
+  id: string;
+  tool: string;
+  server?: string;
+  input: Record<string, unknown>;
+  status: 'pending' | 'running' | 'success' | 'error';
+  output?: unknown;
+  duration?: number;
+  error?: string;
+}
+
+export interface ChatThinkingBlock {
+  id: string;
+  content: string;
+  visible: boolean;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string;
+  timestamp: number;
+  attachments?: ChatAttachment[];
+  codeBlocks?: ChatCodeBlock[];
+  toolCalls?: ChatToolCall[];
+  thinking?: ChatThinkingBlock[];
+  model?: string;
+  tokens?: { input: number; output: number };
+  cost?: number;
+  latency?: number;
+  // Phase 1-4: Enhanced metrics
+  tier?: 'fast' | 'balanced' | 'powerful';
+  racing?: {
+    winner: string;
+    participants: number;
+    ttftSaved: number;
+  };
+  cacheHits?: number;
+  anticipationHits?: number;
+  phi?: number;
+}
+
+export interface ChatConversationContext {
+  files?: string[];
+  memoryItems?: string[];
+  tools?: string[];
+  model?: 'fast' | 'balanced' | 'powerful';
+}
+
+export interface ChatConversation {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: number;
+  updatedAt: number;
+  context: ChatConversationContext;
+}
+
+export interface GeneratedDocument {
+  id: string;
+  conversationId: string;
+  type: 'report' | 'presentation' | 'summary' | 'code';
+  format: 'md' | 'pptx' | 'pdf';
+  path: string;
+  createdAt: number;
+  metadata?: {
+    pages?: number;
+    slides?: number;
+    wordCount?: number;
+  };
+}
+
+export interface ChatState {
+  // Conversations
+  conversations: ChatConversation[];
+  activeConversationId: string | null;
+
+  // Current message state
+  inputMessage: string;
+  isStreaming: boolean;
+  streamingMessage: Partial<ChatMessage> | null;
+
+  // Tool execution
+  activeToolCalls: ChatToolCall[];
+
+  // Context
+  attachedFiles: ChatAttachment[];
+  memoryContext: Array<{ id: string; content: string; type: string }>;
+
+  // Document generation
+  isGeneratingDocument: boolean;
+  generatedDocuments: GeneratedDocument[];
+
+  // Settings
+  selectedModel: 'fast' | 'balanced' | 'powerful';
+  useBrain: boolean;
+  useMemory: boolean;
+  showThinking: boolean;
+
+  // Metrics
+  totalTokensUsed: number;
+  totalCost: number;
+}
+
 export interface SelfImprovementState {
   // Cycle state
   currentStage: ImprovementStage;
@@ -456,6 +579,7 @@ export interface GenesisState {
   swarm: SwarmState;
   healing: HealingState;
   grounding: GroundingState;
+  chat: ChatState;
   events: Array<{ id: string; type: string; timestamp: number; data: unknown }>;
 }
 
@@ -498,6 +622,26 @@ interface GenesisStore extends GenesisState {
   addHealingEvent: (event: HealingEvent) => void;
   addVerifiedClaim: (claim: VerifiedClaim) => void;
   addEvent: (event: { type: string; data: unknown }) => void;
+  // Chat actions
+  updateChat: (chat: Partial<ChatState>) => void;
+  setActiveConversation: (id: string | null) => void;
+  addConversation: (conversation: ChatConversation) => void;
+  updateConversation: (id: string, updates: Partial<ChatConversation>) => void;
+  deleteConversation: (id: string) => void;
+  addChatMessage: (conversationId: string, message: ChatMessage) => void;
+  appendToStreamingMessage: (content: string) => void;
+  setStreamingMessage: (message: Partial<ChatMessage> | null) => void;
+  finalizeStreamingMessage: () => void;
+  addActiveToolCall: (toolCall: ChatToolCall) => void;
+  updateToolCall: (id: string, updates: Partial<ChatToolCall>) => void;
+  clearActiveToolCalls: () => void;
+  attachFile: (file: ChatAttachment) => void;
+  removeAttachment: (id: string) => void;
+  clearAttachments: () => void;
+  setInputMessage: (message: string) => void;
+  setIsStreaming: (isStreaming: boolean) => void;
+  addGeneratedDocument: (doc: GeneratedDocument) => void;
+  setChatSettings: (settings: { selectedModel?: 'fast' | 'balanced' | 'powerful'; useBrain?: boolean; useMemory?: boolean; showThinking?: boolean }) => void;
   reset: () => void;
 }
 
@@ -637,6 +781,25 @@ const initialGroundingState: GroundingState = {
   recentClaims: [],
 };
 
+const initialChatState: ChatState = {
+  conversations: [],
+  activeConversationId: null,
+  inputMessage: '',
+  isStreaming: false,
+  streamingMessage: null,
+  activeToolCalls: [],
+  attachedFiles: [],
+  memoryContext: [],
+  isGeneratingDocument: false,
+  generatedDocuments: [],
+  selectedModel: 'balanced',
+  useBrain: true,
+  useMemory: true,
+  showThinking: true,
+  totalTokensUsed: 0,
+  totalCost: 0,
+};
+
 const initialState: GenesisState = {
   connected: false,
   lastUpdate: 0,
@@ -697,6 +860,7 @@ const initialState: GenesisState = {
   swarm: initialSwarmState,
   healing: initialHealingState,
   grounding: initialGroundingState,
+  chat: initialChatState,
   events: [],
 };
 
@@ -983,6 +1147,184 @@ export const useGenesisStore = create<GenesisStore>((set) => ({
       lastUpdate: Date.now(),
     })),
 
+  // Chat actions
+  updateChat: (chat) =>
+    set((state) => ({
+      chat: { ...state.chat, ...chat },
+      lastUpdate: Date.now(),
+    })),
+
+  setActiveConversation: (id) =>
+    set((state) => ({
+      chat: { ...state.chat, activeConversationId: id },
+      lastUpdate: Date.now(),
+    })),
+
+  addConversation: (conversation) =>
+    set((state) => ({
+      chat: {
+        ...state.chat,
+        conversations: [conversation, ...state.chat.conversations],
+        activeConversationId: conversation.id,
+      },
+      lastUpdate: Date.now(),
+    })),
+
+  updateConversation: (id, updates) =>
+    set((state) => ({
+      chat: {
+        ...state.chat,
+        conversations: state.chat.conversations.map(c =>
+          c.id === id ? { ...c, ...updates, updatedAt: Date.now() } : c
+        ),
+      },
+      lastUpdate: Date.now(),
+    })),
+
+  deleteConversation: (id) =>
+    set((state) => ({
+      chat: {
+        ...state.chat,
+        conversations: state.chat.conversations.filter(c => c.id !== id),
+        activeConversationId: state.chat.activeConversationId === id ? null : state.chat.activeConversationId,
+      },
+      lastUpdate: Date.now(),
+    })),
+
+  addChatMessage: (conversationId, message) =>
+    set((state) => ({
+      chat: {
+        ...state.chat,
+        conversations: state.chat.conversations.map(c =>
+          c.id === conversationId
+            ? { ...c, messages: [...c.messages, message], updatedAt: Date.now() }
+            : c
+        ),
+        totalTokensUsed: state.chat.totalTokensUsed + (message.tokens?.input || 0) + (message.tokens?.output || 0),
+        totalCost: state.chat.totalCost + (message.cost || 0),
+      },
+      lastUpdate: Date.now(),
+    })),
+
+  appendToStreamingMessage: (content) =>
+    set((state) => ({
+      chat: {
+        ...state.chat,
+        streamingMessage: state.chat.streamingMessage
+          ? { ...state.chat.streamingMessage, content: (state.chat.streamingMessage.content || '') + content }
+          : { content, role: 'assistant' as const, timestamp: Date.now() },
+      },
+    })),
+
+  setStreamingMessage: (message) =>
+    set((state) => ({
+      chat: { ...state.chat, streamingMessage: message },
+    })),
+
+  finalizeStreamingMessage: () =>
+    set((state) => {
+      if (!state.chat.streamingMessage || !state.chat.activeConversationId) {
+        return { chat: { ...state.chat, streamingMessage: null, isStreaming: false } };
+      }
+
+      const finalMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: state.chat.streamingMessage.content || '',
+        timestamp: state.chat.streamingMessage.timestamp || Date.now(),
+        toolCalls: state.chat.activeToolCalls,
+        thinking: state.chat.streamingMessage.thinking,
+        model: state.chat.streamingMessage.model,
+        tokens: state.chat.streamingMessage.tokens,
+        latency: state.chat.streamingMessage.latency,
+      };
+
+      return {
+        chat: {
+          ...state.chat,
+          conversations: state.chat.conversations.map(c =>
+            c.id === state.chat.activeConversationId
+              ? { ...c, messages: [...c.messages, finalMessage], updatedAt: Date.now() }
+              : c
+          ),
+          streamingMessage: null,
+          isStreaming: false,
+          activeToolCalls: [],
+          totalTokensUsed: state.chat.totalTokensUsed + (finalMessage.tokens?.input || 0) + (finalMessage.tokens?.output || 0),
+        },
+        lastUpdate: Date.now(),
+      };
+    }),
+
+  addActiveToolCall: (toolCall) =>
+    set((state) => ({
+      chat: {
+        ...state.chat,
+        activeToolCalls: [...state.chat.activeToolCalls, toolCall],
+      },
+    })),
+
+  updateToolCall: (id, updates) =>
+    set((state) => ({
+      chat: {
+        ...state.chat,
+        activeToolCalls: state.chat.activeToolCalls.map(tc =>
+          tc.id === id ? { ...tc, ...updates } : tc
+        ),
+      },
+    })),
+
+  clearActiveToolCalls: () =>
+    set((state) => ({
+      chat: { ...state.chat, activeToolCalls: [] },
+    })),
+
+  attachFile: (file) =>
+    set((state) => ({
+      chat: {
+        ...state.chat,
+        attachedFiles: [...state.chat.attachedFiles, file],
+      },
+    })),
+
+  removeAttachment: (id) =>
+    set((state) => ({
+      chat: {
+        ...state.chat,
+        attachedFiles: state.chat.attachedFiles.filter(f => f.id !== id),
+      },
+    })),
+
+  clearAttachments: () =>
+    set((state) => ({
+      chat: { ...state.chat, attachedFiles: [] },
+    })),
+
+  setInputMessage: (message) =>
+    set((state) => ({
+      chat: { ...state.chat, inputMessage: message },
+    })),
+
+  setIsStreaming: (isStreaming) =>
+    set((state) => ({
+      chat: { ...state.chat, isStreaming },
+    })),
+
+  addGeneratedDocument: (doc) =>
+    set((state) => ({
+      chat: {
+        ...state.chat,
+        generatedDocuments: [doc, ...state.chat.generatedDocuments],
+        isGeneratingDocument: false,
+      },
+      lastUpdate: Date.now(),
+    })),
+
+  setChatSettings: (settings) =>
+    set((state) => ({
+      chat: { ...state.chat, ...settings },
+    })),
+
   reset: () => set(initialState),
 }));
 
@@ -1011,3 +1353,19 @@ export const selectContent = (state: GenesisStore) => state.content;
 export const selectSwarm = (state: GenesisStore) => state.swarm;
 export const selectHealing = (state: GenesisStore) => state.healing;
 export const selectGrounding = (state: GenesisStore) => state.grounding;
+export const selectChat = (state: GenesisStore) => state.chat;
+export const selectActiveConversation = (state: GenesisStore) => {
+  const { chat } = state;
+  if (!chat.activeConversationId) return null;
+  return chat.conversations.find(c => c.id === chat.activeConversationId) || null;
+};
+export const selectConversations = (state: GenesisStore) => state.chat.conversations;
+export const selectIsStreaming = (state: GenesisStore) => state.chat.isStreaming;
+export const selectStreamingMessage = (state: GenesisStore) => state.chat.streamingMessage;
+export const selectActiveToolCalls = (state: GenesisStore) => state.chat.activeToolCalls;
+export const selectChatSettings = (state: GenesisStore) => ({
+  selectedModel: state.chat.selectedModel,
+  useBrain: state.chat.useBrain,
+  useMemory: state.chat.useMemory,
+  showThinking: state.chat.showThinking,
+});

@@ -421,3 +421,28 @@ export interface AudienceData {
     interests?: string[];
   };
 }
+
+// =============================================================================
+// Publication Types (Loop 3: Publishing)
+// =============================================================================
+
+export interface PublicationResult {
+  platform: 'twitter' | 'linkedin' | 'bluesky' | 'mastodon' | 'email';
+  success: boolean;
+  postId?: string;
+  url?: string;
+  threadUrls?: string[];
+  recipients?: number;
+  error?: string;
+  publishedAt: Date;
+}
+
+export interface PublicationReport {
+  id: string;
+  week: string;
+  results: PublicationResult[];
+  totalPublished: number;
+  totalFailed: number;
+  emailSent: boolean;
+  publishedAt: Date;
+}

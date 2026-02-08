@@ -589,6 +589,59 @@ export interface X402ReceiptEvent extends BusEvent {
 }
 
 // ============================================================================
+// Content Events (v18.1.0)
+// ============================================================================
+
+export type ContentPlatform = 'twitter' | 'linkedin' | 'mastodon' | 'bluesky' | 'mirror' | 'paragraph' | 'substack' | 'hackmd' | 'devto';
+export type ContentTypeEnum = 'article' | 'thread' | 'post' | 'newsletter' | 'tutorial' | 'announcement';
+
+export interface ContentCreatedEvent extends BusEvent {
+  contentId: string;
+  type: ContentTypeEnum;
+  topic: string;
+  platforms: ContentPlatform[];
+  keywords: string[];
+}
+
+export interface ContentPublishedEvent extends BusEvent {
+  contentId: string;
+  platform: ContentPlatform;
+  postId: string;
+  url?: string;
+  status: 'success' | 'failed';
+  error?: string;
+}
+
+export interface ContentScheduledEvent extends BusEvent {
+  contentId: string;
+  platforms: ContentPlatform[];
+  scheduledFor: Date;
+}
+
+export interface ContentEngagementEvent extends BusEvent {
+  contentId: string;
+  platform: ContentPlatform;
+  impressions: number;
+  engagements: number;
+  engagementRate: number;
+}
+
+export interface ContentRevenueEvent extends BusEvent {
+  contentId: string;
+  platform: ContentPlatform;
+  amount: number;
+  currency: string;
+  revenueSource: string;
+}
+
+export interface ContentInsightEvent extends BusEvent {
+  insightType: 'best_platform' | 'optimal_time' | 'trending_topic' | 'performance_alert';
+  platform?: ContentPlatform;
+  recommendation: string;
+  confidence: number;
+}
+
+// ============================================================================
 // CLI Events
 // ============================================================================
 
@@ -842,6 +895,14 @@ export interface GenesisEventMap {
   'x402.challenge.issued': X402ChallengeEvent;
   'x402.payment.completed': X402PaymentEvent;
   'x402.receipt.generated': X402ReceiptEvent;
+
+  // --- Content Events (v18.1.0) ---
+  'content.created': ContentCreatedEvent;
+  'content.published': ContentPublishedEvent;
+  'content.scheduled': ContentScheduledEvent;
+  'content.engagement': ContentEngagementEvent;
+  'content.revenue': ContentRevenueEvent;
+  'content.insight': ContentInsightEvent;
 
   // --- CLI Events ---
   'cli.user.message': CLIUserMessageEvent;

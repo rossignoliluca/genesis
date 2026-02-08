@@ -153,6 +153,13 @@ import {
   getBrainStatePersistence,
 } from './persistence.js';
 
+// v18.3: Component-specific memory with FSRS scheduling
+import {
+  getComponentMemory,
+  type ComponentMemoryManager,
+  type ComponentId,
+} from '../memory/index.js';
+
 // v13.1: Self-Knowledge — code-aware context
 import {
   SelfKnowledge,
@@ -211,6 +218,9 @@ export class Brain {
 
   // v10.4.2: Unified Memory Query
   private unifiedQuery!: UnifiedMemoryQuery;
+
+  // v18.3: Component-specific memory with FSRS
+  private componentMemory: ComponentMemoryManager;
 
   // v8.2: Tool Results Cache (approved self-modification)
   private toolCache: Map<string, { result: ToolResult; timestamp: number }> = new Map();
@@ -276,6 +286,10 @@ export class Brain {
 
     // v13.1: Self-Knowledge — code awareness (keyword search, no API)
     this.selfKnowledge = getSelfKnowledge();
+
+    // v18.3: Component-specific memory with FSRS v4 scheduling
+    // Brain uses its own profile with high retention for reasoning context
+    this.componentMemory = getComponentMemory('brain');
 
     // v7.13: Initialize full module integration (lazy - on first use)
     this.initializeV713Modules();
@@ -1445,6 +1459,21 @@ export class Brain {
       if (codeContext) {
         context.formatted = codeContext + '\n' + context.formatted;
         context.tokenEstimate += Math.ceil(codeContext.length / 4);
+      }
+    }
+
+    // v18.3: Retrieve relevant reasoning episodes from component memory (FSRS-scheduled)
+    if (this.componentMemory) {
+      const relevantEpisodes = this.componentMemory.search(state.query, { limit: 3 });
+      if (relevantEpisodes.length > 0) {
+        const episodeContext = relevantEpisodes
+          .map(ep => {
+            const content = ep.memory.content as { what: string; details?: { responseLength?: number } };
+            return `[Previous: ${content.what}]`;
+          })
+          .join('\n');
+        context.formatted = episodeContext + '\n' + context.formatted;
+        context.tokenEstimate += Math.ceil(episodeContext.length / 4);
       }
     }
 
@@ -2990,6 +3019,39 @@ export class Brain {
       this.persistence.recordBroadcast();
     }
     this.persistence.save();
+
+    // v18.3: Store reasoning episode to component memory for FSRS-based recall
+    if (this.componentMemory && !state.error) {
+      this.componentMemory.storeEpisodic({
+        id: `brain-cycle-${Date.now()}`,
+        type: 'episodic',
+        created: new Date(),
+        lastAccessed: new Date(),
+        accessCount: 0,
+        R0: 0.9,
+        S: 7,
+        importance: Math.min(1, state.phi * 1.2), // Higher phi = more important
+        emotionalValence: 0,
+        associations: [],
+        tags: ['reasoning', 'brain-cycle', ...state.moduleHistory.slice(0, 3)],
+        consolidated: false,
+        content: {
+          what: `Query: ${state.query.slice(0, 100)}`,
+          details: {
+            query: state.query,
+            responseLength: state.response.length,
+            modules: state.moduleHistory,
+            toolCalls: state.toolCalls.length,
+            cycleTime: cycleTime,
+            phi: state.phi,
+          },
+        },
+        when: {
+          timestamp: new Date(state.startTime),
+          duration: cycleTime,
+        },
+      });
+    }
   }
 
   /**

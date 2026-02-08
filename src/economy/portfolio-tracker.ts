@@ -200,6 +200,42 @@ export class PortfolioTracker {
     }
   }
 
+  /**
+   * Record outcome by bounty ID (for cases where we don't have recordId)
+   */
+  recordOutcomeByBountyId(
+    bountyId: string,
+    outcome: 'accepted' | 'rejected' | 'paid',
+    revenue?: number,
+    feedback?: string
+  ): void {
+    // Find the most recent record for this bounty
+    const record = [...this.records]
+      .reverse()
+      .find(r => r.bountyId === bountyId);
+
+    if (record) {
+      record.status = outcome;
+      record.completedAt = new Date();
+      if (feedback) record.feedback = feedback;
+      if (revenue !== undefined) record.reward = revenue;
+
+      if (record.submittedAt) {
+        record.duration = (Date.now() - record.submittedAt.getTime()) / (1000 * 60 * 60);
+      }
+
+      if (outcome === 'paid') {
+        record.paidAt = new Date();
+      }
+
+      this.updateDailySnapshot();
+      this.checkGoals();
+      this.save();
+
+      console.log(`[PortfolioTracker] Recorded ${outcome} for bounty ${bountyId}`);
+    }
+  }
+
   // ===========================================================================
   // Statistics
   // ===========================================================================

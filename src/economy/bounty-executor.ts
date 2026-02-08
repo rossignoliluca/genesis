@@ -36,6 +36,11 @@ import { getRepoStyleLearner } from './repo-style-learner.js';
 import { getTestGenerator } from './test-generator.js';
 import { getSmartRetry } from './smart-retry.js';
 import { getSuccessPatterns } from './success-patterns.js';
+// v19.6: Near-infallibility modules
+import { getMaintainerProfiler } from './maintainer-profiler.js';
+import { getPRTemplateMatcher } from './pr-template-matcher.js';
+import { getCommitOptimizer } from './commit-optimizer.js';
+import { getPortfolioTracker } from './portfolio-tracker.js';
 
 // ============================================================================
 // Types
@@ -594,6 +599,11 @@ export class BountyExecutor {
   private testGenerator = getTestGenerator();
   private smartRetry = getSmartRetry();
   private successPatterns = getSuccessPatterns();
+  // v19.6: Near-infallibility modules
+  private maintainerProfiler = getMaintainerProfiler();
+  private prTemplateMatcher = getPRTemplateMatcher();
+  private commitOptimizer = getCommitOptimizer();
+  private portfolioTracker = getPortfolioTracker();
 
   private activeExecutions = new Map<string, Promise<ExecutionResult>>();
 
@@ -1142,13 +1152,74 @@ export class BountyExecutor {
 
       console.log('[BountyExecutor] ✅ Multi-model validation passed');
 
+      // 3.7 v19.6: Learn maintainer preferences and get PR template
+      let prDescription = solution.description;
+      if (bounty.sourceMetadata?.org && bounty.sourceMetadata?.repo) {
+        const owner = bounty.sourceMetadata.org;
+        const repo = bounty.sourceMetadata.repo;
+        const repoKey = `${owner}/${repo}`;
+
+        // Profile repo maintainers
+        console.log('[BountyExecutor] Profiling maintainers...');
+        try {
+          // Get a sample maintainer profile for the repo
+          const maintainerProfile = await this.maintainerProfiler.getProfile(owner, repoKey);
+          console.log(`[BountyExecutor] Maintainer profile: ${maintainerProfile.username} - ${maintainerProfile.reviewStyle.strictness} strictness`);
+
+          // Check for deal-breakers we should avoid
+          if (maintainerProfile.reviewStyle.dealBreakers.length > 0) {
+            console.log(`[BountyExecutor] ⚠️ Deal-breakers: ${maintainerProfile.reviewStyle.dealBreakers.slice(0, 3).join(', ')}`);
+          }
+
+          // Log submission guidance
+          const guidance = this.maintainerProfiler.generateSubmissionGuidance(maintainerProfile);
+          console.log(`[BountyExecutor] Guidance: ${maintainerProfile.reviewStyle.focusAreas.slice(0, 2).join(', ') || 'general quality'}`);
+        } catch (profileError) {
+          console.warn('[BountyExecutor] Maintainer profiling failed:', profileError);
+        }
+
+        // Get and match PR template
+        console.log('[BountyExecutor] Matching PR template...');
+        try {
+          const template = await this.prTemplateMatcher.getTemplate(owner, repo);
+          if (template) {
+            console.log(`[BountyExecutor] Found PR template with ${template.sections.length} sections`);
+            const filledDescription = await this.prTemplateMatcher.generateDescription(
+              template,
+              bounty,
+              solution.changes,
+              solution.description,
+              bounty.sourceMetadata.issueNumber
+            );
+            prDescription = filledDescription.body;
+            console.log(`[BountyExecutor] Generated compliant PR description (${(filledDescription.confidence * 100).toFixed(0)}% confidence)`);
+          }
+        } catch (templateError) {
+          console.warn('[BountyExecutor] PR template matching failed:', templateError);
+        }
+
+        // Optimize commit message
+        console.log('[BountyExecutor] Optimizing commit message...');
+        try {
+          const commitStyle = await this.commitOptimizer.learnStyle(owner, repo);
+          console.log(`[BountyExecutor] Commit style: ${commitStyle.format.type} format (${(commitStyle.confidence * 100).toFixed(0)}% confidence)`);
+          // Commit message optimization would be passed to PRPipeline
+        } catch (commitError) {
+          console.warn('[BountyExecutor] Commit optimization failed:', commitError);
+        }
+      }
+
+      // 3.8 v19.6: Record bounty start in portfolio
+      const portfolioRecordId = this.portfolioTracker.recordBountyStart(bounty, classification);
+      console.log(`[BountyExecutor] Portfolio record: ${portfolioRecordId}`);
+
       // 4. Submit PR (if autoSubmit enabled and not dry run)
       if (this.config.autoSubmit && !this.config.dryRun) {
         console.log('[BountyExecutor] Submitting PR...');
         const submission = await this.prPipeline.submitBounty(
           bounty,
           solution.changes,
-          solution.description,
+          prDescription, // v19.6: Use template-matched description
           {
             confidence: solution.confidence,
             validationScore: Math.round(solution.confidence * 100),
@@ -1310,6 +1381,27 @@ export class BountyExecutor {
   }
 
   /**
+   * v19.6: Get portfolio analytics
+   */
+  getPortfolioStats() {
+    return this.portfolioTracker.getStats();
+  }
+
+  /**
+   * v19.6: Get portfolio report
+   */
+  getPortfolioReport(): string {
+    return this.portfolioTracker.generateReport();
+  }
+
+  /**
+   * v19.6: Set portfolio goals
+   */
+  setPortfolioGoal(type: 'revenue' | 'bounties' | 'streak' | 'reputation', target: number, deadline?: Date): string {
+    return this.portfolioTracker.setGoal(type, target, deadline);
+  }
+
+  /**
    * v19.2: Record outcome to learning engine for causal analysis
    */
   private recordLearningOutcome(
@@ -1379,6 +1471,14 @@ export class BountyExecutor {
                 bounty,
                 classification
               );
+
+              // v19.6: Record completion in portfolio tracker
+              this.portfolioTracker.recordOutcomeByBountyId(
+                updated.bountyId,
+                'paid',
+                updated.bountyValue
+              );
+              console.log(`[BountyExecutor] Portfolio updated: ${(this.portfolioTracker.getStats().successRate * 100).toFixed(0)}% success rate`);
             }
           } catch (learnError) {
             console.warn('[BountyExecutor] Failed to learn from success:', learnError);
@@ -1387,6 +1487,17 @@ export class BountyExecutor {
           // v16.2: Track consecutive rejections for circuit breaker
           this.consecutiveRejections++;
           console.log(`[BountyExecutor] PR rejected: ${sub.prUrl} (consecutive rejections: ${this.consecutiveRejections})`);
+
+          // v19.6: Record failure in portfolio tracker
+          try {
+            this.portfolioTracker.recordOutcomeByBountyId(
+              updated.bountyId,
+              'rejected',
+              0
+            );
+          } catch (portfolioErr) {
+            console.warn('[BountyExecutor] Failed to record rejection in portfolio:', portfolioErr);
+          }
 
           // v19.3: Deep analyze rejection feedback
           try {

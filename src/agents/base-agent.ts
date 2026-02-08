@@ -220,11 +220,6 @@ export abstract class BaseAgent implements Agent {
 
       this.messagesProcessed++;
       this.circuitBreaker.recordSuccess();
-
-      // If we were in error state and recovered, log it
-      if (this.state === 'error') {
-        this.log('Recovered from error state');
-      }
     } catch (error) {
       this.errors++;
       this.circuitBreaker.recordFailure();

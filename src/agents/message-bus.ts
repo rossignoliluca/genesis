@@ -7,6 +7,182 @@
 
 import { Message, MessageType, MessagePriority, AgentId } from './types.js';
 import { randomUUID } from 'crypto';
+import { appendFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
+import { join } from 'path';
+
+// ============================================================================
+// Persistent Message Log
+// ============================================================================
+
+export interface PersistenceConfig {
+  /** Enable persistent logging */
+  enabled: boolean;
+  /** Directory for log files */
+  logDir: string;
+  /** Max file size before rotation (bytes) */
+  maxFileSize: number;
+  /** Flush interval for batch writes (ms). 0 = synchronous writes */
+  flushInterval: number;
+}
+
+const DEFAULT_PERSISTENCE_CONFIG: PersistenceConfig = {
+  enabled: false,
+  logDir: '.genesis/message-logs',
+  maxFileSize: 50 * 1024 * 1024, // 50MB
+  flushInterval: 0,              // Sync writes for safety
+};
+
+/**
+ * Append-only JSONL log for message audit trail.
+ * Survives restarts. Supports replay for debugging and recovery.
+ */
+export class PersistentMessageLog {
+  private config: PersistenceConfig;
+  private currentFile: string;
+  private buffer: string[] = [];
+  private flushTimer: NodeJS.Timeout | null = null;
+  private fileIndex = 0;
+
+  constructor(config: Partial<PersistenceConfig> = {}) {
+    this.config = { ...DEFAULT_PERSISTENCE_CONFIG, ...config };
+    this.currentFile = '';
+
+    if (this.config.enabled) {
+      this.init();
+    }
+  }
+
+  private init(): void {
+    if (!existsSync(this.config.logDir)) {
+      mkdirSync(this.config.logDir, { recursive: true });
+    }
+    this.currentFile = this.getLogFilePath();
+
+    if (this.config.flushInterval > 0) {
+      this.flushTimer = setInterval(() => this.flush(), this.config.flushInterval);
+    }
+  }
+
+  private getLogFilePath(): string {
+    const date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    return join(this.config.logDir, `messages-${date}-${this.fileIndex}.jsonl`);
+  }
+
+  /** Append a message to the persistent log */
+  append(message: Message): void {
+    if (!this.config.enabled) return;
+
+    const line = JSON.stringify({
+      id: message.id,
+      type: message.type,
+      from: message.from,
+      to: message.to,
+      priority: message.priority,
+      timestamp: message.timestamp,
+      replyTo: message.replyTo,
+      correlationId: message.correlationId,
+      payloadSize: JSON.stringify(message.payload).length,
+      // Store payload summary (not full payload to limit log size)
+      payloadType: typeof message.payload,
+      payloadKeys: message.payload && typeof message.payload === 'object'
+        ? Object.keys(message.payload)
+        : undefined,
+    }) + '\n';
+
+    if (this.config.flushInterval > 0) {
+      this.buffer.push(line);
+    } else {
+      this.writeSync(line);
+    }
+  }
+
+  /** Append full message including payload (for critical messages) */
+  appendFull(message: Message): void {
+    if (!this.config.enabled) return;
+
+    const line = JSON.stringify({
+      ...message,
+      timestamp: message.timestamp,
+    }) + '\n';
+
+    this.writeSync(line);
+  }
+
+  private writeSync(line: string): void {
+    try {
+      // Rotate if needed
+      if (existsSync(this.currentFile)) {
+        const stats = readFileSync(this.currentFile);
+        if (stats.length >= this.config.maxFileSize) {
+          this.fileIndex++;
+          this.currentFile = this.getLogFilePath();
+        }
+      }
+      appendFileSync(this.currentFile, line, 'utf8');
+    } catch {
+      // Silent fail — don't crash the system for logging
+    }
+  }
+
+  /** Flush buffered writes */
+  flush(): void {
+    if (this.buffer.length === 0) return;
+    const data = this.buffer.join('');
+    this.buffer = [];
+    this.writeSync(data);
+  }
+
+  /** Replay messages from log files (for recovery/debugging) */
+  replay(options?: {
+    since?: Date;
+    until?: Date;
+    type?: MessageType;
+    from?: AgentId;
+    limit?: number;
+  }): Array<Record<string, unknown>> {
+    if (!this.config.enabled || !existsSync(this.currentFile)) return [];
+
+    const results: Array<Record<string, unknown>> = [];
+    try {
+      const content = readFileSync(this.currentFile, 'utf8');
+      const lines = content.trim().split('\n').filter(Boolean);
+
+      for (const line of lines) {
+        const entry = JSON.parse(line) as Record<string, unknown>;
+        const ts = new Date(entry.timestamp as string);
+
+        if (options?.since && ts < options.since) continue;
+        if (options?.until && ts > options.until) continue;
+        if (options?.type && entry.type !== options.type) continue;
+        if (options?.from && entry.from !== options.from) continue;
+
+        results.push(entry);
+        if (options?.limit && results.length >= options.limit) break;
+      }
+    } catch {
+      // File read error
+    }
+
+    return results;
+  }
+
+  /** Get log file stats */
+  getStats(): { enabled: boolean; currentFile: string; bufferSize: number } {
+    return {
+      enabled: this.config.enabled,
+      currentFile: this.currentFile,
+      bufferSize: this.buffer.length,
+    };
+  }
+
+  shutdown(): void {
+    this.flush();
+    if (this.flushTimer) {
+      clearInterval(this.flushTimer);
+      this.flushTimer = null;
+    }
+  }
+}
 
 // ============================================================================
 // Message Bus Types
@@ -44,6 +220,9 @@ export class MessageBus {
   private messageHistory: Message[] = [];
   private maxHistorySize = 1000;
 
+  // v18.1: Persistent message log for audit trail
+  readonly persistentLog: PersistentMessageLog;
+
   // Metrics
   private metrics = {
     messagesSent: 0,
@@ -51,6 +230,10 @@ export class MessageBus {
     messagesDropped: 0,
     startTime: new Date(),
   };
+
+  constructor(persistenceConfig?: Partial<PersistenceConfig>) {
+    this.persistentLog = new PersistentMessageLog(persistenceConfig);
+  }
 
   // ============================================================================
   // Core Methods
@@ -96,8 +279,15 @@ export class MessageBus {
     this.priorityQueues[priority].push(fullMessage);
     this.metrics.messagesSent++;
 
-    // Store in history
+    // Store in history (in-memory hot path)
     this.addToHistory(fullMessage);
+
+    // v18.1: Persistent log (cold storage audit trail)
+    if (priority === 'critical') {
+      this.persistentLog.appendFull(fullMessage); // Full payload for critical
+    } else {
+      this.persistentLog.append(fullMessage);     // Summary for others
+    }
 
     // Process queue
     await this.processQueue();
@@ -354,13 +544,40 @@ export class MessageBus {
     this.priorityQueues = { critical: [], high: [], normal: [], low: [] };
     this.messageHistory = [];
   }
+
+  /**
+   * v18.1: Replay messages from persistent log
+   */
+  replay(options?: Parameters<PersistentMessageLog['replay']>[0]) {
+    return this.persistentLog.replay(options);
+  }
+
+  /**
+   * v18.1: Enable persistent logging after construction
+   */
+  enablePersistence(config: Partial<PersistenceConfig>): void {
+    const newLog = new PersistentMessageLog({ ...config, enabled: true });
+    // @ts-expect-error: overwriting readonly for reconfiguration
+    this.persistentLog = newLog;
+  }
+
+  /**
+   * v18.1: Graceful shutdown
+   */
+  shutdown(): void {
+    this.persistentLog.shutdown();
+    this.clear();
+  }
 }
 
 // ============================================================================
 // Singleton Export
 // ============================================================================
 
-export const messageBus = new MessageBus();
+export const messageBus = new MessageBus({
+  enabled: !!process.env.GENESIS_MESSAGE_PERSISTENCE,
+  logDir: process.env.GENESIS_MESSAGE_LOG_DIR || '.genesis/message-logs',
+});
 
 // ============================================================================
 // Helper Functions

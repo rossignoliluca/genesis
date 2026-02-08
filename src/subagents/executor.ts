@@ -18,6 +18,7 @@ import {
 import { getSubagent, BUILTIN_SUBAGENTS } from './registry.js';
 import { LLMBridge, createLLMBridge } from '../llm/index.js';
 import { ToolDispatcher, TOOL_ALIASES } from '../cli/dispatcher.js';
+import { SharedTaskContext, getSharedContext, destroySharedContext } from './shared-context.js';
 
 // ============================================================================
 // Subagent Executor
@@ -28,6 +29,8 @@ export class SubagentExecutor {
   private runningTasks: Map<string, BackgroundTask> = new Map();
   private eventHandlers: Set<SubagentEventHandler> = new Set();
   private dispatcher: ToolDispatcher | null = null;
+  /** Active shared contexts for task groups */
+  private activeGroups: Map<string, SharedTaskContext> = new Map();
 
   constructor(config: Partial<SubagentConfig> = {}) {
     this.config = { ...DEFAULT_SUBAGENT_CONFIG, ...config };
@@ -227,6 +230,115 @@ export class SubagentExecutor {
   }
 
   /**
+   * Execute multiple subagents as a group with shared context.
+   * Subagents can see each other's findings through the shared context.
+   *
+   * Usage:
+   *   const results = await executor.executeGroup([
+   *     { description: 'Find papers', prompt: '...', subagentType: 'research' },
+   *     { description: 'Find code', prompt: '...', subagentType: 'explore' },
+   *   ]);
+   */
+  async executeGroup(requests: TaskRequest[]): Promise<{
+    groupId: string;
+    results: TaskResult[];
+    sharedContext: SharedTaskContext;
+  }> {
+    const groupId = `group-${randomUUID().slice(0, 8)}`;
+    const sharedCtx = getSharedContext(groupId);
+    this.activeGroups.set(groupId, sharedCtx);
+
+    this.emit({
+      type: 'task_start',
+      taskId: groupId,
+      timestamp: new Date(),
+      data: { description: `Group of ${requests.length} subagents`, groupSize: requests.length },
+    });
+
+    try {
+      // Execute all subagents in parallel, each with access to shared context
+      const promises = requests.map(async (request) => {
+        const taskId = randomUUID().slice(0, 8);
+        const subagent = getSubagent(request.subagentType);
+        if (!subagent) {
+          return {
+            taskId,
+            subagentType: request.subagentType,
+            success: false,
+            error: `Unknown subagent type: ${request.subagentType}`,
+            duration: 0,
+          } as TaskResult;
+        }
+
+        const startTime = Date.now();
+
+        try {
+          const llm = this.createSubagentLLM(request.model || subagent.model);
+
+          // Build system prompt with shared context injected
+          const contextSection = sharedCtx.formatForPrompt(taskId);
+          const systemPrompt = this.buildSystemPrompt(subagent.systemPrompt, subagent.tools) + contextSection;
+
+          const timeout = subagent.timeout || this.config.defaultTimeout;
+          const result = await Promise.race([
+            this.runSubagentWithSharing(llm, systemPrompt, request.prompt, subagent.tools, taskId, sharedCtx, request.subagentType),
+            this.timeoutPromise(timeout, taskId),
+          ]);
+
+          return {
+            taskId,
+            subagentType: request.subagentType,
+            success: true,
+            result,
+            duration: Date.now() - startTime,
+          } as TaskResult;
+        } catch (error) {
+          return {
+            taskId,
+            subagentType: request.subagentType,
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+            duration: Date.now() - startTime,
+          } as TaskResult;
+        }
+      });
+
+      const results = await Promise.all(promises);
+
+      this.emit({
+        type: 'task_complete',
+        taskId: groupId,
+        timestamp: new Date(),
+        data: {
+          results: results.length,
+          successful: results.filter(r => r.success).length,
+          sharedEntries: sharedCtx.getStats().entries,
+        },
+      });
+
+      return { groupId, results, sharedContext: sharedCtx };
+    } finally {
+      // Don't destroy the context yet — caller may want to read it
+      // Context should be explicitly destroyed via destroyGroup()
+    }
+  }
+
+  /**
+   * Destroy a task group's shared context
+   */
+  destroyGroup(groupId: string): void {
+    this.activeGroups.delete(groupId);
+    destroySharedContext(groupId);
+  }
+
+  /**
+   * Get the shared context for a task group
+   */
+  getGroupContext(groupId: string): SharedTaskContext | undefined {
+    return this.activeGroups.get(groupId);
+  }
+
+  /**
    * Subscribe to events
    */
   on(handler: SubagentEventHandler): () => void {
@@ -367,6 +479,98 @@ After completing your task, provide a clear summary of:
         data: { turn, toolsExecuted: allowedCalls.length, results: dispatchResult.results.length },
       });
     }
+
+    return lastResponse;
+  }
+
+  /**
+   * Run subagent with shared context — publishes findings after each tool turn
+   */
+  private async runSubagentWithSharing(
+    llm: LLMBridge,
+    systemPrompt: string,
+    userPrompt: string,
+    allowedTools: string[],
+    taskId: string,
+    sharedCtx: SharedTaskContext,
+    subagentType: string,
+  ): Promise<string> {
+    const maxTurns = this.config.maxTurns || 10;
+    let turn = 0;
+    let conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    let lastResponse = '';
+
+    conversationHistory.push({ role: 'user', content: userPrompt });
+
+    while (turn < maxTurns) {
+      turn++;
+
+      // Inject latest shared context updates into conversation
+      if (turn > 1) {
+        const updates = sharedCtx.formatForPrompt(taskId, 2048);
+        if (updates) {
+          conversationHistory.push({
+            role: 'user',
+            content: `[Shared context update from siblings]\n${updates}`,
+          });
+        }
+      }
+
+      const historyPrompt = conversationHistory
+        .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+        .join('\n\n');
+
+      const response = await llm.chat(historyPrompt, systemPrompt);
+      lastResponse = response.content;
+
+      conversationHistory.push({ role: 'assistant', content: lastResponse });
+
+      // Publish this turn's response to shared context
+      sharedCtx.publish(taskId, subagentType, `${taskId}-turn-${turn}`, {
+        turn,
+        summary: lastResponse.slice(0, 500), // First 500 chars as summary
+      });
+
+      if (!this.dispatcher) break;
+
+      const toolCalls = this.dispatcher.parseToolCalls(lastResponse);
+      const allowedCalls = toolCalls.filter(call => this.isToolAllowed(call.name, allowedTools));
+
+      if (allowedCalls.length === 0) break;
+
+      const dispatchResult = await this.dispatcher.dispatch(allowedCalls);
+
+      // Publish tool results to shared context
+      for (const r of dispatchResult.results) {
+        if (r.success) {
+          sharedCtx.publish(taskId, subagentType, `${taskId}-tool-${r.name}`, {
+            tool: r.name,
+            data: typeof r.data === 'string' ? r.data.slice(0, 1000) : r.data,
+          });
+        }
+      }
+
+      const resultsText = dispatchResult.results
+        .map(r => r.success
+          ? `Tool ${r.name} succeeded:\n${typeof r.data === 'string' ? r.data : JSON.stringify(r.data, null, 2)}`
+          : `Tool ${r.name} failed: ${r.error}`)
+        .join('\n\n');
+
+      conversationHistory.push({
+        role: 'user',
+        content: `Tool execution results:\n\n${resultsText}\n\nContinue with your task based on these results.`,
+      });
+
+      this.emit({
+        type: 'task_progress',
+        taskId,
+        timestamp: new Date(),
+        data: { turn, toolsExecuted: allowedCalls.length, results: dispatchResult.results.length },
+      });
+    }
+
+    // Publish final result
+    sharedCtx.publish(taskId, subagentType, `${taskId}-final`, lastResponse);
 
     return lastResponse;
   }

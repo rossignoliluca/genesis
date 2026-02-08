@@ -832,3 +832,52 @@ export type {
   PatternMatch,
   SuccessAnalysis,
 } from './success-patterns.js';
+
+// v19.6: Maintainer Profiler (Personalized Submissions)
+export {
+  MaintainerProfiler,
+  getMaintainerProfiler,
+  resetMaintainerProfiler,
+} from './maintainer-profiler.js';
+export type {
+  MaintainerProfile,
+  MaintainerInteraction,
+} from './maintainer-profiler.js';
+
+// v19.6: PR Template Matcher (Template Compliance)
+export {
+  PRTemplateMatcher,
+  getPRTemplateMatcher,
+  resetPRTemplateMatcher,
+} from './pr-template-matcher.js';
+export type {
+  PRTemplate,
+  TemplateSection,
+  TemplateCheckbox,
+  FilledPRDescription,
+} from './pr-template-matcher.js';
+
+// v19.6: Portfolio Tracker (Performance Analytics)
+export {
+  PortfolioTracker,
+  getPortfolioTracker,
+  resetPortfolioTracker,
+} from './portfolio-tracker.js';
+export type {
+  PortfolioStats,
+  BountyRecord,
+  DailySnapshot,
+  Goal,
+  PerformanceTrend,
+} from './portfolio-tracker.js';
+
+// v19.6: Commit Optimizer (Commit Message Compliance)
+export {
+  CommitOptimizer,
+  getCommitOptimizer,
+  resetCommitOptimizer,
+} from './commit-optimizer.js';
+export type {
+  CommitStyle,
+  OptimizedCommit,
+} from './commit-optimizer.js';

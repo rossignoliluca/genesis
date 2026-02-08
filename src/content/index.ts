@@ -121,6 +121,22 @@ export { getContentScheduler, ContentScheduler } from './scheduler/index.js';
 export { getAnalyticsAggregator, AnalyticsAggregator } from './analytics/index.js';
 
 // =============================================================================
+// Intelligence Exports (v24.0)
+// =============================================================================
+
+export {
+  getContentIntelligence,
+  resetContentIntelligence,
+  ContentIntelligence,
+  type EngagementPattern,
+  type ViralPrediction,
+  type OptimalTiming,
+  type ContentIdea,
+  type ABTestResult,
+  type ContentIntelligenceConfig,
+} from './intelligence.js';
+
+// =============================================================================
 // Orchestrator Exports
 // =============================================================================
 

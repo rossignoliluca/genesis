@@ -59,6 +59,9 @@ import { runCodeQualityAnalysis, persistCodeQualityToMemory, loadCodeQualityGrap
 import { bootstrapIntegration, getUnifiedStatus, getIntegrationState } from './integration/index.js';
 import { getGenesis } from './genesis.js';
 
+// Revenue CLI (v19.0.0)
+import { handleRevenueCommand } from './revenue/cli.js';
+
 // ============================================================================
 // CLI Colors
 // ============================================================================
@@ -2129,6 +2132,14 @@ ${c('Commands:', 'bold')}
     todos            TODO/FIXME items
     history          Show previous analysis
 
+  ${c('revenue', 'green')} [subcommand]    v19.0: Revenue Activation & Management
+    status           Show current revenue metrics (default)
+    activate         Activate all revenue streams
+    opportunities    List current opportunities
+    services         List service catalog
+    tools            Show MCP tool pricing (x402)
+    project [days]   Project revenue (default: 30 days)
+
   ${c('rsi', 'green')} [subcommand]       v15.1: Recursive Self-Improvement
     status           Show RSI status (default)
     run              Run RSI cycle(s)
@@ -2757,6 +2768,15 @@ async function main(): Promise<void> {
       case 'hunt':
         // v16: Autonomous Bounty Execution
         await cmdBounty(positional, options);
+        break;
+      case 'revenue':
+      case 'rev':
+        // v19: Revenue activation and management
+        {
+          const subArgs = [positional, ...Object.entries(options).map(([k, v]) => v === 'true' ? `--${k}` : `--${k}=${v}`)].filter(Boolean) as string[];
+          const output = await handleRevenueCommand(subArgs);
+          console.log(output);
+        }
         break;
       default:
         console.error(c(`Unknown command: ${command}`, 'red'));

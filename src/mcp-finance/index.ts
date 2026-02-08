@@ -11,6 +11,7 @@
  */
 
 import { getEventBus } from '../bus/index.js';
+import { getMCPClient, type IMCPClient } from '../mcp/index.js';
 
 // ============================================================================
 // Types
@@ -74,6 +75,8 @@ export class MCPFinanceManager {
   private config: MCPFinanceConfig;
   private cache: Map<string, { data: unknown; expiry: number }> = new Map();
   private bus = getEventBus();
+  // v18.2: MCP client for real data fetching
+  private mcp: IMCPClient | null = null;
 
   constructor(config: Partial<MCPFinanceConfig> = {}) {
     this.config = {
@@ -84,6 +87,7 @@ export class MCPFinanceManager {
       cacheTTLMs: 5 * 60 * 1000, // 5 minutes
       ...config,
     };
+    try { this.mcp = getMCPClient(); } catch { this.mcp = null; }
   }
 
   // ==========================================================================
@@ -98,18 +102,35 @@ export class MCPFinanceManager {
     const cached = this.getFromCache<MarketNews[]>(cacheKey);
     if (cached) return cached;
 
-    // In real mode, this calls mcp__brave-search__brave_news_search
-    // For now, return structured placeholder
-    const news: MarketNews[] = [
-      {
-        title: `Market update for ${query}`,
-        source: 'Financial News',
-        url: 'https://example.com/news',
-        publishedAt: new Date().toISOString(),
-        sentiment: 0.2,
-        relevance: 0.8,
-      },
-    ];
+    let news: MarketNews[] = [];
+
+    // v18.2: Real Brave Search via MCP
+    if (this.config.enableBraveSearch && this.mcp) {
+      try {
+        const result = await this.mcp.call('brave-search', 'brave_news_search', {
+          query,
+          count: options.limit ?? 10,
+          freshness: options.freshness ?? 'week',
+        });
+        if (result.success && result.data?.results) {
+          news = (result.data.results as any[]).map((r: any) => ({
+            title: r.title || '',
+            source: r.source?.name || r.url || '',
+            url: r.url || '',
+            publishedAt: r.publishedAt || r.date || new Date().toISOString(),
+            sentiment: r.sentiment ?? undefined,
+            relevance: r.relevance ?? 0.5,
+          }));
+        }
+      } catch (e) {
+        console.debug('[MCPFinance] Brave news failed:', (e as Error)?.message);
+      }
+    }
+
+    // Fallback placeholder if MCP unavailable or returned nothing
+    if (news.length === 0) {
+      news = [{ title: `Market update for ${query}`, source: 'placeholder', url: '', publishedAt: new Date().toISOString(), sentiment: 0.2, relevance: 0.8 }];
+    }
 
     this.setCache(cacheKey, news);
     this.emitEvent('news.fetched', { query, count: news.length });
@@ -125,18 +146,39 @@ export class MCPFinanceManager {
     const cached = this.getFromCache<MarketResearch>(cacheKey);
     if (cached) return cached;
 
-    // In real mode, this calls mcp__gemini__web_search with mode='research'
-    const research: MarketResearch = {
-      query,
-      summary: `Research results for: ${query}`,
-      insights: [
-        'Market showing mixed signals',
-        'Volume patterns suggest accumulation',
-        'Sentiment indicators neutral',
-      ],
-      sources: ['https://example.com/source1'],
-      confidence: 0.7,
-    };
+    let research: MarketResearch | null = null;
+
+    // v18.2: Real Gemini web search via MCP
+    if (this.config.enableGemini && this.mcp) {
+      try {
+        const result = await this.mcp.call('gemini', 'web_search', {
+          query: `market analysis ${query}`,
+        });
+        if (result.success && result.data) {
+          const data = result.data as any;
+          research = {
+            query,
+            summary: data.summary || data.text || `Research for: ${query}`,
+            insights: Array.isArray(data.insights) ? data.insights : [data.summary || 'Market data retrieved'],
+            sources: Array.isArray(data.sources) ? data.sources : [],
+            confidence: data.confidence ?? 0.7,
+          };
+        }
+      } catch (e) {
+        console.debug('[MCPFinance] Gemini research failed:', (e as Error)?.message);
+      }
+    }
+
+    // Fallback placeholder if MCP unavailable or returned nothing
+    if (!research) {
+      research = {
+        query,
+        summary: `Research results for: ${query}`,
+        insights: ['Market showing mixed signals', 'Volume patterns suggest accumulation', 'Sentiment indicators neutral'],
+        sources: [],
+        confidence: 0.5,
+      };
+    }
 
     this.setCache(cacheKey, research);
     this.emitEvent('research.completed', { query, confidence: research.confidence });
@@ -152,8 +194,8 @@ export class MCPFinanceManager {
     const cached = this.getFromCache<PriceData>(cacheKey);
     if (cached) return cached;
 
-    // In real mode, this calls appropriate MCP server
-    // CoinGecko for crypto, Alpha Vantage for stocks
+    // v18.2: No MCP price server available yet (CoinGecko/Alpha Vantage pending)
+    // Returns simulated data as placeholder
     const price: PriceData = {
       symbol,
       price: type === 'crypto' ? 50000 + Math.random() * 1000 : 100 + Math.random() * 10,

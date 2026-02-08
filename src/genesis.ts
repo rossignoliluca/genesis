@@ -2124,6 +2124,25 @@ export class Genesis {
       }
     }
 
+    // v18.3: Consciousness φ-based deferral for high-stakes decisions
+    // If φ is too low, reduce confidence and fall back to safer strategies
+    if (this.consciousness && deepProcessing) {
+      const phiDefer = this.consciousness.shouldDefer();
+      if (phiDefer) {
+        // φ is below threshold → reduce confidence, signal need for simpler processing
+        const phi = this.consciousness.getSnapshot()?.level?.rawPhi ?? 0;
+        confidence = {
+          value: 0.3,
+          calibrationError: 0.15,
+          uncertaintySources: [{
+            type: 'epistemic',
+            source: 'low_phi_consciousness',
+            magnitude: 0.7,
+          }],
+        };
+      }
+    }
+
     // Step 2: Brain processes (with multi-modal context injection)
     let response = '';
     if (this.brain) {
@@ -3027,6 +3046,18 @@ export class Genesis {
       this.centralAwareness = null;
     }
 
+    // v18.2: Stop active inference loop if running
+    try {
+      const { resetAutonomousLoop } = await import('./active-inference/autonomous-loop.js');
+      resetAutonomousLoop();
+    } catch { /* optional */ }
+
+    // v18.2: Reset market strategist singleton
+    try {
+      const { resetMarketStrategist } = await import('./market-strategist/index.js');
+      resetMarketStrategist();
+    } catch { /* optional */ }
+
     // v18.1.0: Content module shutdown
     if (this.contentOrchestrator) {
       shutdownContentModule();
@@ -3051,8 +3082,11 @@ export class Genesis {
       this.worldModel.stop();
     }
     if (this.memory) {
-      // Final consolidation before shutdown
-      await this.memory.consolidate().catch(() => { /* best-effort */ });
+      // v18.2: Final consolidation with timeout to prevent shutdown hang
+      await Promise.race([
+        this.memory.consolidate().catch(() => {}),
+        new Promise(resolve => setTimeout(resolve, 5000)),
+      ]);
     }
     if (this.consciousness) {
       this.consciousness.stop();
@@ -3064,7 +3098,11 @@ export class Genesis {
       this.memorySync.stopAutoSync();
     }
     if (this.dashboard) {
-      await this.dashboard.stop();
+      // v18.2: Timeout to prevent shutdown hang
+      await Promise.race([
+        this.dashboard.stop(),
+        new Promise(resolve => setTimeout(resolve, 3000)),
+      ]);
     }
 
     // L1: Substrate shutdown
@@ -3099,6 +3137,12 @@ export class Genesis {
       this.stateStore.close();
       this.eventBus?.publish('persistence:shutdown', { source: 'persistence', precision: 1.0 });
     }
+
+    // v18.2: Clear event bus subscriptions
+    try {
+      const { resetEventBus } = await import('./bus/index.js');
+      resetEventBus();
+    } catch { /* optional */ }
 
     this.booted = false;
     this.levels = { L1: false, L2: false, L3: false, L4: false };

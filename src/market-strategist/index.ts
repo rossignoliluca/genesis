@@ -81,7 +81,7 @@ let strategistInstance: MarketStrategist | null = null;
  * Get the singleton MarketStrategist instance
  */
 export function getMarketStrategist(config?: Partial<StrategyConfig>): MarketStrategist {
-  if (!strategistInstance || config) {
+  if (!strategistInstance) {
     strategistInstance = new MarketStrategist(config);
   }
   return strategistInstance;

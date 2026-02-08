@@ -235,3 +235,23 @@ export function createSubscriber(moduleId: string) {
     },
   };
 }
+
+/**
+ * v18.2: Emit a system error to the bus for nociception detection.
+ */
+export function emitSystemError(
+  module: string,
+  error: unknown,
+  severity: 'warning' | 'critical' | 'fatal' = 'warning',
+): void {
+  try {
+    const bus = getEventBus();
+    bus.publish('kernel.panic', {
+      source: module,
+      precision: 1.0,
+      reason: error instanceof Error ? error.message : String(error),
+      severity,
+      recoverable: severity !== 'fatal',
+    });
+  } catch { /* bus unavailable */ }
+}

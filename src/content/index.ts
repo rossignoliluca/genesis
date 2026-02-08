@@ -132,11 +132,9 @@ export {
 } from './orchestrator.js';
 
 // Internal imports for module initialization functions
-import { getContentScheduler } from './scheduler/index.js';
-import { getAnalyticsAggregator } from './analytics/index.js';
-import { getContentOrchestrator, type ContentOrchestrator } from './orchestrator.js';
-import type { ContentScheduler } from './scheduler/index.js';
-import type { AnalyticsAggregator } from './analytics/index.js';
+import { getContentScheduler, ContentScheduler } from './scheduler/index.js';
+import { getAnalyticsAggregator, AnalyticsAggregator } from './analytics/index.js';
+import { getContentOrchestrator, ContentOrchestrator } from './orchestrator.js';
 
 // =============================================================================
 // Event Bus Integration Exports
@@ -225,8 +223,10 @@ export function initContentModule(config: ContentModuleConfig = {}): {
  * Gracefully shutdown the content module.
  */
 export function shutdownContentModule(): void {
-  const scheduler = getContentScheduler();
-  scheduler.stop();
+  // v18.2: Full singleton reset for clean shutdown/reboot
+  ContentScheduler.reset();
+  ContentOrchestrator.reset();
+  AnalyticsAggregator.reset();
 }
 
 // =============================================================================

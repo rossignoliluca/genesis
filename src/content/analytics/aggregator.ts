@@ -37,6 +37,11 @@ export class AnalyticsAggregator {
     return AnalyticsAggregator.instance;
   }
 
+  // v18.2: Clean singleton reset for shutdown
+  static reset(): void {
+    AnalyticsAggregator.instance = null;
+  }
+
   trackContent(contentId: string, data: {
     title?: string;
     type: ContentType;

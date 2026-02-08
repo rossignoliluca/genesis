@@ -65,6 +65,11 @@ export class ContentOrchestrator {
     this.componentMemory = getComponentMemory('content');
   }
 
+  // v18.2: Clean singleton reset for shutdown
+  static reset(): void {
+    ContentOrchestrator.instance = null;
+  }
+
   static getInstance(generator?: ContentGenerator, researcher?: ContentResearcher): ContentOrchestrator {
     if (!ContentOrchestrator.instance) {
       ContentOrchestrator.instance = new ContentOrchestrator(generator, researcher);

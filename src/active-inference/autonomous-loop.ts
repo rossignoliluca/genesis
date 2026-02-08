@@ -14,7 +14,7 @@ import { ExperienceReplayBuffer, createExperienceReplayBuffer } from './experien
 import { AllostasisSystem, createAllostasisSystem } from '../allostasis/index.js';
 import { createDreamService, DreamService } from '../daemon/dream-mode.js';
 import { ConformalPredictor, createFreeEnergyConformalPredictor } from '../uncertainty/conformal.js';
-import { getEventBus, type GenesisEventBus } from '../bus/index.js';
+import { getEventBus, type GenesisEventBus, createSubscriber, emitSystemError } from '../bus/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -108,6 +108,12 @@ export class AutonomousLoop {
   private replayBuffer: ExperienceReplayBuffer;
   private previousObservation: Observation | null = null;
 
+  // v18.2: Value engine reference for TD learning feedback
+  private valueEngine: {
+    updateFromOutcome: (prevLatent: any, action: ActionType, outcome: any) => void;
+    getLatentState: () => any;
+  } | null = null;
+
   // v11.4: Allostasis (interoceptive regulation → C-matrix modulation)
   private allostasis: AllostasisSystem;
   private lastAllostaticDelta: boolean = false;
@@ -127,6 +133,8 @@ export class AutonomousLoop {
 
   // v17.0: Event bus integration for central awareness
   private eventBus: GenesisEventBus | null = null;
+  // v18.2: Managed bus subscriptions (lifecycle cleanup)
+  private busSubscriber: ReturnType<typeof createSubscriber> | null = null;
 
   constructor(config: Partial<AutonomousLoopConfig> = {}) {
     this.config = { ...DEFAULT_LOOP_CONFIG, ...config };
@@ -190,14 +198,14 @@ export class AutonomousLoop {
       this.eventBus = null;
     }
 
-    // v18.1: React to allostasis regulation events
+    // v18.2: React to allostasis regulation events (managed lifecycle)
     try {
-      const bus = getEventBus();
-      bus.subscribe('allostasis.throttle', (event) => {
+      this.busSubscriber = createSubscriber('autonomous-loop');
+      this.busSubscriber.on('allostasis.throttle', (event) => {
         const mag = (event as any).magnitude ?? 0.5;
         this.config.cycleInterval = Math.max(this.config.cycleInterval, 2000 * mag);
       });
-      bus.subscribe('allostasis.hibernate', () => {
+      this.busSubscriber.on('allostasis.hibernate', () => {
         this.runDreamConsolidation();
       });
     } catch { /* bus optional */ }
@@ -268,6 +276,8 @@ export class AutonomousLoop {
       if (this.config.verbose) {
         console.error(`[AI Loop] Error:`, error);
       }
+      // v18.2: Signal error to nociception via bus
+      emitSystemError('active-inference', error, 'critical');
     }
 
     this.running = false;
@@ -318,8 +328,29 @@ export class AutonomousLoop {
       this.engine.config.learningRateA = 0.05 * effect.learningRate;
       this.engine.config.learningRateB = 0.05 * effect.learningRate;
       this.engine.config.actionTemperature = Math.max(0.1, effect.explorationRate);
-      this.engine.config.explorationBonus = effect.explorationRate;
+      this.engine.config.explorationBonus = effect.explorationRate * effect.riskTolerance;
+
+      // v18.3: Wire remaining neuromodulation effects
+      this.engine.config.priorWeight = 0.1 * effect.precisionGain;
+      this.engine.config.inferenceIterations = Math.max(8, Math.round(26 * effect.processingDepth));
+      this.engine.config.policyHorizon = Math.round(2 + effect.temporalDiscount * 3);
     } catch { /* neuromodulation optional */ }
+
+    // v18.3: φ-gated action escalation
+    // Low consciousness → force conservative action selection
+    try {
+      const { getConsciousnessSystem } = await import('../consciousness/index.js');
+      const consciousness = getConsciousnessSystem();
+      if (consciousness?.shouldDefer?.()) {
+        // Low φ → conservative parameters (reduce exploration and temperature)
+        this.engine.config.actionTemperature = Math.min(this.engine.config.actionTemperature, 0.5);
+        this.engine.config.explorationBonus = Math.min(this.engine.config.explorationBonus, 0.3);
+        if (this.config.verbose) {
+          const phi = consciousness.getSnapshot()?.level?.rawPhi ?? 0;
+          console.log(`[AI Loop] φ-gated action: φ=${phi.toFixed(3)} → conservative mode (temp=0.5, explore=0.3)`);
+        }
+      }
+    } catch { /* consciousness optional */ }
 
     if (this.config.verbose) {
       console.log(`[AI Loop] Cycle ${this.cycleCount} - Observation:`, obs);
@@ -358,6 +389,32 @@ export class AutonomousLoop {
       }
     } catch (e) { console.debug('[AI Loop] Allostasis optional:', (e as Error)?.message); }
 
+    // v18.2: MetaMemory knowledge gaps → bias action selection toward exploration
+    try {
+      const { getMetaMemory } = await import('../memory/meta-memory.js');
+      const metaMemory = getMetaMemory();
+      const gaps = metaMemory.getKnowledgeGaps();
+
+      if (gaps.length > 0) {
+        // Count high-priority gaps (low confidence/coverage)
+        const urgentGaps = gaps.filter(g => g.confidence < 0.3 || g.coverage < 0.3);
+
+        if (urgentGaps.length >= 2) {
+          // Many knowledge gaps → strongly prefer tool use for research/sensing
+          this.engine.modulatePreferences({
+            tool: [-1, 0, 2],  // Prefer successful tool use (sensing/research)
+          });
+          this.lastAllostaticDelta = true;
+        } else if (gaps.length >= 1) {
+          // Some gaps → mildly prefer tool exploration
+          this.engine.modulatePreferences({
+            tool: [-0.5, 0, 1],  // Mild preference for tool success
+          });
+          this.lastAllostaticDelta = true;
+        }
+      }
+    } catch { /* meta-memory optional */ }
+
     // 2. Run inference (beliefs + policy + action)
     let action: ActionType;
     let beliefs: Beliefs;
@@ -372,6 +429,9 @@ export class AutonomousLoop {
       action = this.engine.step(obs);
       beliefs = this.engine.getBeliefs();
     }
+
+    // v18.2: Snapshot latent state before action execution (for TD learning)
+    const preActionLatent = this.valueEngine?.getLatentState?.() ?? null;
 
     // v17.0: Emit belief updated event
     const mostLikelyState = this.engine.getMostLikelyState();
@@ -412,6 +472,18 @@ export class AutonomousLoop {
 
     // 4. v10.8: Feed action outcome back to observations
     this.observations.recordToolResult(result.success, result.duration);
+
+    // v18.2: TD Learning - feed action outcome to value function
+    if (this.valueEngine && preActionLatent) {
+      try {
+        const nextObs = await this.gatherNonBlocking();
+        this.valueEngine.updateFromOutcome(preActionLatent, action, {
+          success: result.success,
+          reward: result.success ? 0.5 : -0.3,
+          newObservation: nextObs,
+        });
+      } catch { /* value update non-fatal */ }
+    }
 
     // 4b. v11.4: Conformal calibration (feed prediction vs actual surprise)
     const actualSurprise = this.engine.getStats().averageSurprise;
@@ -526,6 +598,11 @@ export class AutonomousLoop {
   stop(reason: string = 'manual'): void {
     this.stopReason = reason;
     this.running = false;
+    // v18.2: Clean up bus subscriptions
+    if (this.busSubscriber) {
+      this.busSubscriber.unsubscribeAll();
+      this.busSubscriber = null;
+    }
   }
 
   // ============================================================================
@@ -914,6 +991,16 @@ export class AutonomousLoop {
     stepFn: ((obs: Observation) => Promise<{ action: ActionType; beliefs: Beliefs }>) | null
   ): void {
     this.customStepFn = stepFn;
+  }
+
+  /**
+   * v18.2: Set value engine reference for TD learning feedback
+   */
+  setValueEngine(engine: {
+    updateFromOutcome: (prevLatent: any, action: ActionType, outcome: any) => void;
+    getLatentState: () => any;
+  }): void {
+    this.valueEngine = engine;
   }
 
   /**

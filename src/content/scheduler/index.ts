@@ -32,6 +32,14 @@ export class ContentScheduler {
     return ContentScheduler.instance;
   }
 
+  // v18.2: Clean singleton reset for shutdown
+  static reset(): void {
+    if (ContentScheduler.instance) {
+      ContentScheduler.instance.stop();
+    }
+    ContentScheduler.instance = null;
+  }
+
   start(intervalMs = 60000): void {
     if (this.processingInterval) return;
     this.processingInterval = setInterval(() => this.processQueue().catch(console.error), intervalMs);

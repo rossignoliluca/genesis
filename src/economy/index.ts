@@ -687,8 +687,13 @@ export type {
 export {
   getEconomicHealth,
   formatHealthReport,
+  startHealthMonitor,
+  stopHealthMonitor,
+  getLastHealthStatus,
+  isHealthMonitorRunning,
 } from './health.js';
 export type {
   EconomicHealth,
   StreamHealth,
+  HealthMonitorConfig,
 } from './health.js';

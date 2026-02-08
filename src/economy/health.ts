@@ -517,3 +517,134 @@ export function formatHealthReport(health: EconomicHealth): string {
 
   return lines.filter(l => l !== '').join('\n');
 }
+
+// ============================================================================
+// Continuous Health Monitor
+// ============================================================================
+
+export interface HealthMonitorConfig {
+  intervalMs?: number;
+  publishToEventBus?: boolean;
+  publishToDashboard?: boolean;
+  alertOnCritical?: boolean;
+}
+
+let healthMonitorInterval: NodeJS.Timeout | null = null;
+let lastHealthStatus: EconomicHealth | null = null;
+
+/**
+ * Start continuous health monitoring.
+ * Publishes health updates to the event bus and dashboard.
+ */
+export function startHealthMonitor(config: HealthMonitorConfig = {}): void {
+  const {
+    intervalMs = 60000, // Default: 1 minute
+    publishToEventBus = true,
+    publishToDashboard = true,
+    alertOnCritical = true,
+  } = config;
+
+  if (healthMonitorInterval) {
+    console.log('[HealthMonitor] Already running');
+    return;
+  }
+
+  console.log(`[HealthMonitor] Starting with ${intervalMs}ms interval`);
+
+  const runCheck = async () => {
+    try {
+      const health = await getEconomicHealth();
+      lastHealthStatus = health;
+
+      // Publish to event bus (use generic event type to avoid schema changes)
+      if (publishToEventBus) {
+        try {
+          const { getEventBus } = await import('../bus/index.js');
+          const bus = getEventBus();
+
+          // Use existing economic event type with extended payload
+          bus.publish('economy.revenue.recorded' as any, {
+            source: 'health-monitor',
+            precision: 1.0,
+            amount: health.metrics.totalRevenue,
+            category: 'health-check',
+            module: 'health-monitor',
+            details: {
+              overall: health.overall,
+              score: health.overallScore,
+              issues: health.issues.length,
+            },
+          });
+
+          // Emit NESS deviation if significant
+          if (health.ness.deviation > 0.5) {
+            bus.publish('economy.ness.deviation' as any, {
+              source: 'health-monitor',
+              precision: 1.0,
+              deviation: health.ness.deviation,
+              revenue: health.ness.currentRevenue,
+              target: health.ness.targetRevenue,
+            });
+          }
+        } catch {
+          // Event bus not available
+        }
+      }
+
+      // Publish to dashboard
+      if (publishToDashboard) {
+        try {
+          const { broadcastToDashboard } = await import('../observability/dashboard.js');
+          broadcastToDashboard('economic-health', {
+            overall: health.overall,
+            score: health.overallScore,
+            wallet: health.wallet,
+            streams: health.streams,
+            metrics: health.metrics,
+            ness: health.ness,
+            executions: health.executions,
+            integrations: health.integrations,
+            issues: health.issues,
+            recommendations: health.recommendations,
+            timestamp: health.timestamp.toISOString(),
+          });
+        } catch {
+          // Dashboard not available
+        }
+      }
+    } catch (error) {
+      console.error('[HealthMonitor] Check failed:', error);
+    }
+  };
+
+  // Run immediately
+  runCheck();
+
+  // Schedule recurring checks
+  healthMonitorInterval = setInterval(runCheck, intervalMs);
+}
+
+/**
+ * Stop continuous health monitoring.
+ */
+export function stopHealthMonitor(): void {
+  if (healthMonitorInterval) {
+    clearInterval(healthMonitorInterval);
+    healthMonitorInterval = null;
+    console.log('[HealthMonitor] Stopped');
+  }
+}
+
+/**
+ * Get the last health status (from continuous monitor).
+ */
+export function getLastHealthStatus(): EconomicHealth | null {
+  return lastHealthStatus;
+}
+
+/**
+ * Check if health monitor is running.
+ */
+export function isHealthMonitorRunning(): boolean {
+  return healthMonitorInterval !== null;
+}

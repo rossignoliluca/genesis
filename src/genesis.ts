@@ -149,11 +149,22 @@ import {
   getAnalyticsAggregator,
   createContentSystemIntegration,
   wireContentToIntegrations,
+  publishMarketBrief,
   type ContentOrchestrator,
   type ContentScheduler,
   type AnalyticsAggregator,
   type ContentSystemIntegration,
+  type MarketBriefSummary,
 } from './content/index.js';
+
+// Market Strategist — weekly market strategy brief generation
+import {
+  getMarketStrategist,
+  generateWeeklyBrief,
+  type MarketStrategist,
+  type MarketBrief,
+  type StrategyConfig,
+} from './market-strategist/index.js';
 
 // ============================================================================
 // Types
@@ -238,6 +249,8 @@ export interface GenesisConfig {
   exotic: boolean;
   /** Enable content creator (multi-platform publishing, SEO, scheduling, analytics) */
   content: boolean;
+  /** Enable market strategist (weekly market briefs, data collection, PPTX generation) */
+  marketStrategist: boolean;
   /** Confidence threshold below which Brain defers to metacognition */
   deferThreshold: number;
   /** Audit all responses for hallucinations */
@@ -320,6 +333,11 @@ export interface GenesisStatus {
     contentCreated: number;
     contentPublished: number;
     avgEngagementRate: number;
+  } | null;
+  marketStrategist: {
+    running: boolean;
+    briefsGenerated: number;
+    lastBriefWeek: string | null;
   } | null;
   modulesWired: number;
   calibrationError: number;
@@ -420,6 +438,11 @@ export class Genesis {
   private contentAnalytics: AnalyticsAggregator | null = null;
   private contentIntegration: ContentSystemIntegration | null = null;
 
+  // v18.2.0: Market strategist module
+  private marketStrategistInstance: MarketStrategist | null = null;
+  private marketStrategistBriefsGenerated = 0;
+  private marketStrategistLastBrief: string | null = null;
+
   // State
   private booted = false;
   private bootTime = 0;
@@ -468,6 +491,7 @@ export class Genesis {
       mcpFinance: true,     // v13.12: MCP finance servers
       exotic: true,         // v14.2: Exotic computing (thermodynamic, HDC, reservoir)
       content: true,        // v18.1: Content creator (social media, SEO, scheduling)
+      marketStrategist: true, // v18.2: Market strategist (weekly briefs, PPTX)
       deferThreshold: 0.3,
       auditResponses: true,
     };
@@ -1727,6 +1751,76 @@ export class Genesis {
       console.log('[Genesis] Content creator module initialized with full system integration');
     }
 
+    // v18.2.0: Market Strategist — weekly market strategy briefs
+    if (this.config.marketStrategist) {
+      this.marketStrategistInstance = getMarketStrategist({
+        generatePresentation: true,
+      });
+      this.fiber?.registerModule('market-strategist');
+
+      // Wire to event bus for brief generation events
+      if (this.eventBus) {
+        const bus = this.eventBus as unknown as {
+          publish: (topic: string, event: unknown) => void;
+        };
+
+        // Override brief generation to emit events and auto-publish to social
+        const originalGenerate = this.marketStrategistInstance.generateWeeklyBrief.bind(this.marketStrategistInstance);
+        this.marketStrategistInstance.generateWeeklyBrief = async () => {
+          const brief = await originalGenerate();
+          this.marketStrategistBriefsGenerated++;
+          this.marketStrategistLastBrief = brief.week;
+
+          // Emit brief generated event
+          bus.publish('market.brief.generated', {
+            week: brief.week,
+            date: brief.date,
+            narrativeCount: brief.narratives.length,
+            sentiment: brief.snapshot.sentiment,
+          });
+
+          // Auto-publish to social if content module is enabled
+          if (this.config.content && this.contentOrchestrator) {
+            const summary: MarketBriefSummary = {
+              week: brief.week,
+              date: brief.date,
+              sentiment: brief.snapshot.sentiment,
+              themes: brief.snapshot.themes,
+              narratives: brief.narratives.map(n => ({
+                title: n.title,
+                thesis: n.thesis,
+                horizon: n.horizon,
+              })),
+              positioning: brief.positioning.map(p => ({
+                assetClass: p.assetClass,
+                position: p.position,
+                rationale: p.rationale,
+              })),
+              risks: brief.risks,
+              opportunities: brief.opportunities,
+            };
+
+            // Schedule for optimal posting times (don't auto-publish immediately)
+            try {
+              await publishMarketBrief(summary, {
+                platforms: ['twitter', 'linkedin'],
+                autoPublish: false, // Just prepare, don't publish
+                includeHashtags: true,
+                threadFormat: true,
+              });
+              console.log(`[Genesis] Market brief ${brief.week} prepared for social publishing`);
+            } catch (err) {
+              console.warn('[Genesis] Failed to prepare market brief for social:', err);
+            }
+          }
+
+          return brief;
+        };
+      }
+
+      console.log('[Genesis] Market strategist module initialized');
+    }
+
     // v13.12.0: Observatory UI — real-time visualization
     if (this.config.observatory && this.dashboard) {
       this.observatory = createObservatory({
@@ -2776,6 +2870,11 @@ export class Genesis {
           avgEngagementRate: integrationMetrics?.avgEngagementRate ?? 0,
         };
       })() : null,
+      marketStrategist: this.marketStrategistInstance ? {
+        running: true,
+        briefsGenerated: this.marketStrategistBriefsGenerated,
+        lastBriefWeek: this.marketStrategistLastBrief,
+      } : null,
       modulesWired: this.wiringResult?.modulesWired ?? 0,
       calibrationError: this.getCalibrationError(),
       uptime: this.bootTime > 0 ? Date.now() - this.bootTime : 0,
@@ -3033,6 +3132,37 @@ export class Genesis {
   async getContentMetrics(since: Date): Promise<import('./content/types.js').AggregatedMetrics | null> {
     if (!this.contentAnalytics) return null;
     return this.contentAnalytics.aggregateMetrics(since);
+  }
+
+  // ==========================================================================
+  // Market Strategist Interface
+  // ==========================================================================
+
+  /**
+   * Generate a weekly market strategy brief
+   */
+  async generateMarketBrief(): Promise<MarketBrief | null> {
+    if (!this.marketStrategistInstance) return null;
+    return this.marketStrategistInstance.generateWeeklyBrief();
+  }
+
+  /**
+   * Process feedback on a market brief
+   */
+  async processMarketBriefFeedback(feedback: string, briefWeek: string): Promise<void> {
+    if (!this.marketStrategistInstance) return;
+    await this.marketStrategistInstance.processFeedback(feedback, briefWeek);
+  }
+
+  /**
+   * Get market strategist statistics
+   */
+  getMarketStrategistStats(): { briefsGenerated: number; lastBriefWeek: string | null } | null {
+    if (!this.marketStrategistInstance) return null;
+    return {
+      briefsGenerated: this.marketStrategistBriefsGenerated,
+      lastBriefWeek: this.marketStrategistLastBrief,
+    };
   }
 
   // ==========================================================================

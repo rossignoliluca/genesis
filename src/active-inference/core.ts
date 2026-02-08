@@ -369,6 +369,18 @@ export class ActiveInferenceEngine {
   private actionCounts: number[] = new Array(ACTION_COUNT).fill(1);
   private totalActions: number = ACTION_COUNT;
 
+  // v18.1: Adaptive learning tracking
+  private cycleCount = 0;
+  private lastLearnCycle = 0;
+
+  // v18.1: Learned modality precisions (Beta-Bernoulli posterior)
+  private precisionSuccesses: Record<string, number> = {
+    energy: 10, phi: 8, tool: 7, coherence: 8, task: 9, economic: 6,
+  };
+  private precisionFailures: Record<string, number> = {
+    energy: 2, phi: 4, tool: 3, coherence: 3, task: 2, economic: 5,
+  };
+
   // Statistics
   private stats = {
     inferenceCount: 0,
@@ -610,6 +622,9 @@ export class ActiveInferenceEngine {
    * v10.8: Now calls updateA/updateB after each step (online learning)
    */
   step(observation: Observation): ActionType {
+    // v18.1: Increment cycle count
+    this.cycleCount++;
+
     // 0. LEARN from previous step (if we have a previous state)
     if (this.previousState && this.previousAction >= 0 && this.previousObservation) {
       this.learn(this.previousObservation, observation, this.previousState, this.previousAction);
@@ -642,6 +657,44 @@ export class ActiveInferenceEngine {
   }
 
   /**
+   * v18.1: Compute adaptive learning rate based on multiple dimensions.
+   * - State entropy: High entropy → faster learning (uncertainty reduction)
+   * - Action novelty: Rarely-taken actions → slower learning (insufficient data)
+   * - Temporal decay: Recent evidence weighted more (exponential decay)
+   * - Modality confidence: High-precision sensors → faster learning
+   */
+  private adaptiveLearningRate(
+    base: number,
+    surprise: number,
+    actionIndex: number,
+    modalityIndex?: number
+  ): number {
+    // 1. Surprise modulation (existing, but improved)
+    const surpriseFactor = Math.min(1 + surprise * 0.5, 3.0);
+
+    // 2. State entropy modulation: higher entropy → need to learn faster
+    const beliefs = this.beliefs.viability;
+    const stateEntropy = -beliefs.reduce((sum, p) => {
+      const pp = Math.max(p, 1e-10);
+      return sum + pp * Math.log(pp);
+    }, 0);
+    const maxEntropy = Math.log(beliefs.length);
+    const entropyRatio = maxEntropy > 0 ? stateEntropy / maxEntropy : 0.5;
+    const entropyBoost = 1 + entropyRatio; // Range [1, 2]
+
+    // 3. Action novelty: actions taken few times → slower learning (not enough data)
+    const actionCount = this.actionCounts[actionIndex] || 1;
+    const totalActions = this.actionCounts.reduce((s, c) => s + c, 0) || 1;
+    const noveltyFactor = Math.min(actionCount / (totalActions * 0.1 + 1), 1.5);
+
+    // 4. Temporal decay: prioritize recent learning
+    const cyclesSinceLastLearn = Math.max(1, (this.cycleCount || 1) - (this.lastLearnCycle || 0));
+    const temporalWeight = 1 + 0.2 * Math.exp(-cyclesSinceLastLearn / 50);
+
+    return base * surpriseFactor * entropyBoost * noveltyFactor * temporalWeight;
+  }
+
+  /**
    * Online learning: update A and B matrices from experience.
    * Called automatically after each step.
    *
@@ -657,12 +710,15 @@ export class ActiveInferenceEngine {
     prevBeliefs: Beliefs,
     actionIdx: number
   ): void {
-    // v10.8.1: Adaptive learning rate - faster when surprised, slower when stable
+    // v18.1: Track learning cycle
+    this.actionCounts[actionIdx] = (this.actionCounts[actionIdx] || 0) + 1;
+    this.lastLearnCycle = this.cycleCount;
+
+    // v18.1: Adaptive learning rate - multi-dimensional
     const avgSurprise = this.stats.inferenceCount > 0
       ? this.stats.totalSurprise / this.stats.inferenceCount
       : 2.0;
-    const surpriseFactor = Math.min(3.0, Math.max(0.3, avgSurprise / 2.0));
-    const lr = this.config.learningRateA * surpriseFactor;
+    const lr = this.adaptiveLearningRate(this.config.learningRateA, avgSurprise, actionIdx);
 
     // === Update A matrix (likelihood mapping) ===
     // For each modality, update the row corresponding to the observation
@@ -722,7 +778,7 @@ export class ActiveInferenceEngine {
 
     // === Update B matrix (transition model) ===
     // "I was in state S, did action A, now I'm in state S'"
-    const lrB = this.config.learningRateB * surpriseFactor;
+    const lrB = this.adaptiveLearningRate(this.config.learningRateB, avgSurprise, actionIdx);
 
     // Viability transitions
     for (let next = 0; next < HIDDEN_STATE_DIMS.viability; next++) {
@@ -795,13 +851,42 @@ export class ActiveInferenceEngine {
   // Helper Functions
   // ============================================================================
 
+  /**
+   * v18.1: Get learned precision for a modality.
+   * Uses Beta-Bernoulli posterior: precision = successes / (successes + failures)
+   */
+  getLearnedPrecision(modality: string): number {
+    const s = this.precisionSuccesses[modality] ?? 10;
+    const f = this.precisionFailures[modality] ?? 2;
+    return s / (s + f);
+  }
+
+  /**
+   * v18.1: Update precision after observing prediction accuracy for a modality.
+   */
+  updatePrecision(modality: string, wasAccurate: boolean): void {
+    if (wasAccurate) {
+      this.precisionSuccesses[modality] = (this.precisionSuccesses[modality] ?? 10) + 1;
+    } else {
+      this.precisionFailures[modality] = (this.precisionFailures[modality] ?? 2) + 1;
+    }
+  }
+
   private computeLikelihoods(observation: Observation): Beliefs {
     // Compute P(observation | state) for each factor
     // v11.0: Precision-weighted likelihoods
     // likelihood_eff = precision * log P(o|s)
     // When precision → 0, observation is ignored (uniform likelihood)
     // When precision → 1, full weight on observation
-    const prec = observation.precision ?? { energy: 1, phi: 1, tool: 1, coherence: 1, task: 1, economic: 1 };
+    // v18.1: Use learned precisions if not provided
+    const prec = observation.precision ?? {
+      energy: this.getLearnedPrecision('energy'),
+      phi: this.getLearnedPrecision('phi'),
+      tool: this.getLearnedPrecision('tool'),
+      coherence: this.getLearnedPrecision('coherence'),
+      task: this.getLearnedPrecision('task'),
+      economic: this.getLearnedPrecision('economic'),
+    };
 
     // Energy observation → viability likelihood (weighted by precision)
     const viabilityLik = this.A.energy[observation.energy].map(p => prec.energy * safeLog(p));

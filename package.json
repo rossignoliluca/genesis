@@ -58,7 +58,13 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
     "@octokit/rest": "^22.0.1",
+    "@types/imap": "^0.8.43",
+    "@types/mailparser": "^3.4.6",
+    "@types/nodemailer": "^7.0.9",
     "dotenv": "^17.2.3",
+    "imap": "^0.8.19",
+    "mailparser": "^3.9.3",
+    "nodemailer": "^8.0.1",
     "viem": "^2.44.4"
   }
 }

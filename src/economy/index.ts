@@ -682,3 +682,13 @@ export type {
   PRSubmission,
   PRResult,
 } from './live/github-executor.js';
+
+// v19.1: Economic Health Monitor
+export {
+  getEconomicHealth,
+  formatHealthReport,
+} from './health.js';
+export type {
+  EconomicHealth,
+  StreamHealth,
+} from './health.js';

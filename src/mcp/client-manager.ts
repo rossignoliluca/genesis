@@ -562,9 +562,37 @@ export class MCPClientManager extends EventEmitter {
   async connectAll(): Promise<Map<string, MCPConnection | Error>> {
     const results = new Map<string, MCPConnection | Error>();
 
-    const promises = Array.from(this.serverConfigs.entries())
-      .filter(([, config]) => config.enabled !== false)
-      .map(async ([name]) => {
+    // v18.1: Staggered connection startup with priority tiers
+    // Tier 1: Critical (memory, filesystem) - connect immediately
+    // Tier 2: Research (brave, exa, arxiv) - connect after 500ms
+    // Tier 3: Everything else - connect after 1500ms
+    const CONNECTION_TIERS: Record<string, number> = {
+      'memory': 0, 'filesystem': 0, 'postgres': 0,           // Tier 1: immediate
+      'brave-search': 1, 'exa': 1, 'arxiv': 1, 'github': 1, // Tier 2: 500ms delay
+      'openai': 2, 'gemini': 2, 'firecrawl': 2,              // Tier 3: 1000ms delay
+    };
+    const TIER_DELAYS = [0, 500, 1000];
+
+    const servers = Array.from(this.serverConfigs.entries())
+      .filter(([, config]) => config.enabled !== false);
+
+    // Group by tier
+    const tiers = new Map<number, Array<[string, any]>>();
+    for (const entry of servers) {
+      const tier = CONNECTION_TIERS[entry[0]] ?? 2;
+      const list = tiers.get(tier) || [];
+      list.push(entry);
+      tiers.set(tier, list);
+    }
+
+    // Connect tier by tier with delays
+    const sortedTiers = Array.from(tiers.entries()).sort((a, b) => a[0] - b[0]);
+    for (const [tier, tierServers] of sortedTiers) {
+      if (tier > 0) {
+        await new Promise(resolve => setTimeout(resolve, TIER_DELAYS[tier] || 1000));
+      }
+
+      const promises = tierServers.map(async ([name]) => {
         try {
           const conn = await this.connect(name);
           results.set(name, conn);
@@ -574,7 +602,12 @@ export class MCPClientManager extends EventEmitter {
         }
       });
 
-    await Promise.allSettled(promises);
+      await Promise.allSettled(promises);
+    }
+
+    // v18.1: Start idle connection pruning
+    this.startIdlePruning();
+
     return results;
   }
 
@@ -613,6 +646,74 @@ export class MCPClientManager extends EventEmitter {
   async disconnectAll(): Promise<void> {
     const servers = Array.from(this.connections.keys());
     await Promise.all(servers.map(s => this.disconnect(s)));
+  }
+
+  // ============================================================================
+  // v18.1: Idle Connection Management
+  // ============================================================================
+
+  /** v18.1: Timer for idle connection pruning */
+  private pruningTimer: NodeJS.Timeout | null = null;
+
+  /**
+   * v18.1: Start background idle connection pruning.
+   * Disconnects servers that haven't been used for idleTimeout ms.
+   */
+  private startIdlePruning(): void {
+    if (this.pruningTimer) return;
+
+    const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+    const CHECK_INTERVAL = 60 * 1000;    // Check every minute
+
+    this.pruningTimer = setInterval(() => {
+      const now = Date.now();
+      for (const [name, conn] of Array.from(this.connections.entries())) {
+        // Don't prune critical connections
+        const tier = (['memory', 'filesystem', 'postgres'].includes(name)) ? 0 : 1;
+        if (tier === 0) continue;
+
+        const idleTime = now - conn.lastUsed.getTime();
+        if (idleTime > IDLE_TIMEOUT) {
+          this.disconnect(name).catch(() => {});
+          console.log(`[MCP] Pruned idle connection: ${name} (idle ${Math.round(idleTime / 1000)}s)`);
+        }
+      }
+    }, CHECK_INTERVAL);
+  }
+
+  /**
+   * v18.1: Shutdown all connections and cleanup.
+   */
+  async shutdown(): Promise<void> {
+    if (this.pruningTimer) {
+      clearInterval(this.pruningTimer);
+      this.pruningTimer = null;
+    }
+
+    const disconnections = Array.from(this.connections.keys()).map(name =>
+      this.disconnect(name)
+    );
+    await Promise.allSettled(disconnections);
+  }
+
+  /**
+   * v18.1: Get connection health status.
+   */
+  getConnectionHealth(): Array<{
+    server: string;
+    connected: boolean;
+    lastUsed: number;
+    toolCount: number;
+    idleSeconds: number;
+  }> {
+    const now = Date.now();
+    return Array.from(this.connections.entries()).map(([name, conn]) => ({
+      server: name,
+      connected: conn.connected,
+      lastUsed: conn.lastUsed.getTime(),
+      toolCount: conn.tools?.length ?? 0,
+      idleSeconds: Math.round((now - conn.lastUsed.getTime()) / 1000),
+    }));
   }
 
   // ============================================================================
@@ -855,7 +956,7 @@ export class MCPClientManager extends EventEmitter {
       servers: {},
     };
 
-    for (const [name, serverConfig] of this.serverConfigs) {
+    for (const [name, serverConfig] of Array.from(this.serverConfigs.entries())) {
       const { name: _, ...rest } = serverConfig;
       config.servers[name] = rest;
     }

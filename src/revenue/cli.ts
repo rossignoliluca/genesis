@@ -339,6 +339,10 @@ export async function handleRevenueCommand(args: string[]): Promise<string> {
       const days = parseInt(args[1]) || 30;
       return projectRevenue(days);
 
+    case 'health':
+    case 'check':
+      return showHealth();
+
     case 'serve':
     case 'server':
       return startServiceServer(parseInt(args[1]) || 9877);
@@ -352,6 +356,7 @@ Usage: genesis revenue <command>
 
 Commands:
   status          Show current revenue metrics
+  health          Full economic health check
   activate        Activate all revenue streams
   opportunities   List current revenue opportunities
   services        List available service offerings
@@ -366,6 +371,20 @@ Examples:
   genesis revenue project 90
   genesis revenue serve 8080
 `;
+  }
+}
+
+// ============================================================================
+// Health Check Command
+// ============================================================================
+
+async function showHealth(): Promise<string> {
+  try {
+    const { getEconomicHealth, formatHealthReport } = await import('../economy/health.js');
+    const health = await getEconomicHealth();
+    return formatHealthReport(health);
+  } catch (error) {
+    return `\n❌ Failed to get economic health: ${error instanceof Error ? error.message : 'Unknown error'}\n`;
   }
 }
 

@@ -67,6 +67,7 @@ import {
   getCognitiveWorkspace,
   AnticipationContext,
 } from '../memory/cognitive-workspace.js';
+import type { MemorySystem } from '../memory/index.js';
 import {
   GlobalWorkspace,
   createGlobalWorkspace,
@@ -222,6 +223,9 @@ export class Brain {
   // v18.3: Component-specific memory with FSRS
   private componentMemory: ComponentMemoryManager;
 
+  // v18.1: Full memory system for grounding and meta-memory
+  private memorySystem: MemorySystem | null = null;
+
   // v8.2: Tool Results Cache (approved self-modification)
   private toolCache: Map<string, { result: ToolResult; timestamp: number }> = new Map();
   private readonly TOOL_CACHE_TTL = 60000; // 1 minute TTL
@@ -290,6 +294,13 @@ export class Brain {
     // v18.3: Component-specific memory with FSRS v4 scheduling
     // Brain uses its own profile with high retention for reasoning context
     this.componentMemory = getComponentMemory('brain');
+
+    // v18.1: Initialize memory system for grounding and meta-memory
+    try {
+      this.memorySystem = getMemorySystem();
+    } catch {
+      console.warn('[Brain] Memory system not available');
+    }
 
     // v7.13: Initialize full module integration (lazy - on first use)
     this.initializeV713Modules();
@@ -1477,6 +1488,22 @@ export class Brain {
       }
     }
 
+    // v18.1: Record anticipation outcome for adaptive depth
+    try {
+      const activeItems = this.workspace.getActive();
+      const usedIds = activeItems
+        .filter(item => item.accessCount > 0)
+        .map(item => item.memory.id);
+      if (usedIds.length > 0) {
+        this.workspace.recordAnticipationOutcome(
+          `brain-${state.query.slice(0, 50)}`,
+          usedIds
+        );
+      }
+    } catch {
+      // Non-critical, don't fail the step
+    }
+
     // Track metrics
     this.metrics.memoryRecalls++;
     const wsMetrics = this.workspace.getMetrics();
@@ -1605,6 +1632,27 @@ export class Brain {
     }
 
     this.metrics.groundingPasses++;
+
+    // v18.1: Update semantic memory stability for verified facts
+    if (state.context?.semantic) {
+      try {
+        const semantic = this.memorySystem?.semantic;
+        if (semantic) {
+          for (const item of state.context.semantic) {
+            if (item.id) {
+              // Successful grounding = evidence the fact is reliable
+              const current = semantic.get(item.id);
+              if (current) {
+                const newS = Math.min(current.S * 1.3, 3650); // Boost stability, cap at 10 years
+                semantic.update(item.id, { S: newS, lastAccessed: new Date() });
+              }
+            }
+          }
+        }
+      } catch {
+        // Non-critical
+      }
+    }
 
     return {
       goto: 'done',
@@ -2431,10 +2479,34 @@ export class Brain {
     try {
       const contextStr = state.context.formatted || '';
 
+      // v18.1: Query meta-memory for knowledge confidence about topic
+      let metaMemoryHint = '';
+      try {
+        const metaMemory = this.memorySystem?.metaMemory;
+        if (metaMemory) {
+          // Extract main topic from query
+          const topic = state.query.split(' ').slice(0, 5).join(' ');
+          const knowledge = metaMemory.knowsAbout(topic);
+          if (knowledge) {
+            if (knowledge.confidence < 0.4) {
+              metaMemoryHint += `\n[META-MEMORY WARNING] Low confidence (${(knowledge.confidence * 100).toFixed(0)}%) on this topic. Consider escalating strategy.`;
+            }
+            if (knowledge.staleness > 30) {
+              metaMemoryHint += `\n[META-MEMORY WARNING] Knowledge is stale (${knowledge.staleness} days old). Prioritize fresh sources.`;
+            }
+            if (knowledge.contradictions.length > 0) {
+              metaMemoryHint += `\n[META-MEMORY WARNING] ${knowledge.contradictions.length} contradictions detected on this topic. Verify carefully.`;
+            }
+          }
+        }
+      } catch {
+        // Non-critical
+      }
+
       // Run metacognitive reasoning (EFE strategy selection + execution)
       const result: MetacognitiveResult = await this.metacognition.reason(
         state.query,
-        contextStr
+        contextStr + metaMemoryHint
       );
 
       // Track metrics

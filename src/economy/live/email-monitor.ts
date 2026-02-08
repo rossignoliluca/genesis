@@ -141,7 +141,7 @@ export class EmailMonitor extends EventEmitter {
       });
 
       imap.once('ready', () => {
-        imap.openBox(this.config.mailbox, false, (err, box) => {
+        imap.openBox(this.config.mailbox, false, (err: Error | null, box: any) => {
           if (err) {
             imap.end();
             return reject(err);
@@ -160,7 +160,7 @@ export class EmailMonitor extends EventEmitter {
             ],
           ];
 
-          imap.search(searchCriteria, (err, uids) => {
+          imap.search(searchCriteria, (err: Error | null, uids: number[]) => {
             if (err) {
               imap.end();
               return reject(err);
@@ -176,10 +176,10 @@ export class EmailMonitor extends EventEmitter {
             const fetch = imap.fetch(uids, { bodies: '', markSeen: this.config.markAsRead });
             const emailPromises: Promise<EmailNotification>[] = [];
 
-            fetch.on('message', (msg) => {
+            fetch.on('message', (msg: any) => {
               emailPromises.push(new Promise((resolveEmail) => {
-                msg.on('body', (stream) => {
-                  simpleParser(stream as unknown as Readable, (err, mail) => {
+                msg.on('body', (stream: any) => {
+                  simpleParser(stream as unknown as Readable, (err: Error | null, mail: any) => {
                     if (err) {
                       resolveEmail({ type: 'unknown', subject: 'Parse error', from: '', date: new Date() });
                       return;
@@ -191,7 +191,7 @@ export class EmailMonitor extends EventEmitter {
               }));
             });
 
-            fetch.once('error', (err) => {
+            fetch.once('error', (err: Error) => {
               console.error('[EmailMonitor] Fetch error:', err);
             });
 

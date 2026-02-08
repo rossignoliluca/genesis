@@ -43,6 +43,7 @@ import {
   Relation,
   ReasoningResult as NSARResult,
 } from './neurosymbolic.js';
+import { StrategyComposer, getStrategyComposer, CompositionPlan, PhaseResult } from './strategy-composer.js';
 
 // ============================================================================
 // Types
@@ -247,6 +248,7 @@ const ESCALATION_ORDER: ReasoningStrategy[] = [
 export class MetacognitiveController {
   private config: MetacognitiveConfig;
   private reasoner: NeurosymbolicReasoner;
+  private composer: StrategyComposer;
 
   // Learning state
   private strategyHistory: Map<ReasoningStrategy, StrategyHistory> = new Map();
@@ -282,6 +284,8 @@ export class MetacognitiveController {
         surpriseHistory: [],
       });
     }
+
+    this.composer = getStrategyComposer();
   }
 
   // ============================================================================
@@ -383,101 +387,122 @@ export class MetacognitiveController {
       detail: `Selected: ${selectedEFE.strategy} (EFE=${selectedEFE.efe.toFixed(3)}, phi=${phi.toFixed(2)})`,
     });
 
+    // ─── Phase 3b: Strategy Composition Check ─────────────────────
+    const compositionPlan = this.composer.compose(
+      complexity.score, phi, budget - tokensUsed,
+      this.getProblemSignature(problem)
+    );
+    const shouldCompose = compositionPlan.phases.length > 1 &&
+      complexity.score >= 0.35 && phi >= 0.3;
+
     // ─── Phase 4: Execute with Escalation Loop ──────────────────────
     let currentStrategy = selectedEFE.strategy;
     let response = '';
     let confidence = 0;
     let escalations = 0;
 
-    while (escalations <= this.config.maxEscalations) {
-      const execStart = Date.now();
+    if (shouldCompose) {
+      // ─── Phase 4a: Multi-Phase Composition Execution ──────────────
+      const phaseResults = await this.executeCompositionPlan(
+        compositionPlan, problem, enrichedContext, budget - tokensUsed
+      );
 
-      // Check timeout
-      if (Date.now() - startTime > this.config.timeoutMs) {
-        trace.push({
-          phase: 'execute',
-          strategy: currentStrategy,
-          duration: Date.now() - execStart,
-          detail: 'Timeout reached',
-        });
-        break;
+      if (phaseResults.length > 0) {
+        const lastPhase = phaseResults[phaseResults.length - 1];
+        response = lastPhase.response;
+        confidence = lastPhase.confidence;
+        tokensUsed += phaseResults.reduce((s, p) => s + p.tokens, 0);
+        currentStrategy = lastPhase.phase.strategy;
       }
-
-      // Check compute budget
-      const strategyBudget = STRATEGY_PROFILES[currentStrategy].tokenBudget;
-      if (tokensUsed + strategyBudget > budget) {
-        trace.push({
-          phase: 'execute',
-          strategy: currentStrategy,
-          duration: Date.now() - execStart,
-          detail: `Budget exceeded (${tokensUsed}/${budget})`,
-        });
-        break;
-      }
-
-      // Execute strategy
-      const result = await this.executeStrategyCall(currentStrategy, problem, enrichedContext);
-      response = result.response;
-      confidence = result.confidence;
-      tokensUsed += result.tokens;
 
       trace.push({
         phase: 'execute',
         strategy: currentStrategy,
         confidence,
-        duration: Date.now() - execStart,
-        detail: `Confidence: ${confidence.toFixed(2)}, tokens: ${result.tokens}`,
+        duration: Date.now() - startTime,
+        detail: `Composition (${compositionPlan.pattern}): ${compositionPlan.phases.length} phases, conf=${confidence.toFixed(2)}`,
       });
+    } else {
+      // ─── Phase 4b: Single Strategy with Escalation ────────────────
+      while (escalations <= this.config.maxEscalations) {
+        const execStart = Date.now();
 
-      // ─── Phase 5: Evaluate & Decide ────────────────────────────────
-      if (confidence >= this.config.minConfidence) {
-        // Good enough
+        if (Date.now() - startTime > this.config.timeoutMs) {
+          trace.push({
+            phase: 'execute', strategy: currentStrategy,
+            duration: Date.now() - execStart, detail: 'Timeout reached',
+          });
+          break;
+        }
+
+        const strategyBudget = STRATEGY_PROFILES[currentStrategy].tokenBudget;
+        if (tokensUsed + strategyBudget > budget) {
+          trace.push({
+            phase: 'execute', strategy: currentStrategy,
+            duration: Date.now() - execStart,
+            detail: `Budget exceeded (${tokensUsed}/${budget})`,
+          });
+          break;
+        }
+
+        const result = await this.executeStrategyCall(currentStrategy, problem, enrichedContext);
+        response = result.response;
+        confidence = result.confidence;
+        tokensUsed += result.tokens;
+
         trace.push({
-          phase: 'evaluate',
-          confidence,
-          duration: 0,
-          detail: `Accepted (>= ${this.config.minConfidence})`,
+          phase: 'execute', strategy: currentStrategy, confidence,
+          duration: Date.now() - execStart,
+          detail: `Confidence: ${confidence.toFixed(2)}, tokens: ${result.tokens}`,
         });
-        break;
-      }
 
-      // Escalate
-      const nextStrategy = this.getNextStrategy(currentStrategy);
-      if (!nextStrategy) {
+        if (confidence >= this.config.minConfidence) {
+          trace.push({
+            phase: 'evaluate', confidence, duration: 0,
+            detail: `Accepted (>= ${this.config.minConfidence})`,
+          });
+          break;
+        }
+
+        const nextStrategy = this.getNextStrategy(currentStrategy);
+        if (!nextStrategy) {
+          trace.push({
+            phase: 'evaluate', confidence, duration: 0,
+            detail: 'No higher strategy available',
+          });
+          break;
+        }
+
+        const nextProfile = STRATEGY_PROFILES[nextStrategy];
+        if (nextProfile.computeCost > 0.4 && phi < this.config.minPhiForAdvanced) {
+          trace.push({
+            phase: 'escalate', strategy: nextStrategy, duration: 0,
+            detail: `Phi too low (${phi.toFixed(2)} < ${this.config.minPhiForAdvanced}) for ${nextStrategy}`,
+          });
+          break;
+        }
+
         trace.push({
-          phase: 'evaluate',
-          confidence,
-          duration: 0,
-          detail: 'No higher strategy available',
+          phase: 'escalate', strategy: nextStrategy, duration: 0,
+          detail: `Escalating: ${currentStrategy} → ${nextStrategy} (confidence ${confidence.toFixed(2)} < ${this.config.minConfidence})`,
         });
-        break;
+
+        currentStrategy = nextStrategy;
+        escalations++;
       }
-
-      // Check phi allows escalation
-      const nextProfile = STRATEGY_PROFILES[nextStrategy];
-      if (nextProfile.computeCost > 0.4 && phi < this.config.minPhiForAdvanced) {
-        trace.push({
-          phase: 'escalate',
-          strategy: nextStrategy,
-          duration: 0,
-          detail: `Phi too low (${phi.toFixed(2)} < ${this.config.minPhiForAdvanced}) for ${nextStrategy}`,
-        });
-        break;
-      }
-
-      trace.push({
-        phase: 'escalate',
-        strategy: nextStrategy,
-        duration: 0,
-        detail: `Escalating: ${currentStrategy} → ${nextStrategy} (confidence ${confidence.toFixed(2)} < ${this.config.minConfidence})`,
-      });
-
-      currentStrategy = nextStrategy;
-      escalations++;
     }
 
     // ─── Phase 6: Learn from Outcome ──────────────────────────────────
     this.recordOutcome(currentStrategy, confidence, Date.now() - startTime, complexity.score);
+
+    if (shouldCompose) {
+      this.composer.recordOutcome(
+        compositionPlan,
+        { confidence, correctness: confidence, tokens: tokensUsed },
+        this.getProblemSignature(problem)
+      );
+    }
+
     trace.push({
       phase: 'learn',
       strategy: currentStrategy,
@@ -910,6 +935,63 @@ export class MetacognitiveController {
   async ingestText(text: string): Promise<{ entities: number; relations: number }> {
     const result = await this.reasoner.ingestText(text);
     return { entities: result.entities.length, relations: result.relations.length };
+  }
+
+  // ============================================================================
+  // Composition Execution
+  // ============================================================================
+
+  /**
+   * Execute a multi-phase composition plan
+   */
+  private async executeCompositionPlan(
+    plan: CompositionPlan,
+    problem: string,
+    context: string,
+    totalBudget: number
+  ): Promise<PhaseResult[]> {
+    const results: PhaseResult[] = [];
+    let currentContext = context;
+
+    for (const phase of plan.phases) {
+      const phaseStart = Date.now();
+      const phaseBudget = Math.floor(plan.totalBudget * phase.budget);
+
+      // Build problem for this phase
+      const phaseProblem = phase.chainOutput && results.length > 0
+        ? `Given this analysis:\n${results[results.length - 1].response}\n\n${phase.role === 'verify' ? 'Verify and correct:' : phase.role === 'synthesize' ? 'Synthesize:' : 'Refine:'} ${problem}`
+        : problem;
+
+      const result = await this.executeStrategyCall(phase.strategy, phaseProblem, currentContext);
+
+      results.push({
+        phase,
+        response: result.response,
+        confidence: result.confidence,
+        tokens: result.tokens,
+        duration: Date.now() - phaseStart,
+        adapted: false,
+      });
+
+      // Update context for next phase if chained
+      if (phase.chainOutput) {
+        currentContext = result.response;
+      }
+
+      // Early exit if very high confidence
+      if (result.confidence >= 0.9) break;
+    }
+
+    return results;
+  }
+
+  /**
+   * Generate problem signature for pattern learning
+   */
+  private getProblemSignature(problem: string): string {
+    const words = problem.toLowerCase().match(/\b\w{4,}\b/g) || [];
+    const sorted = [...new Set(words)].sort().slice(0, 5);
+    return `sig-${sorted.join('-')}`;
   }
 
   // ============================================================================

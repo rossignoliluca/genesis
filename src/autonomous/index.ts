@@ -808,4 +808,64 @@ export {
   type StrategyConfig,
 } from './strategy-orchestrator.js';
 
+// v29.0: Self-Reflection Engine — metacognitive introspection
+export {
+  SelfReflectionEngine,
+  getSelfReflectionEngine,
+  resetSelfReflectionEngine,
+  type ReflectionConfig,
+  type CognitiveBias,
+  type BiasDetection,
+  type FailurePattern,
+  type CognitiveMetrics,
+  type ReflectionInsight,
+  type ImprovementProposal,
+  type ReflectionReport,
+} from './self-reflection.js';
+
+// v30.0: Goal System — autonomous goal pursuit
+export {
+  GoalSystem,
+  getGoalSystem,
+  resetGoalSystem,
+  type GoalConfig,
+  type GoalDomain,
+  type GoalStatus,
+  type GoalPriority,
+  type GoalMetrics,
+  type Milestone,
+  type Goal,
+  type GoalProposal,
+  type GoalEvaluation,
+} from './goal-system.js';
+
+// v31.0: Attention Controller — cognitive focus management
+export {
+  AttentionController,
+  getAttentionController,
+  resetAttentionController,
+  type AttentionConfig,
+  type AttentionSource,
+  type AttentionPriority,
+  type AttentionItem,
+  type AttentionFocus,
+  type AttentionSwitch,
+  type AttentionStats,
+} from './attention-controller.js';
+
+// v32.0: Skill Acquisition System — capability learning
+export {
+  SkillAcquisitionSystem,
+  getSkillAcquisitionSystem,
+  resetSkillAcquisitionSystem,
+  type SkillConfig,
+  type SkillCategory,
+  type SkillStage,
+  type SkillMetrics,
+  type Skill,
+  type SkillPattern,
+  type SkillGap,
+  type SkillDevelopmentPlan,
+} from './skill-acquisition.js';
+
 export default AutonomousSystem;

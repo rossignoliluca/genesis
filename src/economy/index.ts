@@ -943,3 +943,18 @@ export type {
   BountyEvent,
   BountyEventType,
 } from './bounty-orchestrator.js';
+
+// v22.0: Bounty Swarm (Multi-Agent Collaborative Solving)
+export {
+  BountySwarm,
+  getBountySwarm,
+  resetBountySwarm,
+} from './bounty-swarm.js';
+export type {
+  SwarmAgentRole,
+  SwarmAgent,
+  SwarmMessage,
+  SwarmTask,
+  SwarmResult,
+  SwarmConfig,
+} from './bounty-swarm.js';

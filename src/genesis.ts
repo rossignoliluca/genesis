@@ -184,6 +184,14 @@ import {
   type StrategyConfig,
 } from './market-strategist/index.js';
 
+// Unified REST API — production HTTP server (v23.0)
+import {
+  getGenesisAPI,
+  startAPIServer,
+  type GenesisAPI,
+  type APIConfig,
+} from './api/index.js';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -271,6 +279,10 @@ export interface GenesisConfig {
   marketStrategist: boolean;
   /** Enable component-specific memory with FSRS v4 scheduling */
   componentMemory: boolean;
+  /** Enable REST API server (v23.0) */
+  apiServer: boolean;
+  /** API server port */
+  apiPort: number;
   /** Confidence threshold below which Brain defers to metacognition */
   deferThreshold: number;
   /** Audit all responses for hallucinations */
@@ -456,6 +468,9 @@ export class Genesis {
   // v21.0: Bounty Orchestrator — unified bounty hunting brain
   private bountyOrchestrator: BountyOrchestrator | null = null;
 
+  // v23.0: REST API Server — production HTTP endpoints
+  private apiServer: GenesisAPI | null = null;
+
   // v13.12.0: Finance, Revenue, UI modules
   private financeModule: FinanceModule | null = null;
   private revenueSystem: RevenueSystem | null = null;
@@ -529,6 +544,8 @@ export class Genesis {
       content: true,        // v18.1: Content creator (social media, SEO, scheduling)
       marketStrategist: true, // v18.2: Market strategist (weekly briefs, PPTX)
       componentMemory: true,  // v18.3: Component-specific memory with FSRS v4
+      apiServer: true,        // v23.0: REST API server
+      apiPort: 3001,          // v23.0: API server port
       deferThreshold: 0.3,
       auditResponses: true,
     };
@@ -2008,6 +2025,18 @@ export class Genesis {
     });
 
     console.log(`[Genesis] Central Awareness active: ${this.wiringResult.modulesWired} modules wired`);
+
+    // v23.0: REST API Server — production HTTP endpoints
+    if (this.config.apiServer) {
+      this.apiServer = getGenesisAPI({
+        port: this.config.apiPort,
+        enableCors: true,
+        enableMetrics: true,
+      });
+      await this.apiServer.start();
+      this.fiber?.registerModule('api-server');
+      console.log(`[Genesis] REST API server started on port ${this.config.apiPort}`);
+    }
 
     this.levels.L4 = true;
   }

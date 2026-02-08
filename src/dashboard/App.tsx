@@ -6,6 +6,27 @@ import * as THREE from 'three';
 import { useGenesisStore } from './stores/genesisStore';
 import { useSSEConnection } from './hooks/useSSEConnection';
 
+// Component Library Imports
+import {
+  PhiGauge as PhiGaugeLib,
+  FreeEnergyGauge,
+  CircularGauge,
+  TimeSeriesChart,
+  RadarChart,
+  SwarmVisualization,
+  NeuromodBalanceViz,
+  WorkspaceVisualization,
+  PainBodyMap,
+  NetworkGraph,
+  Panel,
+  PanelGrid,
+  MetricCard,
+  StatusCard,
+  StatusIndicator,
+  DataTable,
+  EventLog,
+} from './components/library';
+
 // ============================================================================
 // GENESIS - Full Interactive Web Interface
 // ============================================================================
@@ -7138,90 +7159,151 @@ function ActiveInferenceView() {
   const { activeInference, kernel } = useGenesisStore();
   const { currentCycle, beliefs, selectedAction, lastSurprise, avgSurprise, isRunning, surpriseHistory } = activeInference;
 
+  // Surprise history for time series
+  const surpriseSeries = useMemo(() => [{
+    id: 'surprise',
+    data: surpriseHistory.map((s) => ({ timestamp: s.timestamp, value: s.value })),
+    color: '#ff8800',
+    label: 'Surprise',
+  }], [surpriseHistory]);
+
   return (
     <div className="inference-view">
       <div className="view-header glass">
         <h2>Active Inference</h2>
-        <span className={`status-badge ${isRunning ? 'active' : 'idle'}`}>
-          {isRunning ? '● RUNNING' : '○ IDLE'}
-        </span>
+        <StatusIndicator
+          status={isRunning ? 'online' : 'offline'}
+          label={isRunning ? 'Running' : 'Idle'}
+          showPulse={isRunning}
+        />
       </div>
 
       <div className="inference-grid">
-        {/* Cycle Info */}
-        <div className="inference-card cycle-card glass">
-          <h3>Current Cycle</h3>
-          <div className="cycle-number">{currentCycle}</div>
-          <div className="cycle-metrics">
-            <div className="metric">
-              <span className="label">Free Energy</span>
-              <span className="value">{kernel.freeEnergy.toFixed(3)}</span>
-            </div>
-            <div className="metric">
-              <span className="label">Prediction Error</span>
-              <span className="value">{kernel.predictionError.toFixed(3)}</span>
+        {/* Free Energy Gauge */}
+        <Panel title="Free Energy Principle" variant="glass">
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <FreeEnergyGauge
+              freeEnergy={kernel.freeEnergy}
+              surprise={lastSurprise}
+              predictionError={kernel.predictionError}
+              size={200}
+              maxEnergy={5}
+            />
+          </div>
+        </Panel>
+
+        {/* Current Cycle */}
+        <Panel title="Inference Cycle" variant="glass">
+          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+            <motion.div
+              style={{ fontSize: 48, fontWeight: 'bold', color: '#00ff88', fontFamily: 'monospace' }}
+              key={currentCycle}
+              initial={{ scale: 1.2, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+            >
+              {currentCycle}
+            </motion.div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>
+              Current Cycle
             </div>
           </div>
-        </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <MetricCard
+              title="Free Energy"
+              value={kernel.freeEnergy.toFixed(3)}
+              color={kernel.freeEnergy > 2 ? '#ff4444' : '#00ff88'}
+              trend={kernel.freeEnergy > avgSurprise ? 'up' : 'down'}
+              size="sm"
+            />
+            <MetricCard
+              title="Prediction Error"
+              value={kernel.predictionError.toFixed(3)}
+              color="#8888ff"
+              size="sm"
+            />
+          </div>
+        </Panel>
 
         {/* Beliefs */}
-        <div className="inference-card beliefs-card glass">
-          <h3>Current Beliefs</h3>
-          <div className="beliefs-list">
+        <Panel title="Current Beliefs" variant="glass">
+          <div style={{ maxHeight: 180, overflow: 'auto' }}>
             {Object.entries(beliefs).length > 0 ? (
               Object.entries(beliefs).map(([key, value]) => (
-                <div key={key} className="belief-item">
-                  <span className="belief-key">{key}</span>
-                  <span className="belief-value">{value}</span>
-                </div>
+                <motion.div
+                  key={key}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    padding: '8px 12px',
+                    background: 'rgba(255,255,255,0.05)',
+                    borderRadius: 6,
+                    marginBottom: 6,
+                  }}
+                >
+                  <span style={{ color: 'rgba(255,255,255,0.7)' }}>{key.replace(/_/g, ' ')}</span>
+                  <span style={{
+                    color: value === 'high' ? '#00ff88' : value === 'low' ? '#ff4444' : '#ffaa00',
+                    fontWeight: 600,
+                  }}>
+                    {value}
+                  </span>
+                </motion.div>
               ))
             ) : (
-              <div className="no-data">No beliefs formed yet</div>
+              <div style={{ textAlign: 'center', padding: 20, color: 'rgba(255,255,255,0.4)' }}>
+                No beliefs formed yet
+              </div>
             )}
           </div>
-        </div>
+        </Panel>
 
         {/* Selected Action */}
-        <div className="inference-card action-card glass">
-          <h3>Selected Action</h3>
-          <div className="action-display">
+        <Panel title="Selected Action" variant="glass">
+          <div style={{ textAlign: 'center', padding: 16 }}>
             {selectedAction ? (
-              <>
-                <span className="action-icon">→</span>
-                <span className="action-text">{selectedAction}</span>
-              </>
+              <motion.div
+                key={selectedAction}
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+              >
+                <span style={{ fontSize: 24, color: '#00ff88' }}>→</span>
+                <div style={{ fontSize: 18, fontWeight: 600, marginTop: 8, textTransform: 'capitalize' }}>
+                  {selectedAction}
+                </div>
+              </motion.div>
             ) : (
-              <span className="no-action">No action selected</span>
+              <span style={{ color: 'rgba(255,255,255,0.4)' }}>No action selected</span>
             )}
           </div>
-        </div>
+        </Panel>
 
-        {/* Surprise Metrics */}
-        <div className="inference-card surprise-card glass">
-          <h3>Surprise</h3>
-          <div className="surprise-metrics">
-            <div className="surprise-current">
-              <span className="label">Last Surprise</span>
-              <span className={`value ${lastSurprise > 0.5 ? 'high' : 'low'}`}>
+        {/* Surprise History Chart */}
+        <Panel title="Surprise History" variant="glass" padding="sm">
+          <TimeSeriesChart
+            series={surpriseSeries}
+            width={400}
+            height={150}
+            showLegend={false}
+            yDomain={[0, 1]}
+            timeWindow={60000}
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: 12 }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 18, fontWeight: 'bold', color: lastSurprise > 0.5 ? '#ff8800' : '#00ff88' }}>
                 {lastSurprise.toFixed(3)}
-              </span>
+              </div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>Last Surprise</div>
             </div>
-            <div className="surprise-avg">
-              <span className="label">Average</span>
-              <span className="value">{avgSurprise.toFixed(3)}</span>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 18, fontWeight: 'bold', color: 'rgba(255,255,255,0.8)' }}>
+                {avgSurprise.toFixed(3)}
+              </div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>Average</div>
             </div>
           </div>
-          <div className="surprise-history">
-            {surpriseHistory.slice(0, 20).map((s, i) => (
-              <div
-                key={i}
-                className="surprise-bar"
-                style={{ height: `${s.value * 100}%` }}
-                title={`${s.value.toFixed(3)} at ${new Date(s.timestamp).toLocaleTimeString()}`}
-              />
-            ))}
-          </div>
-        </div>
+        </Panel>
       </div>
     </div>
   );
@@ -7242,86 +7324,126 @@ function NociceptionView() {
     return 'critical';
   };
 
+  // Convert stimuli for PainBodyMap
+  const stimuliForMap = useMemo(() => {
+    return activeStimuli.map((s) => ({
+      id: s.id,
+      type: s.type,
+      intensity: s.intensity,
+      source: s.location || 'system',
+      timestamp: Date.now(),
+    }));
+  }, [activeStimuli]);
+
+  // Pain history for time series
+  const painSeries = useMemo(() => [{
+    id: 'pain',
+    data: painHistory.map((p) => ({ timestamp: p.timestamp, value: p.value })),
+    color: totalPain > 0.6 ? '#ff4444' : totalPain > 0.3 ? '#ffaa00' : '#00ff88',
+    label: 'Pain Level',
+  }], [painHistory, totalPain]);
+
   return (
     <div className="nociception-view">
       <div className="view-header glass">
         <h2>Nociception System</h2>
-        <span className={`pain-level ${getPainLevel(totalPain)}`}>
-          Pain Level: {(totalPain * 100).toFixed(0)}%
-        </span>
+        <StatusIndicator
+          status={totalPain > 0.6 ? 'error' : totalPain > 0.3 ? 'warning' : 'success'}
+          label={`Pain Level: ${(totalPain * 100).toFixed(0)}%`}
+        />
       </div>
 
       <div className="nociception-grid">
+        {/* Pain Body Map Visualization */}
+        <Panel title="Pain Map" variant="glass" padding="sm">
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <PainBodyMap
+              stimuli={stimuliForMap}
+              totalPain={totalPain}
+              threshold={threshold}
+              adaptation={adaptation}
+              size={280}
+            />
+          </div>
+        </Panel>
+
         {/* Pain Gauge */}
-        <div className="nociception-card gauge-card glass">
-          <h3>Total Pain</h3>
-          <div className="pain-gauge">
-            <div className="gauge-ring">
-              <svg viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r="45" className="gauge-bg" />
-                <circle
-                  cx="50" cy="50" r="45"
-                  className={`gauge-fill ${getPainLevel(totalPain)}`}
-                  strokeDasharray={`${totalPain * 283} 283`}
-                />
-              </svg>
-              <div className="gauge-value">{(totalPain * 100).toFixed(0)}%</div>
+        <Panel title="Total Pain" variant="glass">
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+            <CircularGauge
+              value={totalPain}
+              size={140}
+              color={totalPain > 0.6 ? '#ff4444' : totalPain > 0.3 ? '#ffaa00' : '#00ff88'}
+              label="Total Pain"
+              unit="%"
+              glow={totalPain > 0.5}
+            />
+            <div style={{ display: 'flex', gap: 24 }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 20, fontWeight: 'bold', color: 'rgba(255,255,255,0.8)' }}>{(threshold * 100).toFixed(0)}%</div>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>Threshold</div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 20, fontWeight: 'bold', color: '#00ff88' }}>{(adaptation * 100).toFixed(0)}%</div>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>Adaptation</div>
+              </div>
             </div>
           </div>
-          <div className="pain-metrics">
-            <div className="metric">
-              <span className="label">Threshold</span>
-              <span className="value">{(threshold * 100).toFixed(0)}%</span>
-            </div>
-            <div className="metric">
-              <span className="label">Adaptation</span>
-              <span className="value">{(adaptation * 100).toFixed(0)}%</span>
-            </div>
-          </div>
-        </div>
+        </Panel>
 
         {/* Active Stimuli */}
-        <div className="nociception-card stimuli-card glass">
-          <h3>Active Stimuli</h3>
-          <div className="stimuli-list">
+        <Panel title="Active Stimuli" variant="glass">
+          <div className="stimuli-list" style={{ maxHeight: 200, overflow: 'auto' }}>
             {activeStimuli.length > 0 ? (
               activeStimuli.map((stimulus) => (
-                <div key={stimulus.id} className={`stimulus-item ${stimulus.type}`}>
-                  <div className="stimulus-header">
-                    <span className="stimulus-location">{stimulus.location}</span>
-                    <span className={`stimulus-type ${stimulus.type}`}>{stimulus.type}</span>
+                <motion.div
+                  key={stimulus.id}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  style={{
+                    background: `rgba(255,68,68,${stimulus.intensity * 0.3})`,
+                    borderRadius: 8,
+                    padding: 10,
+                    marginBottom: 8,
+                    borderLeft: '3px solid #ff4444',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontWeight: 500 }}>{stimulus.location || 'Unknown'}</span>
+                    <span style={{ color: '#ff4444', fontSize: 12 }}>{stimulus.type}</span>
                   </div>
-                  <div className="stimulus-intensity">
-                    <div
-                      className="intensity-bar"
-                      style={{ width: `${stimulus.intensity * 100}%` }}
+                  <div style={{ height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2 }}>
+                    <motion.div
+                      style={{ height: '100%', background: '#ff4444', borderRadius: 2 }}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${stimulus.intensity * 100}%` }}
                     />
-                    <span className="intensity-value">{(stimulus.intensity * 100).toFixed(0)}%</span>
                   </div>
-                </div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>
+                    Intensity: {(stimulus.intensity * 100).toFixed(0)}%
+                  </div>
+                </motion.div>
               ))
             ) : (
-              <div className="no-stimuli">
-                <span className="icon">✓</span>
-                <span>No pain stimuli detected</span>
+              <div style={{ textAlign: 'center', padding: 20, color: '#00ff88' }}>
+                <span style={{ fontSize: 24 }}>✓</span>
+                <div style={{ marginTop: 8 }}>No pain stimuli detected</div>
               </div>
             )}
           </div>
-        </div>
+        </Panel>
 
-        {/* Pain History */}
-        <div className="nociception-card history-card glass">
-          <h3>Pain History</h3>
-          <div className="pain-chart">
-            {painHistory.slice(0, 30).map((p, i) => (
-              <div
-                key={i}
-                className={`pain-bar ${getPainLevel(p.value)}`}
-                style={{ height: `${p.value * 100}%` }}
-              />
-            ))}
-          </div>
-        </div>
+        {/* Pain History Chart */}
+        <Panel title="Pain History" variant="glass" padding="sm">
+          <TimeSeriesChart
+            series={painSeries}
+            width={380}
+            height={150}
+            showLegend={false}
+            yDomain={[0, 1]}
+            timeWindow={120000}
+          />
+        </Panel>
       </div>
     </div>
   );
@@ -7922,83 +8044,124 @@ function SwarmView() {
   const { swarm, agents } = useGenesisStore();
   const { agentCount, activeCoordinations, patterns, collectiveIntelligence, consensusLevel } = swarm;
 
+  // Convert patterns to component format
+  const swarmAgents = useMemo(() => {
+    return Array.from({ length: agentCount }, (_, i) => ({
+      id: `agent-${i}`,
+      role: ['explorer', 'exploiter', 'coordinator', 'specialist'][i % 4],
+      status: i < agents.active ? 'active' as const : 'idle' as const,
+      load: 0.3 + Math.random() * 0.5,
+      contribution: Math.random(),
+    }));
+  }, [agentCount, agents.active]);
+
+  const swarmPatterns = useMemo(() => {
+    return patterns.map((p) => ({
+      id: p.id,
+      type: p.pattern,
+      strength: p.confidence,
+      participants: p.agents.length,
+    }));
+  }, [patterns]);
+
   return (
     <div className="swarm-view">
       <div className="view-header glass">
         <h2>Swarm Intelligence</h2>
         <div className="header-stats">
-          <span>{agentCount} agents</span>
+          <StatusIndicator status={agents.active > 0 ? 'online' : 'offline'} label={`${agentCount} agents`} size="sm" />
           <span>{activeCoordinations} coordinations</span>
         </div>
       </div>
 
       <div className="swarm-grid">
-        {/* Collective Metrics */}
-        <div className="swarm-card metrics-card glass">
-          <h3>Collective Metrics</h3>
-          <div className="swarm-metrics">
-            <div className="metric-gauge">
-              <span className="label">Collective Intelligence</span>
-              <div className="gauge-bar">
-                <div className="gauge-fill" style={{ width: `${collectiveIntelligence * 100}%` }} />
-              </div>
-              <span className="value">{(collectiveIntelligence * 100).toFixed(0)}%</span>
-            </div>
-            <div className="metric-gauge">
-              <span className="label">Consensus Level</span>
-              <div className="gauge-bar">
-                <div className="gauge-fill" style={{ width: `${consensusLevel * 100}%` }} />
-              </div>
-              <span className="value">{(consensusLevel * 100).toFixed(0)}%</span>
-            </div>
+        {/* 3D Swarm Visualization */}
+        <Panel title="Swarm Visualization" variant="glass" padding="none">
+          <SwarmVisualization
+            agents={swarmAgents}
+            patterns={swarmPatterns}
+            width={450}
+            height={350}
+            showConnections={true}
+            rotateCamera={true}
+          />
+        </Panel>
+
+        {/* Collective Metrics with Gauges */}
+        <Panel title="Collective Metrics" variant="glass">
+          <div style={{ display: 'flex', gap: 24, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <CircularGauge
+              value={collectiveIntelligence}
+              label="Intelligence"
+              color="#00ff88"
+              size={100}
+            />
+            <CircularGauge
+              value={consensusLevel}
+              label="Consensus"
+              color="#8888ff"
+              size={100}
+            />
           </div>
-        </div>
+        </Panel>
 
         {/* Emergent Patterns */}
-        <div className="swarm-card patterns-card glass">
-          <h3>Emergent Patterns</h3>
+        <Panel title="Emergent Patterns" variant="glass">
           <div className="patterns-list">
             {patterns.length > 0 ? (
               patterns.map((pattern) => (
-                <div key={pattern.id} className="pattern-item">
-                  <div className="pattern-name">{pattern.pattern}</div>
-                  <div className="pattern-agents">
+                <motion.div
+                  key={pattern.id}
+                  className="pattern-item"
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  style={{
+                    background: 'rgba(255,255,255,0.05)',
+                    borderRadius: 8,
+                    padding: 12,
+                    marginBottom: 8,
+                    borderLeft: `3px solid #00ff88`,
+                  }}
+                >
+                  <div style={{ fontWeight: 600, color: '#00ff88', marginBottom: 4 }}>{pattern.pattern}</div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
                     {pattern.agents.slice(0, 3).map((a) => (
-                      <span key={a} className="agent-tag">{a}</span>
+                      <span key={a} style={{ background: 'rgba(0,255,136,0.2)', padding: '2px 8px', borderRadius: 4, fontSize: 11 }}>{a}</span>
                     ))}
                     {pattern.agents.length > 3 && (
-                      <span className="more">+{pattern.agents.length - 3} more</span>
+                      <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>+{pattern.agents.length - 3} more</span>
                     )}
                   </div>
-                  <div className="pattern-confidence">
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
                     Confidence: {(pattern.confidence * 100).toFixed(0)}%
                   </div>
-                </div>
+                </motion.div>
               ))
             ) : (
-              <div className="no-patterns">No emergent patterns detected</div>
+              <div style={{ textAlign: 'center', padding: 20, color: 'rgba(255,255,255,0.4)' }}>
+                No emergent patterns detected
+              </div>
             )}
           </div>
-        </div>
+        </Panel>
 
         {/* Agent Distribution */}
-        <div className="swarm-card distribution-card glass">
-          <h3>Agent Status</h3>
-          <div className="distribution-stats">
-            <div className="stat">
-              <span className="label">Total</span>
-              <span className="value">{agents.total}</span>
+        <Panel title="Agent Status" variant="glass">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, textAlign: 'center' }}>
+            <div>
+              <div style={{ fontSize: 28, fontWeight: 'bold', color: 'rgba(255,255,255,0.9)' }}>{agents.total}</div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Total</div>
             </div>
-            <div className="stat active">
-              <span className="label">Active</span>
-              <span className="value">{agents.active}</span>
+            <div>
+              <div style={{ fontSize: 28, fontWeight: 'bold', color: '#00ff88' }}>{agents.active}</div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Active</div>
             </div>
-            <div className="stat queued">
-              <span className="label">Queued</span>
-              <span className="value">{agents.queued}</span>
+            <div>
+              <div style={{ fontSize: 28, fontWeight: 'bold', color: '#ffaa00' }}>{agents.queued}</div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Queued</div>
             </div>
           </div>
-        </div>
+        </Panel>
       </div>
     </div>
   );

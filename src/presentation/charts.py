@@ -658,8 +658,21 @@ def render_gauge(data: dict, config: dict, palette, source: str, output_path: st
             bbox=dict(boxstyle="round,pad=0.4", facecolor=gauge_box_bg,
                      edgecolor=palette.red, linewidth=2))
 
-    # Scale markers
-    for i in range(max_val + 1):
+    # Scale markers — show sensible number of ticks (max ~10-12)
+    if max_val <= 12:
+        tick_step = 1
+    elif max_val <= 25:
+        tick_step = 5
+    elif max_val <= 50:
+        tick_step = 10
+    else:
+        tick_step = max(max_val // 10, 5)
+        # Round step to nearest nice number
+        for nice in [5, 10, 20, 25, 50]:
+            if max_val / nice <= 12:
+                tick_step = nice
+                break
+    for i in range(0, max_val + 1, tick_step):
         ax.text(i, bar_y - 0.05, str(i), ha="center", va="top", fontsize=8, color=palette.gray)
 
     # Title

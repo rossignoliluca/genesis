@@ -57,6 +57,103 @@ export interface MemoryState {
   consolidationProgress: number;
 }
 
+// ============================================================================
+// Self-Improvement Types
+// ============================================================================
+
+export type ImprovementStage = 'idle' | 'observe' | 'reflect' | 'propose' | 'apply' | 'verify';
+
+export interface ModificationProposal {
+  id: string;
+  category: 'performance' | 'consciousness' | 'memory' | 'reliability' | 'capability';
+  target: string;
+  change: string;
+  reason: string;
+  expected: string;
+  risk: 'LOW' | 'MEDIUM' | 'HIGH';
+  reversible: boolean;
+}
+
+export interface SandboxStep {
+  id: string;
+  name: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  duration?: number;
+  progress?: number;
+}
+
+export interface InvariantResult {
+  id: string;
+  name: string;
+  passed: boolean;
+  message?: string;
+}
+
+export interface ModificationRecord {
+  id: string;
+  timestamp: number;
+  description: string;
+  status: 'success' | 'failed' | 'rolled_back';
+  metrics?: {
+    before: Record<string, number>;
+    after: Record<string, number>;
+  };
+  commitHash?: string;
+  rollbackHash?: string;
+  reason?: string;
+}
+
+export interface Lesson {
+  id: string;
+  content: string;
+  type: 'positive' | 'negative';
+  confidence: number;
+  appliedCount: number;
+  lastApplied?: number;
+  retention: number;
+  category: 'performance' | 'memory' | 'errors' | 'phi' | 'agents';
+}
+
+export interface CodeQuery {
+  query: string;
+  results: number;
+  timestamp: number;
+  file?: string;
+}
+
+export interface SelfImprovementState {
+  // Cycle state
+  currentStage: ImprovementStage;
+  cycleEnabled: boolean;
+  currentProposal: ModificationProposal | null;
+
+  // Metrics
+  phi: number;
+  errorRate: number;
+  memoryReuse: number;
+  responseTime: number;
+
+  // Sandbox state
+  sandboxPath: string | null;
+  sandboxProgress: SandboxStep[];
+  invariantResults: InvariantResult[];
+  buildOutput: string[];
+
+  // History
+  modifications: ModificationRecord[];
+
+  // Learning
+  lessons: Lesson[];
+  successRate: number;
+  totalAttempts: number;
+
+  // Code understanding
+  moduleUnderstanding: Record<string, number>;
+  recentQueries: CodeQuery[];
+  analyzingFile: string | null;
+  analyzingProgress: number;
+}
+
 export interface GenesisState {
   connected: boolean;
   lastUpdate: number;
@@ -66,6 +163,7 @@ export interface GenesisState {
   agents: AgentState;
   economy: EconomyState;
   memory: MemoryState;
+  selfImprovement: SelfImprovementState;
   events: Array<{ id: string; type: string; timestamp: number; data: unknown }>;
 }
 
@@ -79,6 +177,11 @@ interface GenesisStore extends GenesisState {
   updateAgents: (agents: Partial<AgentState>) => void;
   updateEconomy: (economy: Partial<EconomyState>) => void;
   updateMemory: (memory: Partial<MemoryState>) => void;
+  updateSelfImprovement: (selfImprovement: Partial<SelfImprovementState>) => void;
+  addModification: (modification: ModificationRecord) => void;
+  addLesson: (lesson: Lesson) => void;
+  addCodeQuery: (query: CodeQuery) => void;
+  addBuildOutput: (line: string) => void;
   addEvent: (event: { type: string; data: unknown }) => void;
   reset: () => void;
 }
@@ -86,6 +189,34 @@ interface GenesisStore extends GenesisState {
 // ============================================================================
 // Initial State
 // ============================================================================
+
+const initialSelfImprovementState: SelfImprovementState = {
+  currentStage: 'idle',
+  cycleEnabled: false,
+  currentProposal: null,
+  phi: 0.5,
+  errorRate: 0.05,
+  memoryReuse: 0.5,
+  responseTime: 100,
+  sandboxPath: null,
+  sandboxProgress: [],
+  invariantResults: [],
+  buildOutput: [],
+  modifications: [],
+  lessons: [],
+  successRate: 0,
+  totalAttempts: 0,
+  moduleUnderstanding: {
+    kernel: 0.85,
+    memory: 0.72,
+    agents: 0.68,
+    mcp: 0.45,
+    tools: 0.90,
+  },
+  recentQueries: [],
+  analyzingFile: null,
+  analyzingProgress: 0,
+};
 
 const initialState: GenesisState = {
   connected: false,
@@ -135,6 +266,7 @@ const initialState: GenesisState = {
     procedural: 100,
     consolidationProgress: 0,
   },
+  selfImprovement: initialSelfImprovementState,
   events: [],
 };
 
@@ -187,6 +319,52 @@ export const useGenesisStore = create<GenesisStore>((set) => ({
       lastUpdate: Date.now(),
     })),
 
+  updateSelfImprovement: (selfImprovement) =>
+    set((state) => ({
+      selfImprovement: { ...state.selfImprovement, ...selfImprovement },
+      lastUpdate: Date.now(),
+    })),
+
+  addModification: (modification) =>
+    set((state) => ({
+      selfImprovement: {
+        ...state.selfImprovement,
+        modifications: [modification, ...state.selfImprovement.modifications.slice(0, 99)],
+        totalAttempts: state.selfImprovement.totalAttempts + 1,
+        successRate: modification.status === 'success'
+          ? ((state.selfImprovement.successRate * state.selfImprovement.totalAttempts) + 1) / (state.selfImprovement.totalAttempts + 1)
+          : (state.selfImprovement.successRate * state.selfImprovement.totalAttempts) / (state.selfImprovement.totalAttempts + 1),
+      },
+      lastUpdate: Date.now(),
+    })),
+
+  addLesson: (lesson) =>
+    set((state) => ({
+      selfImprovement: {
+        ...state.selfImprovement,
+        lessons: [lesson, ...state.selfImprovement.lessons.slice(0, 99)],
+      },
+      lastUpdate: Date.now(),
+    })),
+
+  addCodeQuery: (query) =>
+    set((state) => ({
+      selfImprovement: {
+        ...state.selfImprovement,
+        recentQueries: [query, ...state.selfImprovement.recentQueries.slice(0, 19)],
+      },
+      lastUpdate: Date.now(),
+    })),
+
+  addBuildOutput: (line) =>
+    set((state) => ({
+      selfImprovement: {
+        ...state.selfImprovement,
+        buildOutput: [...state.selfImprovement.buildOutput.slice(-49), line],
+      },
+      lastUpdate: Date.now(),
+    })),
+
   addEvent: (event) =>
     set((state) => ({
       events: [
@@ -209,3 +387,7 @@ export const selectKernel = (state: GenesisStore) => state.kernel;
 export const selectAgents = (state: GenesisStore) => state.agents;
 export const selectEconomy = (state: GenesisStore) => state.economy;
 export const selectConnected = (state: GenesisStore) => state.connected;
+export const selectSelfImprovement = (state: GenesisStore) => state.selfImprovement;
+export const selectCurrentStage = (state: GenesisStore) => state.selfImprovement.currentStage;
+export const selectModifications = (state: GenesisStore) => state.selfImprovement.modifications;
+export const selectLessons = (state: GenesisStore) => state.selfImprovement.lessons;

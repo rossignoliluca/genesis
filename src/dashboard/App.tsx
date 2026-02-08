@@ -10,12 +10,15 @@ import { useSSEConnection } from './hooks/useSSEConnection';
 // GENESIS - Full Interactive Web Interface
 // ============================================================================
 
-type View = 'overview' | 'chat' | 'agents' | 'tasks' | 'creator' | 'terminal' | 'analytics' | 'files' | 'memory' | 'settings' | 'workflow' | 'playground' | 'integrations' | 'marketplace';
+type View = 'overview' | 'consciousness' | 'neuromod' | 'ness' | 'chat' | 'agents' | 'tasks' | 'creator' | 'terminal' | 'analytics' | 'files' | 'memory' | 'settings' | 'workflow' | 'playground' | 'integrations' | 'marketplace' | 'mcp' | 'codemind' | 'evolution' | 'sandbox' | 'lessons' | 'history';
 
 // Icons as simple components
 const Icons = {
   overview: () => <span>◉</span>,
-  chat: () => <span>◈</span>,
+  consciousness: () => <span>◎</span>,
+  neuromod: () => <span>◈</span>,
+  ness: () => <span>◇</span>,
+  chat: () => <span>◆</span>,
   agents: () => <span>⬡</span>,
   tasks: () => <span>◇</span>,
   creator: () => <span>✦</span>,
@@ -53,7 +56,723 @@ const Icons = {
   verified: () => <span>✓</span>,
   copy: () => <span>⎘</span>,
   run: () => <span>▶</span>,
+  chart: () => <span>📊</span>,
+  editor: () => <span>✏️</span>,
+  docs: () => <span>📚</span>,
+  webhook: () => <span>🪝</span>,
+  history: () => <span>🕐</span>,
+  bookmark: () => <span>🔖</span>,
+  export: () => <span>📤</span>,
+  schedule: () => <span>📅</span>,
+  mic: () => <span>🎤</span>,
+  globe: () => <span>🌐</span>,
+  lock: () => <span>🔒</span>,
+  user: () => <span>👤</span>,
+  sparkle: () => <span>✨</span>,
+  rocket: () => <span>🚀</span>,
+  cpu: () => <span>🔲</span>,
+  database: () => <span>🗄️</span>,
+  split: () => <span>⊞</span>,
+  space: () => <span>◐</span>,
+  palette: () => <span>🎨</span>,
+  wand: () => <span>🪄</span>,
+  layers: () => <span>☰</span>,
+  mcp: () => <span>🔗</span>,
+  server: () => <span>🖥️</span>,
+  tool: () => <span>🔧</span>,
+  research: () => <span>📚</span>,
+  web: () => <span>🌐</span>,
+  browser: () => <span>🌍</span>,
+  codemind: () => <span>◎</span>,
+  evolution: () => <span>⟳</span>,
+  sandbox: () => <span>🧪</span>,
+  lessons: () => <span>🧠</span>,
+  history: () => <span>📜</span>,
 };
+
+// ============================================================================
+// SPACES SYSTEM (Arc-style workspaces)
+// ============================================================================
+
+interface Space {
+  id: string;
+  name: string;
+  color: string;
+  icon: string;
+  tabs: View[];
+  isActive: boolean;
+}
+
+const defaultSpaces: Space[] = [
+  { id: 'work', name: 'Work', color: '#a855f7', icon: '💼', tabs: ['overview', 'agents', 'tasks'], isActive: true },
+  { id: 'dev', name: 'Development', color: '#06b6d4', icon: '👨‍💻', tabs: ['terminal', 'files', 'playground'], isActive: false },
+  { id: 'creative', name: 'Creative', color: '#f59e0b', icon: '🎨', tabs: ['creator', 'chat'], isActive: false },
+  { id: 'analytics', name: 'Analytics', color: '#10b981', icon: '📊', tabs: ['analytics', 'memory'], isActive: false },
+];
+
+function SpaceSwitcher({ spaces, activeSpace, onSwitch, onAddSpace }: {
+  spaces: Space[];
+  activeSpace: string;
+  onSwitch: (id: string) => void;
+  onAddSpace: () => void;
+}) {
+  return (
+    <div className="space-switcher">
+      {spaces.map(space => (
+        <motion.button
+          key={space.id}
+          className={`space-tab ${activeSpace === space.id ? 'active' : ''}`}
+          style={{ '--space-color': space.color } as React.CSSProperties}
+          onClick={() => onSwitch(space.id)}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <span className="space-icon">{space.icon}</span>
+          <span className="space-name">{space.name}</span>
+          {activeSpace === space.id && (
+            <motion.div
+              className="space-indicator"
+              layoutId="spaceIndicator"
+              style={{ background: space.color }}
+            />
+          )}
+        </motion.button>
+      ))}
+      <button className="add-space" onClick={onAddSpace}>
+        <Icons.plus />
+      </button>
+    </div>
+  );
+}
+
+// ============================================================================
+// SPLIT VIEW SYSTEM
+// ============================================================================
+
+interface SplitPanel {
+  id: string;
+  view: View;
+  size: number;
+}
+
+function SplitViewManager({ panels, onClose, onResize }: {
+  panels: SplitPanel[];
+  onClose: (id: string) => void;
+  onResize: (id: string, size: number) => void;
+}) {
+  if (panels.length <= 1) return null;
+
+  return (
+    <div className="split-view-container" style={{
+      gridTemplateColumns: panels.map(p => `${p.size}fr`).join(' ')
+    }}>
+      {panels.map((panel, i) => (
+        <React.Fragment key={panel.id}>
+          <div className="split-panel">
+            <div className="split-panel-header">
+              <span className="panel-title">{panel.view}</span>
+              <button className="panel-close" onClick={() => onClose(panel.id)}>×</button>
+            </div>
+            <div className="split-panel-content">
+              {/* View content rendered here */}
+            </div>
+          </div>
+          {i < panels.length - 1 && (
+            <div className="split-resizer" />
+          )}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================================
+// 3D INTERACTIVE HERO ORB
+// ============================================================================
+
+function ConsciousnessOrb({ phi, state }: { phi: number; state: string }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const [hovered, setHovered] = useState(false);
+
+  useFrame((frameState) => {
+    if (meshRef.current) {
+      meshRef.current.rotation.x = frameState.clock.elapsedTime * 0.2;
+      meshRef.current.rotation.y = frameState.clock.elapsedTime * 0.3;
+
+      // Pulse based on phi
+      const scale = 1 + Math.sin(frameState.clock.elapsedTime * 2) * 0.05 * phi;
+      meshRef.current.scale.setScalar(scale);
+    }
+  });
+
+  const getColor = () => {
+    if (state === 'focused') return '#a855f7';
+    if (state === 'dreaming') return '#06b6d4';
+    if (state === 'vigilant') return '#f59e0b';
+    return '#8b5cf6';
+  };
+
+  return (
+    <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
+      <Sphere
+        ref={meshRef}
+        args={[1, 64, 64]}
+        onPointerOver={() => setHovered(true)}
+        onPointerOut={() => setHovered(false)}
+      >
+        <MeshDistortMaterial
+          color={getColor()}
+          attach="material"
+          distort={0.3 + phi * 0.2}
+          speed={2}
+          roughness={0.2}
+          metalness={0.8}
+          emissive={getColor()}
+          emissiveIntensity={hovered ? 0.5 : 0.2}
+        />
+      </Sphere>
+    </Float>
+  );
+}
+
+function HeroOrb3D() {
+  const { consciousness } = useGenesisStore();
+
+  return (
+    <div className="hero-orb-container">
+      <Canvas camera={{ position: [0, 0, 4], fov: 45 }}>
+        <ambientLight intensity={0.5} />
+        <pointLight position={[10, 10, 10]} intensity={1} />
+        <pointLight position={[-10, -10, -10]} color="#06b6d4" intensity={0.5} />
+        <Stars radius={100} depth={50} count={1000} factor={4} fade speed={1} />
+        <ConsciousnessOrb phi={consciousness.phi} state={consciousness.state} />
+        <OrbitControls enableZoom={false} enablePan={false} autoRotate autoRotateSpeed={0.5} />
+      </Canvas>
+      <div className="orb-overlay">
+        <span className="orb-phi">φ = {consciousness.phi.toFixed(3)}</span>
+        <span className="orb-state">{consciousness.state}</span>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// LCH COLOR SYSTEM & THEME ENGINE
+// ============================================================================
+
+interface ThemeConfig {
+  baseHue: number;
+  accentHue: number;
+  contrast: 'low' | 'medium' | 'high';
+  mode: 'dark' | 'light';
+}
+
+const generateTheme = (config: ThemeConfig) => {
+  const { baseHue, accentHue, contrast, mode } = config;
+
+  const contrastMultiplier = contrast === 'high' ? 1.2 : contrast === 'low' ? 0.8 : 1;
+  const isDark = mode === 'dark';
+
+  return {
+    '--theme-base': `lch(${isDark ? 10 : 95}% 5 ${baseHue})`,
+    '--theme-surface': `lch(${isDark ? 15 : 100}% 3 ${baseHue})`,
+    '--theme-elevated': `lch(${isDark ? 20 : 98}% 4 ${baseHue})`,
+    '--theme-accent': `lch(60% 80 ${accentHue})`,
+    '--theme-accent-dim': `lch(40% 60 ${accentHue})`,
+    '--theme-text': `lch(${isDark ? 90 : 10}% 5 ${baseHue})`,
+    '--theme-text-secondary': `lch(${isDark ? 70 : 40}% 5 ${baseHue})`,
+    '--theme-text-muted': `lch(${isDark ? 50 : 60}% 5 ${baseHue})`,
+    '--theme-border': `lch(${isDark ? 25 : 85}% 3 ${baseHue} / 0.5)`,
+    '--contrast-multiplier': contrastMultiplier,
+  };
+};
+
+function ThemeCustomizer({ isOpen, onClose, onApply }: {
+  isOpen: boolean;
+  onClose: () => void;
+  onApply: (config: ThemeConfig) => void;
+}) {
+  const [config, setConfig] = useState<ThemeConfig>({
+    baseHue: 270,
+    accentHue: 270,
+    contrast: 'medium',
+    mode: 'dark',
+  });
+
+  const presets = [
+    { name: 'Genesis Purple', baseHue: 270, accentHue: 270 },
+    { name: 'Ocean Blue', baseHue: 220, accentHue: 200 },
+    { name: 'Forest Green', baseHue: 150, accentHue: 140 },
+    { name: 'Sunset Orange', baseHue: 30, accentHue: 25 },
+    { name: 'Rose Pink', baseHue: 340, accentHue: 330 },
+    { name: 'Monochrome', baseHue: 0, accentHue: 0 },
+  ];
+
+  if (!isOpen) return null;
+
+  return (
+    <>
+      <motion.div className="theme-overlay" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} />
+      <motion.div
+        className="theme-customizer"
+        initial={{ opacity: 0, x: 100 }}
+        animate={{ opacity: 1, x: 0 }}
+      >
+        <div className="theme-header">
+          <h2>🎨 Theme Studio</h2>
+          <button onClick={onClose}>×</button>
+        </div>
+
+        <div className="theme-content">
+          <div className="theme-section">
+            <h3>Presets</h3>
+            <div className="theme-presets">
+              {presets.map(preset => (
+                <button
+                  key={preset.name}
+                  className="preset-btn"
+                  style={{ '--preset-color': `lch(60% 80 ${preset.accentHue})` } as React.CSSProperties}
+                  onClick={() => setConfig(c => ({ ...c, baseHue: preset.baseHue, accentHue: preset.accentHue }))}
+                >
+                  <span className="preset-swatch" />
+                  <span>{preset.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="theme-section">
+            <h3>Custom Colors</h3>
+            <div className="theme-sliders">
+              <div className="slider-group">
+                <label>Base Hue: {config.baseHue}°</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="360"
+                  value={config.baseHue}
+                  onChange={e => setConfig(c => ({ ...c, baseHue: parseInt(e.target.value) }))}
+                  className="hue-slider"
+                />
+              </div>
+              <div className="slider-group">
+                <label>Accent Hue: {config.accentHue}°</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="360"
+                  value={config.accentHue}
+                  onChange={e => setConfig(c => ({ ...c, accentHue: parseInt(e.target.value) }))}
+                  className="hue-slider"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="theme-section">
+            <h3>Contrast</h3>
+            <div className="contrast-options">
+              {(['low', 'medium', 'high'] as const).map(level => (
+                <button
+                  key={level}
+                  className={`contrast-btn ${config.contrast === level ? 'active' : ''}`}
+                  onClick={() => setConfig(c => ({ ...c, contrast: level }))}
+                >
+                  {level}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="theme-section">
+            <h3>Mode</h3>
+            <div className="mode-toggle">
+              <button
+                className={config.mode === 'dark' ? 'active' : ''}
+                onClick={() => setConfig(c => ({ ...c, mode: 'dark' }))}
+              >
+                🌙 Dark
+              </button>
+              <button
+                className={config.mode === 'light' ? 'active' : ''}
+                onClick={() => setConfig(c => ({ ...c, mode: 'light' }))}
+              >
+                ☀️ Light
+              </button>
+            </div>
+          </div>
+
+          <div className="theme-preview">
+            <h3>Preview</h3>
+            <div className="preview-card" style={generateTheme(config) as React.CSSProperties}>
+              <div className="preview-header">Sample Card</div>
+              <div className="preview-body">This is how your theme looks</div>
+              <button className="preview-btn">Action</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="theme-actions">
+          <button className="apply-btn" onClick={() => onApply(config)}>
+            Apply Theme
+          </button>
+        </div>
+      </motion.div>
+    </>
+  );
+}
+
+// ============================================================================
+// AI AUTOFILL / SMART SUGGESTIONS
+// ============================================================================
+
+function AIAutofill({ context, onSelect }: {
+  context: string;
+  onSelect: (suggestion: string) => void;
+}) {
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!context || context.length < 3) {
+      setSuggestions([]);
+      return;
+    }
+
+    setLoading(true);
+    const timer = setTimeout(() => {
+      // Simulate AI suggestions based on context
+      const mockSuggestions = [
+        `Complete: "${context}..."`,
+        `Expand on: ${context}`,
+        `Generate code for: ${context}`,
+        `Search docs for: ${context}`,
+      ];
+      setSuggestions(mockSuggestions.slice(0, 3));
+      setLoading(false);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [context]);
+
+  if (!suggestions.length && !loading) return null;
+
+  return (
+    <motion.div
+      className="ai-autofill"
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+    >
+      <div className="autofill-header">
+        <span className="autofill-icon">✨</span>
+        <span>AI Suggestions</span>
+        {loading && <span className="autofill-loading" />}
+      </div>
+      <div className="autofill-list">
+        {suggestions.map((suggestion, i) => (
+          <button
+            key={i}
+            className="autofill-item"
+            onClick={() => onSelect(suggestion)}
+          >
+            <span className="suggestion-icon">→</span>
+            <span className="suggestion-text">{suggestion}</span>
+            <span className="suggestion-key">Tab</span>
+          </button>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+// ============================================================================
+// BOOSTS SYSTEM (Custom CSS/JS)
+// ============================================================================
+
+interface Boost {
+  id: string;
+  name: string;
+  description: string;
+  css?: string;
+  enabled: boolean;
+}
+
+function BoostsPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [boosts, setBoosts] = useState<Boost[]>([
+    { id: '1', name: 'Neon Glow', description: 'Add neon glow effects to buttons', css: '.nav-item:hover { box-shadow: 0 0 20px var(--accent-purple); }', enabled: false },
+    { id: '2', name: 'Rounded Everything', description: 'Extra rounded corners', css: '* { border-radius: 16px !important; }', enabled: false },
+    { id: '3', name: 'Compact Mode', description: 'Reduce padding and spacing', css: '.view-container { padding: 12px !important; }', enabled: true },
+    { id: '4', name: 'Rainbow Accent', description: 'Animated rainbow accent color', css: '@keyframes rainbow { 0% { filter: hue-rotate(0deg); } 100% { filter: hue-rotate(360deg); } } .logo-orb { animation: rainbow 5s linear infinite; }', enabled: false },
+  ]);
+
+  const [editingBoost, setEditingBoost] = useState<Boost | null>(null);
+
+  const toggleBoost = (id: string) => {
+    setBoosts(prev => prev.map(b => b.id === id ? { ...b, enabled: !b.enabled } : b));
+  };
+
+  // Apply enabled boosts
+  useEffect(() => {
+    const styleId = 'genesis-boosts';
+    let styleEl = document.getElementById(styleId) as HTMLStyleElement;
+
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = styleId;
+      document.head.appendChild(styleEl);
+    }
+
+    const enabledCSS = boosts.filter(b => b.enabled).map(b => b.css).join('\n');
+    styleEl.textContent = enabledCSS;
+
+    return () => {
+      if (styleEl) styleEl.textContent = '';
+    };
+  }, [boosts]);
+
+  if (!isOpen) return null;
+
+  return (
+    <>
+      <motion.div className="boosts-overlay" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} />
+      <motion.div
+        className="boosts-panel"
+        initial={{ opacity: 0, y: 50 }}
+        animate={{ opacity: 1, y: 0 }}
+      >
+        <div className="boosts-header">
+          <h2>⚡ Boosts</h2>
+          <p>Customize your Genesis experience</p>
+          <button className="close-btn" onClick={onClose}>×</button>
+        </div>
+
+        <div className="boosts-list">
+          {boosts.map(boost => (
+            <div key={boost.id} className={`boost-item ${boost.enabled ? 'enabled' : ''}`}>
+              <div className="boost-info">
+                <h3>{boost.name}</h3>
+                <p>{boost.description}</p>
+              </div>
+              <div className="boost-actions">
+                <button className="edit-boost" onClick={() => setEditingBoost(boost)}>Edit</button>
+                <label className="boost-toggle">
+                  <input
+                    type="checkbox"
+                    checked={boost.enabled}
+                    onChange={() => toggleBoost(boost.id)}
+                  />
+                  <span className="toggle-slider" />
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <button className="add-boost-btn">
+          <Icons.plus /> Create New Boost
+        </button>
+
+        {editingBoost && (
+          <div className="boost-editor">
+            <h3>Edit: {editingBoost.name}</h3>
+            <textarea
+              value={editingBoost.css}
+              onChange={e => setEditingBoost({ ...editingBoost, css: e.target.value })}
+              placeholder="/* Your CSS here */"
+            />
+            <div className="editor-actions">
+              <button onClick={() => {
+                setBoosts(prev => prev.map(b => b.id === editingBoost.id ? editingBoost : b));
+                setEditingBoost(null);
+              }}>Save</button>
+              <button onClick={() => setEditingBoost(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </motion.div>
+    </>
+  );
+}
+
+// ============================================================================
+// ENHANCED OVERVIEW WITH 3D
+// ============================================================================
+
+function EnhancedOverview() {
+  const {
+    connected,
+    consciousness,
+    neuromod,
+    kernel,
+    economy,
+    memory,
+    agents,
+    events,
+  } = useGenesisStore();
+
+  return (
+    <div className="enhanced-overview">
+      {/* 3D Hero Section */}
+      <div className="overview-hero">
+        <HeroOrb3D />
+        <div className="hero-stats">
+          <motion.div
+            className="hero-stat"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            <span className="stat-value">{agents.active}</span>
+            <span className="stat-label">Active Agents</span>
+          </motion.div>
+          <motion.div
+            className="hero-stat"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.2 }}
+          >
+            <span className="stat-value">{(consciousness.phi * 100).toFixed(0)}%</span>
+            <span className="stat-label">Consciousness</span>
+          </motion.div>
+          <motion.div
+            className="hero-stat"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.3 }}
+          >
+            <span className="stat-value">${economy.costs.toFixed(2)}</span>
+            <span className="stat-label">Session Cost</span>
+          </motion.div>
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="quick-action-bar">
+        <motion.button
+          className="quick-action"
+          whileHover={{ scale: 1.05, y: -2 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <span className="qa-icon">💬</span>
+          <span>Chat with Genesis</span>
+        </motion.button>
+        <motion.button
+          className="quick-action"
+          whileHover={{ scale: 1.05, y: -2 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <span className="qa-icon">🤖</span>
+          <span>Start Agent</span>
+        </motion.button>
+        <motion.button
+          className="quick-action"
+          whileHover={{ scale: 1.05, y: -2 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <span className="qa-icon">⛓</span>
+          <span>New Workflow</span>
+        </motion.button>
+        <motion.button
+          className="quick-action"
+          whileHover={{ scale: 1.05, y: -2 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <span className="qa-icon">✨</span>
+          <span>Generate Content</span>
+        </motion.button>
+      </div>
+
+      {/* Metrics Grid */}
+      <div className="metrics-grid">
+        <motion.div
+          className="metric-card neuro"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+        >
+          <h3>Neuromodulation</h3>
+          <div className="neuro-bars">
+            {Object.entries(neuromod).map(([key, value]) => (
+              <div key={key} className="neuro-bar">
+                <span className="neuro-label">{key}</span>
+                <div className="neuro-track">
+                  <motion.div
+                    className="neuro-fill"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${value * 100}%` }}
+                    transition={{ duration: 0.5 }}
+                    style={{ background: key === 'dopamine' ? '#10b981' : key === 'serotonin' ? '#3b82f6' : key === 'norepinephrine' ? '#f59e0b' : '#ef4444' }}
+                  />
+                </div>
+                <span className="neuro-value">{(value * 100).toFixed(0)}%</span>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+
+        <motion.div
+          className="metric-card kernel"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <h3>Kernel Levels</h3>
+          <div className="kernel-grid">
+            {Object.entries(kernel.levels).map(([level, data]) => (
+              <div key={level} className={`kernel-level ${data.active ? 'active' : ''}`}>
+                <span className="level-name">{level.toUpperCase()}</span>
+                <div className="level-ring">
+                  <svg viewBox="0 0 36 36">
+                    <path
+                      className="ring-bg"
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    />
+                    <motion.path
+                      className="ring-progress"
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      initial={{ strokeDasharray: '0, 100' }}
+                      animate={{ strokeDasharray: `${data.load * 100}, 100` }}
+                    />
+                  </svg>
+                  <span className="level-percent">{(data.load * 100).toFixed(0)}%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+
+        <motion.div
+          className="metric-card events"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+        >
+          <h3>Live Events</h3>
+          <div className="events-stream">
+            {events.slice(0, 5).map((event, i) => (
+              <motion.div
+                key={event.id}
+                className="event-item"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.05 }}
+              >
+                <span className="event-dot" />
+                <span className="event-type">{event.type}</span>
+                <span className="event-time">
+                  {new Date(event.timestamp).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+              </motion.div>
+            ))}
+            {events.length === 0 && (
+              <div className="no-events">Waiting for events...</div>
+            )}
+          </div>
+        </motion.div>
+      </div>
+    </div>
+  );
+}
 
 // ============================================================================
 // CHAT INTERFACE
@@ -1484,23 +2203,23 @@ function ShortcutsPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
   const shortcuts = [
     { category: 'Navigation', items: [
       { keys: ['⌘', 'K'], desc: 'Open Command Palette' },
+      { keys: ['⌘', 'P'], desc: 'Global Search' },
       { keys: ['⌘', '1-9'], desc: 'Navigate to section' },
-      { keys: ['⌘', '←'], desc: 'Toggle sidebar' },
+    ]},
+    { category: 'Tools', items: [
+      { keys: ['⌘', 'E'], desc: 'Code Editor' },
+      { keys: ['⌘', '/'], desc: 'Documentation' },
+      { keys: ['⌘', 'J'], desc: 'Quick AI assist' },
     ]},
     { category: 'Actions', items: [
       { keys: ['⌘', 'N'], desc: 'New task' },
       { keys: ['⌘', 'Enter'], desc: 'Send message' },
       { keys: ['⌘', 'S'], desc: 'Save changes' },
     ]},
-    { category: 'View', items: [
-      { keys: ['⌘', '+'], desc: 'Zoom in' },
-      { keys: ['⌘', '-'], desc: 'Zoom out' },
-      { keys: ['⌘', '0'], desc: 'Reset zoom' },
-    ]},
-    { category: 'AI', items: [
-      { keys: ['⌘', 'J'], desc: 'Quick AI assist' },
-      { keys: ['⌘', 'G'], desc: 'Generate content' },
-      { keys: ['Esc'], desc: 'Cancel operation' },
+    { category: 'General', items: [
+      { keys: ['?'], desc: 'Show shortcuts' },
+      { keys: ['Esc'], desc: 'Close panels' },
+      { keys: ['⌘', 'D'], desc: 'Toggle dark mode' },
     ]},
   ];
 
@@ -1665,6 +2384,816 @@ function ThemeToggle({ isDark, onToggle }: { isDark: boolean; onToggle: () => vo
         {isDark ? '🌙' : '☀️'}
       </motion.div>
     </button>
+  );
+}
+
+// ============================================================================
+// USER PROFILE DROPDOWN
+// ============================================================================
+
+function UserProfile() {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="user-profile">
+      <button className="profile-trigger" onClick={() => setIsOpen(!isOpen)}>
+        <div className="profile-avatar">L</div>
+        <span className="profile-name">Luca</span>
+        <span className="profile-arrow">{isOpen ? '▲' : '▼'}</span>
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            className="profile-dropdown"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+          >
+            <div className="dropdown-header">
+              <div className="dropdown-avatar">L</div>
+              <div className="dropdown-info">
+                <span className="dropdown-name">Luca Rossignoli</span>
+                <span className="dropdown-email">luca@genesis.ai</span>
+              </div>
+            </div>
+            <div className="dropdown-divider" />
+            <button className="dropdown-item">
+              <span>👤</span> Profile Settings
+            </button>
+            <button className="dropdown-item">
+              <span>🔔</span> Notifications
+            </button>
+            <button className="dropdown-item">
+              <span>🎨</span> Appearance
+            </button>
+            <button className="dropdown-item">
+              <span>🔗</span> API Keys
+            </button>
+            <div className="dropdown-divider" />
+            <button className="dropdown-item logout">
+              <span>🚪</span> Sign Out
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ============================================================================
+// NOTIFICATION BELL
+// ============================================================================
+
+function NotificationBell({ count, onClick }: { count: number; onClick: () => void }) {
+  return (
+    <button className="notification-bell" onClick={onClick}>
+      <span className="bell-icon">🔔</span>
+      {count > 0 && (
+        <motion.span
+          className="bell-badge"
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          key={count}
+        >
+          {count > 9 ? '9+' : count}
+        </motion.span>
+      )}
+    </button>
+  );
+}
+
+// ============================================================================
+// VOICE COMMAND INDICATOR
+// ============================================================================
+
+function VoiceCommand({ isListening, onToggle }: { isListening: boolean; onToggle: () => void }) {
+  return (
+    <button
+      className={`voice-command ${isListening ? 'listening' : ''}`}
+      onClick={onToggle}
+      title="Voice Commands"
+    >
+      <motion.span
+        animate={isListening ? { scale: [1, 1.2, 1] } : {}}
+        transition={{ duration: 0.5, repeat: Infinity }}
+      >
+        🎤
+      </motion.span>
+      {isListening && (
+        <div className="voice-waves">
+          <span /><span /><span />
+        </div>
+      )}
+    </button>
+  );
+}
+
+// ============================================================================
+// GLOBAL SEARCH WITH PREVIEW
+// ============================================================================
+
+interface SearchResult {
+  id: string;
+  type: 'file' | 'agent' | 'task' | 'memory' | 'setting' | 'doc';
+  title: string;
+  description: string;
+  path?: string;
+  icon: string;
+}
+
+function GlobalSearch({ isOpen, onClose, onNavigate }: { isOpen: boolean; onClose: () => void; onNavigate: (view: View) => void }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const allItems: SearchResult[] = useMemo(() => [
+    { id: '1', type: 'file', title: 'App.tsx', description: 'Main application component', path: 'src/dashboard/App.tsx', icon: '📄' },
+    { id: '2', type: 'file', title: 'consciousness.ts', description: 'Consciousness module', path: 'src/kernel/consciousness.ts', icon: '📄' },
+    { id: '3', type: 'agent', title: 'Explorer Agent', description: 'Research and exploration agent', icon: '🤖' },
+    { id: '4', type: 'agent', title: 'Writer Agent', description: 'Content generation agent', icon: '🤖' },
+    { id: '5', type: 'agent', title: 'Analyst Agent', description: 'Data analysis agent', icon: '🤖' },
+    { id: '6', type: 'task', title: 'Implement auth flow', description: 'Add authentication system', icon: '◇' },
+    { id: '7', type: 'task', title: 'Fix memory leak', description: 'Critical bug in kernel', icon: '◇' },
+    { id: '8', type: 'memory', title: 'Project overview', description: 'Semantic memory about the project', icon: '💾' },
+    { id: '9', type: 'memory', title: 'API patterns', description: 'Procedural memory for API design', icon: '💾' },
+    { id: '10', type: 'setting', title: 'API Keys', description: 'Configure API provider keys', icon: '⚙️' },
+    { id: '11', type: 'setting', title: 'MCP Servers', description: 'Manage MCP connections', icon: '⚙️' },
+    { id: '12', type: 'doc', title: 'Getting Started', description: 'Quick start guide', icon: '📚' },
+    { id: '13', type: 'doc', title: 'API Reference', description: 'Complete API documentation', icon: '📚' },
+  ], []);
+
+  useEffect(() => {
+    if (isOpen && inputRef.current) {
+      inputRef.current.focus();
+    }
+    setQuery('');
+    setResults([]);
+    setSelectedIndex(0);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
+
+    setLoading(true);
+    const timer = setTimeout(() => {
+      const filtered = allItems.filter(item =>
+        item.title.toLowerCase().includes(query.toLowerCase()) ||
+        item.description.toLowerCase().includes(query.toLowerCase())
+      );
+      setResults(filtered);
+      setLoading(false);
+      setSelectedIndex(0);
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [query, allItems]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex(prev => Math.min(prev + 1, results.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex(prev => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter' && results[selectedIndex]) {
+      handleSelect(results[selectedIndex]);
+    }
+  };
+
+  const handleSelect = (result: SearchResult) => {
+    if (result.type === 'agent') onNavigate('agents');
+    else if (result.type === 'task') onNavigate('tasks');
+    else if (result.type === 'file') onNavigate('files');
+    else if (result.type === 'memory') onNavigate('memory');
+    else if (result.type === 'setting') onNavigate('settings');
+    else if (result.type === 'doc') onNavigate('overview');
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <>
+      <motion.div
+        className="global-search-overlay"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+      />
+      <motion.div
+        className="global-search"
+        initial={{ opacity: 0, y: -20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: -20, scale: 0.95 }}
+      >
+        <div className="search-input-container">
+          <Icons.search />
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Search files, agents, tasks, docs..."
+          />
+          {loading && <div className="search-spinner" />}
+        </div>
+
+        {query && (
+          <div className="search-results">
+            {results.length === 0 && !loading ? (
+              <div className="no-results">No results found for "{query}"</div>
+            ) : (
+              results.map((result, i) => (
+                <motion.div
+                  key={result.id}
+                  className={`search-result ${i === selectedIndex ? 'selected' : ''}`}
+                  onClick={() => handleSelect(result)}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.03 }}
+                >
+                  <span className="result-icon">{result.icon}</span>
+                  <div className="result-info">
+                    <span className="result-title">{result.title}</span>
+                    <span className="result-desc">{result.description}</span>
+                    {result.path && <span className="result-path">{result.path}</span>}
+                  </div>
+                  <span className="result-type">{result.type}</span>
+                </motion.div>
+              ))
+            )}
+          </div>
+        )}
+
+        {!query && (
+          <div className="search-hints">
+            <div className="hint-section">
+              <span className="hint-label">Quick Actions</span>
+              <div className="hint-actions">
+                <button onClick={() => setQuery('agent:')}>Search Agents</button>
+                <button onClick={() => setQuery('file:')}>Search Files</button>
+                <button onClick={() => setQuery('task:')}>Search Tasks</button>
+              </div>
+            </div>
+            <div className="hint-section">
+              <span className="hint-label">Recent</span>
+              <div className="recent-items">
+                {allItems.slice(0, 3).map(item => (
+                  <div key={item.id} className="recent-item" onClick={() => handleSelect(item)}>
+                    <span>{item.icon}</span>
+                    <span>{item.title}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </motion.div>
+    </>
+  );
+}
+
+// ============================================================================
+// PERFORMANCE MONITOR
+// ============================================================================
+
+function PerformanceMonitor() {
+  const [cpuHistory, setCpuHistory] = useState<number[]>(Array(30).fill(0));
+  const [memHistory, setMemHistory] = useState<number[]>(Array(30).fill(0));
+  const [netHistory, setNetHistory] = useState<number[]>(Array(30).fill(0));
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCpuHistory(prev => [...prev.slice(1), 20 + Math.random() * 40]);
+      setMemHistory(prev => [...prev.slice(1), 40 + Math.random() * 30]);
+      setNetHistory(prev => [...prev.slice(1), Math.random() * 100]);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const renderGraph = (data: number[], color: string, label: string) => {
+    const max = Math.max(...data, 100);
+    const points = data.map((val, i) => {
+      const x = (i / (data.length - 1)) * 100;
+      const y = 100 - (val / max) * 100;
+      return `${x},${y}`;
+    }).join(' ');
+
+    return (
+      <div className="perf-graph">
+        <div className="graph-header">
+          <span className="graph-label">{label}</span>
+          <span className="graph-value" style={{ color }}>{data[data.length - 1].toFixed(1)}%</span>
+        </div>
+        <svg viewBox="0 0 100 50" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id={`grad-${label}`} x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+              <stop offset="100%" stopColor={color} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <polyline
+            points={points}
+            fill="none"
+            stroke={color}
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <polygon
+            points={`0,50 ${points} 100,50`}
+            fill={`url(#grad-${label})`}
+          />
+        </svg>
+      </div>
+    );
+  };
+
+  return (
+    <motion.div
+      className={`perf-monitor ${isExpanded ? 'expanded' : ''}`}
+      onClick={() => setIsExpanded(!isExpanded)}
+    >
+      <div className="perf-header">
+        <span className="perf-title">⚡ Performance</span>
+        <span className="perf-toggle">{isExpanded ? '▼' : '▶'}</span>
+      </div>
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            className="perf-content"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+          >
+            {renderGraph(cpuHistory, '#a855f7', 'CPU')}
+            {renderGraph(memHistory, '#06b6d4', 'Memory')}
+            {renderGraph(netHistory, '#10b981', 'Network')}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+// ============================================================================
+// CODE EDITOR (Mini)
+// ============================================================================
+
+function CodeEditor({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [code, setCode] = useState(`// Genesis Script Editor
+import { Genesis } from '@genesis/core';
+
+async function main() {
+  const genesis = new Genesis();
+
+  // Start an agent
+  const agent = await genesis.agents.spawn('analyst', {
+    goal: 'Analyze system metrics',
+    context: genesis.memory.recent(10)
+  });
+
+  // Wait for result
+  const result = await agent.execute();
+  console.log('Result:', result);
+}
+
+main();
+`);
+  const [output, setOutput] = useState<string[]>([]);
+  const [running, setRunning] = useState(false);
+
+  const runCode = () => {
+    setRunning(true);
+    setOutput([]);
+
+    // Simulate execution
+    const logs = [
+      '> Initializing Genesis...',
+      '> Spawning analyst agent...',
+      '> Agent started: analyst-7f3d',
+      '> Executing goal: "Analyze system metrics"',
+      '> Fetching context from memory...',
+      '> Processing 10 memory items...',
+      '> Analysis complete!',
+      '> Result: { health: 0.92, anomalies: 0, suggestions: 2 }'
+    ];
+
+    logs.forEach((log, i) => {
+      setTimeout(() => {
+        setOutput(prev => [...prev, log]);
+        if (i === logs.length - 1) setRunning(false);
+      }, (i + 1) * 400);
+    });
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <>
+      <motion.div
+        className="editor-overlay"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+      />
+      <motion.div
+        className="code-editor-panel"
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.9 }}
+      >
+        <div className="editor-header">
+          <div className="editor-tabs">
+            <span className="editor-tab active">script.ts</span>
+            <button className="new-tab">+</button>
+          </div>
+          <div className="editor-actions">
+            <button className="run-btn" onClick={runCode} disabled={running}>
+              {running ? '⏳ Running...' : '▶ Run'}
+            </button>
+            <button className="close-btn" onClick={onClose}>×</button>
+          </div>
+        </div>
+
+        <div className="editor-body">
+          <div className="editor-main">
+            <div className="line-numbers">
+              {code.split('\n').map((_, i) => (
+                <span key={i}>{i + 1}</span>
+              ))}
+            </div>
+            <textarea
+              value={code}
+              onChange={e => setCode(e.target.value)}
+              spellCheck={false}
+            />
+          </div>
+
+          <div className="editor-output">
+            <div className="output-header">
+              <span>Console Output</span>
+              <button onClick={() => setOutput([])}>Clear</button>
+            </div>
+            <div className="output-content">
+              {output.length === 0 ? (
+                <span className="output-placeholder">Run your script to see output...</span>
+              ) : (
+                output.map((line, i) => (
+                  <motion.div
+                    key={i}
+                    className="output-line"
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                  >
+                    {line}
+                  </motion.div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </>
+  );
+}
+
+// ============================================================================
+// ONBOARDING FLOW
+// ============================================================================
+
+function OnboardingFlow({ isOpen, onComplete }: { isOpen: boolean; onComplete: () => void }) {
+  const [step, setStep] = useState(0);
+
+  const steps = [
+    {
+      title: 'Welcome to Genesis',
+      description: 'The most advanced AI system interface ever created. Let\'s take a quick tour.',
+      icon: '🚀'
+    },
+    {
+      title: 'Command Palette',
+      description: 'Press ⌘K anywhere to open the command palette. Search for anything, navigate quickly.',
+      icon: '⌘'
+    },
+    {
+      title: 'AI Agents',
+      description: 'Genesis has 10 specialized agents. Each can be started, stopped, and monitored in real-time.',
+      icon: '🤖'
+    },
+    {
+      title: 'Real-time Updates',
+      description: 'Everything updates live via SSE. Consciousness, memory, kernel - all in sync.',
+      icon: '⚡'
+    },
+    {
+      title: 'Workflow Builder',
+      description: 'Create complex automation flows with our visual node editor. Drag, connect, deploy.',
+      icon: '⛓'
+    },
+    {
+      title: 'You\'re Ready!',
+      description: 'Explore the interface. Press ? for keyboard shortcuts. Have fun building the future.',
+      icon: '✨'
+    }
+  ];
+
+  const nextStep = () => {
+    if (step < steps.length - 1) {
+      setStep(step + 1);
+    } else {
+      onComplete();
+    }
+  };
+
+  const prevStep = () => {
+    if (step > 0) setStep(step - 1);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <>
+      <motion.div
+        className="onboarding-overlay"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+      />
+      <motion.div
+        className="onboarding-modal"
+        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+      >
+        <div className="onboarding-progress">
+          {steps.map((_, i) => (
+            <div
+              key={i}
+              className={`progress-dot ${i === step ? 'active' : i < step ? 'completed' : ''}`}
+            />
+          ))}
+        </div>
+
+        <motion.div
+          key={step}
+          className="onboarding-content"
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -20 }}
+        >
+          <span className="onboarding-icon">{steps[step].icon}</span>
+          <h2>{steps[step].title}</h2>
+          <p>{steps[step].description}</p>
+        </motion.div>
+
+        <div className="onboarding-actions">
+          {step > 0 && (
+            <button className="back-btn" onClick={prevStep}>
+              ← Back
+            </button>
+          )}
+          <button className="next-btn" onClick={nextStep}>
+            {step === steps.length - 1 ? 'Get Started' : 'Next →'}
+          </button>
+        </div>
+
+        <button className="skip-btn" onClick={onComplete}>
+          Skip tour
+        </button>
+      </motion.div>
+    </>
+  );
+}
+
+// ============================================================================
+// DOCS VIEWER
+// ============================================================================
+
+function DocsViewer({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [activeDoc, setActiveDoc] = useState('getting-started');
+
+  const docs = [
+    { id: 'getting-started', title: 'Getting Started', icon: '🚀' },
+    { id: 'agents', title: 'Agents Guide', icon: '🤖' },
+    { id: 'api', title: 'API Reference', icon: '📡' },
+    { id: 'workflows', title: 'Workflows', icon: '⛓' },
+    { id: 'memory', title: 'Memory System', icon: '💾' },
+    { id: 'integrations', title: 'Integrations', icon: '🔌' },
+  ];
+
+  const docContent: Record<string, string> = {
+    'getting-started': `
+# Getting Started with Genesis
+
+Genesis is an autonomous AI system with consciousness-inspired architecture.
+
+## Quick Start
+
+1. **Connect to Genesis**: The dashboard automatically connects via SSE
+2. **Monitor the System**: Watch real-time metrics on the Overview
+3. **Chat with Genesis**: Use the Chat interface to interact
+4. **Run Agents**: Start specialized agents from the Agents panel
+
+## Key Concepts
+
+### Consciousness (φ)
+The system's integrated information level, measured in bits.
+
+### Neuromodulation
+Four simulated neurotransmitters affect system behavior:
+- **Dopamine**: Motivation and reward
+- **Serotonin**: Mood stability
+- **Norepinephrine**: Alertness
+- **Cortisol**: Stress response
+
+### Active Inference
+Genesis minimizes free energy to maintain homeostasis.
+    `,
+    'agents': `
+# Agents Guide
+
+Genesis includes 10 specialized AI agents.
+
+## Available Agents
+
+| Agent | Type | Purpose |
+|-------|------|---------|
+| Explorer | Research | Information gathering |
+| Writer | Content | Text generation |
+| Analyst | Analysis | Data analysis |
+| Coder | Development | Code generation |
+| Planner | Planning | Strategic planning |
+| Critic | Review | Quality assurance |
+| Memory | Storage | Memory management |
+| Executor | Execution | Task execution |
+| Monitor | Monitoring | System monitoring |
+| Dreamer | Creative | Creative ideation |
+
+## Starting an Agent
+
+\`\`\`typescript
+await genesis.agents.start('analyst', {
+  goal: 'Analyze metrics',
+  context: { ... }
+});
+\`\`\`
+    `,
+    'api': `
+# API Reference
+
+## Endpoints
+
+### GET /api/metrics
+Returns current system metrics.
+
+### POST /api/chat
+Send a message to Genesis.
+
+### GET /api/agents
+List all agents and their status.
+
+### POST /api/agents/:id/start
+Start a specific agent.
+
+### GET /api/events
+SSE stream of real-time events.
+    `,
+    'workflows': `
+# Workflows Guide
+
+Build complex automations with the visual Workflow Builder.
+
+## Node Types
+
+- **Trigger**: Starts the workflow (on message, schedule, event)
+- **Condition**: Branch based on criteria
+- **Action**: Execute an agent or API call
+- **Output**: Send response or store result
+
+## Creating a Workflow
+
+1. Open the Workflow Builder
+2. Add a Trigger node
+3. Connect to Actions and Conditions
+4. Add an Output node
+5. Save and activate
+    `,
+    'memory': `
+# Memory System
+
+Genesis has three types of memory:
+
+## Episodic Memory
+Stores specific events and experiences with timestamps.
+
+## Semantic Memory
+Stores facts, concepts, and general knowledge.
+
+## Procedural Memory
+Stores skills, patterns, and how-to knowledge.
+
+## Memory Operations
+
+- **Store**: Add new memories
+- **Retrieve**: Search and recall
+- **Consolidate**: Strengthen important memories
+- **Forget**: Decay unimportant memories
+    `,
+    'integrations': `
+# Integrations
+
+Connect Genesis to external services.
+
+## Available Integrations
+
+- **Slack**: Team notifications
+- **GitHub**: Code repository
+- **Linear**: Issue tracking
+- **PostgreSQL**: Database
+- **Redis**: Caching
+- **OpenAI/Anthropic**: LLM providers
+
+## Adding an Integration
+
+1. Go to Integrations page
+2. Click Connect on desired service
+3. Authenticate and configure
+4. Test the connection
+    `
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <>
+      <motion.div
+        className="docs-overlay"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+      />
+      <motion.div
+        className="docs-viewer"
+        initial={{ opacity: 0, x: 100 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: 100 }}
+      >
+        <div className="docs-header">
+          <h2>📚 Documentation</h2>
+          <button className="close-btn" onClick={onClose}>×</button>
+        </div>
+
+        <div className="docs-layout">
+          <nav className="docs-nav">
+            {docs.map(doc => (
+              <button
+                key={doc.id}
+                className={`docs-nav-item ${activeDoc === doc.id ? 'active' : ''}`}
+                onClick={() => setActiveDoc(doc.id)}
+              >
+                <span>{doc.icon}</span>
+                <span>{doc.title}</span>
+              </button>
+            ))}
+          </nav>
+
+          <div className="docs-content">
+            <div className="markdown-body">
+              {docContent[activeDoc]?.split('\n').map((line, i) => {
+                if (line.startsWith('# ')) {
+                  return <h1 key={i}>{line.slice(2)}</h1>;
+                } else if (line.startsWith('## ')) {
+                  return <h2 key={i}>{line.slice(3)}</h2>;
+                } else if (line.startsWith('### ')) {
+                  return <h3 key={i}>{line.slice(4)}</h3>;
+                } else if (line.startsWith('- ')) {
+                  return <li key={i}>{line.slice(2)}</li>;
+                } else if (line.startsWith('```')) {
+                  return null; // Skip code fence markers
+                } else if (line.startsWith('|')) {
+                  return <code key={i} className="table-row">{line}</code>;
+                } else if (line.trim()) {
+                  return <p key={i}>{line}</p>;
+                }
+                return null;
+              })}
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </>
   );
 }
 
@@ -1860,19 +3389,23 @@ function SystemHealth() {
 function Breadcrumbs({ currentView }: { currentView: View }) {
   const viewLabels: Record<View, string> = {
     overview: 'Overview',
+    consciousness: 'Consciousness',
+    neuromod: 'Neuromodulation',
+    ness: 'NESS Economy',
     chat: 'Chat',
-    agents: 'Agenti',
+    agents: 'Agents',
     tasks: 'Tasks',
     creator: 'Creator Studio',
     terminal: 'Terminal',
     analytics: 'Analytics',
     files: 'File Explorer',
     memory: 'Memory',
-    settings: 'Impostazioni',
+    settings: 'Settings',
     workflow: 'Workflow Builder',
     playground: 'API Playground',
     integrations: 'Integrations',
-    marketplace: 'Marketplace'
+    marketplace: 'Marketplace',
+    mcp: 'MCP Hub'
   };
 
   return (
@@ -2630,6 +4163,2287 @@ function MarketplaceView() {
 }
 
 // ============================================================================
+// MCP HUB - Model Context Protocol Control Center
+// ============================================================================
+
+interface MCPServer {
+  id: string;
+  name: string;
+  status: 'connected' | 'disconnected' | 'error';
+  icon: string;
+  tools: MCPTool[];
+  description: string;
+  category: 'ai' | 'research' | 'web' | 'cloud' | 'automation';
+}
+
+interface MCPTool {
+  name: string;
+  mcpName?: string; // Real MCP tool name (e.g., mcp__gemini__web_search)
+  description: string;
+  params?: Record<string, string>; // Parameter descriptions
+  parameters?: Record<string, any>;
+  template?: string; // Pre-filled input template
+}
+
+interface MCPCall {
+  id: string;
+  server: string;
+  tool: string;
+  timestamp: number;
+  duration: number;
+  status: 'success' | 'error' | 'pending';
+  input?: any;
+  output?: any;
+}
+
+interface MCPFavorite {
+  serverId: string;
+  toolName: string;
+}
+
+// 3D MCP Constellation Component
+function MCPConstellation3D({ servers, selectedServer, onSelect }: {
+  servers: MCPServer[];
+  selectedServer: MCPServer | null;
+  onSelect: (server: MCPServer) => void;
+}) {
+  return (
+    <div className="mcp-constellation-3d">
+      <Canvas camera={{ position: [0, 0, 8], fov: 60 }}>
+        <ambientLight intensity={0.3} />
+        <pointLight position={[10, 10, 10]} intensity={1} color="#a855f7" />
+        <pointLight position={[-10, -10, -10]} intensity={0.5} color="#06b6d4" />
+        <Stars radius={100} depth={50} count={2000} factor={4} fade speed={1} />
+
+        {servers.map((server, i) => {
+          const angle = (i / servers.length) * Math.PI * 2;
+          const radius = 3;
+          const x = Math.cos(angle) * radius;
+          const z = Math.sin(angle) * radius;
+          const y = (Math.random() - 0.5) * 2;
+
+          return (
+            <group key={server.id} position={[x, y, z]}>
+              <mesh
+                onClick={() => onSelect(server)}
+                onPointerOver={(e) => (e.object.scale.setScalar(1.3))}
+                onPointerOut={(e) => (e.object.scale.setScalar(1))}
+              >
+                <sphereGeometry args={[0.3 + server.tools.length * 0.02, 32, 32]} />
+                <meshStandardMaterial
+                  color={server.status === 'connected' ? '#10b981' : '#ef4444'}
+                  emissive={selectedServer?.id === server.id ? '#a855f7' : '#000'}
+                  emissiveIntensity={selectedServer?.id === server.id ? 0.5 : 0}
+                  metalness={0.8}
+                  roughness={0.2}
+                />
+              </mesh>
+              {/* Tool particles orbiting */}
+              {server.tools.slice(0, 5).map((_, ti) => {
+                const toolAngle = (ti / Math.min(5, server.tools.length)) * Math.PI * 2;
+                const toolRadius = 0.5;
+                return (
+                  <mesh
+                    key={ti}
+                    position={[
+                      Math.cos(toolAngle) * toolRadius,
+                      Math.sin(toolAngle) * toolRadius,
+                      0
+                    ]}
+                  >
+                    <sphereGeometry args={[0.05, 16, 16]} />
+                    <meshStandardMaterial color="#a855f7" emissive="#a855f7" emissiveIntensity={0.5} />
+                  </mesh>
+                );
+              })}
+            </group>
+          );
+        })}
+
+        <OrbitControls enableZoom={true} enablePan={false} autoRotate autoRotateSpeed={0.3} />
+      </Canvas>
+
+      {/* Legend overlay */}
+      <div className="constellation-legend">
+        {servers.map(server => (
+          <div
+            key={server.id}
+            className={`legend-item ${selectedServer?.id === server.id ? 'selected' : ''}`}
+            onClick={() => onSelect(server)}
+          >
+            <span className="legend-icon">{server.icon}</span>
+            <span className="legend-name">{server.name}</span>
+            <span className="legend-count">{server.tools.length}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Tool Search Component
+function MCPToolSearch({ servers, onSelectTool }: {
+  servers: MCPServer[];
+  onSelectTool: (server: MCPServer, tool: MCPTool) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const allTools = useMemo(() => {
+    return servers.flatMap(server =>
+      server.tools.map(tool => ({ server, tool }))
+    );
+  }, [servers]);
+
+  const filteredTools = useMemo(() => {
+    if (!query) return allTools.slice(0, 10);
+    const q = query.toLowerCase();
+    return allTools.filter(
+      ({ server, tool }) =>
+        tool.name.toLowerCase().includes(q) ||
+        tool.description.toLowerCase().includes(q) ||
+        server.name.toLowerCase().includes(q)
+    ).slice(0, 10);
+  }, [allTools, query]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        setIsOpen(true);
+        setTimeout(() => inputRef.current?.focus(), 100);
+      }
+      if (e.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  if (!isOpen) {
+    return (
+      <button className="mcp-search-trigger" onClick={() => setIsOpen(true)}>
+        <Icons.search />
+        <span>Search tools...</span>
+        <span className="shortcut">⌘F</span>
+      </button>
+    );
+  }
+
+  return (
+    <motion.div
+      className="mcp-tool-search"
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+    >
+      <div className="search-input-wrapper">
+        <Icons.search />
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder="Search all MCP tools..."
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          autoFocus
+        />
+        <button className="close-search" onClick={() => setIsOpen(false)}>×</button>
+      </div>
+      <div className="search-results">
+        {filteredTools.map(({ server, tool }, i) => (
+          <motion.button
+            key={`${server.id}-${tool.name}`}
+            className="search-result"
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: i * 0.03 }}
+            onClick={() => {
+              onSelectTool(server, tool);
+              setIsOpen(false);
+              setQuery('');
+            }}
+          >
+            <span className="result-icon">{server.icon}</span>
+            <div className="result-info">
+              <span className="result-name">{tool.name}</span>
+              <span className="result-desc">{tool.description}</span>
+            </div>
+            <span className="result-server">{server.name}</span>
+          </motion.button>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+// Activity Sparkline Component
+function MCPActivitySparkline({ calls }: { calls: MCPCall[] }) {
+  const last24Hours = useMemo(() => {
+    const now = Date.now();
+    const hours = Array(24).fill(0);
+    calls.forEach(call => {
+      const hoursAgo = Math.floor((now - call.timestamp) / (1000 * 60 * 60));
+      if (hoursAgo < 24) {
+        hours[23 - hoursAgo]++;
+      }
+    });
+    return hours;
+  }, [calls]);
+
+  const max = Math.max(...last24Hours, 1);
+
+  return (
+    <div className="activity-sparkline">
+      <div className="sparkline-bars">
+        {last24Hours.map((count, i) => (
+          <div
+            key={i}
+            className="sparkline-bar"
+            style={{
+              height: `${(count / max) * 100}%`,
+              opacity: 0.3 + (count / max) * 0.7
+            }}
+          />
+        ))}
+      </div>
+      <div className="sparkline-label">Last 24h activity</div>
+    </div>
+  );
+}
+
+// Server Detail Popover Component
+function ServerDetailPopover({ server, position, onClose }: {
+  server: MCPServer;
+  position: { x: number; y: number };
+  onClose: () => void;
+}) {
+  return (
+    <motion.div
+      className="server-popover"
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      style={{ left: position.x, top: position.y }}
+    >
+      <div className="popover-header">
+        <span className="popover-icon">{server.icon}</span>
+        <div className="popover-title">
+          <h4>{server.name}</h4>
+          <span className={`popover-status ${server.status}`}>
+            {server.status === 'connected' ? '● Online' : '○ Offline'}
+          </span>
+        </div>
+        <button className="popover-close" onClick={onClose}>×</button>
+      </div>
+      <p className="popover-desc">{server.description}</p>
+      <div className="popover-stats">
+        <div className="popover-stat">
+          <span className="stat-val">{server.tools.length}</span>
+          <span className="stat-lbl">Tools</span>
+        </div>
+        <div className="popover-stat">
+          <span className="stat-val">{server.category}</span>
+          <span className="stat-lbl">Category</span>
+        </div>
+      </div>
+      <div className="popover-tools">
+        <h5>Available Tools</h5>
+        <div className="mini-tools-list">
+          {server.tools.slice(0, 5).map(tool => (
+            <div key={tool.name} className="mini-tool">
+              <span className="mini-tool-name">{tool.name}</span>
+            </div>
+          ))}
+          {server.tools.length > 5 && (
+            <div className="mini-tool more">+{server.tools.length - 5} more</div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// Live Execution Indicator Component
+function LiveExecutionIndicator({ isExecuting, currentTool, duration }: {
+  isExecuting: boolean;
+  currentTool: string | null;
+  duration: number;
+}) {
+  if (!isExecuting) return null;
+
+  return (
+    <motion.div
+      className="live-execution"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 20 }}
+    >
+      <div className="execution-pulse" />
+      <div className="execution-info">
+        <span className="execution-tool">{currentTool}</span>
+        <span className="execution-duration">{(duration / 1000).toFixed(1)}s</span>
+      </div>
+      <div className="execution-spinner" />
+    </motion.div>
+  );
+}
+
+// Tool Category Badge Component
+function CategoryBadge({ category }: { category: string }) {
+  const colors: Record<string, string> = {
+    ai: '#a855f7',
+    research: '#3b82f6',
+    web: '#f97316',
+    cloud: '#06b6d4',
+    automation: '#10b981',
+  };
+
+  return (
+    <span
+      className="category-badge"
+      style={{ '--badge-color': colors[category] || '#6b7280' } as React.CSSProperties}
+    >
+      {category}
+    </span>
+  );
+}
+
+// ============================================================================
+// MCP LEARNING & MEMORY SYSTEM
+// ============================================================================
+
+interface UsagePattern {
+  toolId: string;
+  serverId: string;
+  useCount: number;
+  successRate: number;
+  avgDuration: number;
+  lastUsed: number;
+  commonInputs: string[];
+}
+
+interface MCPLearningState {
+  patterns: UsagePattern[];
+  totalCalls: number;
+  successfulCalls: number;
+  favoriteTools: string[];
+  lastSession: number;
+  insights: LearningInsight[];
+}
+
+interface LearningInsight {
+  id: string;
+  type: 'recommendation' | 'optimization' | 'warning' | 'achievement';
+  title: string;
+  description: string;
+  actionTool?: string;
+  createdAt: number;
+}
+
+const LEARNING_STORAGE_KEY = 'genesis-mcp-learning';
+
+function useMCPLearning(callHistory: MCPCall[]): MCPLearningState {
+  const [state, setState] = useState<MCPLearningState>(() => {
+    try {
+      const saved = localStorage.getItem(LEARNING_STORAGE_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      patterns: [],
+      totalCalls: 0,
+      successfulCalls: 0,
+      favoriteTools: [],
+      lastSession: Date.now(),
+      insights: [],
+    };
+  });
+
+  // Update patterns when call history changes
+  useEffect(() => {
+    const patternMap = new Map<string, UsagePattern>();
+
+    callHistory.forEach(call => {
+      const toolId = `${call.server}:${call.tool}`;
+      const existing = patternMap.get(toolId) || {
+        toolId,
+        serverId: call.server,
+        useCount: 0,
+        successRate: 0,
+        avgDuration: 0,
+        lastUsed: 0,
+        commonInputs: [],
+      };
+
+      existing.useCount++;
+      existing.lastUsed = Math.max(existing.lastUsed, call.timestamp);
+      existing.avgDuration = (existing.avgDuration * (existing.useCount - 1) + call.duration) / existing.useCount;
+
+      if (call.status === 'success') {
+        existing.successRate = ((existing.successRate * (existing.useCount - 1)) + 1) / existing.useCount;
+      }
+
+      if (call.input && !existing.commonInputs.includes(call.input)) {
+        existing.commonInputs = [...existing.commonInputs.slice(-4), call.input];
+      }
+
+      patternMap.set(toolId, existing);
+    });
+
+    const patterns = Array.from(patternMap.values())
+      .sort((a, b) => b.useCount - a.useCount);
+
+    const successfulCalls = callHistory.filter(c => c.status === 'success').length;
+
+    // Generate insights based on patterns
+    const insights: LearningInsight[] = [];
+
+    // Top tool insight
+    if (patterns.length > 0) {
+      const topTool = patterns[0];
+      insights.push({
+        id: `top-${topTool.toolId}`,
+        type: 'achievement',
+        title: 'Most Used Tool',
+        description: `${topTool.toolId.split(':')[1]} is your go-to tool with ${topTool.useCount} uses`,
+        actionTool: topTool.toolId,
+        createdAt: Date.now(),
+      });
+    }
+
+    // Low success rate warning
+    const lowSuccessTools = patterns.filter(p => p.useCount >= 3 && p.successRate < 0.5);
+    if (lowSuccessTools.length > 0) {
+      insights.push({
+        id: `warn-${lowSuccessTools[0].toolId}`,
+        type: 'warning',
+        title: 'Check Parameters',
+        description: `${lowSuccessTools[0].toolId.split(':')[1]} has a ${(lowSuccessTools[0].successRate * 100).toFixed(0)}% success rate`,
+        actionTool: lowSuccessTools[0].toolId,
+        createdAt: Date.now(),
+      });
+    }
+
+    // Recommend unused categories
+    const usedCategories = new Set(patterns.map(p => p.serverId));
+    const allCategories = ['gemini', 'context7', 'semantic-scholar', 'arxiv', 'firecrawl', 'playwright', 'aws'];
+    const unusedCategories = allCategories.filter(c => !usedCategories.has(c));
+    if (unusedCategories.length > 0) {
+      insights.push({
+        id: `discover-${unusedCategories[0]}`,
+        type: 'recommendation',
+        title: 'Explore New Tools',
+        description: `Try ${unusedCategories[0]} for new capabilities`,
+        createdAt: Date.now(),
+      });
+    }
+
+    const newState: MCPLearningState = {
+      patterns,
+      totalCalls: callHistory.length,
+      successfulCalls,
+      favoriteTools: patterns.slice(0, 5).map(p => p.toolId),
+      lastSession: Date.now(),
+      insights: insights.slice(0, 4),
+    };
+
+    setState(newState);
+    localStorage.setItem(LEARNING_STORAGE_KEY, JSON.stringify(newState));
+
+    // Also sync to disk via server for persistence across sessions
+    fetch('http://localhost:9876/api/learning/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newState),
+    }).catch(() => {
+      // Silent fail - localStorage is the primary store
+    });
+  }, [callHistory]);
+
+  // Load from server on mount (fallback for fresh installs)
+  useEffect(() => {
+    fetch('http://localhost:9876/api/learning/load')
+      .then(res => res.json())
+      .then(serverState => {
+        // Only use server state if local is empty and server has data
+        if (serverState.totalCalls > 0) {
+          const localState = localStorage.getItem(LEARNING_STORAGE_KEY);
+          if (!localState) {
+            setState(serverState);
+            localStorage.setItem(LEARNING_STORAGE_KEY, JSON.stringify(serverState));
+          }
+        }
+      })
+      .catch(() => {
+        // Silent fail - use local state
+      });
+  }, []);
+
+  return state;
+}
+
+// MCP Learning Panel Component
+function MCPLearningPanel({ learning, onSelectTool }: {
+  learning: MCPLearningState;
+  onSelectTool: (serverId: string, toolName: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const overallSuccessRate = learning.totalCalls > 0
+    ? (learning.successfulCalls / learning.totalCalls * 100).toFixed(0)
+    : 0;
+
+  return (
+    <motion.div
+      className={`mcp-learning-panel ${expanded ? 'expanded' : ''}`}
+      layout
+    >
+      <div className="learning-header" onClick={() => setExpanded(!expanded)}>
+        <div className="learning-title">
+          <span className="learning-icon">🧠</span>
+          <span>Learning Insights</span>
+        </div>
+        <div className="learning-summary">
+          <span className="learning-stat">
+            <span className="stat-num">{learning.totalCalls}</span>
+            <span className="stat-lbl">calls</span>
+          </span>
+          <span className="learning-stat">
+            <span className="stat-num">{overallSuccessRate}%</span>
+            <span className="stat-lbl">success</span>
+          </span>
+        </div>
+        <motion.span
+          className="expand-icon"
+          animate={{ rotate: expanded ? 180 : 0 }}
+        >
+          ▼
+        </motion.span>
+      </div>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            className="learning-content"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+          >
+            {/* Insights */}
+            <div className="insights-section">
+              <h4>Insights</h4>
+              <div className="insights-grid">
+                {learning.insights.map(insight => (
+                  <motion.div
+                    key={insight.id}
+                    className={`insight-card ${insight.type}`}
+                    whileHover={{ scale: 1.02 }}
+                    onClick={() => {
+                      if (insight.actionTool) {
+                        const [server, tool] = insight.actionTool.split(':');
+                        onSelectTool(server, tool);
+                      }
+                    }}
+                  >
+                    <span className="insight-icon">
+                      {insight.type === 'achievement' ? '🏆' :
+                       insight.type === 'warning' ? '⚠️' :
+                       insight.type === 'recommendation' ? '💡' : '✨'}
+                    </span>
+                    <div className="insight-text">
+                      <span className="insight-title">{insight.title}</span>
+                      <span className="insight-desc">{insight.description}</span>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+
+            {/* Top Tools */}
+            <div className="top-tools-section">
+              <h4>Most Used Tools</h4>
+              <div className="usage-chart">
+                {learning.patterns.slice(0, 5).map((pattern, idx) => (
+                  <motion.div
+                    key={pattern.toolId}
+                    className="usage-bar-row"
+                    initial={{ x: -20, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    transition={{ delay: idx * 0.05 }}
+                  >
+                    <span className="usage-rank">#{idx + 1}</span>
+                    <span className="usage-tool">{pattern.toolId.split(':')[1]}</span>
+                    <div className="usage-bar-container">
+                      <motion.div
+                        className="usage-bar-fill"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${(pattern.useCount / (learning.patterns[0]?.useCount || 1)) * 100}%` }}
+                        transition={{ delay: 0.2 + idx * 0.05, duration: 0.5 }}
+                      />
+                    </div>
+                    <span className="usage-count">{pattern.useCount}</span>
+                    <span className={`usage-success ${pattern.successRate >= 0.8 ? 'high' : pattern.successRate >= 0.5 ? 'mid' : 'low'}`}>
+                      {(pattern.successRate * 100).toFixed(0)}%
+                    </span>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+
+            {/* Usage Heatmap */}
+            <div className="heatmap-section">
+              <h4>Activity by Category</h4>
+              <div className="category-heatmap">
+                {['ai', 'research', 'web', 'cloud', 'automation'].map(category => {
+                  const categoryPatterns = learning.patterns.filter(p => {
+                    const serverCategories: Record<string, string> = {
+                      gemini: 'ai',
+                      context7: 'research',
+                      'semantic-scholar': 'research',
+                      arxiv: 'research',
+                      firecrawl: 'web',
+                      playwright: 'automation',
+                      aws: 'cloud',
+                    };
+                    return serverCategories[p.serverId] === category;
+                  });
+                  const totalUses = categoryPatterns.reduce((sum, p) => sum + p.useCount, 0);
+                  const maxUses = Math.max(...learning.patterns.map(p => p.useCount), 1);
+                  const intensity = totalUses / maxUses;
+
+                  return (
+                    <div
+                      key={category}
+                      className="heatmap-cell"
+                      style={{
+                        '--intensity': intensity,
+                        '--cat-hue': category === 'ai' ? 270 :
+                                     category === 'research' ? 200 :
+                                     category === 'web' ? 30 :
+                                     category === 'cloud' ? 180 : 140
+                      } as React.CSSProperties}
+                    >
+                      <span className="heatmap-label">{category}</span>
+                      <span className="heatmap-value">{totalUses}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Memory Sync Status */}
+            <div className="memory-sync-section">
+              <div className="sync-status">
+                <span className="sync-icon">💾</span>
+                <span className="sync-text">
+                  Memory synced • {learning.patterns.length} patterns learned
+                </span>
+                <span className="sync-time">
+                  Last: {new Date(learning.lastSession).toLocaleTimeString()}
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+// Toast Notification System
+interface Toast {
+  id: string;
+  type: 'success' | 'error' | 'info' | 'warning';
+  title: string;
+  message?: string;
+  duration?: number;
+}
+
+function ToastContainer({ toasts, onDismiss }: {
+  toasts: Toast[];
+  onDismiss: (id: string) => void;
+}) {
+  return (
+    <div className="toast-container">
+      <AnimatePresence>
+        {toasts.map(toast => (
+          <motion.div
+            key={toast.id}
+            className={`toast toast-${toast.type}`}
+            initial={{ opacity: 0, x: 100, scale: 0.8 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 100, scale: 0.8 }}
+            onClick={() => onDismiss(toast.id)}
+          >
+            <span className="toast-icon">
+              {toast.type === 'success' ? '✓' :
+               toast.type === 'error' ? '✗' :
+               toast.type === 'warning' ? '⚠' : 'ℹ'}
+            </span>
+            <div className="toast-content">
+              <span className="toast-title">{toast.title}</span>
+              {toast.message && <span className="toast-message">{toast.message}</span>}
+            </div>
+            <button className="toast-close">×</button>
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function useToasts() {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const addToast = useCallback((toast: Omit<Toast, 'id'>) => {
+    const id = crypto.randomUUID();
+    setToasts(prev => [...prev, { ...toast, id }]);
+
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, toast.duration || 4000);
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  return { toasts, addToast, dismissToast };
+}
+
+// Smart Suggestions Component
+function SmartSuggestions({ learning, servers, onSelectTool }: {
+  learning: MCPLearningState;
+  servers: MCPServer[];
+  onSelectTool: (server: MCPServer, tool: MCPTool) => void;
+}) {
+  // Generate suggestions based on patterns
+  const suggestions = useMemo(() => {
+    const result: Array<{ server: MCPServer; tool: MCPTool; reason: string; score: number }> = [];
+
+    // Frequently used tools
+    learning.patterns.slice(0, 3).forEach(pattern => {
+      const server = servers.find(s => s.id === pattern.serverId);
+      const tool = server?.tools.find(t => t.name === pattern.toolId.split(':')[1]);
+      if (server && tool) {
+        result.push({
+          server,
+          tool,
+          reason: 'Frequently used',
+          score: pattern.useCount * 10 + pattern.successRate * 5,
+        });
+      }
+    });
+
+    // High success rate tools
+    learning.patterns
+      .filter(p => p.successRate >= 0.9 && p.useCount >= 2)
+      .slice(0, 2)
+      .forEach(pattern => {
+        const server = servers.find(s => s.id === pattern.serverId);
+        const tool = server?.tools.find(t => t.name === pattern.toolId.split(':')[1]);
+        if (server && tool && !result.find(r => r.tool.name === tool.name)) {
+          result.push({
+            server,
+            tool,
+            reason: 'High success rate',
+            score: pattern.successRate * 15,
+          });
+        }
+      });
+
+    return result.sort((a, b) => b.score - a.score).slice(0, 4);
+  }, [learning, servers]);
+
+  if (suggestions.length === 0) return null;
+
+  return (
+    <div className="smart-suggestions">
+      <div className="suggestions-header">
+        <span className="suggestions-icon">✨</span>
+        <span>Smart Suggestions</span>
+      </div>
+      <div className="suggestions-list">
+        {suggestions.map(({ server, tool, reason }) => (
+          <motion.button
+            key={`${server.id}-${tool.name}`}
+            className="suggestion-chip"
+            onClick={() => onSelectTool(server, tool)}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <span className="suggestion-server-icon">{server.icon}</span>
+            <span className="suggestion-tool">{tool.name}</span>
+            <span className="suggestion-reason">{reason}</span>
+          </motion.button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Tool Template Generator
+function getToolTemplates(serverId: string, toolName: string): { label: string; value: string }[] {
+  const templates: Record<string, Record<string, { label: string; value: string }[]>> = {
+    gemini: {
+      web_search: [
+        { label: 'Simple search', value: '{"query": "your search query"}' },
+        { label: 'Research mode', value: '{"query": "topic", "mode": "research"}' },
+        { label: 'With citations', value: '{"query": "topic", "includeCitations": true}' },
+      ],
+      web_search_batch: [
+        { label: 'Multiple queries', value: '{"queries": ["query1", "query2", "query3"]}' },
+      ],
+      health_check: [
+        { label: 'Check health', value: '{}' },
+      ],
+    },
+    context7: {
+      'resolve-library-id': [
+        { label: 'React', value: '{"libraryName": "react"}' },
+        { label: 'Vue', value: '{"libraryName": "vue"}' },
+        { label: 'Next.js', value: '{"libraryName": "nextjs"}' },
+      ],
+      'query-docs': [
+        { label: 'React hooks', value: '{"libraryId": "react", "query": "useState hook"}' },
+        { label: 'Getting started', value: '{"libraryId": "react", "query": "getting started"}' },
+      ],
+    },
+    'semantic-scholar': {
+      search_semantic_scholar: [
+        { label: 'AI search', value: '{"query": "machine learning", "limit": 10}' },
+        { label: 'By author', value: '{"author": "author name", "limit": 5}' },
+      ],
+      get_semantic_scholar_paper: [
+        { label: 'By paper ID', value: '{"paperId": "paper-id"}' },
+        { label: 'By DOI', value: '{"doi": "10.1234/example"}' },
+      ],
+    },
+    arxiv: {
+      search_arxiv: [
+        { label: 'AI papers', value: '{"query": "transformer neural network", "max_results": 10}' },
+        { label: 'By author', value: '{"query": "au:Vaswani", "max_results": 5}' },
+      ],
+      get_recent_ai_papers: [
+        { label: 'Latest 10', value: '{"max_results": 10}' },
+        { label: 'Latest 25', value: '{"max_results": 25}' },
+      ],
+    },
+    firecrawl: {
+      firecrawl_scrape: [
+        { label: 'Simple scrape', value: '{"url": "https://example.com"}' },
+        { label: 'With markdown', value: '{"url": "https://example.com", "formats": ["markdown"]}' },
+      ],
+      firecrawl_map: [
+        { label: 'Map site', value: '{"url": "https://example.com"}' },
+      ],
+      firecrawl_search: [
+        { label: 'Web search', value: '{"query": "search term", "limit": 5}' },
+      ],
+      firecrawl_crawl: [
+        { label: 'Crawl site', value: '{"url": "https://example.com", "limit": 10}' },
+      ],
+    },
+    playwright: {
+      browser_navigate: [
+        { label: 'Go to URL', value: '{"url": "https://example.com"}' },
+      ],
+      browser_take_screenshot: [
+        { label: 'Full page', value: '{"fullPage": true}' },
+        { label: 'Visible only', value: '{"fullPage": false}' },
+      ],
+      browser_click: [
+        { label: 'By selector', value: '{"selector": "button.submit"}' },
+        { label: 'By text', value: '{"text": "Submit"}' },
+      ],
+    },
+    aws: {
+      cloud_servers: [
+        { label: 'List instances', value: '{"action": "list"}' },
+        { label: 'By region', value: '{"action": "list", "region": "us-east-1"}' },
+      ],
+      cloud_storage: [
+        { label: 'List buckets', value: '{"action": "list-buckets"}' },
+        { label: 'List objects', value: '{"action": "list-objects", "bucket": "my-bucket"}' },
+      ],
+    },
+  };
+
+  return templates[serverId]?.[toolName] || [
+    { label: 'Empty', value: '{}' },
+    { label: 'Sample', value: '{"param": "value"}' },
+  ];
+}
+
+function MCPHubView() {
+  const [servers, setServers] = useState<MCPServer[]>([
+    // AI & Search
+    {
+      id: 'gemini',
+      name: 'Gemini',
+      status: 'connected',
+      icon: '💎',
+      category: 'ai',
+      description: 'Grounded web search with citations using Gemini models',
+      tools: [
+        { name: 'web_search', mcpName: 'mcp__gemini__web_search', description: 'Search web with AI grounding (normal/research mode)', params: { q: 'string (required)', mode: 'normal | research', verbosity: 'concise | normal | detailed' } },
+        { name: 'web_search_batch', mcpName: 'mcp__gemini__web_search_batch', description: 'Run multiple searches in parallel', params: { queries: 'string[]' } },
+        { name: 'health_check', mcpName: 'mcp__gemini__health_check', description: 'Check Gemini service health and metrics', params: {} },
+      ],
+    },
+    // Research
+    {
+      id: 'context7',
+      name: 'Context7',
+      status: 'connected',
+      icon: '📚',
+      category: 'research',
+      description: 'Up-to-date documentation and code examples for any library',
+      tools: [
+        { name: 'resolve-library-id', mcpName: 'mcp__context7__resolve-library-id', description: 'Resolve library name to Context7 ID', params: { libraryName: 'string (required)', query: 'string (required)' } },
+        { name: 'query-docs', mcpName: 'mcp__context7__query-docs', description: 'Query documentation for any library', params: { libraryId: 'string (required)', query: 'string (required)' } },
+      ],
+    },
+    {
+      id: 'semantic-scholar',
+      name: 'Semantic Scholar',
+      status: 'connected',
+      icon: '🎓',
+      category: 'research',
+      description: 'Academic paper search and citation analysis',
+      tools: [
+        { name: 'search_semantic_scholar', mcpName: 'mcp__semantic-scholar__search_semantic_scholar', description: 'Search papers by keyword/topic', params: { query: 'string (required)', maxResults: 'number (default: 10)' } },
+        { name: 'get_semantic_scholar_paper', mcpName: 'mcp__semantic-scholar__get_semantic_scholar_paper', description: 'Get paper by ID or DOI', params: { identifier: 'string (required)' } },
+        { name: 'get_paper_citations', mcpName: 'mcp__semantic-scholar__get_paper_citations', description: 'Get citing papers', params: { paperId: 'string (required)' } },
+        { name: 'semantic_scholar_to_bibtex', mcpName: 'mcp__semantic-scholar__semantic_scholar_to_bibtex', description: 'Convert to BibTeX format', params: { identifier: 'string (required)' } },
+      ],
+    },
+    {
+      id: 'arxiv',
+      name: 'ArXiv',
+      status: 'connected',
+      icon: '📄',
+      category: 'research',
+      description: 'Search and access research papers from arXiv',
+      tools: [
+        { name: 'search_arxiv', mcpName: 'mcp__arxiv__search_arxiv', description: 'Search arXiv papers', params: { query: 'string (required)', maxResults: 'number (default: 5)' } },
+        { name: 'get_recent_ai_papers', mcpName: 'mcp__arxiv__get_recent_ai_papers', description: 'Get latest AI papers (cs.AI)', params: {} },
+        { name: 'get_arxiv_pdf_url', mcpName: 'mcp__arxiv__get_arxiv_pdf_url', description: 'Get paper PDF URL', params: { arxivId: 'string (required)' } },
+        { name: 'parse_paper_content', mcpName: 'mcp__arxiv__parse_paper_content', description: 'Parse paper content', params: { arxivId: 'string (required)' } },
+      ],
+    },
+    // Web
+    {
+      id: 'firecrawl',
+      name: 'Firecrawl',
+      status: 'connected',
+      icon: '🔥',
+      category: 'web',
+      description: 'Advanced web scraping, crawling, and search',
+      tools: [
+        { name: 'firecrawl_scrape', mcpName: 'mcp__firecrawl__firecrawl_scrape', description: 'Scrape content from single URL', params: { url: 'string (required)', formats: '["markdown"]' } },
+        { name: 'firecrawl_map', mcpName: 'mcp__firecrawl__firecrawl_map', description: 'Discover all URLs on a site', params: { url: 'string (required)' } },
+        { name: 'firecrawl_search', mcpName: 'mcp__firecrawl__firecrawl_search', description: 'Search web and extract content', params: { query: 'string (required)', limit: 'number' } },
+        { name: 'firecrawl_crawl', mcpName: 'mcp__firecrawl__firecrawl_crawl', description: 'Crawl website and extract content', params: { url: 'string (required)', limit: 'number' } },
+        { name: 'firecrawl_check_crawl_status', mcpName: 'mcp__firecrawl__firecrawl_check_crawl_status', description: 'Check crawl job status', params: { id: 'string (required)' } },
+        { name: 'firecrawl_extract', mcpName: 'mcp__firecrawl__firecrawl_extract', description: 'Extract structured data', params: { urls: 'string[]', prompt: 'string' } },
+        { name: 'firecrawl_agent', mcpName: 'mcp__firecrawl__firecrawl_agent', description: 'Autonomous data gathering agent', params: { prompt: 'string (required)' } },
+        { name: 'firecrawl_agent_status', mcpName: 'mcp__firecrawl__firecrawl_agent_status', description: 'Check agent status', params: { id: 'string (required)' } },
+      ],
+    },
+    // Automation
+    {
+      id: 'playwright',
+      name: 'Playwright',
+      status: 'connected',
+      icon: '🎭',
+      category: 'automation',
+      description: 'Browser automation, testing, and web interaction',
+      tools: [
+        { name: 'browser_navigate', description: 'Navigate to URL' },
+        { name: 'browser_navigate_back', description: 'Go back in history' },
+        { name: 'browser_click', description: 'Click element' },
+        { name: 'browser_hover', description: 'Hover over element' },
+        { name: 'browser_drag', description: 'Drag and drop' },
+        { name: 'browser_type', description: 'Type text in input' },
+        { name: 'browser_fill_form', description: 'Fill form fields' },
+        { name: 'browser_press_key', description: 'Press keyboard key' },
+        { name: 'browser_select_option', description: 'Select dropdown option' },
+        { name: 'browser_file_upload', description: 'Upload file' },
+        { name: 'browser_take_screenshot', description: 'Take screenshot' },
+        { name: 'browser_snapshot', description: 'Get accessibility snapshot' },
+        { name: 'browser_evaluate', description: 'Execute JavaScript' },
+        { name: 'browser_run_code', description: 'Run Playwright code snippet' },
+        { name: 'browser_console_messages', description: 'Get console messages' },
+        { name: 'browser_network_requests', description: 'Get network requests' },
+        { name: 'browser_tabs', description: 'Manage browser tabs' },
+        { name: 'browser_handle_dialog', description: 'Handle alert/confirm/prompt' },
+        { name: 'browser_wait_for', description: 'Wait for element/condition' },
+        { name: 'browser_resize', description: 'Resize browser window' },
+        { name: 'browser_close', description: 'Close browser' },
+        { name: 'browser_install', description: 'Install browser' },
+      ],
+    },
+    // Cloud - AWS
+    {
+      id: 'aws',
+      name: 'AWS',
+      status: 'connected',
+      icon: '☁️',
+      category: 'cloud',
+      description: 'Amazon Web Services - Complete cloud infrastructure management',
+      tools: [
+        // Compute
+        { name: 'cloud_servers', description: 'EC2 instance management' },
+        { name: 'serverless_functions', description: 'Lambda functions' },
+        { name: 'container_services', description: 'ECS/Fargate containers' },
+        { name: 'kubernetes', description: 'EKS Kubernetes clusters' },
+        { name: 'kubernetes_clusters', description: 'Manage EKS clusters' },
+        { name: 'kubernetes_packages', description: 'Helm charts' },
+        // Storage
+        { name: 'cloud_storage', description: 'S3 buckets and objects' },
+        { name: 'databases', description: 'RDS/DynamoDB databases' },
+        { name: 'database_manager', description: 'Advanced DB management' },
+        { name: 'container_registry', description: 'ECR container images' },
+        // Networking
+        { name: 'network_manager', description: 'VPC and networking' },
+        { name: 'route53', description: 'DNS management' },
+        { name: 'cloudfront', description: 'CDN distribution' },
+        // DevOps
+        { name: 'build_jobs', description: 'CodeBuild jobs' },
+        { name: 'build_operations', description: 'Build operations' },
+        { name: 'deployment_pipelines', description: 'CodePipeline' },
+        { name: 'deployment_insights', description: 'Deployment analytics' },
+        { name: 'source_control', description: 'CodeCommit repos' },
+        { name: 'infrastructure_code', description: 'CloudFormation/CDK' },
+        { name: 'cloud_templates', description: 'CF templates' },
+        // Monitoring & Logs
+        { name: 'logs_and_metrics', description: 'CloudWatch logs/metrics' },
+        { name: 'smart_log_analysis', description: 'AI-powered log analysis' },
+        { name: 'dashboards', description: 'CloudWatch dashboards' },
+        // Security
+        { name: 'security_permissions', description: 'IAM management' },
+        { name: 'security_scanner', description: 'Security scanning' },
+        { name: 'secrets_manager', description: 'Secrets management' },
+        // Operations
+        { name: 'incident_manager', description: 'Incident management' },
+        { name: 'incident_analyze', description: 'AI incident analysis' },
+        { name: 'incident_approve', description: 'Approve recovery actions' },
+        { name: 'incident_execute', description: 'Execute recovery' },
+        { name: 'incident_recover', description: 'Auto recovery' },
+        { name: 'automation_playbooks', description: 'SSM automation' },
+        { name: 'runbook', description: 'Runbook execution' },
+        { name: 'remote_commands', description: 'SSM Run Command' },
+        { name: 'task_scheduler', description: 'EventBridge scheduler' },
+        { name: 'scheduled_ops', description: 'Scheduled operations' },
+        { name: 'auto_remediation', description: 'Auto-remediation rules' },
+        // Messaging
+        { name: 'message_queues', description: 'SQS/SNS messaging' },
+        { name: 'notifications', description: 'SNS notifications' },
+        { name: 'slack_webhook', description: 'Slack integration' },
+        { name: 'teams_webhook', description: 'Teams integration' },
+        // Multi-account
+        { name: 'multi_account', description: 'AWS Organizations' },
+        { name: 'multi_region', description: 'Multi-region ops' },
+        { name: 'resource_organizer', description: 'Resource Groups' },
+        { name: 'cost_optimizer', description: 'Cost optimization' },
+        // External
+        { name: 'jira_tickets', description: 'Jira integration' },
+        { name: 'workflow', description: 'Step Functions' },
+        { name: 'ai_assistant', description: 'AI-powered assistant' },
+        // Azure DevOps
+        { name: 'azure_devops_projects', description: 'Azure DevOps projects' },
+        { name: 'azure_devops_pipelines', description: 'Azure pipelines' },
+        { name: 'azure_devops_repos', description: 'Azure repos' },
+        { name: 'azure_devops_work_items', description: 'Azure work items' },
+        { name: 'azure_devops_wiki', description: 'Azure wiki' },
+      ],
+    },
+  ]);
+
+  const [selectedServer, setSelectedServer] = useState<MCPServer | null>(null);
+  const [selectedTool, setSelectedTool] = useState<MCPTool | null>(null);
+  const [toolInput, setToolInput] = useState('');
+  const [toolOutput, setToolOutput] = useState<string | null>(null);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [view3D, setView3D] = useState(false);
+  const [favorites, setFavorites] = useState<MCPFavorite[]>([
+    { serverId: 'gemini', toolName: 'web_search' },
+    { serverId: 'firecrawl', toolName: 'firecrawl_scrape' },
+    { serverId: 'context7', toolName: 'query-docs' },
+  ]);
+
+  const [callHistory, setCallHistory] = useState<MCPCall[]>(() => {
+    // Load from localStorage
+    try {
+      const saved = localStorage.getItem('genesis-mcp-history');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [
+      { id: '1', server: 'context7', tool: 'query-docs', timestamp: Date.now() - 60000, duration: 1234, status: 'success' },
+      { id: '2', server: 'firecrawl', tool: 'firecrawl_scrape', timestamp: Date.now() - 120000, duration: 2456, status: 'success' },
+      { id: '3', server: 'gemini', tool: 'web_search', timestamp: Date.now() - 180000, duration: 3200, status: 'success' },
+      { id: '4', server: 'semantic-scholar', tool: 'search_semantic_scholar', timestamp: Date.now() - 240000, duration: 890, status: 'error' },
+      { id: '5', server: 'arxiv', tool: 'get_recent_ai_papers', timestamp: Date.now() - 300000, duration: 1567, status: 'success' },
+      { id: '6', server: 'playwright', tool: 'browser_navigate', timestamp: Date.now() - 360000, duration: 2890, status: 'success' },
+      { id: '7', server: 'aws', tool: 'cloud_servers', timestamp: Date.now() - 420000, duration: 1123, status: 'success' },
+      { id: '8', server: 'firecrawl', tool: 'firecrawl_agent', timestamp: Date.now() - 480000, duration: 4567, status: 'success' },
+    ];
+  });
+
+  // Persist call history
+  useEffect(() => {
+    localStorage.setItem('genesis-mcp-history', JSON.stringify(callHistory.slice(0, 100)));
+  }, [callHistory]);
+
+  // Learning system
+  const learning = useMCPLearning(callHistory);
+
+  // Toast notifications
+  const { toasts, addToast, dismissToast } = useToasts();
+
+  const [filter, setFilter] = useState<'all' | 'ai' | 'research' | 'web' | 'cloud' | 'automation'>('all');
+
+  const isFavorite = (serverId: string, toolName: string) =>
+    favorites.some(f => f.serverId === serverId && f.toolName === toolName);
+
+  const toggleFavorite = (serverId: string, toolName: string) => {
+    if (isFavorite(serverId, toolName)) {
+      setFavorites(prev => prev.filter(f => !(f.serverId === serverId && f.toolName === toolName)));
+    } else {
+      setFavorites(prev => [...prev, { serverId, toolName }]);
+    }
+  };
+
+  const handleSelectTool = (server: MCPServer, tool: MCPTool) => {
+    setSelectedServer(server);
+    setSelectedTool(tool);
+    setToolOutput(null);
+    // Set template if available
+    if (tool.template) {
+      setToolInput(tool.template);
+    }
+  };
+
+  // Computed values
+  const filteredServers = useMemo(() =>
+    servers.filter(s => filter === 'all' || s.category === filter),
+    [servers, filter]
+  );
+
+  const totalTools = servers.reduce((acc, s) => acc + s.tools.length, 0);
+  const connectedServers = servers.filter(s => s.status === 'connected').length;
+
+  // Keyboard shortcuts for MCP Hub
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if typing in input/textarea
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      // Escape to clear selection
+      if (e.key === 'Escape') {
+        setSelectedTool(null);
+        setToolOutput(null);
+      }
+
+      // Number keys 1-7 to select servers
+      if (e.key >= '1' && e.key <= '7' && !e.metaKey && !e.ctrlKey) {
+        const index = parseInt(e.key) - 1;
+        const server = filteredServers[index];
+        if (server) {
+          setSelectedServer(server);
+          setSelectedTool(null);
+        }
+      }
+
+      // G key to toggle 3D view
+      if (e.key === 'g' && !e.metaKey && !e.ctrlKey) {
+        setView3D(v => !v);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [filteredServers]);
+
+  const executeTool = async () => {
+    if (!selectedServer || !selectedTool) return;
+
+    setIsExecuting(true);
+    const startTime = Date.now();
+    const requestId = crypto.randomUUID();
+
+    // Build the MCP request
+    const mcpRequest = {
+      id: requestId,
+      tool: selectedTool.mcpName || `mcp__${selectedServer.id}__${selectedTool.name}`,
+      params: (() => {
+        try { return JSON.parse(toolInput); } catch { return {}; }
+      })(),
+      timestamp: Date.now(),
+    };
+
+    try {
+      // Write request to the MCP bridge endpoint
+      const response = await fetch('http://localhost:9876/api/mcp/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mcpRequest),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+
+        const newCall: MCPCall = {
+          id: requestId,
+          server: selectedServer.id,
+          tool: selectedTool.name,
+          timestamp: Date.now(),
+          duration: Date.now() - startTime,
+          status: result.success ? 'success' : 'error',
+          input: toolInput,
+          output: result.data,
+        };
+
+        setCallHistory(prev => [newCall, ...prev]);
+        setToolOutput(JSON.stringify(result, null, 2));
+
+        // Show success toast
+        addToast({
+          type: 'success',
+          title: `${selectedTool.name} executed`,
+          message: `Completed in ${Date.now() - startTime}ms`,
+        });
+      } else {
+        throw new Error(`HTTP ${response.status}`);
+      }
+    } catch (err) {
+      // Fallback: Write to file for manual execution
+      const fallbackOutput = {
+        mode: 'pending_execution',
+        tool: mcpRequest.tool,
+        params: mcpRequest.params,
+        command: `// Execute in Claude Code:\n// ${mcpRequest.tool}(${JSON.stringify(mcpRequest.params)})`,
+        note: 'MCP bridge not available. Copy the command above to execute in Claude Code.',
+      };
+
+      const newCall: MCPCall = {
+        id: requestId,
+        server: selectedServer.id,
+        tool: selectedTool.name,
+        timestamp: Date.now(),
+        duration: Date.now() - startTime,
+        status: 'pending',
+        input: toolInput,
+        output: fallbackOutput,
+      };
+
+      setCallHistory(prev => [newCall, ...prev]);
+      setToolOutput(JSON.stringify(fallbackOutput, null, 2));
+
+      // Show info toast for pending execution
+      addToast({
+        type: 'info',
+        title: 'Queued for execution',
+        message: 'Use Claude Code to complete this request',
+      });
+    }
+
+    setIsExecuting(false);
+  };
+
+  const categoryColors: Record<string, string> = {
+    ai: '#a855f7',
+    research: '#06b6d4',
+    web: '#f59e0b',
+    cloud: '#3b82f6',
+    automation: '#10b981',
+  };
+
+  // Handler for learning panel tool selection
+  const handleLearningToolSelect = (serverId: string, toolName: string) => {
+    const server = servers.find(s => s.id === serverId);
+    const tool = server?.tools.find(t => t.name === toolName);
+    if (server && tool) {
+      handleSelectTool(server, tool);
+    }
+  };
+
+  return (
+    <div className="mcp-hub-view">
+      {/* Toast Notifications */}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
+      {/* Server Health Banner */}
+      <div className="mcp-health-banner">
+        <div className="health-status-grid">
+          {servers.map(server => (
+            <div
+              key={server.id}
+              className={`health-dot ${server.status}`}
+              title={`${server.name}: ${server.status}`}
+            >
+              {server.icon}
+            </div>
+          ))}
+        </div>
+        <span className="health-summary">
+          {connectedServers}/{servers.length} servers online
+        </span>
+        <div className="health-indicator">
+          {connectedServers === servers.length ? (
+            <span className="all-healthy">● All Systems Operational</span>
+          ) : (
+            <span className="some-issues">◐ Some Issues Detected</span>
+          )}
+        </div>
+      </div>
+
+      {/* Learning Panel */}
+      <MCPLearningPanel
+        learning={learning}
+        onSelectTool={handleLearningToolSelect}
+      />
+
+      {/* Smart Suggestions */}
+      <SmartSuggestions
+        learning={learning}
+        servers={servers}
+        onSelectTool={handleSelectTool}
+      />
+
+      <div className="view-header">
+        <h2>MCP Hub</h2>
+        <div className="mcp-header-actions">
+          <MCPToolSearch servers={servers} onSelectTool={handleSelectTool} />
+          <button
+            className={`view-toggle ${view3D ? 'active' : ''}`}
+            onClick={() => setView3D(!view3D)}
+            title="Toggle 3D View"
+          >
+            {view3D ? '2D' : '3D'}
+          </button>
+        </div>
+        <div className="mcp-stats">
+          <span className="stat">
+            <span className="stat-value">{connectedServers}</span>
+            <span className="stat-label">Servers</span>
+          </span>
+          <span className="stat">
+            <span className="stat-value">{totalTools}</span>
+            <span className="stat-label">Tools</span>
+          </span>
+          <span className="stat">
+            <span className="stat-value">{callHistory.length}</span>
+            <span className="stat-label">Calls</span>
+          </span>
+          <MCPActivitySparkline calls={callHistory} />
+        </div>
+      </div>
+
+      {/* Favorites Bar */}
+      {favorites.length > 0 && (
+        <div className="mcp-favorites-bar">
+          <span className="favorites-label">⭐ Favorites</span>
+          <div className="favorites-list">
+            {favorites.map(fav => {
+              const server = servers.find(s => s.id === fav.serverId);
+              const tool = server?.tools.find(t => t.name === fav.toolName);
+              if (!server || !tool) return null;
+              return (
+                <motion.button
+                  key={`${fav.serverId}-${fav.toolName}`}
+                  className="favorite-chip"
+                  onClick={() => handleSelectTool(server, tool)}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <span className="fav-icon">{server.icon}</span>
+                  <span className="fav-name">{tool.name}</span>
+                </motion.button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* MCP Constellation */}
+      {view3D ? (
+        <MCPConstellation3D
+          servers={filteredServers}
+          selectedServer={selectedServer}
+          onSelect={(server) => {
+            setSelectedServer(server);
+            setSelectedTool(null);
+            setToolOutput(null);
+          }}
+        />
+      ) : (
+      <div className="mcp-constellation">
+        <div className="constellation-header">
+          <h3>Server Constellation</h3>
+          <div className="constellation-filters">
+            {(['all', 'ai', 'research', 'web', 'cloud', 'automation'] as const).map(cat => (
+              <button
+                key={cat}
+                className={`filter-btn ${filter === cat ? 'active' : ''}`}
+                onClick={() => setFilter(cat)}
+                style={cat !== 'all' ? { '--cat-color': categoryColors[cat] } as React.CSSProperties : {}}
+              >
+                {cat === 'all' ? 'All' : cat.charAt(0).toUpperCase() + cat.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="constellation-grid">
+          {filteredServers.map(server => (
+            <motion.div
+              key={server.id}
+              className={`server-node ${server.status} ${selectedServer?.id === server.id ? 'selected' : ''}`}
+              onClick={() => {
+                setSelectedServer(server);
+                setSelectedTool(null);
+                setToolOutput(null);
+              }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              style={{ '--server-color': categoryColors[server.category] } as React.CSSProperties}
+            >
+              <div className="server-icon">{server.icon}</div>
+              <div className="server-info">
+                <span className="server-name">{server.name}</span>
+                <span className="server-tools">{server.tools.length} tools</span>
+              </div>
+              <div className={`server-status ${server.status}`} />
+            </motion.div>
+          ))}
+        </div>
+      </div>
+      )}
+
+      <div className="mcp-workspace">
+        {/* Tools Panel */}
+        <div className="mcp-tools-panel">
+          <h3>
+            {selectedServer ? (
+              <>
+                <span className="server-icon-small">{selectedServer.icon}</span>
+                {selectedServer.name} Tools
+              </>
+            ) : (
+              'Select a Server'
+            )}
+          </h3>
+          {selectedServer ? (
+            <div className="tools-list">
+              {selectedServer.tools.map(tool => (
+                <motion.div
+                  key={tool.name}
+                  className={`tool-item ${selectedTool?.name === tool.name ? 'selected' : ''} ${isFavorite(selectedServer.id, tool.name) ? 'favorited' : ''}`}
+                  whileHover={{ x: 4 }}
+                >
+                  <button
+                    className="tool-main"
+                    onClick={() => {
+                      setSelectedTool(tool);
+                      setToolOutput(null);
+                    }}
+                  >
+                    <span className="tool-icon">🔧</span>
+                    <div className="tool-info">
+                      <span className="tool-name">{tool.name}</span>
+                      <span className="tool-desc">{tool.description}</span>
+                    </div>
+                  </button>
+                  <button
+                    className={`tool-fav-btn ${isFavorite(selectedServer.id, tool.name) ? 'active' : ''}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFavorite(selectedServer.id, tool.name);
+                    }}
+                    title={isFavorite(selectedServer.id, tool.name) ? 'Remove from favorites' : 'Add to favorites'}
+                  >
+                    {isFavorite(selectedServer.id, tool.name) ? '★' : '☆'}
+                  </button>
+                </motion.div>
+              ))}
+            </div>
+          ) : (
+            <div className="no-server-selected">
+              <span className="empty-icon">🔗</span>
+              <p>Click on a server to view its tools</p>
+            </div>
+          )}
+        </div>
+
+        {/* Tool Executor */}
+        <div className="mcp-executor">
+          {selectedTool ? (
+            <>
+              <div className="executor-header">
+                <h3>{selectedTool.name}</h3>
+                <div className="executor-meta">
+                  <span className="executor-server">{selectedServer?.name}</span>
+                  {selectedServer && <CategoryBadge category={selectedServer.category} />}
+                </div>
+              </div>
+              {/* MCP Tool Name */}
+              <div className="mcp-tool-identifier">
+                <span className="mcp-label">MCP Tool:</span>
+                <code className="mcp-name">{selectedTool.mcpName || `mcp__${selectedServer?.id}__${selectedTool.name}`}</code>
+                <button
+                  className="copy-mcp-btn"
+                  onClick={() => navigator.clipboard.writeText(selectedTool.mcpName || `mcp__${selectedServer?.id}__${selectedTool.name}`)}
+                  title="Copy MCP name"
+                >
+                  📋
+                </button>
+              </div>
+              {/* Bridge Status */}
+              <div className="bridge-status">
+                <span className="bridge-dot active" />
+                <span className="bridge-text">Claude Code Bridge Active</span>
+              </div>
+              <p className="executor-desc">{selectedTool.description}</p>
+              {/* Parameters Schema */}
+              {selectedTool.params && Object.keys(selectedTool.params).length > 0 && (
+                <div className="params-schema">
+                  <span className="params-label">Parameters:</span>
+                  <div className="params-list">
+                    {Object.entries(selectedTool.params).map(([key, type]) => (
+                      <span key={key} className="param-item">
+                        <code>{key}</code>: <span className="param-type">{type}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="executor-templates">
+                <span className="templates-label">Quick templates:</span>
+                <div className="templates-list">
+                  {getToolTemplates(selectedServer?.id || '', selectedTool.name).map((template, i) => (
+                    <button
+                      key={i}
+                      className="template-btn"
+                      onClick={() => setToolInput(template.value)}
+                    >
+                      {template.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="executor-input">
+                <label>Input (JSON)</label>
+                <textarea
+                  value={toolInput}
+                  onChange={e => setToolInput(e.target.value)}
+                  placeholder='{"query": "your input here"}'
+                  spellCheck={false}
+                />
+                <div className="input-actions">
+                  <button className="input-action" onClick={() => setToolInput('')} title="Clear">
+                    🗑️
+                  </button>
+                  <button
+                    className="input-action"
+                    onClick={() => {
+                      try {
+                        const formatted = JSON.stringify(JSON.parse(toolInput), null, 2);
+                        setToolInput(formatted);
+                      } catch {}
+                    }}
+                    title="Format JSON"
+                  >
+                    ✨
+                  </button>
+                  <button
+                    className="input-action"
+                    onClick={() => navigator.clipboard.writeText(toolInput)}
+                    title="Copy"
+                  >
+                    📋
+                  </button>
+                </div>
+              </div>
+              <button
+                className="execute-btn"
+                onClick={executeTool}
+                disabled={isExecuting}
+              >
+                {isExecuting ? (
+                  <>
+                    <span className="spinner" />
+                    Executing...
+                  </>
+                ) : (
+                  <>
+                    <Icons.play />
+                    Execute Tool
+                  </>
+                )}
+              </button>
+              {toolOutput && (
+                <div className="executor-output">
+                  <label>Output</label>
+                  <pre>{toolOutput}</pre>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="no-tool-selected">
+              <span className="empty-icon">🔧</span>
+              <p>Select a tool to execute</p>
+            </div>
+          )}
+        </div>
+
+        {/* Call History */}
+        <div className="mcp-history">
+          <h3>Recent Calls</h3>
+          <div className="history-list">
+            {callHistory.slice(0, 10).map(call => (
+              <motion.div
+                key={call.id}
+                className={`history-item ${call.status}`}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+              >
+                <div className="history-icon">
+                  {servers.find(s => s.id === call.server)?.icon || '🔗'}
+                </div>
+                <div className="history-info">
+                  <span className="history-tool">{call.tool}</span>
+                  <span className="history-server">{call.server}</span>
+                </div>
+                <div className="history-meta">
+                  <span className="history-duration">{call.duration}ms</span>
+                  <span className="history-time">
+                    {Math.floor((Date.now() - call.timestamp) / 60000)}m ago
+                  </span>
+                </div>
+                <div className={`history-status ${call.status}`}>
+                  {call.status === 'success' ? '✓' : call.status === 'error' ? '✗' : '○'}
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="mcp-quick-actions">
+        <motion.button
+          className="quick-action-card"
+          whileHover={{ y: -4, scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => {
+            setSelectedServer(servers.find(s => s.id === 'context7') || null);
+            setSelectedTool({ name: 'query-docs', description: 'Query documentation' });
+          }}
+        >
+          <span className="qa-icon">📚</span>
+          <span className="qa-title">Search Docs</span>
+          <span className="qa-desc">Query library documentation</span>
+        </motion.button>
+        <motion.button
+          className="quick-action-card"
+          whileHover={{ y: -4, scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => {
+            setSelectedServer(servers.find(s => s.id === 'gemini') || null);
+            setSelectedTool({ name: 'web_search', description: 'Web search with AI' });
+          }}
+        >
+          <span className="qa-icon">💎</span>
+          <span className="qa-title">Gemini Search</span>
+          <span className="qa-desc">AI-grounded web search</span>
+        </motion.button>
+        <motion.button
+          className="quick-action-card"
+          whileHover={{ y: -4, scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => {
+            setSelectedServer(servers.find(s => s.id === 'semantic-scholar') || null);
+            setSelectedTool({ name: 'search_semantic_scholar', description: 'Search papers' });
+          }}
+        >
+          <span className="qa-icon">🎓</span>
+          <span className="qa-title">Find Papers</span>
+          <span className="qa-desc">Search academic research</span>
+        </motion.button>
+        <motion.button
+          className="quick-action-card"
+          whileHover={{ y: -4, scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => {
+            setSelectedServer(servers.find(s => s.id === 'arxiv') || null);
+            setSelectedTool({ name: 'get_recent_ai_papers', description: 'Latest AI papers' });
+          }}
+        >
+          <span className="qa-icon">📄</span>
+          <span className="qa-title">ArXiv AI</span>
+          <span className="qa-desc">Latest AI research papers</span>
+        </motion.button>
+        <motion.button
+          className="quick-action-card"
+          whileHover={{ y: -4, scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => {
+            setSelectedServer(servers.find(s => s.id === 'firecrawl') || null);
+            setSelectedTool({ name: 'firecrawl_scrape', description: 'Scrape URL' });
+          }}
+        >
+          <span className="qa-icon">🔥</span>
+          <span className="qa-title">Scrape URL</span>
+          <span className="qa-desc">Extract content from page</span>
+        </motion.button>
+        <motion.button
+          className="quick-action-card"
+          whileHover={{ y: -4, scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => {
+            setSelectedServer(servers.find(s => s.id === 'firecrawl') || null);
+            setSelectedTool({ name: 'firecrawl_agent', description: 'Autonomous agent' });
+          }}
+        >
+          <span className="qa-icon">🤖</span>
+          <span className="qa-title">Web Agent</span>
+          <span className="qa-desc">Autonomous data gathering</span>
+        </motion.button>
+        <motion.button
+          className="quick-action-card"
+          whileHover={{ y: -4, scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => {
+            setSelectedServer(servers.find(s => s.id === 'playwright') || null);
+            setSelectedTool({ name: 'browser_navigate', description: 'Navigate browser' });
+          }}
+        >
+          <span className="qa-icon">🎭</span>
+          <span className="qa-title">Browser</span>
+          <span className="qa-desc">Playwright automation</span>
+        </motion.button>
+        <motion.button
+          className="quick-action-card"
+          whileHover={{ y: -4, scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => {
+            setSelectedServer(servers.find(s => s.id === 'aws') || null);
+            setSelectedTool({ name: 'cloud_servers', description: 'EC2 management' });
+          }}
+        >
+          <span className="qa-icon">☁️</span>
+          <span className="qa-title">AWS Cloud</span>
+          <span className="qa-desc">Manage cloud infrastructure</span>
+        </motion.button>
+      </div>
+
+      {/* Keyboard Shortcuts Hint */}
+      <div className="mcp-shortcuts-bar">
+        <span className="shortcuts-label">Shortcuts:</span>
+        <div className="shortcuts-list">
+          <span className="shortcut-item">
+            <kbd>⌘F</kbd> Search Tools
+          </span>
+          <span className="shortcut-item">
+            <kbd>⌘↵</kbd> Execute
+          </span>
+          <span className="shortcut-item">
+            <kbd>G</kbd> Toggle 3D
+          </span>
+          <span className="shortcut-item">
+            <kbd>1-7</kbd> Select Server
+          </span>
+          <span className="shortcut-item">
+            <kbd>Esc</kbd> Clear
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// CONSCIOUSNESS CONTROL CENTER (Genesis Unique)
+// ============================================================================
+
+function PhiGauge({ value, size = 160 }: { value: number; size?: number }) {
+  const circumference = (size - 20) * Math.PI;
+  const strokeDashoffset = circumference - (value * circumference);
+  const color = value > 0.7 ? '#22c55e' : value > 0.4 ? '#eab308' : '#ef4444';
+
+  return (
+    <div className="phi-gauge" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {/* Background circle */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={(size - 20) / 2}
+          fill="none"
+          stroke="rgba(255,255,255,0.05)"
+          strokeWidth="8"
+        />
+        {/* Progress circle */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={(size - 20) / 2}
+          fill="none"
+          stroke={color}
+          strokeWidth="8"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          style={{ transition: 'stroke-dashoffset 0.5s ease, stroke 0.3s ease' }}
+        />
+        {/* Glow effect */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={(size - 20) / 2}
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          style={{ filter: 'blur(8px)', opacity: 0.5 }}
+        />
+      </svg>
+      <div className="phi-gauge-center">
+        <span className="phi-symbol">φ</span>
+        <span className="phi-value">{value.toFixed(3)}</span>
+      </div>
+    </div>
+  );
+}
+
+function ConsciousnessControlCenter() {
+  const { consciousness, connected } = useGenesisStore();
+  const [phiHistory, setPhiHistory] = useState<number[]>([]);
+
+  useEffect(() => {
+    setPhiHistory(prev => [...prev.slice(-59), consciousness.phi]);
+  }, [consciousness.phi]);
+
+  const stateColors: Record<string, string> = {
+    alert: '#22c55e',
+    aware: '#3b82f6',
+    drowsy: '#eab308',
+    dormant: '#71717a',
+    fragmented: '#ef4444',
+  };
+
+  return (
+    <div className="consciousness-view">
+      <div className="view-header glass">
+        <h2>Consciousness Control Center</h2>
+        <div className="header-badges">
+          <span className="state-badge" style={{ background: stateColors[consciousness.state] || '#71717a' }}>
+            {consciousness.state?.toUpperCase()}
+          </span>
+          <span className={`connection-badge ${connected ? 'connected' : ''}`}>
+            {connected ? '● LIVE' : '○ OFFLINE'}
+          </span>
+        </div>
+      </div>
+
+      <div className="consciousness-grid">
+        {/* Main φ Display */}
+        <div className="consciousness-card phi-card glass">
+          <PhiGauge value={consciousness.phi} size={200} />
+          <div className="phi-meta">
+            <div className="phi-label">Integrated Information</div>
+            <div className="phi-description">
+              IIT 4.0 φ measures the irreducible information generated by the system
+            </div>
+          </div>
+        </div>
+
+        {/* φ Trend */}
+        <div className="consciousness-card trend-card glass">
+          <h3>φ Temporal Dynamics</h3>
+          <div className="phi-trend">
+            {phiHistory.map((phi, i) => (
+              <div
+                key={i}
+                className="trend-bar"
+                style={{
+                  height: `${phi * 100}%`,
+                  background: `linear-gradient(to top, rgba(168, 85, 247, 0.3), rgba(168, 85, 247, ${0.3 + phi * 0.7}))`,
+                  opacity: 0.3 + (i / phiHistory.length) * 0.7,
+                }}
+              />
+            ))}
+          </div>
+          <div className="trend-labels">
+            <span>-60s</span>
+            <span>NOW</span>
+          </div>
+        </div>
+
+        {/* Integration Metrics */}
+        <div className="consciousness-card metrics-card glass">
+          <h3>Integration Metrics</h3>
+          <div className="integration-metrics">
+            <div className="metric-row">
+              <span className="metric-label">Integration Coherence</span>
+              <div className="metric-bar">
+                <motion.div
+                  className="metric-fill"
+                  style={{ background: 'var(--accent-purple)' }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${consciousness.integration * 100}%` }}
+                />
+              </div>
+              <span className="metric-value">{(consciousness.integration * 100).toFixed(0)}%</span>
+            </div>
+            <div className="metric-row">
+              <span className="metric-label">System Complexity</span>
+              <div className="metric-bar">
+                <motion.div
+                  className="metric-fill"
+                  style={{ background: 'var(--accent-cyan)' }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${consciousness.complexity * 100}%` }}
+                />
+              </div>
+              <span className="metric-value">{(consciousness.complexity * 100).toFixed(0)}%</span>
+            </div>
+            <div className="metric-row">
+              <span className="metric-label">Workspace Coherence</span>
+              <div className="metric-bar">
+                <motion.div
+                  className="metric-fill"
+                  style={{ background: 'var(--accent-green)' }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${(consciousness.phi * 0.8 + 0.2) * 100}%` }}
+                />
+              </div>
+              <span className="metric-value">{((consciousness.phi * 0.8 + 0.2) * 100).toFixed(0)}%</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Global Workspace */}
+        <div className="consciousness-card workspace-card glass">
+          <h3>Global Workspace</h3>
+          <div className="workspace-viz">
+            {[...Array(7)].map((_, i) => (
+              <motion.div
+                key={i}
+                className="workspace-slot"
+                animate={{
+                  opacity: Math.random() > 0.3 ? 0.9 : 0.2,
+                  scale: Math.random() > 0.5 ? 1 : 0.8,
+                }}
+                transition={{ duration: 2, repeat: Infinity, repeatType: 'reverse', delay: i * 0.2 }}
+              >
+                <div className="slot-content" style={{
+                  background: `hsl(${260 + i * 15}, 70%, ${40 + Math.random() * 20}%)`,
+                }} />
+              </motion.div>
+            ))}
+          </div>
+          <div className="workspace-info">
+            <span>Capacity: 7±2 items</span>
+            <span>Broadcast: ~40Hz</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// NEUROMODULATION DASHBOARD (Genesis Unique)
+// ============================================================================
+
+function NeuromodulationDashboard() {
+  const { neuromod } = useGenesisStore();
+
+  const channels = [
+    { name: 'Dopamine', key: 'dopamine', color: '#22c55e', icon: '🧬', effect: 'Exploration & Reward' },
+    { name: 'Serotonin', key: 'serotonin', color: '#3b82f6', icon: '💙', effect: 'Patience & Wellbeing' },
+    { name: 'Norepinephrine', key: 'norepinephrine', color: '#eab308', icon: '⚡', effect: 'Alertness & Precision' },
+    { name: 'Cortisol', key: 'cortisol', color: '#ef4444', icon: '🔥', effect: 'Stress Response' },
+  ];
+
+  return (
+    <div className="neuromod-view">
+      <div className="view-header glass">
+        <h2>Neuromodulation System</h2>
+        <span className="subtitle">Chemical State Modulation</span>
+      </div>
+
+      {/* Aurora Visualization */}
+      <div className="neuromod-aurora glass">
+        <div className="aurora-container">
+          {channels.map((channel, i) => (
+            <motion.div
+              key={channel.key}
+              className="aurora-band"
+              style={{
+                background: `linear-gradient(90deg,
+                  transparent 0%,
+                  ${channel.color}40 ${20 + i * 5}%,
+                  ${channel.color}80 50%,
+                  ${channel.color}40 ${80 - i * 5}%,
+                  transparent 100%
+                )`,
+                height: `${((neuromod as any)[channel.key] || 0.5) * 60 + 20}px`,
+              }}
+              animate={{
+                opacity: [0.5, 0.8, 0.5],
+                y: [0, -5, 0],
+              }}
+              transition={{
+                duration: 3 + i,
+                repeat: Infinity,
+                ease: 'easeInOut',
+              }}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Channel Cards */}
+      <div className="neuromod-channels">
+        {channels.map(channel => {
+          const value = (neuromod as any)[channel.key] || 0.5;
+          return (
+            <motion.div
+              key={channel.key}
+              className="channel-card glass"
+              whileHover={{ y: -4 }}
+            >
+              <div className="channel-header">
+                <span className="channel-icon">{channel.icon}</span>
+                <span className="channel-name">{channel.name}</span>
+              </div>
+              <div className="channel-gauge">
+                <svg width="100" height="100" viewBox="0 0 100 100">
+                  <circle
+                    cx="50" cy="50" r="40"
+                    fill="none"
+                    stroke="rgba(255,255,255,0.05)"
+                    strokeWidth="8"
+                  />
+                  <circle
+                    cx="50" cy="50" r="40"
+                    fill="none"
+                    stroke={channel.color}
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    strokeDasharray={251}
+                    strokeDashoffset={251 - (value * 251)}
+                    transform="rotate(-90 50 50)"
+                    style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+                  />
+                </svg>
+                <div className="gauge-value">
+                  {(value * 100).toFixed(0)}%
+                </div>
+              </div>
+              <div className="channel-effect">{channel.effect}</div>
+              <div className="channel-bar">
+                <motion.div
+                  className="bar-fill"
+                  style={{ background: channel.color }}
+                  animate={{ width: `${value * 100}%` }}
+                />
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
+
+      {/* Modulation Effects */}
+      <div className="neuromod-effects glass">
+        <h3>Active Modulation Effects</h3>
+        <div className="effects-grid">
+          <div className="effect-item">
+            <span className="effect-label">Exploration Rate</span>
+            <span className="effect-value" style={{ color: '#22c55e' }}>
+              ×{(1 + (neuromod.dopamine || 0.5) * 0.5).toFixed(2)}
+            </span>
+          </div>
+          <div className="effect-item">
+            <span className="effect-label">Temporal Discount</span>
+            <span className="effect-value" style={{ color: '#3b82f6' }}>
+              {((neuromod.serotonin || 0.5) * 0.9 + 0.1).toFixed(2)}
+            </span>
+          </div>
+          <div className="effect-item">
+            <span className="effect-label">Precision Gain</span>
+            <span className="effect-value" style={{ color: '#eab308' }}>
+              ×{(1 + (neuromod.norepinephrine || 0.5) * 0.3).toFixed(2)}
+            </span>
+          </div>
+          <div className="effect-item">
+            <span className="effect-label">Risk Tolerance</span>
+            <span className="effect-value" style={{ color: '#ef4444' }}>
+              {(1 - (neuromod.cortisol || 0.3) * 0.5).toFixed(2)}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// NESS ECONOMIC DASHBOARD (Genesis Unique)
+// ============================================================================
+
+function NESSEconomicDashboard() {
+  const { economy } = useGenesisStore();
+
+  const runway = economy.runway || 90;
+  const nessDeviation = economy.ness || 0.85;
+
+  return (
+    <div className="ness-view">
+      <div className="view-header glass">
+        <h2>NESS Economic Monitor</h2>
+        <span className="subtitle">Non-Equilibrium Steady State</span>
+      </div>
+
+      <div className="ness-grid">
+        {/* NESS Gauge */}
+        <div className="ness-card ness-gauge-card glass">
+          <h3>NESS Deviation</h3>
+          <div className="ness-gauge">
+            <svg width="200" height="120" viewBox="0 0 200 120">
+              {/* Background arc */}
+              <path
+                d="M 20 100 A 80 80 0 0 1 180 100"
+                fill="none"
+                stroke="rgba(255,255,255,0.05)"
+                strokeWidth="12"
+                strokeLinecap="round"
+              />
+              {/* Value arc */}
+              <path
+                d="M 20 100 A 80 80 0 0 1 180 100"
+                fill="none"
+                stroke={nessDeviation > 0.8 ? '#22c55e' : nessDeviation > 0.5 ? '#eab308' : '#ef4444'}
+                strokeWidth="12"
+                strokeLinecap="round"
+                strokeDasharray="251"
+                strokeDashoffset={251 - (nessDeviation * 251)}
+                style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+              />
+            </svg>
+            <div className="ness-value">
+              <span className="value">{(nessDeviation * 100).toFixed(0)}%</span>
+              <span className="label">Equilibrium</span>
+            </div>
+          </div>
+          <div className="ness-indicators">
+            <div className="indicator">
+              <span className="dot" style={{ background: '#22c55e' }} />
+              <span>Stable (80%+)</span>
+            </div>
+            <div className="indicator">
+              <span className="dot" style={{ background: '#eab308' }} />
+              <span>Warning (50-80%)</span>
+            </div>
+            <div className="indicator">
+              <span className="dot" style={{ background: '#ef4444' }} />
+              <span>Critical (&lt;50%)</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Runway */}
+        <div className="ness-card runway-card glass">
+          <h3>Cash Runway</h3>
+          <div className="runway-display">
+            <motion.span
+              className="runway-days"
+              key={runway}
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+            >
+              {runway}
+            </motion.span>
+            <span className="runway-label">days</span>
+          </div>
+          <div className="runway-bar">
+            <motion.div
+              className="runway-fill"
+              animate={{ width: `${Math.min(100, (runway / 365) * 100)}%` }}
+              style={{
+                background: runway > 180 ? '#22c55e' : runway > 90 ? '#eab308' : '#ef4444',
+              }}
+            />
+          </div>
+          <div className="runway-meta">
+            <span>Balance: ${(economy.cash || 0).toFixed(2)}</span>
+            <span>Burn: ${(economy.costs || 0).toFixed(2)}/day</span>
+          </div>
+        </div>
+
+        {/* Revenue Streams */}
+        <div className="ness-card revenue-card glass">
+          <h3>Revenue Streams</h3>
+          <div className="revenue-streams">
+            {[
+              { name: 'Bounty', value: 0.35, color: '#a855f7' },
+              { name: 'MCP Services', value: 0.25, color: '#3b82f6' },
+              { name: 'Content', value: 0.20, color: '#22c55e' },
+              { name: 'DeFi Yield', value: 0.12, color: '#eab308' },
+              { name: 'Keeper', value: 0.08, color: '#ec4899' },
+            ].map(stream => (
+              <div key={stream.name} className="stream-row">
+                <span className="stream-name">{stream.name}</span>
+                <div className="stream-bar">
+                  <motion.div
+                    className="stream-fill"
+                    style={{ background: stream.color }}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${stream.value * 100}%` }}
+                    transition={{ duration: 0.5 }}
+                  />
+                </div>
+                <span className="stream-value">{(stream.value * 100).toFixed(0)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Q/Γ Ratio */}
+        <div className="ness-card ratio-card glass">
+          <h3>Q/Γ Dynamics</h3>
+          <div className="ratio-display">
+            <div className="ratio-item">
+              <span className="ratio-label">Solenoidal (Q)</span>
+              <span className="ratio-value" style={{ color: '#a855f7' }}>0.52</span>
+              <span className="ratio-desc">Exploration</span>
+            </div>
+            <div className="ratio-divider">/</div>
+            <div className="ratio-item">
+              <span className="ratio-label">Dissipative (Γ)</span>
+              <span className="ratio-value" style={{ color: '#22c55e' }}>0.48</span>
+              <span className="ratio-desc">Exploitation</span>
+            </div>
+          </div>
+          <div className="ratio-bar">
+            <div className="ratio-left" style={{ width: '52%', background: 'linear-gradient(90deg, #a855f7, #3b82f6)' }} />
+            <div className="ratio-right" style={{ width: '48%', background: 'linear-gradient(90deg, #22c55e, #10b981)' }} />
+          </div>
+          <div className="ratio-target">Target: Q/Γ ≈ 1.0 at NESS</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // OVERVIEW (Dashboard)
 // ============================================================================
 
@@ -2807,6 +6621,26 @@ export default function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [quickAssistOpen, setQuickAssistOpen] = useState(false);
   const [isDarkTheme, setIsDarkTheme] = useState(true);
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [codeEditorOpen, setCodeEditorOpen] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    return !localStorage.getItem('genesis-onboarding-complete');
+  });
+  const [unreadNotifications, setUnreadNotifications] = useState(3);
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+
+  // Advanced features state
+  const [spaces, setSpaces] = useState<Space[]>(defaultSpaces);
+  const [activeSpace, setActiveSpace] = useState('work');
+  const [themeCustomizerOpen, setThemeCustomizerOpen] = useState(false);
+  const [boostsPanelOpen, setBoostsPanelOpen] = useState(false);
+  const [currentTheme, setCurrentTheme] = useState<ThemeConfig>({
+    baseHue: 270,
+    accentHue: 270,
+    contrast: 'medium',
+    mode: 'dark',
+  });
 
   const { connected } = useGenesisStore();
 
@@ -2827,6 +6661,21 @@ export default function App() {
         e.preventDefault();
         setQuickAssistOpen(prev => !prev);
       }
+      // ⌘P for global search
+      if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
+        e.preventDefault();
+        setGlobalSearchOpen(prev => !prev);
+      }
+      // ⌘E for code editor
+      if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
+        e.preventDefault();
+        setCodeEditorOpen(prev => !prev);
+      }
+      // ⌘/ for docs
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+        e.preventDefault();
+        setDocsOpen(prev => !prev);
+      }
       // ? for shortcuts panel
       if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
         setShortcutsOpen(prev => !prev);
@@ -2840,11 +6689,33 @@ export default function App() {
           setCurrentView(views[viewIndex]);
         }
       }
+      // ⌘T for theme customizer
+      if ((e.metaKey || e.ctrlKey) && e.key === 't') {
+        e.preventDefault();
+        setThemeCustomizerOpen(prev => !prev);
+      }
+      // ⌘B for boosts
+      if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+        e.preventDefault();
+        setBoostsPanelOpen(prev => !prev);
+      }
+      // ⌘\ for switching spaces
+      if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+        e.preventDefault();
+        const currentIndex = spaces.findIndex(s => s.id === activeSpace);
+        const nextIndex = (currentIndex + 1) % spaces.length;
+        setActiveSpace(spaces[nextIndex].id);
+      }
       // Escape to close
       if (e.key === 'Escape') {
         setCommandPaletteOpen(false);
         setShortcutsOpen(false);
         setQuickAssistOpen(false);
+        setGlobalSearchOpen(false);
+        setCodeEditorOpen(false);
+        setDocsOpen(false);
+        setThemeCustomizerOpen(false);
+        setBoostsPanelOpen(false);
       }
     };
 
@@ -2880,26 +6751,37 @@ export default function App() {
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
-  const navItems: { id: View; label: string; icon: React.FC }[] = [
-    { id: 'overview', label: 'Overview', icon: Icons.overview },
-    { id: 'chat', label: 'Chat', icon: Icons.chat },
-    { id: 'agents', label: 'Agenti', icon: Icons.agents },
-    { id: 'tasks', label: 'Tasks', icon: Icons.tasks },
-    { id: 'creator', label: 'Creator', icon: Icons.creator },
-    { id: 'terminal', label: 'Terminal', icon: Icons.terminal },
-    { id: 'analytics', label: 'Analytics', icon: Icons.analytics },
-    { id: 'files', label: 'Files', icon: Icons.files },
-    { id: 'memory', label: 'Memory', icon: Icons.memory },
-    { id: 'workflow', label: 'Workflow', icon: Icons.workflow },
-    { id: 'playground', label: 'Playground', icon: Icons.playground },
-    { id: 'integrations', label: 'Integrations', icon: Icons.integrations },
-    { id: 'marketplace', label: 'Marketplace', icon: Icons.marketplace },
-    { id: 'settings', label: 'Settings', icon: Icons.settings },
+  const navItems: { id: View; label: string; icon: React.FC; section?: string }[] = [
+    // Genesis Core
+    { id: 'overview', label: 'Overview', icon: Icons.overview, section: 'genesis' },
+    { id: 'consciousness', label: 'Consciousness', icon: Icons.consciousness, section: 'genesis' },
+    { id: 'neuromod', label: 'Neuromod', icon: Icons.neuromod, section: 'genesis' },
+    { id: 'ness', label: 'NESS Economy', icon: Icons.ness, section: 'genesis' },
+    // Operations
+    { id: 'agents', label: 'Agents', icon: Icons.agents, section: 'ops' },
+    { id: 'tasks', label: 'Tasks', icon: Icons.tasks, section: 'ops' },
+    { id: 'memory', label: 'Memory', icon: Icons.memory, section: 'ops' },
+    { id: 'mcp', label: 'MCP Hub', icon: Icons.mcp, section: 'ops' },
+    // Development
+    { id: 'chat', label: 'Chat', icon: Icons.chat, section: 'dev' },
+    { id: 'terminal', label: 'Terminal', icon: Icons.terminal, section: 'dev' },
+    { id: 'files', label: 'Files', icon: Icons.files, section: 'dev' },
+    { id: 'playground', label: 'Playground', icon: Icons.playground, section: 'dev' },
+    // More
+    { id: 'analytics', label: 'Analytics', icon: Icons.analytics, section: 'more' },
+    { id: 'creator', label: 'Creator', icon: Icons.creator, section: 'more' },
+    { id: 'workflow', label: 'Workflow', icon: Icons.workflow, section: 'more' },
+    { id: 'integrations', label: 'Integrations', icon: Icons.integrations, section: 'more' },
+    { id: 'marketplace', label: 'Marketplace', icon: Icons.marketplace, section: 'more' },
+    { id: 'settings', label: 'Settings', icon: Icons.settings, section: 'more' },
   ];
 
   const renderView = () => {
     switch (currentView) {
-      case 'overview': return <OverviewView />;
+      case 'overview': return <EnhancedOverview />;
+      case 'consciousness': return <ConsciousnessControlCenter />;
+      case 'neuromod': return <NeuromodulationDashboard />;
+      case 'ness': return <NESSEconomicDashboard />;
       case 'chat': return <ChatView />;
       case 'agents': return <AgentsView />;
       case 'tasks': return <TasksView />;
@@ -2912,6 +6794,7 @@ export default function App() {
       case 'playground': return <PlaygroundView />;
       case 'integrations': return <IntegrationsView />;
       case 'marketplace': return <MarketplaceView />;
+      case 'mcp': return <MCPHubView />;
       case 'settings': return <SettingsView />;
       default: return <OverviewView />;
     }
@@ -2947,6 +6830,73 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Global Search */}
+      <AnimatePresence>
+        {globalSearchOpen && (
+          <GlobalSearch
+            isOpen={globalSearchOpen}
+            onClose={() => setGlobalSearchOpen(false)}
+            onNavigate={setCurrentView}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Code Editor */}
+      <AnimatePresence>
+        {codeEditorOpen && (
+          <CodeEditor isOpen={codeEditorOpen} onClose={() => setCodeEditorOpen(false)} />
+        )}
+      </AnimatePresence>
+
+      {/* Docs Viewer */}
+      <AnimatePresence>
+        {docsOpen && (
+          <DocsViewer isOpen={docsOpen} onClose={() => setDocsOpen(false)} />
+        )}
+      </AnimatePresence>
+
+      {/* Onboarding */}
+      <AnimatePresence>
+        {showOnboarding && (
+          <OnboardingFlow
+            isOpen={showOnboarding}
+            onComplete={() => {
+              setShowOnboarding(false);
+              localStorage.setItem('genesis-onboarding-complete', 'true');
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Theme Customizer */}
+      <AnimatePresence>
+        {themeCustomizerOpen && (
+          <ThemeCustomizer
+            isOpen={themeCustomizerOpen}
+            onClose={() => setThemeCustomizerOpen(false)}
+            onApply={(config) => {
+              setCurrentTheme(config);
+              // Apply theme CSS variables
+              const themeVars = generateTheme(config);
+              Object.entries(themeVars).forEach(([key, value]) => {
+                document.documentElement.style.setProperty(key, value as string);
+              });
+              setThemeCustomizerOpen(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Boosts Panel */}
+      <AnimatePresence>
+        {boostsPanelOpen && (
+          <BoostsPanel
+            isOpen={boostsPanelOpen}
+            onClose={() => setBoostsPanelOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Sidebar */}
       <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
@@ -2955,6 +6905,26 @@ export default function App() {
             {!sidebarCollapsed && <span className="logo-text">GENESIS</span>}
           </div>
         </div>
+
+        {/* Spaces Switcher */}
+        {!sidebarCollapsed && (
+          <SpaceSwitcher
+            spaces={spaces}
+            activeSpace={activeSpace}
+            onSwitch={setActiveSpace}
+            onAddSpace={() => {
+              const newSpace: Space = {
+                id: `space-${Date.now()}`,
+                name: 'New Space',
+                color: '#' + Math.floor(Math.random()*16777215).toString(16),
+                icon: '📁',
+                tabs: ['overview'],
+                isActive: false,
+              };
+              setSpaces(prev => [...prev, newSpace]);
+            }}
+          />
+        )}
 
         {/* Search / Command Palette trigger */}
         {!sidebarCollapsed && (
@@ -2995,6 +6965,45 @@ export default function App() {
           <LiveCollaborators />
           <div className="top-bar-actions">
             <button
+              className="top-bar-btn"
+              onClick={() => setGlobalSearchOpen(true)}
+              title="Global Search (⌘P)"
+            >
+              🔍
+            </button>
+            <button
+              className="top-bar-btn"
+              onClick={() => setCodeEditorOpen(true)}
+              title="Code Editor (⌘E)"
+            >
+              ✏️
+            </button>
+            <button
+              className="top-bar-btn"
+              onClick={() => setDocsOpen(true)}
+              title="Documentation (⌘/)"
+            >
+              📚
+            </button>
+            <VoiceCommand
+              isListening={isVoiceListening}
+              onToggle={() => setIsVoiceListening(!isVoiceListening)}
+            />
+            <button
+              className="top-bar-btn theme-btn"
+              onClick={() => setThemeCustomizerOpen(true)}
+              title="Theme Studio (⌘T)"
+            >
+              🎨
+            </button>
+            <button
+              className="top-bar-btn boosts-btn"
+              onClick={() => setBoostsPanelOpen(true)}
+              title="Boosts (⌘B)"
+            >
+              ⚡
+            </button>
+            <button
               className="shortcuts-btn"
               onClick={() => setShortcutsOpen(true)}
               title="Keyboard Shortcuts (?)"
@@ -3008,6 +7017,11 @@ export default function App() {
             >
               🧠
             </button>
+            <NotificationBell
+              count={unreadNotifications}
+              onClick={() => setUnreadNotifications(0)}
+            />
+            <UserProfile />
           </div>
         </div>
 
@@ -3038,6 +7052,7 @@ export default function App() {
           {currentView === 'overview' && (
             <aside className="right-sidebar">
               <SystemHealth />
+              <PerformanceMonitor />
               <ActivityFeed />
             </aside>
           )}
@@ -3068,20 +7083,72 @@ export default function App() {
         }
 
         :root {
-          --bg-primary: #0a0a0f;
-          --bg-secondary: #111118;
-          --bg-card: #16161d;
-          --bg-hover: #1c1c25;
-          --border-color: rgba(255, 255, 255, 0.06);
-          --text-primary: #e4e4e7;
+          /* Vercel-inspired Premium Dark Theme */
+          --bg-primary: #000000;
+          --bg-secondary: #0a0a0a;
+          --bg-card: #111111;
+          --bg-hover: #171717;
+          --bg-elevated: #1a1a1a;
+          --border-color: rgba(255, 255, 255, 0.08);
+          --border-subtle: rgba(255, 255, 255, 0.04);
+
+          /* Typography */
+          --text-primary: #fafafa;
           --text-secondary: #a1a1aa;
-          --text-muted: #71717a;
+          --text-muted: #52525b;
+          --text-accent: #ededed;
+
+          /* Accent Colors - Genesis Consciousness Theme */
           --accent-purple: #a855f7;
-          --accent-cyan: #06b6d4;
-          --accent-green: #10b981;
-          --accent-orange: #f59e0b;
+          --accent-violet: #8b5cf6;
+          --accent-cyan: #22d3ee;
+          --accent-green: #22c55e;
+          --accent-yellow: #eab308;
+          --accent-orange: #f97316;
           --accent-red: #ef4444;
           --accent-blue: #3b82f6;
+          --accent-pink: #ec4899;
+
+          /* Genesis-specific colors */
+          --phi-color: #c084fc;
+          --dopamine-color: #22c55e;
+          --serotonin-color: #3b82f6;
+          --norepinephrine-color: #eab308;
+          --cortisol-color: #ef4444;
+
+          /* Glassmorphism */
+          --glass-bg: rgba(17, 17, 17, 0.7);
+          --glass-border: rgba(255, 255, 255, 0.1);
+          --glass-blur: 20px;
+
+          /* Shadows */
+          --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+          --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+          --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.5);
+          --shadow-glow: 0 0 40px rgba(168, 85, 247, 0.15);
+
+          /* Transitions */
+          --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+          --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+          --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+          /* Spacing scale */
+          --space-1: 4px;
+          --space-2: 8px;
+          --space-3: 12px;
+          --space-4: 16px;
+          --space-5: 20px;
+          --space-6: 24px;
+          --space-8: 32px;
+          --space-10: 40px;
+
+          /* Border radius */
+          --radius-sm: 6px;
+          --radius-md: 8px;
+          --radius-lg: 12px;
+          --radius-xl: 16px;
+          --radius-2xl: 20px;
+          --radius-full: 9999px;
         }
 
         .genesis-app {
@@ -5531,6 +9598,7 @@ export default function App() {
           gap: 8px;
         }
 
+        .top-bar-btn,
         .shortcuts-btn,
         .assist-btn {
           width: 36px;
@@ -5546,10 +9614,886 @@ export default function App() {
           transition: all 0.2s;
         }
 
+        .top-bar-btn:hover,
         .shortcuts-btn:hover,
         .assist-btn:hover {
           background: var(--bg-hover);
           border-color: var(--accent-purple);
+        }
+
+        /* ============================================
+           GLOBAL SEARCH
+           ============================================ */
+
+        .global-search-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.6);
+          z-index: 200;
+          backdrop-filter: blur(4px);
+        }
+
+        .global-search {
+          position: fixed;
+          top: 15%;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 90%;
+          max-width: 640px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 16px;
+          z-index: 201;
+          overflow: hidden;
+          box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
+        }
+
+        .search-input-container {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 16px 20px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .search-input-container input {
+          flex: 1;
+          background: transparent;
+          border: none;
+          font-size: 16px;
+          color: var(--text-primary);
+        }
+
+        .search-input-container input:focus {
+          outline: none;
+        }
+
+        .search-spinner {
+          width: 18px;
+          height: 18px;
+          border: 2px solid var(--border-color);
+          border-top-color: var(--accent-purple);
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+        }
+
+        .search-results {
+          max-height: 400px;
+          overflow-y: auto;
+        }
+
+        .no-results {
+          padding: 32px;
+          text-align: center;
+          color: var(--text-muted);
+        }
+
+        .search-result {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          padding: 12px 20px;
+          cursor: pointer;
+          transition: background 0.1s;
+        }
+
+        .search-result:hover,
+        .search-result.selected {
+          background: var(--bg-hover);
+        }
+
+        .result-icon {
+          font-size: 20px;
+        }
+
+        .result-info {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .result-title {
+          font-size: 14px;
+          font-weight: 500;
+          color: var(--text-primary);
+        }
+
+        .result-desc {
+          font-size: 12px;
+          color: var(--text-secondary);
+        }
+
+        .result-path {
+          font-size: 11px;
+          color: var(--text-muted);
+          font-family: 'SF Mono', monospace;
+        }
+
+        .result-type {
+          padding: 3px 8px;
+          background: var(--bg-secondary);
+          border-radius: 4px;
+          font-size: 10px;
+          color: var(--text-muted);
+          text-transform: uppercase;
+        }
+
+        .search-hints {
+          padding: 16px 20px;
+        }
+
+        .hint-section {
+          margin-bottom: 16px;
+        }
+
+        .hint-label {
+          display: block;
+          font-size: 11px;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          margin-bottom: 10px;
+        }
+
+        .hint-actions {
+          display: flex;
+          gap: 8px;
+        }
+
+        .hint-actions button {
+          padding: 6px 12px;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          color: var(--text-secondary);
+          font-size: 12px;
+          cursor: pointer;
+        }
+
+        .hint-actions button:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+
+        .recent-items {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .recent-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 13px;
+        }
+
+        .recent-item:hover {
+          background: var(--bg-hover);
+        }
+
+        /* ============================================
+           PERFORMANCE MONITOR
+           ============================================ */
+
+        .perf-monitor {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          overflow: hidden;
+          cursor: pointer;
+        }
+
+        .perf-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 14px 16px;
+        }
+
+        .perf-title {
+          font-size: 13px;
+          font-weight: 600;
+        }
+
+        .perf-toggle {
+          font-size: 10px;
+          color: var(--text-muted);
+        }
+
+        .perf-content {
+          padding: 0 16px 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .perf-graph {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .graph-header {
+          display: flex;
+          justify-content: space-between;
+          font-size: 11px;
+        }
+
+        .graph-label {
+          color: var(--text-muted);
+        }
+
+        .graph-value {
+          font-weight: 600;
+          font-family: 'SF Mono', monospace;
+        }
+
+        .perf-graph svg {
+          height: 40px;
+          width: 100%;
+        }
+
+        /* ============================================
+           CODE EDITOR
+           ============================================ */
+
+        .editor-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.7);
+          z-index: 200;
+        }
+
+        .code-editor-panel {
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: 90%;
+          max-width: 1000px;
+          height: 80vh;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: 16px;
+          z-index: 201;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+
+        .editor-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 12px 16px;
+          background: var(--bg-primary);
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .editor-tabs {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .editor-tab {
+          padding: 6px 14px;
+          background: var(--bg-card);
+          border-radius: 6px;
+          font-size: 12px;
+          color: var(--text-secondary);
+        }
+
+        .editor-tab.active {
+          background: var(--accent-purple);
+          color: white;
+        }
+
+        .new-tab {
+          width: 24px;
+          height: 24px;
+          background: transparent;
+          border: 1px dashed var(--border-color);
+          border-radius: 4px;
+          color: var(--text-muted);
+          cursor: pointer;
+        }
+
+        .editor-actions {
+          display: flex;
+          gap: 10px;
+        }
+
+        .run-btn {
+          padding: 8px 16px;
+          background: var(--accent-green);
+          border: none;
+          border-radius: 6px;
+          color: white;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+
+        .run-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .editor-body {
+          flex: 1;
+          display: grid;
+          grid-template-columns: 1fr 300px;
+          min-height: 0;
+        }
+
+        .editor-main {
+          display: flex;
+          overflow: hidden;
+        }
+
+        .line-numbers {
+          padding: 16px 12px;
+          background: var(--bg-primary);
+          display: flex;
+          flex-direction: column;
+          font-family: 'SF Mono', monospace;
+          font-size: 13px;
+          color: var(--text-muted);
+          text-align: right;
+          user-select: none;
+        }
+
+        .line-numbers span {
+          line-height: 1.5;
+        }
+
+        .editor-main textarea {
+          flex: 1;
+          padding: 16px;
+          background: var(--bg-card);
+          border: none;
+          color: var(--text-primary);
+          font-family: 'SF Mono', monospace;
+          font-size: 13px;
+          line-height: 1.5;
+          resize: none;
+        }
+
+        .editor-main textarea:focus {
+          outline: none;
+        }
+
+        .editor-output {
+          background: var(--bg-primary);
+          border-left: 1px solid var(--border-color);
+          display: flex;
+          flex-direction: column;
+        }
+
+        .output-header {
+          display: flex;
+          justify-content: space-between;
+          padding: 12px 16px;
+          border-bottom: 1px solid var(--border-color);
+          font-size: 12px;
+          color: var(--text-secondary);
+        }
+
+        .output-header button {
+          background: transparent;
+          border: none;
+          color: var(--text-muted);
+          font-size: 11px;
+          cursor: pointer;
+        }
+
+        .output-content {
+          flex: 1;
+          padding: 12px 16px;
+          overflow-y: auto;
+          font-family: 'SF Mono', monospace;
+          font-size: 12px;
+        }
+
+        .output-placeholder {
+          color: var(--text-muted);
+        }
+
+        .output-line {
+          color: var(--accent-green);
+          margin-bottom: 4px;
+        }
+
+        /* ============================================
+           ONBOARDING
+           ============================================ */
+
+        .onboarding-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.85);
+          z-index: 300;
+        }
+
+        .onboarding-modal {
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: 90%;
+          max-width: 480px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 20px;
+          padding: 40px;
+          z-index: 301;
+          text-align: center;
+        }
+
+        .onboarding-progress {
+          display: flex;
+          justify-content: center;
+          gap: 8px;
+          margin-bottom: 32px;
+        }
+
+        .progress-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: var(--bg-hover);
+          transition: all 0.3s;
+        }
+
+        .progress-dot.active {
+          background: var(--accent-purple);
+          transform: scale(1.3);
+        }
+
+        .progress-dot.completed {
+          background: var(--accent-green);
+        }
+
+        .onboarding-content {
+          margin-bottom: 32px;
+        }
+
+        .onboarding-icon {
+          font-size: 48px;
+          display: block;
+          margin-bottom: 20px;
+        }
+
+        .onboarding-content h2 {
+          font-size: 24px;
+          margin-bottom: 12px;
+        }
+
+        .onboarding-content p {
+          color: var(--text-secondary);
+          line-height: 1.6;
+        }
+
+        .onboarding-actions {
+          display: flex;
+          justify-content: center;
+          gap: 12px;
+        }
+
+        .back-btn,
+        .next-btn {
+          padding: 12px 24px;
+          border-radius: 10px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .back-btn {
+          background: transparent;
+          border: 1px solid var(--border-color);
+          color: var(--text-secondary);
+        }
+
+        .next-btn {
+          background: var(--accent-purple);
+          border: none;
+          color: white;
+        }
+
+        .next-btn:hover {
+          background: #9333ea;
+        }
+
+        .skip-btn {
+          display: block;
+          margin: 24px auto 0;
+          background: transparent;
+          border: none;
+          color: var(--text-muted);
+          font-size: 13px;
+          cursor: pointer;
+        }
+
+        .skip-btn:hover {
+          color: var(--text-secondary);
+        }
+
+        /* ============================================
+           DOCS VIEWER
+           ============================================ */
+
+        .docs-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.5);
+          z-index: 200;
+        }
+
+        .docs-viewer {
+          position: fixed;
+          top: 0;
+          right: 0;
+          width: 700px;
+          max-width: 90%;
+          height: 100vh;
+          background: var(--bg-card);
+          border-left: 1px solid var(--border-color);
+          z-index: 201;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .docs-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 20px 24px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .docs-header h2 {
+          font-size: 18px;
+        }
+
+        .docs-layout {
+          flex: 1;
+          display: flex;
+          min-height: 0;
+        }
+
+        .docs-nav {
+          width: 200px;
+          padding: 16px;
+          border-right: 1px solid var(--border-color);
+          overflow-y: auto;
+        }
+
+        .docs-nav-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          width: 100%;
+          padding: 10px 12px;
+          background: transparent;
+          border: none;
+          border-radius: 8px;
+          text-align: left;
+          font-size: 13px;
+          color: var(--text-secondary);
+          cursor: pointer;
+          margin-bottom: 4px;
+          transition: all 0.2s;
+        }
+
+        .docs-nav-item:hover {
+          background: var(--bg-hover);
+        }
+
+        .docs-nav-item.active {
+          background: var(--accent-purple);
+          color: white;
+        }
+
+        .docs-content {
+          flex: 1;
+          padding: 24px;
+          overflow-y: auto;
+        }
+
+        .markdown-body h1 {
+          font-size: 28px;
+          margin-bottom: 20px;
+          padding-bottom: 12px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .markdown-body h2 {
+          font-size: 20px;
+          margin: 24px 0 12px;
+          color: var(--accent-purple);
+        }
+
+        .markdown-body h3 {
+          font-size: 16px;
+          margin: 16px 0 8px;
+        }
+
+        .markdown-body p {
+          margin-bottom: 12px;
+          line-height: 1.7;
+          color: var(--text-secondary);
+        }
+
+        .markdown-body li {
+          margin-left: 20px;
+          margin-bottom: 6px;
+          color: var(--text-secondary);
+        }
+
+        .markdown-body code {
+          font-family: 'SF Mono', monospace;
+          font-size: 12px;
+          background: var(--bg-secondary);
+          padding: 2px 6px;
+          border-radius: 4px;
+        }
+
+        .markdown-body .table-row {
+          display: block;
+          padding: 4px 0;
+          font-size: 11px;
+        }
+
+        /* ============================================
+           USER PROFILE
+           ============================================ */
+
+        .user-profile {
+          position: relative;
+        }
+
+        .profile-trigger {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 12px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .profile-trigger:hover {
+          background: var(--bg-hover);
+        }
+
+        .profile-avatar {
+          width: 24px;
+          height: 24px;
+          background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan));
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 11px;
+          font-weight: 600;
+          color: white;
+        }
+
+        .profile-name {
+          font-size: 13px;
+          color: var(--text-primary);
+        }
+
+        .profile-arrow {
+          font-size: 8px;
+          color: var(--text-muted);
+        }
+
+        .profile-dropdown {
+          position: absolute;
+          top: 100%;
+          right: 0;
+          margin-top: 8px;
+          width: 240px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          overflow: hidden;
+          z-index: 100;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .dropdown-header {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 16px;
+        }
+
+        .dropdown-avatar {
+          width: 40px;
+          height: 40px;
+          background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan));
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+          font-weight: 600;
+          color: white;
+        }
+
+        .dropdown-info {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .dropdown-name {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .dropdown-email {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        .dropdown-divider {
+          height: 1px;
+          background: var(--border-color);
+          margin: 4px 0;
+        }
+
+        .dropdown-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          width: 100%;
+          padding: 10px 16px;
+          background: transparent;
+          border: none;
+          text-align: left;
+          font-size: 13px;
+          color: var(--text-secondary);
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .dropdown-item:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+
+        .dropdown-item.logout {
+          color: var(--accent-red);
+        }
+
+        .dropdown-item.logout:hover {
+          background: rgba(239, 68, 68, 0.1);
+        }
+
+        /* ============================================
+           NOTIFICATION BELL
+           ============================================ */
+
+        .notification-bell {
+          position: relative;
+          width: 36px;
+          height: 36px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .notification-bell:hover {
+          background: var(--bg-hover);
+          border-color: var(--accent-purple);
+        }
+
+        .bell-badge {
+          position: absolute;
+          top: -4px;
+          right: -4px;
+          min-width: 16px;
+          height: 16px;
+          padding: 0 4px;
+          background: var(--accent-red);
+          border-radius: 8px;
+          font-size: 10px;
+          font-weight: 600;
+          color: white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        /* ============================================
+           VOICE COMMAND
+           ============================================ */
+
+        .voice-command {
+          position: relative;
+          width: 36px;
+          height: 36px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .voice-command:hover {
+          background: var(--bg-hover);
+        }
+
+        .voice-command.listening {
+          background: rgba(239, 68, 68, 0.1);
+          border-color: var(--accent-red);
+        }
+
+        .voice-waves {
+          position: absolute;
+          bottom: -8px;
+          display: flex;
+          gap: 2px;
+        }
+
+        .voice-waves span {
+          width: 3px;
+          height: 8px;
+          background: var(--accent-red);
+          border-radius: 2px;
+          animation: wave 0.5s ease-in-out infinite;
+        }
+
+        .voice-waves span:nth-child(1) { animation-delay: 0s; }
+        .voice-waves span:nth-child(2) { animation-delay: 0.15s; }
+        .voice-waves span:nth-child(3) { animation-delay: 0.3s; }
+
+        @keyframes wave {
+          0%, 100% { height: 4px; }
+          50% { height: 12px; }
         }
 
         /* ============================================
@@ -7175,6 +12119,3645 @@ export default function App() {
             right: 16px;
             left: 16px;
             width: auto;
+          }
+        }
+
+        /* ============================================
+           SPACES SWITCHER
+           ============================================ */
+
+        .space-switcher {
+          display: flex;
+          gap: 6px;
+          padding: 12px;
+          overflow-x: auto;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .space-tab {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 14px;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 10px;
+          color: var(--text-secondary);
+          font-size: 13px;
+          cursor: pointer;
+          transition: all 0.2s;
+          position: relative;
+          white-space: nowrap;
+        }
+
+        .space-tab:hover {
+          background: rgba(168, 85, 247, 0.1);
+          border-color: rgba(168, 85, 247, 0.3);
+        }
+
+        .space-tab.active {
+          background: rgba(var(--space-color), 0.15);
+          border-color: var(--space-color);
+          color: var(--text-primary);
+        }
+
+        .space-icon {
+          font-size: 14px;
+        }
+
+        .space-name {
+          font-weight: 500;
+        }
+
+        .space-indicator {
+          position: absolute;
+          bottom: -1px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 20px;
+          height: 3px;
+          border-radius: 2px;
+        }
+
+        .add-space {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 36px;
+          height: 36px;
+          background: transparent;
+          border: 1px dashed var(--border-color);
+          border-radius: 10px;
+          color: var(--text-muted);
+          font-size: 18px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .add-space:hover {
+          background: var(--bg-hover);
+          border-color: var(--accent-purple);
+          color: var(--accent-purple);
+        }
+
+        /* ============================================
+           THEME CUSTOMIZER
+           ============================================ */
+
+        .theme-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.6);
+          z-index: 300;
+          backdrop-filter: blur(4px);
+        }
+
+        .theme-customizer {
+          position: fixed;
+          top: 0;
+          right: 0;
+          width: 400px;
+          max-width: 100%;
+          height: 100vh;
+          background: var(--bg-card);
+          border-left: 1px solid var(--border-color);
+          z-index: 301;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+
+        .theme-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 20px 24px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .theme-header h2 {
+          font-size: 18px;
+          font-weight: 600;
+        }
+
+        .theme-header button {
+          width: 32px;
+          height: 32px;
+          background: transparent;
+          border: none;
+          color: var(--text-muted);
+          font-size: 24px;
+          cursor: pointer;
+          border-radius: 8px;
+        }
+
+        .theme-header button:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+
+        .theme-content {
+          flex: 1;
+          overflow-y: auto;
+          padding: 24px;
+        }
+
+        .theme-section {
+          margin-bottom: 28px;
+        }
+
+        .theme-section h3 {
+          font-size: 13px;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          margin-bottom: 16px;
+        }
+
+        .theme-presets {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 10px;
+        }
+
+        .preset-btn {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 12px 14px;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 10px;
+          color: var(--text-secondary);
+          font-size: 13px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .preset-btn:hover {
+          background: var(--bg-secondary);
+          border-color: var(--preset-color);
+        }
+
+        .preset-swatch {
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background: var(--preset-color);
+        }
+
+        .theme-sliders {
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+
+        .slider-group {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .slider-group label {
+          font-size: 13px;
+          color: var(--text-secondary);
+        }
+
+        .hue-slider {
+          width: 100%;
+          height: 8px;
+          -webkit-appearance: none;
+          background: linear-gradient(to right,
+            hsl(0, 80%, 50%),
+            hsl(60, 80%, 50%),
+            hsl(120, 80%, 50%),
+            hsl(180, 80%, 50%),
+            hsl(240, 80%, 50%),
+            hsl(300, 80%, 50%),
+            hsl(360, 80%, 50%)
+          );
+          border-radius: 4px;
+          cursor: pointer;
+        }
+
+        .hue-slider::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          width: 18px;
+          height: 18px;
+          background: white;
+          border-radius: 50%;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+          cursor: pointer;
+        }
+
+        .contrast-options,
+        .mode-toggle {
+          display: flex;
+          gap: 8px;
+        }
+
+        .contrast-btn,
+        .mode-toggle button {
+          flex: 1;
+          padding: 12px;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          color: var(--text-secondary);
+          font-size: 13px;
+          cursor: pointer;
+          transition: all 0.2s;
+          text-transform: capitalize;
+        }
+
+        .contrast-btn:hover,
+        .mode-toggle button:hover {
+          background: var(--bg-secondary);
+        }
+
+        .contrast-btn.active,
+        .mode-toggle button.active {
+          background: var(--accent-purple);
+          border-color: var(--accent-purple);
+          color: white;
+        }
+
+        .theme-preview {
+          margin-top: 24px;
+        }
+
+        .preview-card {
+          padding: 20px;
+          background: var(--theme-surface, var(--bg-secondary));
+          border: 1px solid var(--theme-border, var(--border-color));
+          border-radius: 12px;
+        }
+
+        .preview-header {
+          font-size: 14px;
+          font-weight: 600;
+          margin-bottom: 8px;
+          color: var(--theme-text, var(--text-primary));
+        }
+
+        .preview-body {
+          font-size: 13px;
+          color: var(--theme-text-secondary, var(--text-secondary));
+          margin-bottom: 16px;
+        }
+
+        .preview-btn {
+          padding: 10px 20px;
+          background: var(--theme-accent, var(--accent-purple));
+          border: none;
+          border-radius: 8px;
+          color: white;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+        }
+
+        .theme-actions {
+          padding: 20px 24px;
+          border-top: 1px solid var(--border-color);
+        }
+
+        .apply-btn {
+          width: 100%;
+          padding: 14px;
+          background: var(--accent-purple);
+          border: none;
+          border-radius: 10px;
+          color: white;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+
+        .apply-btn:hover {
+          background: #9333ea;
+        }
+
+        /* ============================================
+           BOOSTS PANEL
+           ============================================ */
+
+        .boosts-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.6);
+          z-index: 300;
+          backdrop-filter: blur(4px);
+        }
+
+        .boosts-panel {
+          position: fixed;
+          bottom: 0;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 600px;
+          max-width: 95%;
+          max-height: 70vh;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-bottom: none;
+          border-radius: 20px 20px 0 0;
+          z-index: 301;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+
+        .boosts-header {
+          padding: 24px;
+          border-bottom: 1px solid var(--border-color);
+          position: relative;
+        }
+
+        .boosts-header h2 {
+          font-size: 20px;
+          font-weight: 600;
+          margin-bottom: 4px;
+        }
+
+        .boosts-header p {
+          font-size: 13px;
+          color: var(--text-muted);
+        }
+
+        .boosts-header .close-btn {
+          position: absolute;
+          top: 20px;
+          right: 20px;
+        }
+
+        .boosts-list {
+          flex: 1;
+          overflow-y: auto;
+          padding: 16px 24px;
+        }
+
+        .boost-item {
+          display: flex;
+          align-items: center;
+          padding: 16px;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          margin-bottom: 12px;
+          transition: all 0.2s;
+        }
+
+        .boost-item.enabled {
+          border-color: var(--accent-purple);
+          background: rgba(168, 85, 247, 0.1);
+        }
+
+        .boost-info {
+          flex: 1;
+        }
+
+        .boost-info h3 {
+          font-size: 14px;
+          font-weight: 600;
+          margin-bottom: 4px;
+        }
+
+        .boost-info p {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        .boost-actions {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .edit-boost {
+          padding: 6px 12px;
+          background: transparent;
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          color: var(--text-secondary);
+          font-size: 12px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .edit-boost:hover {
+          background: var(--bg-secondary);
+          color: var(--text-primary);
+        }
+
+        .boost-toggle {
+          position: relative;
+          display: inline-block;
+          width: 44px;
+          height: 24px;
+        }
+
+        .boost-toggle input {
+          opacity: 0;
+          width: 0;
+          height: 0;
+        }
+
+        .toggle-slider {
+          position: absolute;
+          cursor: pointer;
+          inset: 0;
+          background: var(--bg-secondary);
+          border-radius: 24px;
+          transition: 0.3s;
+        }
+
+        .toggle-slider:before {
+          position: absolute;
+          content: "";
+          height: 18px;
+          width: 18px;
+          left: 3px;
+          bottom: 3px;
+          background: white;
+          border-radius: 50%;
+          transition: 0.3s;
+        }
+
+        .boost-toggle input:checked + .toggle-slider {
+          background: var(--accent-purple);
+        }
+
+        .boost-toggle input:checked + .toggle-slider:before {
+          transform: translateX(20px);
+        }
+
+        .add-boost-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          width: 100%;
+          padding: 14px;
+          background: transparent;
+          border: 2px dashed var(--border-color);
+          border-radius: 12px;
+          color: var(--text-muted);
+          font-size: 14px;
+          cursor: pointer;
+          transition: all 0.2s;
+          margin-top: 8px;
+        }
+
+        .add-boost-btn:hover {
+          border-color: var(--accent-purple);
+          color: var(--accent-purple);
+          background: rgba(168, 85, 247, 0.05);
+        }
+
+        .boost-editor {
+          padding: 20px 24px;
+          border-top: 1px solid var(--border-color);
+          background: var(--bg-secondary);
+        }
+
+        .boost-editor h3 {
+          font-size: 14px;
+          margin-bottom: 12px;
+        }
+
+        .boost-editor textarea {
+          width: 100%;
+          height: 120px;
+          padding: 12px;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          color: var(--text-primary);
+          font-family: 'SF Mono', monospace;
+          font-size: 12px;
+          resize: vertical;
+          margin-bottom: 12px;
+        }
+
+        .editor-actions {
+          display: flex;
+          gap: 10px;
+        }
+
+        .editor-actions button {
+          padding: 8px 16px;
+          border-radius: 6px;
+          font-size: 13px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .editor-actions button:first-child {
+          background: var(--accent-purple);
+          border: none;
+          color: white;
+        }
+
+        .editor-actions button:last-child {
+          background: transparent;
+          border: 1px solid var(--border-color);
+          color: var(--text-secondary);
+        }
+
+        /* ============================================
+           ENHANCED OVERVIEW & 3D HERO ORB
+           ============================================ */
+
+        .enhanced-overview {
+          display: flex;
+          flex-direction: column;
+          gap: 24px;
+        }
+
+        .overview-hero {
+          display: flex;
+          align-items: center;
+          gap: 32px;
+          padding: 32px;
+          background: linear-gradient(135deg, rgba(168, 85, 247, 0.1), rgba(6, 182, 212, 0.05));
+          border: 1px solid rgba(168, 85, 247, 0.2);
+          border-radius: 20px;
+        }
+
+        .hero-orb-container {
+          width: 200px;
+          height: 200px;
+          position: relative;
+        }
+
+        .hero-orb-container canvas {
+          border-radius: 16px;
+        }
+
+        .orb-overlay {
+          position: absolute;
+          bottom: 10px;
+          left: 50%;
+          transform: translateX(-50%);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 2px;
+          pointer-events: none;
+        }
+
+        .orb-phi {
+          font-family: 'SF Mono', monospace;
+          font-size: 14px;
+          font-weight: 600;
+          color: white;
+          text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .orb-state {
+          font-size: 11px;
+          color: rgba(255, 255, 255, 0.7);
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+        }
+
+        .hero-stats {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+
+        .hero-stat {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .hero-stat .stat-value {
+          font-size: 32px;
+          font-weight: 700;
+          background: linear-gradient(90deg, var(--accent-purple), var(--accent-cyan));
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
+
+        .hero-stat .stat-label {
+          font-size: 13px;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .quick-action-bar {
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+
+        .quick-action {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 14px 20px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          color: var(--text-primary);
+          font-size: 14px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .quick-action:hover {
+          background: var(--bg-hover);
+          border-color: var(--accent-purple);
+        }
+
+        .qa-icon {
+          font-size: 18px;
+        }
+
+        .metrics-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+          gap: 16px;
+        }
+
+        .metric-card {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 16px;
+          padding: 20px;
+        }
+
+        .metric-card h3 {
+          font-size: 14px;
+          font-weight: 600;
+          margin-bottom: 16px;
+          color: var(--text-primary);
+        }
+
+        .neuro-bars {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .neuro-bar {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .neuro-label {
+          width: 100px;
+          font-size: 12px;
+          color: var(--text-secondary);
+          text-transform: capitalize;
+        }
+
+        .neuro-track {
+          flex: 1;
+          height: 8px;
+          background: var(--bg-hover);
+          border-radius: 4px;
+          overflow: hidden;
+        }
+
+        .neuro-fill {
+          height: 100%;
+          border-radius: 4px;
+        }
+
+        .neuro-value {
+          width: 40px;
+          font-size: 12px;
+          font-weight: 600;
+          text-align: right;
+          color: var(--text-primary);
+        }
+
+        .kernel-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 16px;
+        }
+
+        .kernel-level {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+          opacity: 0.4;
+          transition: opacity 0.3s;
+        }
+
+        .kernel-level.active {
+          opacity: 1;
+        }
+
+        .level-name {
+          font-size: 11px;
+          font-weight: 600;
+          color: var(--text-muted);
+        }
+
+        .level-ring {
+          width: 60px;
+          height: 60px;
+          position: relative;
+        }
+
+        .level-ring svg {
+          width: 100%;
+          height: 100%;
+          transform: rotate(-90deg);
+        }
+
+        .level-ring .ring-bg {
+          fill: none;
+          stroke: var(--bg-hover);
+          stroke-width: 4;
+        }
+
+        .level-ring .ring-progress {
+          fill: none;
+          stroke: var(--accent-purple);
+          stroke-width: 4;
+          stroke-linecap: round;
+        }
+
+        .level-percent {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .events-stream {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          max-height: 200px;
+          overflow-y: auto;
+        }
+
+        .event-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 12px;
+          background: var(--bg-hover);
+          border-radius: 8px;
+        }
+
+        .event-item .event-dot {
+          width: 8px;
+          height: 8px;
+          background: var(--accent-purple);
+          border-radius: 50%;
+          animation: pulse 2s ease-in-out infinite;
+        }
+
+        .event-item .event-type {
+          flex: 1;
+          font-size: 12px;
+          color: var(--text-primary);
+        }
+
+        .event-item .event-time {
+          font-size: 11px;
+          color: var(--text-muted);
+          font-family: 'SF Mono', monospace;
+        }
+
+        /* ============================================
+           AI AUTOFILL
+           ============================================ */
+
+        .ai-autofill {
+          position: absolute;
+          bottom: 100%;
+          left: 0;
+          right: 0;
+          margin-bottom: 8px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          overflow: hidden;
+          box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .autofill-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 14px;
+          border-bottom: 1px solid var(--border-color);
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        .autofill-icon {
+          font-size: 14px;
+        }
+
+        .autofill-loading {
+          width: 12px;
+          height: 12px;
+          border: 2px solid var(--border-color);
+          border-top-color: var(--accent-purple);
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+          margin-left: auto;
+        }
+
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+
+        .autofill-list {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .autofill-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 12px 14px;
+          background: transparent;
+          border: none;
+          text-align: left;
+          color: var(--text-secondary);
+          font-size: 13px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .autofill-item:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+
+        .suggestion-icon {
+          color: var(--accent-purple);
+        }
+
+        .suggestion-text {
+          flex: 1;
+        }
+
+        .suggestion-key {
+          padding: 2px 6px;
+          background: var(--bg-hover);
+          border-radius: 4px;
+          font-size: 10px;
+          color: var(--text-muted);
+        }
+
+        /* ============================================
+           MCP HUB
+           ============================================ */
+
+        .mcp-hub-view {
+          display: flex;
+          flex-direction: column;
+          gap: 24px;
+        }
+
+        .mcp-hub-view .view-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .mcp-stats {
+          display: flex;
+          gap: 24px;
+        }
+
+        .mcp-stats .stat {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding: 12px 20px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+        }
+
+        .mcp-stats .stat-value {
+          font-size: 24px;
+          font-weight: 700;
+          color: var(--accent-purple);
+        }
+
+        .mcp-stats .stat-label {
+          font-size: 11px;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        /* MCP Constellation */
+        .mcp-constellation {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 16px;
+          padding: 24px;
+        }
+
+        .constellation-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 20px;
+        }
+
+        .constellation-header h3 {
+          font-size: 16px;
+          font-weight: 600;
+        }
+
+        .constellation-filters {
+          display: flex;
+          gap: 8px;
+        }
+
+        .filter-btn {
+          padding: 6px 14px;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          color: var(--text-secondary);
+          font-size: 12px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .filter-btn:hover {
+          background: var(--bg-secondary);
+          color: var(--text-primary);
+        }
+
+        .filter-btn.active {
+          background: var(--cat-color, var(--accent-purple));
+          border-color: var(--cat-color, var(--accent-purple));
+          color: white;
+        }
+
+        .constellation-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+          gap: 16px;
+        }
+
+        .server-node {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          padding: 16px 20px;
+          background: var(--bg-hover);
+          border: 2px solid var(--border-color);
+          border-radius: 14px;
+          cursor: pointer;
+          transition: all 0.2s;
+          position: relative;
+        }
+
+        .server-node:hover {
+          background: var(--bg-secondary);
+          border-color: var(--server-color);
+        }
+
+        .server-node.selected {
+          background: rgba(168, 85, 247, 0.1);
+          border-color: var(--accent-purple);
+        }
+
+        .server-node.disconnected {
+          opacity: 0.5;
+        }
+
+        .server-node .server-icon {
+          font-size: 28px;
+        }
+
+        .server-node .server-info {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .server-node .server-name {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .server-node .server-tools {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        .server-node .server-status {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+        }
+
+        .server-node .server-status.connected {
+          background: var(--accent-green);
+          box-shadow: 0 0 8px var(--accent-green);
+        }
+
+        .server-node .server-status.disconnected {
+          background: var(--text-muted);
+        }
+
+        .server-node .server-status.error {
+          background: var(--accent-red);
+          box-shadow: 0 0 8px var(--accent-red);
+        }
+
+        /* MCP Workspace */
+        .mcp-workspace {
+          display: grid;
+          grid-template-columns: 280px 1fr 300px;
+          gap: 16px;
+        }
+
+        .mcp-tools-panel,
+        .mcp-executor,
+        .mcp-history {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 14px;
+          padding: 20px;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .mcp-tools-panel h3,
+        .mcp-executor h3,
+        .mcp-history h3 {
+          font-size: 14px;
+          font-weight: 600;
+          margin-bottom: 16px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .server-icon-small {
+          font-size: 18px;
+        }
+
+        .tools-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          flex: 1;
+          overflow-y: auto;
+        }
+
+        .tool-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px 14px;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 10px;
+          cursor: pointer;
+          transition: all 0.2s;
+          text-align: left;
+        }
+
+        .tool-item:hover {
+          background: var(--bg-secondary);
+          border-color: var(--accent-purple);
+        }
+
+        .tool-item.selected {
+          background: rgba(168, 85, 247, 0.1);
+          border-color: var(--accent-purple);
+        }
+
+        .tool-item .tool-icon {
+          font-size: 16px;
+        }
+
+        .tool-item .tool-info {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .tool-item .tool-name {
+          font-size: 13px;
+          font-weight: 500;
+          color: var(--text-primary);
+        }
+
+        .tool-item .tool-desc {
+          font-size: 11px;
+          color: var(--text-muted);
+        }
+
+        .no-server-selected,
+        .no-tool-selected {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 12px;
+          color: var(--text-muted);
+        }
+
+        .empty-icon {
+          font-size: 48px;
+          opacity: 0.3;
+        }
+
+        .no-server-selected p,
+        .no-tool-selected p {
+          font-size: 13px;
+          text-align: center;
+        }
+
+        /* Executor */
+        .executor-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 16px;
+        }
+
+        .executor-header h3 {
+          margin-bottom: 0;
+        }
+
+        .executor-server {
+          font-size: 12px;
+          padding: 4px 10px;
+          background: var(--bg-hover);
+          border-radius: 6px;
+          color: var(--text-secondary);
+        }
+
+        .executor-input {
+          margin-bottom: 16px;
+        }
+
+        .executor-input label,
+        .executor-output label {
+          display: block;
+          font-size: 12px;
+          color: var(--text-secondary);
+          margin-bottom: 8px;
+        }
+
+        .executor-input textarea {
+          width: 100%;
+          height: 120px;
+          padding: 12px;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          color: var(--text-primary);
+          font-family: 'SF Mono', monospace;
+          font-size: 12px;
+          resize: vertical;
+        }
+
+        .execute-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          width: 100%;
+          padding: 14px;
+          background: var(--accent-purple);
+          border: none;
+          border-radius: 10px;
+          color: white;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .execute-btn:hover:not(:disabled) {
+          background: #9333ea;
+        }
+
+        .execute-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .execute-btn .spinner {
+          width: 16px;
+          height: 16px;
+          border: 2px solid rgba(255, 255, 255, 0.3);
+          border-top-color: white;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+
+        .executor-output {
+          margin-top: 16px;
+        }
+
+        .executor-output pre {
+          padding: 12px;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          font-family: 'SF Mono', monospace;
+          font-size: 11px;
+          color: var(--accent-green);
+          overflow-x: auto;
+          max-height: 200px;
+        }
+
+        /* History */
+        .history-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          flex: 1;
+          overflow-y: auto;
+        }
+
+        .history-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 12px;
+          background: var(--bg-hover);
+          border-radius: 8px;
+        }
+
+        .history-item.error {
+          border-left: 3px solid var(--accent-red);
+        }
+
+        .history-item.success {
+          border-left: 3px solid var(--accent-green);
+        }
+
+        .history-icon {
+          font-size: 18px;
+        }
+
+        .history-info {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+        }
+
+        .history-tool {
+          font-size: 12px;
+          font-weight: 500;
+          color: var(--text-primary);
+        }
+
+        .history-server {
+          font-size: 10px;
+          color: var(--text-muted);
+        }
+
+        .history-meta {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 1px;
+        }
+
+        .history-duration {
+          font-size: 11px;
+          font-family: 'SF Mono', monospace;
+          color: var(--text-secondary);
+        }
+
+        .history-time {
+          font-size: 10px;
+          color: var(--text-muted);
+        }
+
+        .history-status {
+          width: 20px;
+          height: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 50%;
+          font-size: 12px;
+          font-weight: 600;
+        }
+
+        .history-status.success {
+          background: rgba(16, 185, 129, 0.2);
+          color: var(--accent-green);
+        }
+
+        .history-status.error {
+          background: rgba(239, 68, 68, 0.2);
+          color: var(--accent-red);
+        }
+
+        /* Quick Actions */
+        .mcp-quick-actions {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 12px;
+        }
+
+        .quick-action-card {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+          padding: 20px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 14px;
+          cursor: pointer;
+          transition: all 0.2s;
+          text-align: center;
+        }
+
+        .quick-action-card:hover {
+          background: var(--bg-hover);
+          border-color: var(--accent-purple);
+        }
+
+        .quick-action-card .qa-icon {
+          font-size: 32px;
+        }
+
+        .quick-action-card .qa-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .quick-action-card .qa-desc {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        /* ============================================
+           MCP ADVANCED FEATURES
+           ============================================ */
+
+        /* View Header Actions */
+        .header-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .search-trigger,
+        .view-toggle {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 14px;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          color: var(--text-secondary);
+          font-size: 12px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .search-trigger:hover,
+        .view-toggle:hover {
+          background: var(--bg-secondary);
+          border-color: var(--accent-purple);
+          color: var(--text-primary);
+        }
+
+        .view-toggle.active {
+          background: var(--accent-purple);
+          border-color: var(--accent-purple);
+          color: white;
+        }
+
+        .shortcut {
+          font-size: 10px;
+          padding: 2px 5px;
+          background: var(--bg-secondary);
+          border-radius: 4px;
+          color: var(--text-muted);
+          font-family: 'SF Mono', monospace;
+        }
+
+        /* Favorites Bar */
+        .mcp-favorites-bar {
+          background: linear-gradient(135deg, rgba(168, 85, 247, 0.1), rgba(139, 92, 246, 0.05));
+          border: 1px solid var(--border-color);
+          border-radius: 14px;
+          padding: 16px 20px;
+        }
+
+        .favorites-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 12px;
+        }
+
+        .favorites-header h4 {
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--text-secondary);
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .fav-count {
+          font-size: 11px;
+          padding: 2px 8px;
+          background: var(--accent-purple);
+          border-radius: 10px;
+          color: white;
+        }
+
+        .favorites-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .favorite-chip {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 14px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 20px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .favorite-chip:hover {
+          background: var(--bg-hover);
+          border-color: var(--accent-purple);
+          transform: translateY(-2px);
+        }
+
+        .favorite-chip .fav-icon {
+          font-size: 14px;
+        }
+
+        .favorite-chip .fav-name {
+          font-size: 12px;
+          font-weight: 500;
+          color: var(--text-primary);
+        }
+
+        /* Tool Item with Favorite Button */
+        .tool-item {
+          position: relative;
+        }
+
+        .tool-main {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex: 1;
+          padding: 0;
+          background: none;
+          border: none;
+          cursor: pointer;
+          text-align: left;
+          color: inherit;
+        }
+
+        .tool-fav-btn {
+          padding: 6px;
+          background: none;
+          border: none;
+          color: var(--text-muted);
+          font-size: 16px;
+          cursor: pointer;
+          transition: all 0.2s;
+          opacity: 0;
+        }
+
+        .tool-item:hover .tool-fav-btn {
+          opacity: 1;
+        }
+
+        .tool-fav-btn:hover {
+          color: var(--accent-yellow);
+          transform: scale(1.2);
+        }
+
+        .tool-fav-btn.active {
+          color: var(--accent-yellow);
+          opacity: 1;
+        }
+
+        .tool-item.favorited {
+          border-color: rgba(234, 179, 8, 0.3);
+        }
+
+        /* MCP Tool Search Overlay */
+        .mcp-tool-search-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.7);
+          backdrop-filter: blur(8px);
+          display: flex;
+          align-items: flex-start;
+          justify-content: center;
+          padding-top: 15vh;
+          z-index: 1000;
+        }
+
+        .mcp-search-modal {
+          width: 100%;
+          max-width: 600px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 16px;
+          overflow: hidden;
+          box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .search-input-wrapper {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 16px 20px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .search-input-wrapper .search-icon {
+          font-size: 20px;
+          color: var(--text-muted);
+        }
+
+        .search-input-wrapper input {
+          flex: 1;
+          background: none;
+          border: none;
+          font-size: 18px;
+          color: var(--text-primary);
+          outline: none;
+        }
+
+        .search-input-wrapper input::placeholder {
+          color: var(--text-muted);
+        }
+
+        .search-results {
+          max-height: 400px;
+          overflow-y: auto;
+        }
+
+        .search-result-item {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          padding: 14px 20px;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+
+        .search-result-item:hover,
+        .search-result-item.selected {
+          background: var(--bg-hover);
+        }
+
+        .search-result-item .result-icon {
+          font-size: 24px;
+        }
+
+        .search-result-item .result-info {
+          flex: 1;
+        }
+
+        .search-result-item .result-tool {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .search-result-item .result-server {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        .search-result-item .result-desc {
+          font-size: 12px;
+          color: var(--text-secondary);
+          margin-top: 4px;
+        }
+
+        .search-no-results {
+          padding: 40px;
+          text-align: center;
+          color: var(--text-muted);
+        }
+
+        .search-no-results .no-results-icon {
+          font-size: 48px;
+          margin-bottom: 16px;
+          opacity: 0.5;
+        }
+
+        /* MCP Activity Sparkline */
+        .mcp-activity-sparkline {
+          display: flex;
+          align-items: flex-end;
+          gap: 2px;
+          height: 30px;
+          padding: 8px 12px;
+          background: var(--bg-hover);
+          border-radius: 8px;
+        }
+
+        .sparkline-bar {
+          width: 6px;
+          background: linear-gradient(to top, var(--accent-purple), var(--accent-blue));
+          border-radius: 2px;
+          transition: height 0.3s ease;
+          min-height: 2px;
+        }
+
+        .sparkline-bar:hover {
+          background: var(--accent-yellow);
+        }
+
+        /* MCP 3D Constellation */
+        .mcp-constellation-3d {
+          height: 400px;
+          background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a14 100%);
+          border: 1px solid var(--border-color);
+          border-radius: 16px;
+          overflow: hidden;
+          position: relative;
+        }
+
+        .mcp-constellation-3d canvas {
+          cursor: grab;
+        }
+
+        .mcp-constellation-3d canvas:active {
+          cursor: grabbing;
+        }
+
+        .constellation-3d-hint {
+          position: absolute;
+          bottom: 16px;
+          left: 50%;
+          transform: translateX(-50%);
+          font-size: 12px;
+          color: var(--text-muted);
+          background: rgba(0, 0, 0, 0.5);
+          padding: 6px 14px;
+          border-radius: 20px;
+          pointer-events: none;
+        }
+
+        /* Server Sphere in 3D */
+        .server-sphere-label {
+          position: absolute;
+          background: var(--bg-card);
+          padding: 4px 10px;
+          border-radius: 6px;
+          font-size: 11px;
+          white-space: nowrap;
+          pointer-events: none;
+        }
+
+        /* Constellation Legend */
+        .constellation-legend {
+          position: absolute;
+          right: 16px;
+          top: 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          background: rgba(0, 0, 0, 0.6);
+          backdrop-filter: blur(8px);
+          padding: 12px;
+          border-radius: 12px;
+          max-height: 300px;
+          overflow-y: auto;
+        }
+
+        .legend-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 12px;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .legend-item:hover {
+          background: rgba(168, 85, 247, 0.2);
+          border-color: rgba(168, 85, 247, 0.5);
+        }
+
+        .legend-item.selected {
+          background: rgba(168, 85, 247, 0.3);
+          border-color: var(--accent-purple);
+        }
+
+        .legend-icon {
+          font-size: 16px;
+        }
+
+        .legend-name {
+          flex: 1;
+          font-size: 12px;
+          color: var(--text-primary);
+        }
+
+        .legend-count {
+          font-size: 10px;
+          padding: 2px 6px;
+          background: var(--accent-purple);
+          border-radius: 10px;
+          color: white;
+        }
+
+        /* MCP Search Trigger */
+        .mcp-search-trigger {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 16px;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 10px;
+          color: var(--text-muted);
+          font-size: 13px;
+          cursor: pointer;
+          transition: all 0.2s;
+          min-width: 200px;
+        }
+
+        .mcp-search-trigger:hover {
+          background: var(--bg-secondary);
+          border-color: var(--accent-purple);
+          color: var(--text-primary);
+        }
+
+        .mcp-search-trigger .shortcut {
+          margin-left: auto;
+          font-size: 10px;
+          padding: 3px 6px;
+          background: var(--bg-secondary);
+          border-radius: 4px;
+          font-family: 'SF Mono', monospace;
+        }
+
+        /* MCP Tool Search Overlay */
+        .mcp-tool-search {
+          position: fixed;
+          top: 100px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 90%;
+          max-width: 600px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 16px;
+          box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+          z-index: 1000;
+          overflow: hidden;
+        }
+
+        .mcp-tool-search .search-input-wrapper {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 16px 20px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .mcp-tool-search .search-input-wrapper input {
+          flex: 1;
+          background: none;
+          border: none;
+          font-size: 16px;
+          color: var(--text-primary);
+          outline: none;
+        }
+
+        .close-search {
+          width: 28px;
+          height: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: var(--bg-hover);
+          border: none;
+          border-radius: 6px;
+          color: var(--text-muted);
+          font-size: 18px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .close-search:hover {
+          background: var(--bg-secondary);
+          color: var(--text-primary);
+        }
+
+        .search-results {
+          max-height: 400px;
+          overflow-y: auto;
+          padding: 8px;
+        }
+
+        .search-result {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          width: 100%;
+          padding: 12px 16px;
+          background: none;
+          border: 1px solid transparent;
+          border-radius: 10px;
+          color: inherit;
+          text-align: left;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .search-result:hover {
+          background: var(--bg-hover);
+          border-color: var(--border-color);
+        }
+
+        .search-result .result-icon {
+          font-size: 22px;
+        }
+
+        .search-result .result-info {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .search-result .result-name {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .search-result .result-desc {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        .search-result .result-server {
+          font-size: 11px;
+          padding: 3px 8px;
+          background: var(--bg-secondary);
+          border-radius: 6px;
+          color: var(--text-secondary);
+        }
+
+        /* Activity Sparkline */
+        .activity-sparkline {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          padding: 12px 16px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+        }
+
+        .sparkline-label {
+          font-size: 10px;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .sparkline-bars {
+          display: flex;
+          align-items: flex-end;
+          gap: 2px;
+          height: 24px;
+        }
+
+        .sparkline-bars .sparkline-bar {
+          flex: 1;
+          min-height: 2px;
+          background: linear-gradient(to top, var(--accent-purple), var(--accent-blue));
+          border-radius: 1px;
+          transition: height 0.3s ease, background 0.2s;
+        }
+
+        .sparkline-bars .sparkline-bar:hover {
+          background: var(--accent-yellow);
+        }
+
+        /* MCP Header Actions */
+        .mcp-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        /* Favorites Label */
+        .favorites-label {
+          font-size: 12px;
+          color: var(--text-secondary);
+          margin-right: 12px;
+        }
+
+        .favorites-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        /* Server Detail Popover */
+        .server-popover {
+          position: fixed;
+          width: 320px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 16px;
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+          z-index: 1000;
+          overflow: hidden;
+        }
+
+        .popover-header {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 16px 20px;
+          background: var(--bg-hover);
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .popover-icon {
+          font-size: 32px;
+        }
+
+        .popover-title {
+          flex: 1;
+        }
+
+        .popover-title h4 {
+          font-size: 16px;
+          font-weight: 600;
+          color: var(--text-primary);
+          margin: 0;
+        }
+
+        .popover-status {
+          font-size: 11px;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .popover-status.connected {
+          color: var(--accent-green);
+        }
+
+        .popover-status.disconnected {
+          color: var(--text-muted);
+        }
+
+        .popover-close {
+          width: 28px;
+          height: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: none;
+          border: none;
+          color: var(--text-muted);
+          font-size: 18px;
+          cursor: pointer;
+          border-radius: 6px;
+          transition: all 0.2s;
+        }
+
+        .popover-close:hover {
+          background: var(--bg-secondary);
+          color: var(--text-primary);
+        }
+
+        .popover-desc {
+          padding: 16px 20px;
+          font-size: 13px;
+          color: var(--text-secondary);
+          line-height: 1.5;
+          margin: 0;
+        }
+
+        .popover-stats {
+          display: flex;
+          gap: 16px;
+          padding: 0 20px 16px;
+        }
+
+        .popover-stat {
+          display: flex;
+          flex-direction: column;
+          padding: 10px 16px;
+          background: var(--bg-hover);
+          border-radius: 10px;
+        }
+
+        .popover-stat .stat-val {
+          font-size: 16px;
+          font-weight: 700;
+          color: var(--accent-purple);
+        }
+
+        .popover-stat .stat-lbl {
+          font-size: 10px;
+          color: var(--text-muted);
+          text-transform: uppercase;
+        }
+
+        .popover-tools {
+          padding: 0 20px 20px;
+        }
+
+        .popover-tools h5 {
+          font-size: 11px;
+          text-transform: uppercase;
+          color: var(--text-muted);
+          margin: 0 0 10px;
+          letter-spacing: 0.05em;
+        }
+
+        .mini-tools-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+
+        .mini-tool {
+          padding: 4px 10px;
+          background: var(--bg-secondary);
+          border-radius: 6px;
+          font-size: 11px;
+          color: var(--text-secondary);
+        }
+
+        .mini-tool.more {
+          background: var(--accent-purple);
+          color: white;
+        }
+
+        /* Live Execution Indicator */
+        .live-execution {
+          position: fixed;
+          bottom: 24px;
+          left: 50%;
+          transform: translateX(-50%);
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          padding: 14px 24px;
+          background: var(--bg-card);
+          border: 1px solid var(--accent-purple);
+          border-radius: 40px;
+          box-shadow: 0 8px 32px rgba(168, 85, 247, 0.3);
+          z-index: 999;
+        }
+
+        .execution-pulse {
+          width: 12px;
+          height: 12px;
+          background: var(--accent-green);
+          border-radius: 50%;
+          animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.3); opacity: 0.7; }
+        }
+
+        .execution-info {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .execution-tool {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .execution-duration {
+          font-size: 11px;
+          color: var(--text-muted);
+          font-family: 'SF Mono', monospace;
+        }
+
+        .execution-spinner {
+          width: 20px;
+          height: 20px;
+          border: 2px solid var(--border-color);
+          border-top-color: var(--accent-purple);
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+
+        /* Category Badge */
+        .category-badge {
+          display: inline-flex;
+          padding: 3px 10px;
+          background: color-mix(in srgb, var(--badge-color) 20%, transparent);
+          border: 1px solid var(--badge-color);
+          border-radius: 12px;
+          font-size: 10px;
+          font-weight: 600;
+          color: var(--badge-color);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        /* Executor Enhancements */
+        .executor-meta {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .executor-desc {
+          font-size: 13px;
+          color: var(--text-secondary);
+          margin: 0 0 16px;
+          padding-bottom: 16px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .executor-templates {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-bottom: 16px;
+        }
+
+        .templates-label {
+          font-size: 11px;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .templates-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+
+        .template-btn {
+          padding: 6px 12px;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          color: var(--text-secondary);
+          font-size: 11px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .template-btn:hover {
+          background: var(--bg-secondary);
+          border-color: var(--accent-purple);
+          color: var(--text-primary);
+        }
+
+        .executor-input {
+          position: relative;
+        }
+
+        .input-actions {
+          position: absolute;
+          top: 32px;
+          right: 8px;
+          display: flex;
+          gap: 4px;
+        }
+
+        .input-action {
+          width: 28px;
+          height: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 12px;
+          transition: all 0.2s;
+          opacity: 0.5;
+        }
+
+        .input-action:hover {
+          opacity: 1;
+          background: var(--bg-secondary);
+          border-color: var(--accent-purple);
+        }
+
+        .executor-input textarea {
+          padding-right: 100px;
+        }
+
+        /* MCP Health Banner */
+        .mcp-health-banner {
+          display: flex;
+          align-items: center;
+          gap: 20px;
+          padding: 12px 20px;
+          background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(6, 182, 212, 0.05));
+          border: 1px solid rgba(16, 185, 129, 0.3);
+          border-radius: 12px;
+        }
+
+        .health-status-grid {
+          display: flex;
+          gap: 4px;
+        }
+
+        .health-dot {
+          width: 28px;
+          height: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 6px;
+          font-size: 14px;
+          transition: all 0.2s;
+          cursor: default;
+        }
+
+        .health-dot.connected {
+          background: rgba(16, 185, 129, 0.2);
+          border: 1px solid rgba(16, 185, 129, 0.5);
+        }
+
+        .health-dot.disconnected {
+          background: rgba(239, 68, 68, 0.2);
+          border: 1px solid rgba(239, 68, 68, 0.5);
+          opacity: 0.6;
+        }
+
+        .health-dot.error {
+          background: rgba(245, 158, 11, 0.2);
+          border: 1px solid rgba(245, 158, 11, 0.5);
+        }
+
+        .health-dot:hover {
+          transform: scale(1.15);
+        }
+
+        .health-summary {
+          font-size: 13px;
+          color: var(--text-secondary);
+          font-weight: 500;
+        }
+
+        .health-indicator {
+          margin-left: auto;
+        }
+
+        .all-healthy {
+          color: var(--accent-green);
+          font-size: 12px;
+          font-weight: 600;
+        }
+
+        .some-issues {
+          color: var(--accent-yellow);
+          font-size: 12px;
+          font-weight: 600;
+        }
+
+        /* MCP Tool Identifier */
+        .mcp-tool-identifier {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 14px;
+          background: linear-gradient(135deg, rgba(168, 85, 247, 0.1), rgba(6, 182, 212, 0.05));
+          border: 1px solid rgba(168, 85, 247, 0.3);
+          border-radius: 8px;
+          margin-bottom: 12px;
+        }
+
+        .mcp-label {
+          font-size: 11px;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .mcp-name {
+          flex: 1;
+          font-family: 'SF Mono', monospace;
+          font-size: 12px;
+          color: var(--accent-purple);
+          background: var(--bg-secondary);
+          padding: 4px 8px;
+          border-radius: 4px;
+        }
+
+        .copy-mcp-btn {
+          width: 28px;
+          height: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: none;
+          border: none;
+          cursor: pointer;
+          opacity: 0.6;
+          transition: opacity 0.2s;
+        }
+
+        .copy-mcp-btn:hover {
+          opacity: 1;
+        }
+
+        /* Bridge Status */
+        .bridge-status {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 12px;
+          background: rgba(16, 185, 129, 0.1);
+          border: 1px solid rgba(16, 185, 129, 0.3);
+          border-radius: 6px;
+          margin-bottom: 12px;
+        }
+
+        .bridge-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: var(--text-muted);
+        }
+
+        .bridge-dot.active {
+          background: var(--accent-green);
+          box-shadow: 0 0 8px var(--accent-green);
+          animation: pulse 2s ease-in-out infinite;
+        }
+
+        .bridge-text {
+          font-size: 11px;
+          color: var(--accent-green);
+          font-weight: 500;
+        }
+
+        /* Parameters Schema */
+        .params-schema {
+          padding: 12px;
+          background: var(--bg-hover);
+          border-radius: 8px;
+          margin-bottom: 12px;
+        }
+
+        .params-label {
+          font-size: 11px;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          display: block;
+          margin-bottom: 8px;
+        }
+
+        .params-list {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .param-item {
+          font-size: 12px;
+          color: var(--text-secondary);
+        }
+
+        .param-item code {
+          color: var(--accent-blue);
+          background: var(--bg-secondary);
+          padding: 2px 6px;
+          border-radius: 3px;
+          font-family: 'SF Mono', monospace;
+        }
+
+        .param-type {
+          color: var(--text-muted);
+          font-style: italic;
+        }
+
+        /* Keyboard Shortcuts Bar */
+        .mcp-shortcuts-bar {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          padding: 12px 20px;
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
+          border-radius: 10px;
+          margin-top: auto;
+        }
+
+        .shortcuts-label {
+          font-size: 11px;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .shortcuts-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 16px;
+        }
+
+        .shortcut-item {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          color: var(--text-secondary);
+        }
+
+        .shortcut-item kbd {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 3px 8px;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          font-family: 'SF Mono', monospace;
+          font-size: 11px;
+          color: var(--text-primary);
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+
+        @media (max-width: 1200px) {
+          .mcp-workspace {
+            grid-template-columns: 1fr;
+          }
+
+          .mcp-tools-panel,
+          .mcp-history {
+            max-height: 300px;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .constellation-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .mcp-quick-actions {
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .constellation-filters {
+            flex-wrap: wrap;
+          }
+        }
+
+        /* ============================================= */
+        /* MCP Learning Panel                            */
+        /* ============================================= */
+
+        .mcp-learning-panel {
+          background: linear-gradient(135deg, var(--bg-card), color-mix(in srgb, var(--accent-purple) 5%, var(--bg-card)));
+          border: 1px solid var(--border-color);
+          border-radius: 16px;
+          overflow: hidden;
+          margin-bottom: 20px;
+        }
+
+        .learning-header {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 16px 20px;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+
+        .learning-header:hover {
+          background: var(--bg-hover);
+        }
+
+        .learning-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .learning-icon {
+          font-size: 18px;
+        }
+
+        .learning-summary {
+          display: flex;
+          gap: 16px;
+          margin-left: auto;
+        }
+
+        .learning-stat {
+          display: flex;
+          align-items: baseline;
+          gap: 4px;
+        }
+
+        .learning-stat .stat-num {
+          font-size: 16px;
+          font-weight: 700;
+          color: var(--accent-purple);
+        }
+
+        .learning-stat .stat-lbl {
+          font-size: 11px;
+          color: var(--text-muted);
+        }
+
+        .expand-icon {
+          color: var(--text-muted);
+          font-size: 10px;
+        }
+
+        .learning-content {
+          padding: 0 20px 20px;
+          overflow: hidden;
+        }
+
+        .insights-section,
+        .top-tools-section,
+        .heatmap-section,
+        .memory-sync-section {
+          margin-bottom: 20px;
+        }
+
+        .insights-section h4,
+        .top-tools-section h4,
+        .heatmap-section h4 {
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          color: var(--text-muted);
+          margin: 0 0 12px;
+        }
+
+        .insights-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 10px;
+        }
+
+        .insight-card {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 12px;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .insight-card:hover {
+          border-color: var(--accent-purple);
+          transform: translateY(-2px);
+        }
+
+        .insight-card.achievement {
+          border-left: 3px solid var(--accent-yellow);
+        }
+
+        .insight-card.warning {
+          border-left: 3px solid var(--accent-red);
+        }
+
+        .insight-card.recommendation {
+          border-left: 3px solid var(--accent-blue);
+        }
+
+        .insight-icon {
+          font-size: 18px;
+        }
+
+        .insight-text {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .insight-title {
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .insight-desc {
+          font-size: 11px;
+          color: var(--text-secondary);
+        }
+
+        .usage-chart {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .usage-bar-row {
+          display: grid;
+          grid-template-columns: 30px 100px 1fr 40px 45px;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .usage-rank {
+          font-size: 10px;
+          color: var(--text-muted);
+          text-align: center;
+        }
+
+        .usage-tool {
+          font-size: 12px;
+          color: var(--text-primary);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .usage-bar-container {
+          height: 8px;
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 4px;
+          overflow: hidden;
+        }
+
+        .usage-bar-fill {
+          height: 100%;
+          background: linear-gradient(90deg, var(--accent-purple), var(--accent-blue));
+          border-radius: 4px;
+        }
+
+        .usage-count {
+          font-size: 11px;
+          color: var(--text-secondary);
+          text-align: right;
+        }
+
+        .usage-success {
+          font-size: 10px;
+          font-weight: 600;
+          text-align: right;
+          padding: 2px 6px;
+          border-radius: 4px;
+        }
+
+        .usage-success.high {
+          background: rgba(16, 185, 129, 0.15);
+          color: var(--accent-green);
+        }
+
+        .usage-success.mid {
+          background: rgba(245, 158, 11, 0.15);
+          color: var(--accent-yellow);
+        }
+
+        .usage-success.low {
+          background: rgba(239, 68, 68, 0.15);
+          color: var(--accent-red);
+        }
+
+        .category-heatmap {
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 8px;
+        }
+
+        .heatmap-cell {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
+          padding: 14px 8px;
+          background: hsl(var(--cat-hue), 70%, calc(20% + var(--intensity) * 30%));
+          border-radius: 10px;
+          text-align: center;
+          transition: all 0.3s;
+        }
+
+        .heatmap-cell:hover {
+          transform: scale(1.05);
+        }
+
+        .heatmap-label {
+          font-size: 10px;
+          text-transform: uppercase;
+          color: rgba(255, 255, 255, 0.7);
+        }
+
+        .heatmap-value {
+          font-size: 16px;
+          font-weight: 700;
+          color: white;
+        }
+
+        .sync-status {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 12px 16px;
+          background: rgba(16, 185, 129, 0.1);
+          border: 1px solid rgba(16, 185, 129, 0.3);
+          border-radius: 10px;
+        }
+
+        .sync-icon {
+          font-size: 16px;
+        }
+
+        .sync-text {
+          font-size: 12px;
+          color: var(--accent-green);
+        }
+
+        .sync-time {
+          margin-left: auto;
+          font-size: 11px;
+          color: var(--text-muted);
+        }
+
+        /* ============================================= */
+        /* Toast Notifications                           */
+        /* ============================================= */
+
+        .toast-container {
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          z-index: 10000;
+          pointer-events: none;
+        }
+
+        .toast {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 14px 18px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+          pointer-events: auto;
+          cursor: pointer;
+          min-width: 280px;
+          max-width: 400px;
+        }
+
+        .toast-success {
+          border-left: 4px solid var(--accent-green);
+        }
+
+        .toast-error {
+          border-left: 4px solid var(--accent-red);
+        }
+
+        .toast-warning {
+          border-left: 4px solid var(--accent-yellow);
+        }
+
+        .toast-info {
+          border-left: 4px solid var(--accent-blue);
+        }
+
+        .toast-icon {
+          width: 28px;
+          height: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 14px;
+          font-weight: 600;
+          border-radius: 50%;
+        }
+
+        .toast-success .toast-icon {
+          background: rgba(16, 185, 129, 0.2);
+          color: var(--accent-green);
+        }
+
+        .toast-error .toast-icon {
+          background: rgba(239, 68, 68, 0.2);
+          color: var(--accent-red);
+        }
+
+        .toast-warning .toast-icon {
+          background: rgba(245, 158, 11, 0.2);
+          color: var(--accent-yellow);
+        }
+
+        .toast-info .toast-icon {
+          background: rgba(59, 130, 246, 0.2);
+          color: var(--accent-blue);
+        }
+
+        .toast-content {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .toast-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .toast-message {
+          font-size: 12px;
+          color: var(--text-secondary);
+        }
+
+        .toast-close {
+          width: 24px;
+          height: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: none;
+          border: none;
+          color: var(--text-muted);
+          font-size: 18px;
+          cursor: pointer;
+          border-radius: 6px;
+          transition: all 0.2s;
+        }
+
+        .toast-close:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+
+        /* ============================================= */
+        /* Smart Suggestions                             */
+        /* ============================================= */
+
+        .smart-suggestions {
+          margin-bottom: 16px;
+        }
+
+        .suggestions-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 12px;
+          color: var(--text-secondary);
+          margin-bottom: 10px;
+        }
+
+        .suggestions-icon {
+          font-size: 14px;
+        }
+
+        .suggestions-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .suggestion-chip {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 14px;
+          background: linear-gradient(135deg, var(--bg-card), color-mix(in srgb, var(--accent-purple) 10%, var(--bg-card)));
+          border: 1px solid color-mix(in srgb, var(--accent-purple) 30%, transparent);
+          border-radius: 20px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .suggestion-chip:hover {
+          border-color: var(--accent-purple);
+          box-shadow: 0 4px 16px rgba(168, 85, 247, 0.2);
+        }
+
+        .suggestion-server-icon {
+          font-size: 14px;
+        }
+
+        .suggestion-tool {
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .suggestion-reason {
+          font-size: 10px;
+          color: var(--accent-purple);
+          padding: 2px 6px;
+          background: rgba(168, 85, 247, 0.15);
+          border-radius: 6px;
+        }
+
+        /* Animated gradient border for active learning */
+        @keyframes gradient-border {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+
+        .mcp-learning-panel.expanded {
+          border: 2px solid transparent;
+          background: linear-gradient(var(--bg-card), var(--bg-card)) padding-box,
+                      linear-gradient(90deg, var(--accent-purple), var(--accent-blue), var(--accent-cyan), var(--accent-purple)) border-box;
+          background-size: 100% 100%, 300% 300%;
+          animation: gradient-border 4s ease infinite;
+        }
+
+        /* ============================================= */
+        /* CONSCIOUSNESS CONTROL CENTER                  */
+        /* ============================================= */
+
+        .consciousness-view {
+          display: flex;
+          flex-direction: column;
+          gap: 24px;
+          padding: 24px;
+          min-height: 100%;
+        }
+
+        .glass {
+          background: var(--glass-bg);
+          backdrop-filter: blur(var(--glass-blur));
+          -webkit-backdrop-filter: blur(var(--glass-blur));
+          border: 1px solid var(--glass-border);
+        }
+
+        .consciousness-view .view-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 20px 24px;
+          border-radius: var(--radius-xl);
+        }
+
+        .consciousness-view .view-header h2 {
+          font-size: 24px;
+          font-weight: 600;
+          background: linear-gradient(135deg, var(--text-primary), var(--accent-purple));
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+
+        .header-badges {
+          display: flex;
+          gap: 12px;
+        }
+
+        .state-badge {
+          padding: 6px 14px;
+          border-radius: var(--radius-full);
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+        }
+
+        .connection-badge {
+          padding: 6px 14px;
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: var(--radius-full);
+          font-size: 11px;
+          font-weight: 600;
+          color: var(--text-muted);
+        }
+
+        .connection-badge.connected {
+          background: rgba(34, 197, 94, 0.15);
+          color: var(--accent-green);
+        }
+
+        .consciousness-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 20px;
+        }
+
+        .consciousness-card {
+          padding: 24px;
+          border-radius: var(--radius-xl);
+        }
+
+        .consciousness-card h3 {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-secondary);
+          margin-bottom: 20px;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        /* Phi Gauge */
+        .phi-card {
+          display: flex;
+          align-items: center;
+          gap: 32px;
+        }
+
+        .phi-gauge {
+          position: relative;
+          flex-shrink: 0;
+        }
+
+        .phi-gauge-center {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          text-align: center;
+        }
+
+        .phi-gauge-center .phi-symbol {
+          display: block;
+          font-size: 24px;
+          font-weight: 300;
+          color: var(--text-muted);
+          margin-bottom: 4px;
+        }
+
+        .phi-gauge-center .phi-value {
+          display: block;
+          font-size: 32px;
+          font-weight: 700;
+          font-family: 'SF Mono', monospace;
+          background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan));
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
+
+        .phi-meta .phi-label {
+          font-size: 18px;
+          font-weight: 600;
+          color: var(--text-primary);
+          margin-bottom: 8px;
+        }
+
+        .phi-meta .phi-description {
+          font-size: 13px;
+          color: var(--text-secondary);
+          line-height: 1.6;
+        }
+
+        /* Phi Trend */
+        .phi-trend {
+          display: flex;
+          align-items: flex-end;
+          gap: 2px;
+          height: 120px;
+          padding: 8px 0;
+        }
+
+        .trend-bar {
+          flex: 1;
+          min-height: 4px;
+          border-radius: 2px;
+          transition: height 0.3s ease;
+        }
+
+        .trend-labels {
+          display: flex;
+          justify-content: space-between;
+          font-size: 10px;
+          color: var(--text-muted);
+          margin-top: 8px;
+        }
+
+        /* Integration Metrics */
+        .integration-metrics {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+
+        .metric-row {
+          display: grid;
+          grid-template-columns: 140px 1fr 50px;
+          align-items: center;
+          gap: 16px;
+        }
+
+        .metric-label {
+          font-size: 13px;
+          color: var(--text-secondary);
+        }
+
+        .metric-bar {
+          height: 8px;
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 4px;
+          overflow: hidden;
+        }
+
+        .metric-fill {
+          height: 100%;
+          border-radius: 4px;
+          transition: width 0.5s ease;
+        }
+
+        .metric-value {
+          font-size: 14px;
+          font-weight: 600;
+          font-family: 'SF Mono', monospace;
+          text-align: right;
+        }
+
+        /* Workspace Visualization */
+        .workspace-viz {
+          display: flex;
+          justify-content: center;
+          gap: 12px;
+          padding: 24px 0;
+        }
+
+        .workspace-slot {
+          width: 40px;
+          height: 40px;
+          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.03);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .slot-content {
+          width: 28px;
+          height: 28px;
+          border-radius: 6px;
+        }
+
+        .workspace-info {
+          display: flex;
+          justify-content: space-between;
+          font-size: 11px;
+          color: var(--text-muted);
+          padding-top: 12px;
+          border-top: 1px solid var(--border-subtle);
+        }
+
+        /* ============================================= */
+        /* NEUROMODULATION DASHBOARD                     */
+        /* ============================================= */
+
+        .neuromod-view {
+          display: flex;
+          flex-direction: column;
+          gap: 24px;
+          padding: 24px;
+        }
+
+        .neuromod-view .view-header {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          padding: 20px 24px;
+          border-radius: var(--radius-xl);
+        }
+
+        .neuromod-view .subtitle {
+          font-size: 14px;
+          color: var(--text-muted);
+        }
+
+        .neuromod-aurora {
+          height: 120px;
+          border-radius: var(--radius-xl);
+          overflow: hidden;
+          position: relative;
+        }
+
+        .aurora-container {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          flex-direction: column;
+          justify-content: flex-end;
+        }
+
+        .aurora-band {
+          width: 100%;
+          filter: blur(20px);
+        }
+
+        .neuromod-channels {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 16px;
+        }
+
+        .channel-card {
+          padding: 20px;
+          border-radius: var(--radius-xl);
+          text-align: center;
+        }
+
+        .channel-header {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          margin-bottom: 16px;
+        }
+
+        .channel-icon {
+          font-size: 20px;
+        }
+
+        .channel-name {
+          font-size: 14px;
+          font-weight: 600;
+        }
+
+        .channel-gauge {
+          position: relative;
+          width: 100px;
+          height: 100px;
+          margin: 0 auto 12px;
+        }
+
+        .channel-gauge .gauge-value {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          font-size: 20px;
+          font-weight: 700;
+          font-family: 'SF Mono', monospace;
+        }
+
+        .channel-effect {
+          font-size: 11px;
+          color: var(--text-muted);
+          margin-bottom: 12px;
+        }
+
+        .channel-bar {
+          height: 4px;
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 2px;
+          overflow: hidden;
+        }
+
+        .channel-bar .bar-fill {
+          height: 100%;
+          border-radius: 2px;
+          transition: width 0.5s ease;
+        }
+
+        .neuromod-effects {
+          padding: 24px;
+          border-radius: var(--radius-xl);
+        }
+
+        .neuromod-effects h3 {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-secondary);
+          margin-bottom: 20px;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .effects-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 16px;
+        }
+
+        .effect-item {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          padding: 16px;
+          background: rgba(255, 255, 255, 0.02);
+          border-radius: var(--radius-lg);
+          text-align: center;
+        }
+
+        .effect-label {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        .effect-value {
+          font-size: 20px;
+          font-weight: 700;
+          font-family: 'SF Mono', monospace;
+        }
+
+        /* ============================================= */
+        /* NESS ECONOMIC DASHBOARD                       */
+        /* ============================================= */
+
+        .ness-view {
+          display: flex;
+          flex-direction: column;
+          gap: 24px;
+          padding: 24px;
+        }
+
+        .ness-view .view-header {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          padding: 20px 24px;
+          border-radius: var(--radius-xl);
+        }
+
+        .ness-view .subtitle {
+          font-size: 14px;
+          color: var(--text-muted);
+        }
+
+        .ness-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 20px;
+        }
+
+        .ness-card {
+          padding: 24px;
+          border-radius: var(--radius-xl);
+        }
+
+        .ness-card h3 {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-secondary);
+          margin-bottom: 20px;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .ness-gauge {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+        }
+
+        .ness-value {
+          text-align: center;
+          margin-top: -60px;
+        }
+
+        .ness-value .value {
+          display: block;
+          font-size: 36px;
+          font-weight: 700;
+          font-family: 'SF Mono', monospace;
+          color: var(--text-primary);
+        }
+
+        .ness-value .label {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        .ness-indicators {
+          display: flex;
+          justify-content: center;
+          gap: 24px;
+          margin-top: 20px;
+        }
+
+        .indicator {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 11px;
+          color: var(--text-secondary);
+        }
+
+        .indicator .dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+        }
+
+        /* Runway */
+        .runway-display {
+          text-align: center;
+          margin-bottom: 20px;
+        }
+
+        .runway-days {
+          font-size: 64px;
+          font-weight: 700;
+          font-family: 'SF Mono', monospace;
+          background: linear-gradient(135deg, var(--accent-green), var(--accent-cyan));
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
+
+        .runway-label {
+          font-size: 16px;
+          color: var(--text-muted);
+          margin-left: 8px;
+        }
+
+        .runway-bar {
+          height: 12px;
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 6px;
+          overflow: hidden;
+          margin-bottom: 16px;
+        }
+
+        .runway-fill {
+          height: 100%;
+          border-radius: 6px;
+          transition: width 0.5s ease;
+        }
+
+        .runway-meta {
+          display: flex;
+          justify-content: space-between;
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        /* Revenue Streams */
+        .revenue-streams {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .stream-row {
+          display: grid;
+          grid-template-columns: 100px 1fr 50px;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .stream-name {
+          font-size: 13px;
+          color: var(--text-secondary);
+        }
+
+        .stream-bar {
+          height: 8px;
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 4px;
+          overflow: hidden;
+        }
+
+        .stream-fill {
+          height: 100%;
+          border-radius: 4px;
+        }
+
+        .stream-value {
+          font-size: 13px;
+          font-weight: 600;
+          font-family: 'SF Mono', monospace;
+          text-align: right;
+        }
+
+        /* Q/Γ Ratio */
+        .ratio-display {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 24px;
+          margin-bottom: 20px;
+        }
+
+        .ratio-item {
+          text-align: center;
+        }
+
+        .ratio-label {
+          display: block;
+          font-size: 11px;
+          color: var(--text-muted);
+          margin-bottom: 4px;
+        }
+
+        .ratio-value {
+          display: block;
+          font-size: 28px;
+          font-weight: 700;
+          font-family: 'SF Mono', monospace;
+        }
+
+        .ratio-desc {
+          display: block;
+          font-size: 10px;
+          color: var(--text-muted);
+          margin-top: 4px;
+        }
+
+        .ratio-divider {
+          font-size: 24px;
+          color: var(--text-muted);
+        }
+
+        .ratio-bar {
+          display: flex;
+          height: 8px;
+          border-radius: 4px;
+          overflow: hidden;
+          margin-bottom: 12px;
+        }
+
+        .ratio-left,
+        .ratio-right {
+          height: 100%;
+        }
+
+        .ratio-target {
+          text-align: center;
+          font-size: 11px;
+          color: var(--text-muted);
+        }
+
+        @media (max-width: 1200px) {
+          .consciousness-grid,
+          .ness-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .neuromod-channels {
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .effects-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+
+        @media (max-width: 768px) {
+          .neuromod-channels {
+            grid-template-columns: 1fr;
+          }
+
+          .effects-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .phi-card {
+            flex-direction: column;
           }
         }
       `}</style>

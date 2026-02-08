@@ -72,6 +72,11 @@ export function useSSEConnection(dashboardUrl: string) {
     updateAgents,
     updateEconomy,
     updateMemory,
+    updateSelfImprovement,
+    addModification,
+    addLesson,
+    addCodeQuery,
+    addBuildOutput,
     addEvent
   } = useGenesisStore();
 
@@ -254,11 +259,142 @@ export function useSSEConnection(dashboardUrl: string) {
         addEvent({ type: eventType, data });
         break;
 
+      case 'selfimprovement':
+        switch (action) {
+          case 'cycle_started':
+            updateSelfImprovement({ currentStage: 'observe', cycleEnabled: true });
+            break;
+          case 'stage_changed':
+            updateSelfImprovement({ currentStage: data.stage ?? 'idle' });
+            break;
+          case 'proposal_created':
+            updateSelfImprovement({
+              currentProposal: data.proposal ?? null,
+              currentStage: 'propose',
+            });
+            break;
+          case 'sandbox_progress':
+            updateSelfImprovement({
+              sandboxPath: data.sandboxPath ?? null,
+              sandboxProgress: data.steps ?? [],
+              currentStage: 'apply',
+            });
+            break;
+          case 'invariant_checked':
+            updateSelfImprovement({
+              invariantResults: data.results ?? [],
+            });
+            break;
+          case 'build_output':
+            addBuildOutput(data.line ?? '');
+            break;
+          case 'modification_applied':
+            addModification({
+              id: data.id ?? crypto.randomUUID(),
+              timestamp: Date.now(),
+              description: data.description ?? '',
+              status: 'success',
+              metrics: data.metrics,
+              commitHash: data.commitHash,
+            });
+            updateSelfImprovement({
+              currentStage: 'verify',
+              currentProposal: null,
+              phi: data.metrics?.after?.phi ?? 0.5,
+              errorRate: data.metrics?.after?.errorRate ?? 0.05,
+              memoryReuse: data.metrics?.after?.memoryReuse ?? 0.5,
+            });
+            break;
+          case 'modification_failed':
+            addModification({
+              id: data.id ?? crypto.randomUUID(),
+              timestamp: Date.now(),
+              description: data.description ?? '',
+              status: 'failed',
+              reason: data.reason,
+              rollbackHash: data.rollbackHash,
+            });
+            updateSelfImprovement({
+              currentStage: 'idle',
+              currentProposal: null,
+            });
+            break;
+          case 'rollback_triggered':
+            addModification({
+              id: data.id ?? crypto.randomUUID(),
+              timestamp: Date.now(),
+              description: `Rollback: ${data.reason}`,
+              status: 'rolled_back',
+              rollbackHash: data.rollbackHash,
+            });
+            break;
+          case 'metrics_updated':
+            updateSelfImprovement({
+              phi: data.phi ?? 0.5,
+              errorRate: data.errorRate ?? 0.05,
+              memoryReuse: data.memoryReuse ?? 0.5,
+              responseTime: data.responseTime ?? 100,
+            });
+            break;
+        }
+        addEvent({ type: eventType, data });
+        break;
+
+      case 'coderag':
+        switch (action) {
+          case 'query_executed':
+            addCodeQuery({
+              query: data.query ?? '',
+              results: data.resultsCount ?? 0,
+              timestamp: Date.now(),
+              file: data.topFile,
+            });
+            break;
+          case 'file_analyzed':
+            updateSelfImprovement({
+              analyzingFile: data.file ?? null,
+              analyzingProgress: data.progress ?? 0,
+            });
+            break;
+          case 'understanding_updated':
+            updateSelfImprovement({
+              moduleUnderstanding: data.modules ?? {},
+              analyzingFile: null,
+              analyzingProgress: 100,
+            });
+            break;
+        }
+        addEvent({ type: eventType, data });
+        break;
+
+      case 'learning':
+        switch (action) {
+          case 'lesson_stored':
+            addLesson({
+              id: data.id ?? crypto.randomUUID(),
+              content: data.content ?? '',
+              type: data.type ?? 'positive',
+              confidence: data.confidence ?? 0.5,
+              appliedCount: data.appliedCount ?? 0,
+              retention: data.retention ?? 1.0,
+              category: data.category ?? 'performance',
+            });
+            break;
+          case 'lesson_recalled':
+            // Update existing lesson's appliedCount
+            break;
+          case 'retention_decayed':
+            // Update lesson retention values
+            break;
+        }
+        addEvent({ type: eventType, data });
+        break;
+
       default:
         // Generic event
         addEvent({ type: eventType, data });
     }
-  }, [updateConsciousness, updateKernel, updateNeuromod, addEvent]);
+  }, [updateConsciousness, updateKernel, updateNeuromod, updateEconomy, updateSelfImprovement, addModification, addLesson, addCodeQuery, addBuildOutput, addEvent]);
 
   useEffect(() => {
     let mounted = true;
@@ -318,7 +454,7 @@ export function useSSEConnection(dashboardUrl: string) {
         };
 
         // Handle specific named events
-        ['consciousness', 'kernel', 'neuromodulation', 'allostasis', 'nociception', 'metrics'].forEach(category => {
+        ['consciousness', 'kernel', 'neuromodulation', 'allostasis', 'nociception', 'metrics', 'selfimprovement', 'coderag', 'learning'].forEach(category => {
           eventSource.addEventListener(category, (event: MessageEvent) => {
             if (!mounted) return;
             try {

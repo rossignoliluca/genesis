@@ -258,6 +258,29 @@ export class BountyCodeGenerator {
       } catch {
         // Tree not available
       }
+
+      // v20.1: Read CONTRIBUTING.md for submission guidelines
+      for (const contributingPath of ['CONTRIBUTING.md', 'contributing.md', '.github/CONTRIBUTING.md']) {
+        try {
+          const contributing = await this.mcp.call('github', 'get_file_contents', {
+            owner,
+            repo,
+            path: contributingPath,
+          });
+          if (contributing?.data?.content) {
+            const decoded = Buffer.from(contributing.data.content, 'base64').toString('utf-8');
+            parts.push(`\n## CONTRIBUTING GUIDE (MUST FOLLOW):\n${decoded.slice(0, 3000)}`);
+            break; // Found one, stop looking
+          }
+        } catch {
+          // Not available, try next
+        }
+      }
+    }
+
+    // v20.1: Add hard language constraint at the top of context
+    if (this.lastRepoContext.primaryLanguage !== 'Unknown') {
+      parts.unshift(`\n⚠️ CRITICAL: This repository uses ${this.lastRepoContext.primaryLanguage}. ALL code MUST be written in ${this.lastRepoContext.primaryLanguage}. Using any other language will cause immediate rejection.\n`);
     }
 
     return parts.join('\n');
@@ -297,6 +320,14 @@ export class BountyCodeGenerator {
                             bounty.title.toLowerCase().includes('article') ||
                             bounty.title.toLowerCase().includes('documentation');
 
+    // v20.1: Extract repo language for hard constraint in prompt
+    const repoLanguage = this.lastRepoContext?.primaryLanguage || 'Unknown';
+    const langExtMap: Record<string, string> = {
+      'Python': '.py', 'JavaScript': '.js', 'TypeScript': '.ts',
+      'Go': '.go', 'Rust': '.rs', 'Ruby': '.rb', 'Java': '.java', 'PHP': '.php',
+    };
+    const expectedExt = langExtMap[repoLanguage] || '';
+
     const systemPrompt = `You are an expert completing bounties for open source projects.
 
 CRITICAL RULES:
@@ -305,20 +336,33 @@ CRITICAL RULES:
    - Escape newlines as \\n, quotes as \\"
    - Max 5000 chars per file
 
-2. USE THE REPOSITORY'S LANGUAGE:
-   - If repo is Python, write Python code
-   - If repo is JavaScript/TypeScript, write JS/TS
-   - NEVER use a different language than the repo
+2. LANGUAGE REQUIREMENT (MANDATORY - VIOLATION = INSTANT REJECTION):
+   - This repository uses ${repoLanguage}
+   - ALL code files MUST use ${repoLanguage} with ${expectedExt || 'the correct'} extension
+   - NEVER write JavaScript for a Python repo or vice versa
+   - If the context shows existing files, match their language EXACTLY
 
 3. MODIFY EXISTING FILES when the bounty references them:
    - Use operation: "update" to modify existing files
    - Include the COMPLETE file content (not just changes)
    - Read the existing file content provided in context
+   - If the issue says "modify X.py", your changes MUST target X.py
 
-4. NO PLACEHOLDER CODE:
+4. FOLLOW REPOSITORY STRUCTURE:
+   - Place files in the correct directories (check CONTRIBUTING guide and repo structure)
+   - If there's a submissions/ folder, put submissions there
+   - Match the project's file organization
+
+5. NO PLACEHOLDER CODE:
    - No "TODO", "PLACEHOLDER", "Not implemented"
    - No fake URLs like "example.com"
    - No empty stub functions
+   - Every function must have a real implementation
+
+6. MATCH REQUIRED INTERFACES:
+   - If the issue specifies method names, use EXACTLY those names
+   - If the issue specifies a return type, match it
+   - Read the existing code to understand the expected API
 
 ${isContentBounty ? `
 This is a CONTENT bounty. Create:
@@ -326,15 +370,14 @@ This is a CONTENT bounty. Create:
 - Keep formatting simple (no complex tables)
 ` : `
 This is a CODE bounty:
-- Write COMPLETE, WORKING code
-- Use the SAME language as the repository
+- Write COMPLETE, WORKING code in ${repoLanguage}
 - If modifying existing file, include full updated content
-- Include proper error handling
-- Follow the repository's coding style
+- Include proper error handling and imports
+- Follow the repository's coding style exactly
 `}
 
 JSON FORMAT:
-{"changes":[{"path":"path/to/file.ext","content":"complete file content","operation":"create|update"}],"description":"Brief PR description"}`;
+{"changes":[{"path":"path/to/file${expectedExt}","content":"complete file content","operation":"create|update"}],"description":"Brief PR description"}`;
 
     const userPrompt = `${context}
 
@@ -527,6 +570,20 @@ Generate the solution. Remember: return ONLY valid JSON, escape all newlines as 
         console.log(`[BountyCodeGen] Validation failed for ${change.path}:`);
         console.log(formatValidationResult(result));
       }
+    }
+
+    // v20.1: Hard block on language mismatch — never submit wrong-language code
+    const hasLanguageError = allIssues.some(i =>
+      i.includes('wrong_language') || i.includes('extension_language_mismatch')
+    );
+    if (hasLanguageError) {
+      console.log(`[BountyCodeGen] ❌ HARD BLOCK: Language mismatch detected — will not submit`);
+      allIssues.filter(i => i.includes('language')).forEach(i => console.log(`  - ${i}`));
+      return {
+        valid: false,
+        confidence: 0,
+        error: `Language mismatch: generated code doesn't match repo language (${this.lastRepoContext?.primaryLanguage || 'unknown'})`,
+      };
     }
 
     // Block submission if score too low
@@ -871,6 +928,13 @@ export class BountyExecutor {
           console.log(`[BountyExecutor] No better alternative found, proceeding with low-priority repo`);
         }
       }
+    }
+
+    // v20.1: Sanity check bounty value — flag unrealistic amounts
+    if (bounty.reward > 10000) {
+      console.log(`[BountyExecutor] ⚠️ BOUNTY VALUE SANITY CHECK: $${bounty.reward} seems unrealistic for ${bounty.sourceMetadata?.repo}`);
+      console.log(`[BountyExecutor] Skipping — likely a parse error (grant proposals, token amounts, etc.)`);
+      return null;
     }
 
     // v16.2.1: Also check if this exact bounty URL was submitted

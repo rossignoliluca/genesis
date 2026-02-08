@@ -201,12 +201,15 @@ export function validateCode(
 
   if (ext && extLangMap[ext]) {
     const expectedForExt = extLangMap[ext];
-    if (!expectedForExt.includes(expectedLang) && expectedLang !== 'typescript' && expectedLang !== 'javascript') {
-      warnings.push({
-        type: 'extension_mismatch',
-        message: `File extension .${ext} doesn't match repo language ${context.primaryLanguage}`,
-        severity: 'warning',
-        suggestion: `Consider using a .${getExtensionForLanguage(expectedLang)} extension`,
+    const isJsTsCompat = (expectedLang === 'typescript' || expectedLang === 'javascript') &&
+                         (ext === 'js' || ext === 'ts' || ext === 'jsx' || ext === 'tsx');
+    if (!expectedForExt.includes(expectedLang) && !isJsTsCompat) {
+      // v20.1: Promote to error — submitting .js to a Python repo is a hard block
+      issues.push({
+        type: 'extension_language_mismatch',
+        message: `File extension .${ext} is incompatible with repo language ${context.primaryLanguage}`,
+        severity: 'error',
+        suggestion: `Rewrite the code in ${context.primaryLanguage} using .${getExtensionForLanguage(expectedLang)} extension`,
       });
     }
   }
@@ -261,6 +264,14 @@ export function validateCode(
   const errorCount = issues.length;
   const warningCount = warnings.length;
   let score = 100 - (errorCount * 20) - (warningCount * 5);
+
+  // v20.1: Hard block — wrong language or extension mismatch forces score to 0
+  const hasLanguageMismatch = issues.some(i => i.type === 'wrong_language');
+  const hasExtensionMismatch = issues.some(i => i.type === 'extension_language_mismatch');
+  if (hasLanguageMismatch || hasExtensionMismatch) {
+    score = 0;
+  }
+
   score = Math.max(0, Math.min(100, score));
 
   return {

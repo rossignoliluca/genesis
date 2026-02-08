@@ -2124,6 +2124,133 @@ registerAction('create.presentation', async (context) => {
 });
 
 // ============================================================================
+// v17.0 - Market Strategist Actions
+// ============================================================================
+
+/**
+ * strategy.collect: Collect market data from web sources
+ */
+registerAction('strategy.collect', async (context) => {
+  const start = Date.now();
+  try {
+    const { MarketCollector } = await import('../market-strategist/collector.js');
+    const config = context.parameters?.config as any;
+    const collector = new MarketCollector(config);
+    const snapshot = await collector.collectWeeklyData();
+
+    return {
+      success: true,
+      action: 'strategy.collect' as ActionType,
+      data: {
+        week: snapshot.week,
+        date: snapshot.date,
+        headlineCount: snapshot.headlines.length,
+        marketCount: snapshot.markets.length,
+        themes: snapshot.themes,
+        sentiment: snapshot.sentiment.overall,
+        sources: snapshot.sources.map(s => s.name),
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'strategy.collect' as ActionType,
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * strategy.analyze: Synthesize narratives and detect themes
+ */
+registerAction('strategy.analyze', async (context) => {
+  const start = Date.now();
+  try {
+    const { MarketCollector } = await import('../market-strategist/collector.js');
+    const { MarketAnalyzer } = await import('../market-strategist/analyzer.js');
+    const { MemoryLayers } = await import('../market-strategist/memory-layers.js');
+
+    const collector = new MarketCollector();
+    const analyzer = new MarketAnalyzer();
+    const layers = new MemoryLayers();
+
+    // Collect data first
+    const snapshot = await collector.collectWeeklyData();
+
+    // Recall context from memory
+    const memoryContext = await layers.recallContext('market strategy');
+
+    // Synthesize narratives
+    const narratives = await analyzer.synthesizeNarrative(
+      snapshot,
+      memoryContext.recentWeeks,
+      memoryContext.historicalAnalogues,
+    );
+
+    return {
+      success: true,
+      action: 'strategy.analyze' as ActionType,
+      data: {
+        narrativeCount: narratives.length,
+        narratives: narratives.map(n => ({
+          title: n.title,
+          horizon: n.horizon,
+          confidence: n.confidence,
+        })),
+        themes: snapshot.themes,
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'strategy.analyze' as ActionType,
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+/**
+ * strategy.brief: Generate complete weekly market brief
+ */
+registerAction('strategy.brief', async (context) => {
+  const start = Date.now();
+  try {
+    const { MarketStrategist } = await import('../market-strategist/strategist.js');
+    const config = context.parameters?.config as any;
+    const strategist = new MarketStrategist(config);
+    const brief = await strategist.generateWeeklyBrief();
+
+    return {
+      success: true,
+      action: 'strategy.brief' as ActionType,
+      data: {
+        id: brief.id,
+        week: brief.week,
+        date: brief.date,
+        narrativeCount: brief.narratives.length,
+        positioningCount: brief.positioning.length,
+        riskCount: brief.risks.length,
+        opportunityCount: brief.opportunities.length,
+        hasPresentation: !!brief.presentationSpec,
+        presentationPath: brief.presentationSpec?.output_path,
+      },
+      duration: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      action: 'strategy.brief' as ActionType,
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - start,
+    };
+  }
+});
+
+// ============================================================================
 // Action Executor Manager
 // ============================================================================
 

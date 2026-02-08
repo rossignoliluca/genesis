@@ -130,6 +130,10 @@ const AI_TO_WM_ACTION: Record<ActionType, WMActionType> = {
   'opportunity.monetize': 'execute',// Wire payments
   // v16.0 - Presentation Engine
   'create.presentation': 'execute', // Generate PPTX
+  // v17.0 - Market Strategist
+  'strategy.collect': 'query',      // Collect market data
+  'strategy.analyze': 'query',      // Synthesize narratives
+  'strategy.brief': 'execute',      // Generate full brief
 };
 
 // ============================================================================

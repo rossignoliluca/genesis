@@ -197,3 +197,18 @@ toolRegistry.set('presentation', {
     return { valid: true };
   },
 });
+
+// Register market strategist tool
+import { MarketStrategist } from '../market-strategist/strategist.js';
+import type { StrategyConfig } from '../market-strategist/types.js';
+
+toolRegistry.set('market_strategist', {
+  name: 'market_strategist',
+  description: 'Generate weekly market strategy brief with data collection, narrative synthesis, and PPTX',
+  execute: async (params: Record<string, unknown>) => {
+    const config = params.config as Partial<StrategyConfig> | undefined;
+    const strategist = new MarketStrategist(config);
+    return strategist.generateWeeklyBrief();
+  },
+  validate: () => ({ valid: true }),
+});

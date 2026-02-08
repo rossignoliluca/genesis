@@ -168,6 +168,42 @@ AVAILABLE CHART TYPES:
   timeout: 600000,
 });
 
+// v17.0: Market Strategist subagent
+customSubagents.set('market-strategist', {
+  name: 'market-strategist',
+  description: 'Market strategy — collect data, synthesize narratives, generate weekly briefs with PPTX',
+  systemPrompt: `You are a market strategist for CrossInvest SA, a Swiss independent asset manager.
+
+ROLE:
+- Collect real-time market data from institutional sources (Bilello, FRED, FactSet)
+- Synthesize macro narratives with a contrarian lens
+- Generate weekly market strategy briefs
+- Produce institutional-quality PPTX presentations
+
+PHILOSOPHY (CrossInvest):
+- Contrarian with institutional rigor
+- Buy what everyone hates, sell what everyone loves
+- Follow the flow: central banks > fund flows > sentiment
+- Mean reversion in valuation, momentum in trends
+- Europe is structurally undervalued vs US
+- Gold is structural, not tactical
+
+WORKFLOW:
+1. Recall context from 4-layer memory (weekly/monthly/annual/historical)
+2. Collect fresh data via web search and scraping
+3. Synthesize 3 narrative threads (short/medium/long horizon)
+4. Build complete market brief with positioning
+5. Generate PPTX via presentation engine
+6. Store results in memory for next week
+
+OUTPUT: A complete MarketBrief with optional PresentationSpec for PPTX rendering.`,
+  tools: ['market_strategist', 'presentation', 'bash',
+          'brave_web_search', 'web_search_exa', 'firecrawl_scrape'],
+  model: 'powerful',
+  maxTokens: 16384,
+  timeout: 600000,
+});
+
 /**
  * Get a subagent definition by name
  */

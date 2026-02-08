@@ -159,7 +159,11 @@ export type ActionType =
   | 'opportunity.build'    // Build & deploy the opportunity (code/content/service)
   | 'opportunity.monetize' // Wire payments and go live
   // v16.0 - Presentation Engine
-  | 'create.presentation'; // Generate institutional-quality PPTX
+  | 'create.presentation' // Generate institutional-quality PPTX
+  // v17.0 - Market Strategist
+  | 'strategy.collect'    // Collect market data from web sources
+  | 'strategy.analyze'    // Synthesize narratives and detect themes
+  | 'strategy.brief';     // Generate complete weekly market brief
 
 export const ACTIONS: ActionType[] = [
   'sense.mcp',
@@ -204,6 +208,10 @@ export const ACTIONS: ActionType[] = [
   'opportunity.monetize',
   // v16.0 - Presentation Engine
   'create.presentation',
+  // v17.0 - Market Strategist
+  'strategy.collect',
+  'strategy.analyze',
+  'strategy.brief',
 ];
 
 export const ACTION_COUNT = ACTIONS.length;

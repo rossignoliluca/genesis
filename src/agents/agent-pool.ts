@@ -14,6 +14,7 @@
  * - 10+ concurrent agents
  */
 
+import { EventEmitter } from 'events';
 import { MessageBus, messageBus } from './message-bus.js';
 import { BaseAgent, getAgentFactory, listAgentTypes, registerAgentFactory } from './base-agent.js';
 import { AgentType, Message, MessagePriority, Agent, MessageType } from './types.js';
@@ -291,6 +292,7 @@ export class AgentPool {
   private activeTaskCount = 0;
   private bus: MessageBus;
   private cleanupInterval: NodeJS.Timeout | null = null;
+  private releaseEmitter = new EventEmitter(); // v18.3: Event-driven agent acquisition
 
   // Stats
   private stats = {
@@ -363,6 +365,7 @@ export class AgentPool {
       entry.useCount++;
       entry.avgLatency = entry.avgLatency + (latency - entry.avgLatency) / entry.useCount;
       entry.avgCost = entry.avgCost + (cost - entry.avgCost) / entry.useCount;
+      this.releaseEmitter.emit('agent-released'); // v18.3: Notify waiters
     }
   }
 
@@ -410,6 +413,7 @@ export class AgentPool {
       };
     } catch (error) {
       poolEntry.busy = false;
+      this.releaseEmitter.emit('agent-released'); // v18.3: Notify waiters
       this.stats.failedTasks++;
 
       return {
@@ -546,27 +550,28 @@ export class AgentPool {
 
     // Check if we can spawn more
     if (poolEntries.length >= this.config.maxAgentsPerType) {
-      // Wait for one to become available
-      const claimed = await new Promise<PooledAgent | null>(resolve => {
+      // v18.3: Event-driven wait instead of polling
+      const claimed = await new Promise<PooledAgent | null>((resolve) => {
         let resolved = false;
 
-        const check = setInterval(() => {
+        const onRelease = () => {
           if (resolved) return;
-          // Atomically claim first free agent
           const free = poolEntries.find(e => !e.busy);
           if (free) {
-            free.busy = true; // Claim it immediately
+            free.busy = true;
             resolved = true;
-            clearInterval(check);
+            this.releaseEmitter.removeListener('agent-released', onRelease);
             resolve(free);
           }
-        }, 100);
+        };
+
+        this.releaseEmitter.on('agent-released', onRelease);
 
         // Timeout after 5s
         setTimeout(() => {
           if (!resolved) {
             resolved = true;
-            clearInterval(check);
+            this.releaseEmitter.removeListener('agent-released', onRelease);
             resolve(null);
           }
         }, 5000);

@@ -65,7 +65,14 @@ import {
   createCognitiveWorkspace,
   WorkingMemoryItem,
 } from '../memory/cognitive-workspace.js';
-import { SystemState, ComponentState, Connection } from './types.js';
+import {
+  SystemState,
+  ComponentState,
+  Connection,
+  IgnitionEvent,
+  WorkspaceContent,
+} from './types.js';
+import { EpisodicMemory } from '../memory/types.js';
 import { createHash } from 'crypto';
 
 // ============================================================================
@@ -213,6 +220,52 @@ export class ConsciousAgent extends EventEmitter {
         }
       });
     }
+
+    // v18.2: Connect Global Workspace ignition → Cognitive Workspace activation boost
+    this.consciousness.workspace.on((event) => {
+      if (event.type === 'ignition' && event.data) {
+        const ignitionData = event.data as IgnitionEvent;
+        const content = ignitionData.content;
+
+        // Boost activation of related items in working memory
+        const activeItems = this.workspace.getActive();
+        for (const item of activeItems) {
+          // Check if the ignited content relates to this memory item
+          const relatedness = this.computeIgnitionRelatedness(content, item);
+          if (relatedness > 0.3) {
+            // Access the item to boost its activation (spreading from ignition)
+            this.workspace.access(item.id);
+          }
+        }
+
+        // If ignited content is important enough, inject it as a memory item
+        if (content.salience > 0.7) {
+          const memory: EpisodicMemory = {
+            id: `gwt-${content.id}`,
+            type: 'episodic',
+            content: {
+              what: `Conscious ignition: ${content.type} from ${content.sourceModule}`,
+              details: content.data,
+            },
+            when: {
+              timestamp: content.timestamp,
+            },
+            importance: content.salience,
+            tags: [content.type, content.sourceModule, 'ignition'],
+            created: new Date(),
+            lastAccessed: new Date(),
+            accessCount: 0,
+            R0: content.salience,
+            S: 7,
+            emotionalValence: 0,
+            associations: [],
+            consolidated: false,
+            source: `gwt:${content.sourceModule}`,
+          };
+          this.workspace.addToBuffer(memory, 'association', content.salience);
+        }
+      }
+    });
   }
 
   /**
@@ -789,6 +842,47 @@ export class ConsciousAgent extends EventEmitter {
   // ============================================================================
   // Utilities
   // ============================================================================
+
+  /**
+   * v18.2: Compute how related an ignited content is to a working memory item
+   */
+  private computeIgnitionRelatedness(
+    content: WorkspaceContent,
+    item: WorkingMemoryItem
+  ): number {
+    let score = 0;
+
+    // Type match (e.g., 'memory' content type matches episodic/semantic memory)
+    const typeMatches: Record<string, string[]> = {
+      goal: ['procedural'],
+      memory: ['episodic', 'semantic'],
+      attention: ['episodic'],
+      percept: ['episodic'],
+      plan: ['procedural'],
+      thought: ['semantic'],
+      emotion: ['episodic'],
+    };
+    if (typeMatches[content.type]?.includes(item.memory.type)) {
+      score += 0.4;
+    }
+
+    // Tag overlap with content data
+    if (item.memory.tags && typeof content.data === 'object' && content.data) {
+      const contentStr = JSON.stringify(content.data).toLowerCase();
+      const matchingTags = item.memory.tags.filter(tag =>
+        contentStr.includes(tag.toLowerCase())
+      );
+      score += Math.min(0.4, matchingTags.length * 0.15);
+    }
+
+    // Source module match (content from memory module boosts memory items)
+    if (content.sourceModule.includes('memory') &&
+        (item.memory.type === 'episodic' || item.memory.type === 'semantic')) {
+      score += 0.2;
+    }
+
+    return Math.min(1, score);
+  }
 
   private log(message: string): void {
     if (this.config.verbose) {

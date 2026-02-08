@@ -20,7 +20,7 @@ import {
   StreamOrchestrator,
   createStreamOrchestrator,
 } from '../streaming/orchestrator.js';
-import type { StreamEvent, HybridStreamOptions } from '../streaming/types.js';
+import type { StreamEvent, HybridStreamOptions, ToolDefinition, ToolParameter } from '../streaming/types.js';
 
 // Phase 1.4: Cognitive Workspace for anticipatory memory
 import {
@@ -565,11 +565,15 @@ export class ChatAPI extends EventEmitter {
           }
         }
 
-        const tools = [
+        const tools: ToolDefinition[] = [
           ...mcpToolsFlat.map((t) => ({
             name: t.name,
             description: t.description || '',
-            parameters: { type: 'object' as const, ...(t.inputSchema as Record<string, unknown>) },
+            parameters: {
+              type: 'object',
+              properties: (t.inputSchema as Record<string, unknown>)?.properties as Record<string, ToolParameter> | undefined,
+              required: (t.inputSchema as Record<string, unknown>)?.required as string[] | undefined,
+            } as ToolParameter,
             handler: async (args: Record<string, unknown>) => {
               const result = await this.dispatcher.dispatch([{
                 id: this.generateId(),
@@ -583,7 +587,11 @@ export class ChatAPI extends EventEmitter {
           ...(toolSchemas.local || []).map((t: { name: string; description?: string; inputSchema?: unknown }) => ({
             name: t.name,
             description: t.description || '',
-            parameters: { type: 'object' as const, ...(t.inputSchema as Record<string, unknown>) },
+            parameters: {
+              type: 'object',
+              properties: (t.inputSchema as Record<string, unknown>)?.properties as Record<string, ToolParameter> | undefined,
+              required: (t.inputSchema as Record<string, unknown>)?.required as string[] | undefined,
+            } as ToolParameter,
             handler: async (args: Record<string, unknown>) => {
               const result = await this.dispatcher.dispatch([{
                 id: this.generateId(),

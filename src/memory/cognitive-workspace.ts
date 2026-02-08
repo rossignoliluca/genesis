@@ -363,6 +363,33 @@ export class CognitiveWorkspace {
   }
 
   /**
+   * v18.3: Clean up coactivation matrix entries for a removed item.
+   * Prevents unbounded matrix growth.
+   */
+  private pruneCoactivation(removedId: string): void {
+    // Remove this item's row
+    this.coactivationMatrix.delete(removedId);
+
+    // Remove references to this item from other rows
+    for (const [, row] of this.coactivationMatrix) {
+      row.delete(removedId);
+    }
+
+    // Cap total matrix size (oldest entries first by lowest value)
+    const MAX_MATRIX_SIZE = 500;
+    if (this.coactivationMatrix.size > MAX_MATRIX_SIZE) {
+      const entries = Array.from(this.coactivationMatrix.entries());
+      // Keep entries that correspond to current buffer items
+      const bufferIds = new Set(this.buffer.keys());
+      const nonBufferEntries = entries.filter(([id]) => !bufferIds.has(id));
+      // Remove oldest non-buffer entries
+      for (const [id] of nonBufferEntries.slice(0, this.coactivationMatrix.size - MAX_MATRIX_SIZE)) {
+        this.coactivationMatrix.delete(id);
+      }
+    }
+  }
+
+  /**
    * Calculate relevance of a memory to the current context
    * v14.0: Structured multi-dimensional scoring
    */
@@ -581,6 +608,9 @@ export class CognitiveWorkspace {
         this.buffer.delete(id);
         evicted.push(id);
 
+        // v18.3: Clean up coactivation matrix for evicted item
+        this.pruneCoactivation(id);
+
         // Track anticipation miss
         if (this.anticipatedIds.has(id)) {
           this.metrics.anticipationMisses++;
@@ -667,6 +697,9 @@ export class CognitiveWorkspace {
 
     if (lowest) {
       this.buffer.delete(lowest.id);
+
+      // v18.3: Clean up coactivation matrix for evicted item
+      this.pruneCoactivation(lowest.id);
 
       // Track anticipation miss
       if (this.anticipatedIds.has(lowest.id)) {

@@ -39,6 +39,68 @@
       "description": "Brave web search",
       "enabled": true
     },
+    "openai": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-server-openai"],
+      "requiredEnv": ["OPENAI_API_KEY"],
+      "description": "OpenAI chat completions for narrative synthesis",
+      "enabled": true,
+      "category": "cognition"
+    },
+    "exa": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "exa-mcp-server"],
+      "requiredEnv": ["EXA_API_KEY"],
+      "description": "Exa semantic search for institutional research",
+      "enabled": true,
+      "category": "research"
+    },
+    "firecrawl": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "requiredEnv": ["FIRECRAWL_API_KEY"],
+      "description": "Web scraping and content extraction",
+      "enabled": true,
+      "category": "research"
+    },
+    "playwright": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-server-playwright"],
+      "description": "Browser automation for chart screenshots",
+      "enabled": true,
+      "category": "automation"
+    },
+    "stability-ai": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-server-stability-ai"],
+      "requiredEnv": ["STABILITY_API_KEY"],
+      "description": "AI image generation for presentation backgrounds",
+      "enabled": true,
+      "category": "visual"
+    },
+    "gemini": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-server-gemini"],
+      "requiredEnv": ["GEMINI_API_KEY"],
+      "description": "Google Gemini for web search fallback",
+      "enabled": true,
+      "category": "research"
+    },
+    "gmail": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-server-gmail"],
+      "requiredEnv": ["GMAIL_CREDENTIALS"],
+      "description": "Email distribution for weekly reports",
+      "enabled": true,
+      "category": "communication"
+    },
     "github": {
       "transport": "stdio",
       "command": "npx",

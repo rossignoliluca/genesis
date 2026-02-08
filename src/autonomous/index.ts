@@ -795,4 +795,17 @@ export {
   type EngineState,
 } from './decision-engine.js';
 
+// v28.0: Strategy Orchestrator — meta-level resource allocation
+export {
+  StrategyOrchestrator,
+  getStrategyOrchestrator,
+  resetStrategyOrchestrator,
+  type Strategy,
+  type StrategyAllocation,
+  type MarketConditions,
+  type StrategyDecision,
+  type StrategyOutcome,
+  type StrategyConfig,
+} from './strategy-orchestrator.js';
+
 export default AutonomousSystem;

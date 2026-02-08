@@ -652,3 +652,64 @@ export function resetMemorySystem(): void {
     memorySystemInstance = null;
   }
 }
+
+// =============================================================================
+// v18.3.0: Component-Specific Memory Profiles
+// =============================================================================
+
+export {
+  // Types
+  type ComponentId,
+  type ComponentMemoryProfile,
+  type FSRSParameters,
+  type RetentionCurve,
+  type ConsolidationStrategy,
+  type RetrievalPreferences,
+  type CapacityAllocation,
+  // Constants
+  COMPONENT_PROFILES,
+  // Functions
+  getComponentProfile,
+  getRegisteredComponents,
+  getTotalCapacity,
+  getComponentsByPriority,
+  createCustomProfile,
+} from './component-profiles.js';
+
+// =============================================================================
+// v18.3.0: FSRS v4 Spaced Repetition Scheduler
+// =============================================================================
+
+export {
+  // Types
+  type Rating,
+  type CardState,
+  type FSRSCard,
+  type SchedulingResult,
+  type ReviewLog,
+  // Class
+  FSRS,
+  // Constants
+  DEFAULT_FSRS_PARAMS,
+  // Factory
+  getFSRS,
+  createComponentFSRS,
+} from './fsrs.js';
+
+// =============================================================================
+// v18.3.0: Component Memory Manager
+// =============================================================================
+
+export {
+  // Types
+  type ComponentMemoryItem,
+  type ComponentMemoryStats,
+  type WorkingMemorySlot,
+  // Class
+  ComponentMemoryManager,
+  // Factory
+  getComponentMemory,
+  getAllComponentManagers,
+  getAggregatedStats,
+  resetAllComponentManagers,
+} from './component-memory.js';

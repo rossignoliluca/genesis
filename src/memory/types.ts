@@ -22,6 +22,11 @@
 export type MemoryType = 'episodic' | 'semantic' | 'procedural';
 
 /**
+ * Memory priority levels for working memory and retrieval
+ */
+export type MemoryPriority = 'low' | 'normal' | 'high' | 'critical';
+
+/**
  * Base interface for all memory items
  */
 export interface BaseMemory {

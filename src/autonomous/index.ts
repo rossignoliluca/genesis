@@ -778,4 +778,21 @@ export function getAutonomousSystem(config?: AutonomousConfig): AutonomousSystem
   return autonomousSystemInstance;
 }
 
+// v25.0: Decision Engine — unified autonomous decision making
+export {
+  DecisionEngine,
+  getDecisionEngine,
+  resetDecisionEngine,
+  type DecisionDomain,
+  type DecisionContext,
+  type DecisionOption,
+  type DecisionConstraint,
+  type ResourceRequirement,
+  type Decision,
+  type DecisionFactors,
+  type DecisionOutcome,
+  type DecisionEngineConfig,
+  type EngineState,
+} from './decision-engine.js';
+
 export default AutonomousSystem;

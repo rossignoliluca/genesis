@@ -881,3 +881,51 @@ export type {
   CommitStyle,
   OptimizedCommit,
 } from './commit-optimizer.js';
+
+// v19.7: Issue Analyzer (Deep Requirement Extraction)
+export {
+  IssueAnalyzer,
+  getIssueAnalyzer,
+  resetIssueAnalyzer,
+} from './issue-analyzer.js';
+export type {
+  IssueAnalysis,
+  Requirement,
+  SolutionValidation,
+} from './issue-analyzer.js';
+
+// v19.7: Competition Detector (Avoid Contested Bounties)
+export {
+  CompetitionDetector,
+  getCompetitionDetector,
+  resetCompetitionDetector,
+} from './competition-detector.js';
+export type {
+  CompetitionAnalysis,
+  Competitor,
+} from './competition-detector.js';
+
+// v19.7: Solution Comparator (Learn from Merged PRs)
+export {
+  SolutionComparator,
+  getSolutionComparator,
+  resetSolutionComparator,
+} from './solution-comparator.js';
+export type {
+  SolutionComparison,
+  SimilarPR,
+  PatternMatch as SolutionPatternMatch,
+} from './solution-comparator.js';
+
+// v19.7: Model Selector (Optimal LLM Selection)
+export {
+  ModelSelector,
+  getModelSelector,
+  resetModelSelector,
+} from './model-selector.js';
+export type {
+  ModelId,
+  ModelProfile,
+  ModelPerformance,
+  ModelSelection,
+} from './model-selector.js';

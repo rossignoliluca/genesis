@@ -147,9 +147,12 @@ import {
   getContentOrchestrator,
   getContentScheduler,
   getAnalyticsAggregator,
+  createContentSystemIntegration,
+  wireContentToIntegrations,
   type ContentOrchestrator,
   type ContentScheduler,
   type AnalyticsAggregator,
+  type ContentSystemIntegration,
 } from './content/index.js';
 
 // ============================================================================
@@ -314,6 +317,9 @@ export interface GenesisStatus {
     scheduledItems: number;
     trackedContent: number;
     totalRevenue: number;
+    contentCreated: number;
+    contentPublished: number;
+    avgEngagementRate: number;
   } | null;
   modulesWired: number;
   calibrationError: number;
@@ -412,6 +418,7 @@ export class Genesis {
   private contentOrchestrator: ContentOrchestrator | null = null;
   private contentScheduler: ContentScheduler | null = null;
   private contentAnalytics: AnalyticsAggregator | null = null;
+  private contentIntegration: ContentSystemIntegration | null = null;
 
   // State
   private booted = false;
@@ -1679,7 +1686,45 @@ export class Genesis {
         });
       }
 
-      console.log('[Genesis] Content creator module initialized');
+      // v18.1.0: Full system integration — memory, revenue, dashboard, metrics
+      const contentIntegration = createContentSystemIntegration({
+        // Memory integration: store content as episodic/semantic memories
+        memorySystem: this.memory ? {
+          remember: (opts) => this.memory!.remember(opts as Parameters<typeof this.memory.remember>[0]),
+          learn: (opts) => this.memory!.learn(opts as Parameters<typeof this.memory.learn>[0]),
+          learnSkill: (opts) => this.memory!.learnSkill(opts as Parameters<typeof this.memory.learnSkill>[0]),
+          recall: (query, opts) => this.memory!.recall(query, opts),
+          semanticRecall: (query, opts) => this.memory!.semanticRecall(query, opts),
+        } : undefined,
+
+        // Economic fiber: cost/revenue tracking
+        fiber: this.fiber ? {
+          recordRevenue: (module, amount, source) => this.fiber!.recordRevenue(module, amount, source),
+          recordCost: (module, amount, category) => this.fiber!.recordCost(module, amount, category),
+          getGlobalSection: () => this.fiber!.getGlobalSection(),
+        } : undefined,
+
+        // Revenue tracker: persistent revenue logging (emits events, fiber handles recording)
+        revenueTracker: this.fiber ? {
+          recordRevenue: (amount, source) => {
+            // Use fiber for revenue (revenueTracker tracks costs via recordCost)
+            this.fiber!.recordRevenue('content', amount, source);
+          },
+        } : undefined,
+
+        // Dashboard: real-time observability
+        broadcast: this.dashboard
+          ? (type, data) => broadcastToDashboard(type, data)
+          : undefined,
+      });
+
+      // Wire orchestrator to automatically use integrations
+      wireContentToIntegrations(contentIntegration, orchestrator);
+
+      // Store integration for later access
+      this.contentIntegration = contentIntegration;
+
+      console.log('[Genesis] Content creator module initialized with full system integration');
     }
 
     // v13.12.0: Observatory UI — real-time visualization
@@ -2719,11 +2764,16 @@ export class Genesis {
       content: this.contentOrchestrator ? (() => {
         const schedulerStats = this.contentScheduler?.getStats();
         const analyticsStats = this.contentAnalytics?.getStats();
+        const integrationMetrics = this.contentIntegration?.metrics.getMetrics();
         return {
           running: true,
           scheduledItems: schedulerStats?.scheduled ?? 0,
           trackedContent: analyticsStats?.trackedContent ?? 0,
           totalRevenue: analyticsStats?.totalRevenue ?? 0,
+          // Integration metrics
+          contentCreated: integrationMetrics?.contentCreatedTotal ?? 0,
+          contentPublished: integrationMetrics?.contentPublishedTotal ?? 0,
+          avgEngagementRate: integrationMetrics?.avgEngagementRate ?? 0,
         };
       })() : null,
       modulesWired: this.wiringResult?.modulesWired ?? 0,

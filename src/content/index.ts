@@ -158,6 +158,27 @@ export {
 } from './bus-wiring.js';
 
 // =============================================================================
+// System Integration Exports
+// =============================================================================
+
+export {
+  createContentSystemIntegration,
+  createMemoryIntegration,
+  createRevenueIntegration,
+  createDashboardIntegration,
+  createEngineIntegration,
+  createMetricsCollector,
+  wireContentToIntegrations,
+  type ContentSystemIntegration,
+  type ContentMemoryIntegration,
+  type ContentRevenueIntegration,
+  type ContentDashboardIntegration,
+  type ContentEngineIntegration,
+  type ContentMetrics,
+  type IntegrationDependencies,
+} from './integration.js';
+
+// =============================================================================
 // Module Initialization
 // =============================================================================
 

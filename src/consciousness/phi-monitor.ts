@@ -609,3 +609,20 @@ export class PhiMonitor {
 export function createPhiMonitor(config?: Partial<PhiMonitorConfig>): PhiMonitor {
   return new PhiMonitor(config);
 }
+
+// ============================================================================
+// Singleton
+// ============================================================================
+
+let phiMonitorInstance: PhiMonitor | null = null;
+
+export function getPhiMonitor(config?: Partial<PhiMonitorConfig>): PhiMonitor {
+  if (!phiMonitorInstance) {
+    phiMonitorInstance = createPhiMonitor(config);
+  }
+  return phiMonitorInstance;
+}
+
+export function resetPhiMonitor(): void {
+  phiMonitorInstance = null;
+}

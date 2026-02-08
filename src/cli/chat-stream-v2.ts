@@ -60,6 +60,7 @@ export interface StreamChatOptions {
   userMessage: string;
   tools?: ToolDefinition[];
   enableThinking?: boolean;
+  thinkingBudget?: number; // v18.3: Dynamic thinking budget (default 2048)
   maxToolCalls?: number;
   temperature?: number;
   maxTokens?: number;
@@ -148,6 +149,7 @@ export class StreamChatHandler {
       messages,
       tools: options.tools,
       enableThinking: options.enableThinking,
+      thinkingBudget: options.thinkingBudget, // v18.3: Dynamic thinking budget
       maxToolCalls: options.maxToolCalls || 10,
       temperature: options.temperature,
       maxTokens: options.maxTokens,

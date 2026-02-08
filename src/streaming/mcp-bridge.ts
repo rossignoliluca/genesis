@@ -17,6 +17,7 @@
 
 import { ToolDefinition, StreamEvent } from './types.js';
 import { LatencyTracker, getLatencyTracker } from './latency-tracker.js';
+import { getEFEToolSelector } from '../active-inference/efe-tool-selector.js';
 
 // ============================================================================
 // Types
@@ -291,8 +292,25 @@ export class MCPBridge {
       // Track latency
       this.trackLatency(call.server, call.tool, latency);
 
+      // v18.2: Feed outcome to EFE tool selector for adaptive learning
+      try {
+        const efeSelector = getEFEToolSelector();
+        const surprise = this.computeResultSurprise(result, latency, call.server);
+        efeSelector.recordOutcome(
+          call.server, call.tool, true, latency, surprise, 0
+        );
+      } catch { /* EFE integration non-fatal */ }
+
       return toolResult;
     } catch (err: any) {
+      // v18.2: Record failure in EFE selector
+      try {
+        const efeSelector = getEFEToolSelector();
+        efeSelector.recordOutcome(
+          call.server, call.tool, false, Date.now() - startTime, 5.0, 0
+        );
+      } catch { /* EFE integration non-fatal */ }
+
       return {
         id: call.id,
         server: call.server,
@@ -523,7 +541,15 @@ export class MCPBridge {
         break;
       }
 
-      levels.push(level.sort((a, b) => b.priority - a.priority));
+      // v18.2: EFE-enhanced priority sorting
+      levels.push(level.sort((a, b) => {
+        // Primary: explicit priority
+        if (a.priority !== b.priority) return b.priority - a.priority;
+        // Secondary: prefer lower-latency servers (from history)
+        const latA = this.getAvgLatency(a.server, a.tool);
+        const latB = this.getAvgLatency(b.server, b.tool);
+        return latA - latB;
+      }));
       for (const call of level) completed.add(call.id);
       remaining = nextRemaining;
     }
@@ -589,6 +615,38 @@ export class MCPBridge {
     const history = this.latencyHistory.get(key)!;
     history.push(latency);
     if (history.length > 50) history.shift();
+  }
+
+  /**
+   * v18.2: Compute surprise from tool result (how unexpected was it?)
+   */
+  private computeResultSurprise(result: unknown, latency: number, server: MCPServerName): number {
+    const profile = SERVER_LATENCY[server];
+    if (!profile) return 1.0;
+
+    // Surprise based on latency deviation from expected
+    const latencyRatio = latency / profile.avg;
+    const latencySurprise = Math.abs(Math.log(Math.max(0.1, latencyRatio)));
+
+    // Surprise based on result emptiness
+    const isEmpty = !result || (typeof result === 'string' && result.length === 0) ||
+      (typeof result === 'object' && Object.keys(result as object).length === 0);
+    const contentSurprise = isEmpty ? 2.0 : 0.0;
+
+    return Math.min(5.0, latencySurprise + contentSurprise);
+  }
+
+  /**
+   * v18.2: Get average latency for a server/tool from history
+   */
+  private getAvgLatency(server: MCPServerName, tool: string): number {
+    const key = `${server}::${tool}`;
+    const history = this.latencyHistory.get(key);
+    if (!history || history.length === 0) {
+      const profile = SERVER_LATENCY[server];
+      return profile?.avg ?? 1000;
+    }
+    return history.reduce((s, v) => s + v, 0) / history.length;
   }
 
   private getToolRegistry(): Record<string, Array<{ name: string; description: string; parameters: any }>> {

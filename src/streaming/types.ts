@@ -257,6 +257,9 @@ export interface HybridStreamOptions {
   /** Enable extended thinking/reasoning */
   enableThinking?: boolean;
 
+  /** v18.3: Dynamic thinking budget tokens (default 2048) */
+  thinkingBudget?: number;
+
   /** Allow adaptive quality upgrades mid-stream */
   adaptiveQuality?: boolean;
 

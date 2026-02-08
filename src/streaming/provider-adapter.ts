@@ -32,6 +32,7 @@ interface AdapterStreamOptions {
   tools?: Array<{ name: string; description: string; inputSchema?: any }>;
   signal?: AbortSignal;
   enableThinking?: boolean;
+  thinkingBudget?: number; // v18.3: Dynamic thinking budget (default 2048)
   baseUrl?: string;
 }
 
@@ -273,7 +274,7 @@ class AnthropicStreamAdapter implements InternalAdapter {
       }));
     }
     if (options.enableThinking) {
-      body.thinking = { type: 'enabled', budget_tokens: 2048 };
+      body.thinking = { type: 'enabled', budget_tokens: options.thinkingBudget || 2048 };
     }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {

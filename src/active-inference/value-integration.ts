@@ -693,5 +693,8 @@ export function createValueIntegratedLoop(
     };
   });
 
+  // v18.2: Wire value engine for TD learning feedback
+  loop.setValueEngine(valueEngine);
+
   return { loop, valueEngine };
 }

@@ -71,6 +71,7 @@ export interface LLMConfig {
   temperature?: number;
   maxTokens?: number;
   enableThinking?: boolean; // v13.10: Extended thinking for Claude
+  thinkingBudget?: number; // v18.3: Dynamic thinking budget (default 2048)
 }
 
 export interface LLMResponse {
@@ -567,7 +568,7 @@ export class LLMBridge {
     if (this.config.enableThinking) {
       requestBody.thinking = {
         type: 'enabled',
-        budget_tokens: Math.min(this.config.maxTokens || 4096, 10000), // Cap at 10k thinking tokens
+        budget_tokens: this.config.thinkingBudget || Math.min(this.config.maxTokens || 4096, 10000), // v18.3: Configurable or cap at 10k
       };
       // Extended thinking requires higher max_tokens
       requestBody.max_tokens = Math.max(this.config.maxTokens || 4096, 16000);
@@ -822,7 +823,7 @@ export class LLMBridge {
     if (this.config.enableThinking) {
       requestBody.thinking = {
         type: 'enabled',
-        budget_tokens: Math.min(this.config.maxTokens || 4096, 10000),
+        budget_tokens: this.config.thinkingBudget || Math.min(this.config.maxTokens || 4096, 10000), // v18.3: Configurable or cap at 10k
       };
       requestBody.max_tokens = Math.max(this.config.maxTokens || 4096, 16000);
     }

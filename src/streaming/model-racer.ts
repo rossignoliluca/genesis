@@ -117,6 +117,7 @@ export class ModelRacer {
     messages: Message[];
     tools?: HybridStreamOptions['tools'];
     enableThinking?: boolean;
+    thinkingBudget?: number; // v18.3: Dynamic thinking budget
     maxTokens?: number;
     temperature?: number;
     forceProvider?: string;
@@ -511,6 +512,7 @@ export class ModelRacer {
       })),
       signal,
       enableThinking: options.enableThinking,
+      thinkingBudget: options.thinkingBudget, // v18.3: Dynamic thinking budget
     };
   }
 

@@ -697,3 +697,34 @@ export type {
   StreamHealth,
   HealthMonitorConfig,
 } from './health.js';
+
+// v19.2: Bounty Intelligence (AI Capability Matching)
+export {
+  BountyIntelligence,
+  AI_CAPABILITY_PROFILE,
+  PLATFORM_STRATEGIES,
+  classifyBounty,
+  getPlatformStrategy,
+  scoreBountyIntelligently,
+  rankBountiesIntelligently,
+} from './bounty-intelligence.js';
+export type {
+  AICapabilityProfile,
+  BountyType,
+  BountyClassification,
+  PlatformStrategy,
+  IntelligentBountyScore,
+} from './bounty-intelligence.js';
+
+// v19.2: Bounty Learning (Causal Analysis + RSI)
+export {
+  BountyLearningEngine,
+  getBountyLearning,
+  resetBountyLearning,
+} from './bounty-learning.js';
+export type {
+  BountyOutcome,
+  CausalFactor,
+  LearningInsight,
+  AdaptiveParameters,
+} from './bounty-learning.js';

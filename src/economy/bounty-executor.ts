@@ -18,6 +18,15 @@ import { getBountyRSIFeedback } from './rsi-feedback.js';
 import { getHybridRouter } from '../llm/router.js';
 import { getMCPClient } from '../mcp/index.js';
 import { validateCode, formatValidationResult, type RepoContext } from './code-validator.js';
+// v19.2: Intelligent bounty selection and learning
+import {
+  classifyBounty,
+  scoreBountyIntelligently,
+  rankBountiesIntelligently,
+  type BountyClassification,
+  type IntelligentBountyScore,
+} from './bounty-intelligence.js';
+import { getBountyLearning, type BountyOutcome } from './bounty-learning.js';
 
 // ============================================================================
 // Types
@@ -565,6 +574,8 @@ export class BountyExecutor {
   private revenueTracker = getRevenueTracker();
   private rsiFeedback = getBountyRSIFeedback();
   private config: BountyExecutorConfig;
+  // v19.2: Intelligent learning system
+  private learningEngine = getBountyLearning();
 
   private activeExecutions = new Map<string, Promise<ExecutionResult>>();
 
@@ -733,17 +744,58 @@ export class BountyExecutor {
     );
     console.log(`[BountyExecutor] Already submitted: ${submittedBountyIds.size} bounties`);
 
-    // 2. Select best bounty, excluding already submitted
-    console.log('[BountyExecutor] Step 2: Selecting best bounty...');
+    // 2. Select best bounty using intelligent ranking
+    console.log('[BountyExecutor] Step 2: Selecting best bounty with AI intelligence...');
 
-    // v16.2.1: Prioritize high-value bounties after we have some submissions
-    const prioritizeValue = submittedBountyIds.size >= 3;
-    if (prioritizeValue) {
-      console.log('[BountyExecutor] Experience mode: targeting higher-value bounties');
+    // v19.2: Get all available bounties and rank them intelligently
+    const allBounties = this.hunter.getAllBounties() || [];
+    const availableBounties = allBounties.filter((b: Bounty) => !submittedBountyIds.has(b.id));
+
+    // v19.2: Use intelligent ranking that considers AI capability, platform fit, and risk
+    const rankedBounties = rankBountiesIntelligently(availableBounties);
+
+    // v19.2: Apply learning-based filtering
+    const filteredBounties = rankedBounties.filter(scored => {
+      const b = scored.bounty;
+      const repoKey = `${b.sourceMetadata?.org}/${b.sourceMetadata?.repo}`;
+
+      // Check if repo is blocked by learning engine
+      if (b.sourceMetadata?.org && b.sourceMetadata?.repo) {
+        if (this.learningEngine.isRepoBlocked(b.sourceMetadata.org, b.sourceMetadata.repo)) {
+          console.log(`[BountyExecutor] Skipping ${repoKey}: blocked by learning engine`);
+          return false;
+        }
+      }
+
+      // Check minimum confidence from learning
+      const minConf = this.learningEngine.getMinConfidence(b.platform);
+      if (scored.classification.aiSuitability < minConf) {
+        console.log(`[BountyExecutor] Skipping ${b.title}: AI suitability ${(scored.classification.aiSuitability * 100).toFixed(0)}% below learned threshold ${(minConf * 100).toFixed(0)}%`);
+        return false;
+      }
+
+      // Check recommendation
+      if (scored.classification.recommendation === 'avoid') {
+        console.log(`[BountyExecutor] Skipping ${b.title}: recommendation is AVOID`);
+        return false;
+      }
+
+      return true;
+    });
+
+    // Log intelligence reasoning for top candidate
+    if (filteredBounties.length > 0) {
+      const top = filteredBounties[0];
+      console.log(`[BountyExecutor] Top candidate: ${top.bounty.title}`);
+      console.log(`  - Type: ${top.classification.type} (confidence: ${(top.classification.confidence * 100).toFixed(0)}%)`);
+      console.log(`  - AI Suitability: ${(top.classification.aiSuitability * 100).toFixed(0)}%`);
+      console.log(`  - Overall Score: ${top.overallScore.toFixed(1)}/100`);
+      console.log(`  - Reasoning: ${top.reasoning.slice(0, 3).join('; ')}`);
     }
 
     // v16.2.2: Get bounty, filtering out blocked repos
-    let bounty = this.hunter.selectBest({
+    const prioritizeValue = submittedBountyIds.size >= 3;
+    let bounty = filteredBounties.length > 0 ? filteredBounties[0].bounty : this.hunter.selectBest({
       excludeIds: submittedBountyIds,
       prioritizeValue,
     });
@@ -851,11 +903,17 @@ export class BountyExecutor {
 
     console.log(`[BountyExecutor] Executing bounty: ${bounty.id}`);
 
+    // v19.2: Classify bounty for learning and intelligence
+    const classification = classifyBounty(bounty);
+    console.log(`[BountyExecutor] Classification: ${classification.type} (AI suitability: ${(classification.aiSuitability * 100).toFixed(0)}%)`);
+
     try {
       // 1. Claim the bounty
       console.log('[BountyExecutor] Claiming bounty...');
       const claimed = await this.hunter.claim(bounty.id);
       if (!claimed) {
+        // v19.2: Record outcome to learning engine
+        this.recordLearningOutcome(bounty, classification, 'pr_failed', startTime, 0, 0);
         return {
           bountyId: bounty.id,
           status: 'failed',
@@ -878,6 +936,9 @@ export class BountyExecutor {
           estimatedHours,
           bounty.reward,
         );
+
+        // v19.2: Record to learning engine
+        this.recordLearningOutcome(bounty, classification, 'validation_failed', startTime, 0, 0, solution.error);
 
         return {
           bountyId: bounty.id,
@@ -928,6 +989,18 @@ export class BountyExecutor {
           this.consecutiveRejections = 0; // Reset on successful submission
           console.log(`[BountyExecutor] Submissions today: ${this.dailySubmissionCount}/${this.config.maxDailySubmissions}`);
 
+          // v19.2: Record submission to learning (final outcome recorded when PR status checked)
+          this.recordLearningOutcome(
+            bounty,
+            classification,
+            'success', // Provisional - will be updated when PR is merged/rejected
+            startTime,
+            Math.round(solution.confidence * 100),
+            solution.confidence,
+            undefined,
+            submission.prUrl
+          );
+
           return {
             bountyId: bounty.id,
             status: 'success',
@@ -945,6 +1018,9 @@ export class BountyExecutor {
             this.blockedRepos.add(repoKey);
             this.saveBlockedRepos();
           }
+
+          // v19.2: Record PR submission failure
+          this.recordLearningOutcome(bounty, classification, 'pr_failed', startTime, 0, solution.confidence, 'PR submission failed');
 
           return {
             bountyId: bounty.id,
@@ -974,6 +1050,9 @@ export class BountyExecutor {
         estimatedHours,
         bounty.reward,
       );
+
+      // v19.2: Record to learning engine
+      this.recordLearningOutcome(bounty, classification, 'pr_failed', startTime, 0, 0, String(error));
 
       return {
         bountyId: bounty.id,
@@ -1027,6 +1106,37 @@ export class BountyExecutor {
    */
   getPRPipeline(): PRPipeline {
     return this.prPipeline;
+  }
+
+  /**
+   * v19.2: Record outcome to learning engine for causal analysis
+   */
+  private recordLearningOutcome(
+    bounty: Bounty,
+    classification: BountyClassification,
+    outcome: BountyOutcome['outcome'],
+    startTime: number,
+    validationScore: number,
+    confidence: number,
+    rejectionReason?: string,
+    prUrl?: string
+  ): void {
+    try {
+      this.learningEngine.recordOutcome({
+        bountyId: bounty.id,
+        bounty,
+        classification,
+        outcome,
+        prUrl,
+        rejectionReason,
+        duration: Date.now() - startTime,
+        validationScore,
+        confidenceAtSubmit: confidence,
+        timestamp: new Date(),
+      });
+    } catch (error) {
+      console.warn('[BountyExecutor] Failed to record learning outcome:', error);
+    }
   }
 
   /**

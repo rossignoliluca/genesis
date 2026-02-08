@@ -247,6 +247,13 @@ export class BountyHunter {
   }
 
   /**
+   * v19.2: Get all discovered bounties for intelligent ranking
+   */
+  getAllBounties(): Bounty[] {
+    return [...this.bounties.values()];
+  }
+
+  /**
    * Submit bounty deliverable.
    * Note: Actual submission to DeWork is done manually on the platform.
    * This tracks the submission for payout monitoring.

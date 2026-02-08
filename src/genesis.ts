@@ -23,6 +23,7 @@ import { MetacognitionSystem, createMetacognitionSystem, type ConfidenceEstimate
 import { getEconomicSystem, type EconomicSystem } from './economy/index.js';
 import { getEconomicFiber, type EconomicFiber } from './economy/fiber.js';
 import { getNESSMonitor, type NESSMonitor, type NESSState } from './economy/ness.js';
+import { getBountyOrchestrator, type BountyOrchestrator } from './economy/bounty-orchestrator.js';
 import { MultiModalPerception, createMultiModalPerception, type ModalityInput, type PerceptionOutput } from './perception/multi-modal.js';
 import { MetaRLLearner, createMetaRLLearner, type AdaptationResult, type CurriculumState } from './learning/meta-rl.js';
 import { getCodeRuntime, type CodeRuntime } from './execution/index.js';
@@ -123,7 +124,7 @@ import { VercelDeployer } from './deployment/index.js';
 import { AutonomousSystem } from './autonomous/index.js';
 
 // Integration — cross-module wiring
-import { bootstrapIntegration, wireAllModules, type WiringResult } from './integration/index.js';
+import { bootstrapIntegration, wireAllModules, type WiringResult, getCognitiveBridge, type CognitiveBridge } from './integration/index.js';
 
 // Central Awareness — global consciousness over all modules
 import { getCentralAwareness, type CentralAwareness, type DecisionGate } from './consciousness/central-awareness.js';
@@ -448,6 +449,12 @@ export class Genesis {
   // v13.11.0: Central Awareness — unified consciousness over all modules
   private centralAwareness: CentralAwareness | null = null;
   private wiringResult: WiringResult | null = null;
+
+  // v21.0: Cognitive Bridge — perception→consciousness→inference pipeline
+  private cognitiveBridge: CognitiveBridge | null = null;
+
+  // v21.0: Bounty Orchestrator — unified bounty hunting brain
+  private bountyOrchestrator: BountyOrchestrator | null = null;
 
   // v13.12.0: Finance, Revenue, UI modules
   private financeModule: FinanceModule | null = null;
@@ -1724,6 +1731,22 @@ export class Genesis {
 
       await this.autonomousSystem.initialize();
       this.fiber?.registerModule('autonomous');
+
+      // v21.0: Start Bounty Orchestrator in autonomous mode
+      this.bountyOrchestrator = getBountyOrchestrator({
+        mode: 'autonomous',
+        minEFEScore: 0.6,
+        minSuccessProbability: 0.5,
+        maxConcurrentBounties: 3,
+        enableEmailMonitoring: true,
+        enableDashboardUpdates: true,
+        enableMemoryPersistence: true,
+        dailyBountyLimit: 10,
+        dailyBudget: this.config.totalBudget,
+      });
+      this.bountyOrchestrator.startAutonomous(30 * 60 * 1000);  // 30 min cycles
+      this.fiber?.registerModule('bounty-orchestrator');
+      console.log('[Genesis] Bounty Orchestrator started (autonomous mode, 30min cycles)');
     }
 
     // v13.12.0: Finance Module — market data, signals, risk, portfolio
@@ -1955,6 +1978,10 @@ export class Genesis {
 
     // Bootstrap Integration — wire all cross-module connections
     await bootstrapIntegration();
+
+    // v21.0: Initialize Cognitive Bridge (perception→consciousness→inference)
+    this.cognitiveBridge = getCognitiveBridge();
+    console.log('[Genesis] Cognitive Bridge active: perception→consciousness→inference pipeline');
 
     // v13.11.0: Wire ALL modules to event bus + start CentralAwareness
     this.centralAwareness = getCentralAwareness();

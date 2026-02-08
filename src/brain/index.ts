@@ -176,6 +176,7 @@ import {
   createWorkspaceAdapter,
 } from '../memory/unified-query.js';
 import { getMemorySystem } from '../memory/index.js';
+import { emitSystemError } from '../bus/index.js';
 
 // ============================================================================
 // Brain Class
@@ -1319,6 +1320,7 @@ export class Brain {
 
       } catch (error) {
         consecutiveErrors++; // v7.18: Track consecutive errors
+        emitSystemError('brain', error, 'critical');
 
         // Healing loop
         if (this.config.healing.enabled && this.config.healing.autoHeal) {

@@ -26,6 +26,7 @@ import { getStreamAdapter, ProviderName } from './provider-adapter.js';
 import { ModelRacer, RacingStrategy, RaceResult } from './model-racer.js';
 import { MCPBridge, MCPToolCall, MCPToolResult, MCPServerName } from './mcp-bridge.js';
 import { getLatencyTracker, LatencyRecord } from './latency-tracker.js';
+import { emitSystemError } from '../bus/index.js';
 
 // ============================================================================
 // Integration Hooks (called by integration layer)
@@ -159,6 +160,7 @@ export class StreamOrchestrator {
               messages: messages as any,
               tools: merged.tools,
               enableThinking: merged.enableThinking,
+              thinkingBudget: merged.thinkingBudget, // v18.3: Dynamic thinking budget
               maxTokens: merged.maxTokens,
               temperature: merged.temperature,
               forceProvider: merged.forceProvider,
@@ -312,6 +314,7 @@ export class StreamOrchestrator {
           yield this.makeDoneEvent();
           return;
         }
+        emitSystemError('streaming', err, 'warning');
         this.transitionState('error');
         yield {
           id: eid(),
@@ -426,6 +429,7 @@ export class StreamOrchestrator {
       })),
       signal: this.abortController?.signal,
       enableThinking: merged.enableThinking,
+      thinkingBudget: merged.thinkingBudget, // v18.3: Dynamic thinking budget
     };
 
     yield* adapter.stream(messages, streamOptions);

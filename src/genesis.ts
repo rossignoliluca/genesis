@@ -40,9 +40,9 @@ import { getSelfImprovementEngine, type SelfImprovementEngine } from './self-mod
 import { ConsciousnessBridge, type ConsciousBridgeConfig, type ConsciousnessState as BridgeState } from './active-inference/consciousness-bridge.js';
 import { getFactorGraph, type FactorGraph } from './kernel/factor-graph.js';
 import type { MotorCommand } from './embodiment/sensorimotor-loop.js';
-import { getNeuromodulationSystem, type NeuromodulationSystem, type ModulationEffect } from './neuromodulation/index.js';
+import { getNeuromodulationSystem, resetNeuromodulationSystem, type NeuromodulationSystem, type ModulationEffect } from './neuromodulation/index.js';
 import { createAllostasisSystem, type AllostasisSystem, type AllostaticAction } from './allostasis/index.js';
-import { getNociceptiveSystem, type NociceptiveSystem, type NociceptiveState, type PainLevel } from './nociception/index.js';
+import { getNociceptiveSystem, resetNociceptiveSystem, type NociceptiveSystem, type NociceptiveState, type PainLevel } from './nociception/index.js';
 import { getDaemon, type Daemon, type DaemonDependencies } from './daemon/index.js';
 import { createFeelingAgent, type FeelingAgent } from './agents/feeling.js';
 import type { Feeling } from './agents/types.js';
@@ -121,7 +121,13 @@ import { createRevenueLoop, type RevenueLoop } from './services/revenue-loop.js'
 import { VercelDeployer } from './deployment/index.js';
 
 // Autonomous — unified autonomous system
-import { AutonomousSystem, getDecisionEngine, type DecisionEngine } from './autonomous/index.js';
+import {
+  AutonomousSystem,
+  getDecisionEngine,
+  getStrategyOrchestrator,
+  type DecisionEngine,
+  type StrategyOrchestrator,
+} from './autonomous/index.js';
 
 // Integration — cross-module wiring
 import { bootstrapIntegration, wireAllModules, type WiringResult, getCognitiveBridge, type CognitiveBridge } from './integration/index.js';
@@ -484,6 +490,9 @@ export class Genesis {
 
   // v25.0: Decision Engine — unified autonomous decision making
   private decisionEngine: DecisionEngine | null = null;
+
+  // v28.0: Strategy Orchestrator — meta-level resource allocation
+  private strategyOrchestrator: StrategyOrchestrator | null = null;
 
   // v26.0: WebSocket Real-Time API
   private websocket: GenesisWebSocket | null = null;
@@ -2081,6 +2090,19 @@ export class Genesis {
       console.log(`[Genesis] WebSocket server started on port ${this.config.wsPort}`);
     }
 
+    // v28.0: Strategy Orchestrator — meta-level resource allocation
+    this.strategyOrchestrator = getStrategyOrchestrator({
+      evaluationInterval: 5 * 60 * 1000,  // 5 minutes
+      minStrategyDuration: 10 * 60 * 1000,  // 10 minutes
+      revenueWeight: 0.4,
+      growthWeight: 0.3,
+      healthWeight: 0.3,
+      explorationRate: 0.15,
+    });
+    this.strategyOrchestrator.start();
+    this.fiber?.registerModule('strategy-orchestrator');
+    console.log('[Genesis] Strategy Orchestrator active: adaptive resource allocation');
+
     this.levels.L4 = true;
   }
 
@@ -3211,9 +3233,9 @@ export class Genesis {
     if (this.allostasis) {
       this.allostasis.removeAllListeners();
     }
-    if (this.neuromodulation) {
-      this.neuromodulation.stop();
-    }
+    // v18.3: Reset singletons to avoid stale instances on reboot
+    resetNociceptiveSystem();
+    resetNeuromodulationSystem();
     if (this.fek) {
       this.fek.stop();
     }

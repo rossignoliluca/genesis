@@ -220,6 +220,19 @@ function wireNociception(nociception: NociceptiveSystem, bus: GenesisEventBus): 
       } catch { /* neuromod optional */ }
     }
   });
+
+  // v18.3: Route kernel.panic → nociception stimulus
+  // This closes the loop: emitSystemError() → kernel.panic → pain signal
+  const panicSub = createSubscriber('nociception-panic');
+  panicSub.on('kernel.panic', (event) => {
+    const severityMap: Record<string, number> = {
+      warning: 0.3,
+      critical: 0.6,
+      fatal: 0.9,
+    };
+    const intensity = severityMap[event.severity] ?? 0.5;
+    nociception.stimulus('cognitive', intensity, `panic:${event.reason}`);
+  });
 }
 
 /**

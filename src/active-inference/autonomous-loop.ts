@@ -365,7 +365,7 @@ export class AutonomousLoop {
         const energyLevel = intero.energy ?? 0.7;
         const errorRate = intero.errorRate ?? 0;
         const memPressure = intero.memoryPressure ?? 0.3;
-        const thresholds = this.getHomeostaticThresholds();
+        const thresholds = await this.getHomeostaticThresholds();
 
         // Low energy → boost preference for rest/low-energy states
         if (energyLevel < thresholds.energy) {
@@ -740,19 +740,16 @@ export class AutonomousLoop {
       // v12.1: High-surprise experiences → episodic memory
       // Only on first replay to avoid duplicate encoding
       if (exp.surprise > 3.0 && exp.replayCount <= 1) {
-        try {
-          const { getMemorySystem } = require('../memory/index.js');
+        import('../memory/index.js').then(({ getMemorySystem }) => {
           const memorySystem = getMemorySystem();
           memorySystem.remember({
-            content: {
-              what: `AIF experience: action=${exp.action} outcome=${exp.outcome} surprise=${exp.surprise.toFixed(2)}`,
-            },
+            what: `AIF experience: action=${exp.action} outcome=${exp.outcome} surprise=${exp.surprise.toFixed(2)}`,
             importance: Math.min(1, exp.surprise / 10),
             tags: ['aif-experience', 'replay-encoded',
                    exp.outcome,
                    exp.surprise > 5 ? 'high-surprise' : 'notable'],
           });
-        } catch (e) { console.debug('[AI Loop] Episodic encoding failed:', (e as Error)?.message); }
+        }).catch((e) => { console.debug('[AI Loop] Episodic encoding failed:', (e as Error)?.message); });
       }
     }
   }
@@ -765,9 +762,9 @@ export class AutonomousLoop {
    * Get homeostatic thresholds from semantic memory.
    * Falls back to defaults if not yet learned.
    */
-  private getHomeostaticThresholds(): { energy: number; error: number; memory: number } {
+  private async getHomeostaticThresholds(): Promise<{ energy: number; error: number; memory: number }> {
     try {
-      const { getMemorySystem } = require('../memory/index.js');
+      const { getMemorySystem } = await import('../memory/index.js');
       const mem = getMemorySystem();
 
       const energyFact = mem.getFact('homeostatic-energy-threshold');
@@ -790,9 +787,9 @@ export class AutonomousLoop {
    * Adjusts threshold slightly based on whether the sensor value was
    * close to or far from the threshold (tighter = more sensitive).
    */
-  private updateHomeostaticMemory(sensor: string, currentThreshold: number, sensorValue: number): void {
+  private async updateHomeostaticMemory(sensor: string, currentThreshold: number, sensorValue: number): Promise<void> {
     try {
-      const { getMemorySystem } = require('../memory/index.js');
+      const { getMemorySystem } = await import('../memory/index.js');
       const mem = getMemorySystem();
 
       // Adaptive threshold: if sensor triggered far from threshold, threshold may be too lax
@@ -829,11 +826,10 @@ export class AutonomousLoop {
     }
 
     // v13.1: Notify FEK to enter dreaming mode (suppresses L2-L4 during consolidation)
-    try {
-      const { getFreeEnergyKernel } = require('../kernel/free-energy-kernel.js');
+    import('../kernel/free-energy-kernel.js').then(({ getFreeEnergyKernel }) => {
       const fek = getFreeEnergyKernel();
       if (fek?.setMode) fek.setMode('dreaming');
-    } catch (e) { console.debug('[AI Loop] FEK not available:', (e as Error)?.message); }
+    }).catch((e) => { console.debug('[AI Loop] FEK not available:', (e as Error)?.message); });
 
     // v11.4: Delegate to DreamService for NREM/SWS/REM phases
     // DreamService handles: episodic consolidation, pattern extraction, creative synthesis
@@ -842,11 +838,10 @@ export class AutonomousLoop {
         console.log(`[AI Loop] Dream complete: ${session.results.memoriesConsolidated} consolidated, ${session.results.patternsExtracted} patterns`);
       }
       // v13.1: Restore FEK to awake mode after dream
-      try {
-        const { getFreeEnergyKernel } = require('../kernel/free-energy-kernel.js');
+      import('../kernel/free-energy-kernel.js').then(({ getFreeEnergyKernel }) => {
         const fek = getFreeEnergyKernel();
         if (fek?.setMode) fek.setMode('awake');
-      } catch (e) { console.debug('[AI Loop] FEK mode restore failed:', (e as Error)?.message); }
+      }).catch((e) => { console.debug('[AI Loop] FEK mode restore failed:', (e as Error)?.message); });
     }).catch(() => {
       // Fallback: direct 3× replay if DreamService fails
       for (let iter = 0; iter < 3; iter++) {

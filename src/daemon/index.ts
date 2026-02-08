@@ -67,6 +67,7 @@ import {
 import { Scheduler, createScheduler, SchedulerConfig } from './scheduler.js';
 import { MaintenanceService, createMaintenanceService, MaintenanceContext } from './maintenance.js';
 import { DreamService, createDreamService, DreamContext } from './dream-mode.js';
+import { emitSystemError } from '../bus/index.js';
 
 // ============================================================================
 // Daemon Context (External Dependencies)
@@ -339,6 +340,9 @@ export class Daemon {
     try {
       const report = await this.maintenance.runCycle();
       return report;
+    } catch (error) {
+      emitSystemError('daemon', error, 'warning');
+      throw error;
     } finally {
       this.state = previousState;
     }

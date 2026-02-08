@@ -35,7 +35,7 @@ import { naturalGradientStep } from './fisher.js';
 import { leapfrogStep, budgetConstraint, roiGradient, computeHamiltonian, type HamiltonianState } from './leapfrog.js';
 import { EconomicFiber, getEconomicFiber } from '../economy/fiber.js';
 import { NESSMonitor, getNESSMonitor, type NESSState } from '../economy/ness.js';
-import { createPublisher, getEventBus } from '../bus/index.js';
+import { createPublisher, getEventBus, emitSystemError } from '../bus/index.js';
 
 // ============================================================================
 // Types
@@ -1160,6 +1160,7 @@ export class FreeEnergyKernel {
    * 5. Predictions flow back down: L4→L3→L2 (predictive coding)
    */
   cycle(observations: KernelObservations): FEKState {
+    try {
     this.cycleCount++;
 
     // === Bottom-up: error propagation ===
@@ -1340,6 +1341,10 @@ export class FreeEnergyKernel {
     for (const handler of this.onCycleHandlers) handler(state);
 
     return state;
+    } catch (error) {
+      emitSystemError('kernel', error, 'critical');
+      throw error;
+    }
   }
 
   // ==========================================================================

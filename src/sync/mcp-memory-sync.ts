@@ -12,6 +12,7 @@
  */
 
 import { getSelfModelGenerator, SelfModel } from '../self-modification/self-model.js';
+import { getMCPClient, type IMCPClient } from '../mcp/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -93,10 +94,12 @@ export class MCPMemorySync {
   private config: SyncConfig;
   private state: SyncState;
   private syncTimer: NodeJS.Timeout | null = null;
+  private mcp: IMCPClient | null = null;
 
   constructor(config: Partial<SyncConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.state = this.loadState();
+    try { this.mcp = getMCPClient(); } catch { this.mcp = null; }
   }
 
   /**
@@ -297,11 +300,26 @@ export class MCPMemorySync {
 
   /**
    * Fetch current state from MCP Memory
-   * Note: In production, this calls the MCP Memory tool
+   * v18.3: Uses real MCP Memory server with file fallback
    */
   private async fetchMCPMemory(): Promise<MCPMemoryGraph> {
-    // Check for cached remote state
-    // v9.2.0: Validate cache path to prevent path traversal
+    // Try real MCP Memory server first
+    if (this.mcp) {
+      try {
+        const result = await this.mcp.call('memory', 'read_graph', {});
+        if (result.success && result.data) {
+          const data = result.data as MCPMemoryGraph;
+          return {
+            entities: data.entities ?? [],
+            relations: data.relations ?? [],
+          };
+        }
+      } catch (e) {
+        this.log('MCP Memory read_graph failed, falling back to file:', (e as Error).message);
+      }
+    }
+
+    // Fallback: local file cache
     const baseDir = path.dirname(path.resolve(this.config.statePath));
     const cachePath = path.join(baseDir, 'mcp-memory-cache.json');
 
@@ -314,17 +332,36 @@ export class MCPMemorySync {
       // Cache miss or parse error
     }
 
-    // Return empty graph if no cache
     return { entities: [], relations: [] };
   }
 
   /**
    * Push merged state to MCP Memory
-   * Note: In production, this calls MCP Memory tools
+   * v18.3: Uses real MCP Memory server with file fallback
    */
   private async pushToMCPMemory(graph: MCPMemoryGraph): Promise<{ success: boolean }> {
-    // Save to local cache (simulating MCP Memory push)
-    // v9.2.0: Validate cache path to prevent path traversal
+    // Try real MCP Memory server first
+    if (this.mcp) {
+      try {
+        // Create entities
+        if (graph.entities.length > 0) {
+          await this.mcp.call('memory', 'create_entities', {
+            entities: graph.entities,
+          });
+        }
+        // Create relations
+        if (graph.relations.length > 0) {
+          await this.mcp.call('memory', 'create_relations', {
+            relations: graph.relations,
+          });
+        }
+        return { success: true };
+      } catch (e) {
+        this.log('MCP Memory push failed, falling back to file:', (e as Error).message);
+      }
+    }
+
+    // Fallback: local file cache
     const baseDir = path.dirname(path.resolve(this.config.statePath));
     const cachePath = path.join(baseDir, 'mcp-memory-cache.json');
 

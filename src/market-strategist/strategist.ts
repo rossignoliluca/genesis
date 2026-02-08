@@ -139,8 +139,8 @@ export class MarketStrategist {
     slides.push({
       type: 'cover',
       content: {
-        company: 'CrossInvest SA',
-        tagline: 'Independent Asset Management',
+        company: 'Rossignoli & Partners',
+        tagline: 'Independent Wealth Management',
         headline: `Weekly Market Strategy`,
         subheadline: `Week ${brief.week} — ${brief.date}`,
         date_range: brief.date,
@@ -224,7 +224,7 @@ export class MarketStrategist {
               p.assetClass, p.position.toUpperCase(), p.conviction, p.rationale,
             ]),
           },
-          source: 'CrossInvest SA',
+          source: 'Rossignoli & Partners',
         },
       });
     }
@@ -252,7 +252,7 @@ export class MarketStrategist {
       content: {
         title: 'Sources & Methodology',
         left_sources: brief.snapshot.sources.map(s => `${s.name}: ${s.url}`).join('\n'),
-        right_sources: 'Analysis: CrossInvest SA proprietary framework\nData: Bloomberg, FRED, FactSet, Bilello',
+        right_sources: 'Analysis: Rossignoli & Partners proprietary framework\nData: Bloomberg, FRED, FactSet, Bilello',
         disclaimer: 'This material is for informational purposes only and does not constitute investment advice.',
       },
     });
@@ -261,22 +261,22 @@ export class MarketStrategist {
     slides.push({
       type: 'back_cover',
       content: {
-        company: 'CrossInvest SA',
-        tagline: 'Independent Asset Management',
-        contact_lines: ['Lugano, Switzerland', 'www.crossinvest.ch'],
+        company: 'Rossignoli & Partners',
+        tagline: 'Independent Wealth Management',
+        contact_lines: ['Lugano, Switzerland', 'www.rossignolipartners.ch'],
         closing: 'Thank you',
         regulatory: 'Regulated by FINMA',
-        copyright: `© ${new Date().getFullYear()} CrossInvest SA. All rights reserved.`,
+        copyright: `© ${new Date().getFullYear()} Rossignoli & Partners. All rights reserved.`,
       },
     });
 
     return {
       meta: {
         title: `Weekly Strategy ${brief.week}`,
-        company: 'CrossInvest SA',
+        company: 'Rossignoli & Partners',
         date: brief.date,
         header_tag: `WEEKLY STRATEGY | ${brief.week}`,
-        footer_left: 'CrossInvest SA',
+        footer_left: 'Rossignoli & Partners',
         footer_center: 'Confidential',
         palette: this.config.presentationPalette,
       },

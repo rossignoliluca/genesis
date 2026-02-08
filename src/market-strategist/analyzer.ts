@@ -16,6 +16,7 @@ import type {
   MarketBrief,
   PositioningView,
   TimeHorizon,
+  CalibrationProfile,
 } from './types.js';
 import type { MemoryLayers } from './memory-layers.js';
 import type { EpisodicMemory, SemanticMemory, Memory } from '../memory/types.js';
@@ -40,7 +41,7 @@ export class MarketAnalyzer {
     historicalAnalogues: SemanticMemory[],
     regimeContext?: { regime: string; confidence: number; trendStrength: number },
   ): Promise<NarrativeThread[]> {
-    const systemPrompt = `You are a senior market strategist at CrossInvest SA, a Swiss independent asset manager.
+    const systemPrompt = `You are a senior market strategist at Rossignoli & Partners, a Swiss independent asset manager.
 Your style: contrarian with institutional rigor. You analyze data from Bilello, FRED, FactSet, JPM, GS, BLK.
 
 Principles:
@@ -56,7 +57,7 @@ Return EXACTLY a JSON array of narrative objects with this schema:
   "horizon": "short" | "medium" | "long",
   "thesis": "main argument in 2-3 sentences",
   "evidence": ["data point 1", "data point 2"],
-  "contrarian": "the contrarian CrossInvest view",
+  "contrarian": "the contrarian Rossignoli & Partners view",
   "confidence": 0.0-1.0
 }]`;
 
@@ -156,7 +157,7 @@ Factor this regime assessment into your narrative synthesis.`;
   }
 
   /**
-   * Generate contrarian views (CrossInvest style)
+   * Generate contrarian views (Rossignoli & Partners style)
    */
   async generateContrarianView(
     consensus: string,
@@ -168,7 +169,7 @@ Factor this regime assessment into your narrative synthesis.`;
         messages: [
           {
             role: 'system',
-            content: `You are a contrarian investment strategist at CrossInvest SA.
+            content: `You are a contrarian investment strategist at Rossignoli & Partners.
 Given the market consensus, provide a concise contrarian view (2-3 sentences).
 Focus on what the crowd is missing, historical analogues, and positioning asymmetries.
 Be specific with data references, not generic.`,
@@ -195,9 +196,10 @@ Be specific with data references, not generic.`,
     snapshot: WeeklySnapshot,
     narratives: NarrativeThread[],
     memoryLayers: MemoryLayers,
+    calibration?: CalibrationProfile,
   ): Promise<MarketBrief> {
-    // Get positioning recommendations
-    const positioning = await this.generatePositioning(snapshot, narratives);
+    // Get positioning recommendations (with calibration if available)
+    const positioning = await this.generatePositioning(snapshot, narratives, calibration);
 
     // Extract risks and opportunities from narratives
     const risks = narratives
@@ -227,17 +229,27 @@ Be specific with data references, not generic.`,
   private async generatePositioning(
     snapshot: WeeklySnapshot,
     narratives: NarrativeThread[],
+    calibration?: CalibrationProfile,
   ): Promise<PositioningView[]> {
+    // Build calibration context for the LLM prompt
+    let calibrationPrompt = '';
+    if (calibration && calibration.adjustments.length > 0) {
+      calibrationPrompt = '\n\nCALIBRATION (based on your track record — RESPECT these caps):\n' +
+        calibration.adjustments.map(a =>
+          `- ${a.assetClass}: max conviction=${a.suggestedConvictionCap} (${a.note})`
+        ).join('\n');
+    }
+
     try {
       const result = await this.mcp.call('openai', 'openai_chat', {
         model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
-            content: `You are a portfolio strategist at CrossInvest SA.
+            content: `You are a portfolio strategist at Rossignoli & Partners.
 Based on the market snapshot and narratives, provide positioning views.
 Return JSON array: [{"assetClass": "name", "position": "long"|"short"|"neutral", "conviction": "high"|"medium"|"low", "rationale": "why"}]
-Cover: US Equities, European Equities, EM Equities, US Treasuries, Credit, Gold, USD, Crypto.`,
+Cover: US Equities, European Equities, EM Equities, US Treasuries, Credit, Gold, USD, Crypto.${calibrationPrompt}`,
           },
           {
             role: 'user',
@@ -252,12 +264,47 @@ Narratives: ${narratives.map(n => `${n.title}: ${n.thesis}`).join('\n')}`,
 
       const content = result.data?.choices?.[0]?.message?.content || '[]';
       const parsed = this.parseJSON(content);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        // Programmatic enforcement: if LLM ignores calibration caps, force downgrade
+        return this.enforceCalibrationCaps(parsed, calibration);
+      }
     } catch {
       // Fall through to defaults
     }
 
     return this.defaultPositioning();
+  }
+
+  /**
+   * Enforce calibration conviction caps programmatically.
+   * If the LLM returns a higher conviction than allowed, downgrade it.
+   */
+  private enforceCalibrationCaps(
+    positioning: PositioningView[],
+    calibration?: CalibrationProfile,
+  ): PositioningView[] {
+    if (!calibration || calibration.adjustments.length === 0) return positioning;
+
+    const capMap = new Map<string, 'high' | 'medium' | 'low'>();
+    for (const adj of calibration.adjustments) {
+      capMap.set(adj.assetClass, adj.suggestedConvictionCap);
+    }
+
+    const convictionRank: Record<string, number> = { low: 1, medium: 2, high: 3 };
+
+    return positioning.map(pos => {
+      const cap = capMap.get(pos.assetClass);
+      if (!cap) return pos;
+
+      const posRank = convictionRank[pos.conviction] || 2;
+      const capRank = convictionRank[cap] || 3;
+
+      if (posRank > capRank) {
+        console.log(`[Calibration] Downgrading ${pos.assetClass} conviction: ${pos.conviction} -> ${cap}`);
+        return { ...pos, conviction: cap };
+      }
+      return pos;
+    });
   }
 
   private buildNarrativePrompt(

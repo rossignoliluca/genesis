@@ -28,17 +28,29 @@ export function seedMarketStrategyMemory(): { procedural: number; semantic: numb
 
   memory.learnSkill({
     name: 'weekly-market-strategy',
-    description: 'Full workflow for weekly market strategy brief generation',
+    description: 'Full workflow for weekly market strategy brief generation — single command via weekly_report tool',
     steps: [
-      { action: 'recall.memory', params: { horizons: ['weekly', 'monthly', 'annual', 'history'] } },
-      { action: 'strategy.collect', params: { sources: ['bilello', 'fred', 'factset', 'brave'] } },
-      { action: 'strategy.analyze', params: { narratives: 3, contrarian: true } },
-      { action: 'strategy.brief', params: { format: 'crossinvest-weekly' } },
-      { action: 'create.presentation', params: { palette: 'crossinvest_dark' } },
-      { action: 'recall.memory', params: { store: true, horizon: 'weekly' } },
+      { action: 'weekly_report.run', params: { sourcePriority: 2 } },
     ],
-    tags: ['market-strategy', 'weekly', 'crossinvest'],
+    tags: ['market-strategy', 'weekly', 'rossignoli', 'pipeline'],
     importance: 0.95,
+  });
+  procedural++;
+
+  memory.learnSkill({
+    name: 'weekly-report-pipeline',
+    description: 'Repeatable weekly report pipeline: collect 20+ MCP sources → verify → analyze → PPTX → social → memory',
+    steps: [
+      { action: 'collect', params: { sources: 'brave-search, firecrawl, exa (20+ sources)', parallel: true } },
+      { action: 'verify', params: { crossReference: true, minSources: 2 } },
+      { action: 'analyze', params: { narratives: 3, contrarian: true, llm: 'openai' } },
+      { action: 'build_spec', params: { style: 'SYZ', slides: '30+', sections: 7 } },
+      { action: 'render_pptx', params: { engine: 'python', palette: 'swiss_institutional' } },
+      { action: 'social', params: { platforms: ['twitter', 'linkedin', 'bluesky'] } },
+      { action: 'store_memory', params: { layers: ['weekly', 'monthly'] } },
+    ],
+    tags: ['market-strategy', 'weekly', 'pipeline', 'mcp'],
+    importance: 1.0,
   });
   procedural++;
 
@@ -187,8 +199,8 @@ export function seedMarketStrategyMemory(): { procedural: number; semantic: numb
   // ==========================================================================
 
   memory.learn({
-    concept: 'crossinvest-strategy-framework',
-    definition: 'CrossInvest SA contrarian investment framework',
+    concept: 'rossignoli-strategy-framework',
+    definition: 'Rossignoli & Partners contrarian investment framework',
     category: 'strategy',
     properties: {
       style: 'Contrarian with institutional rigor',
@@ -203,27 +215,34 @@ export function seedMarketStrategyMemory(): { procedural: number; semantic: numb
       risk_framework: 'Max drawdown -15%, position sizing via Kelly fraction 0.25',
       review_cadence: 'Weekly brief, monthly rebalance, quarterly deep dive',
     },
-    tags: ['crossinvest', 'strategy', 'framework'],
+    tags: ['rossignoli', 'strategy', 'framework'],
     confidence: 1.0,
     importance: 1.0,
   });
   semantic++;
 
   memory.learn({
-    concept: 'crossinvest-presentation-style',
-    definition: 'CrossInvest SA presentation design guidelines for market strategy decks',
+    concept: 'rossignoli-presentation-style',
+    definition: 'Rossignoli & Partners presentation design guidelines for market strategy decks',
     category: 'strategy',
     properties: {
-      palette: 'crossinvest_dark',
-      style: 'Dark navy background, gold accents, institutional typography',
+      palette: 'swiss_institutional',
+      style: 'Light background (#F5F5F5), navy primary (#003366), institutional typography — SYZ-style',
       structure: [
-        'Cover with weekly theme',
+        'Cover with #GlobalMarkets Weekly Wrap-Up',
         'Executive summary (3-4 key insights)',
-        'Market scoreboard (table heatmap)',
+        'Cross-asset scoreboard (table heatmap)',
+        'Section: #equities (indices, earnings)',
+        'Section: #fixed_income (yields, credit)',
+        'Section: #fx (EUR/USD, USD/CHF, DXY)',
+        'Section: #commodities (gold, oil)',
+        'Section: #macro (Fed, ECB, data)',
+        'Section: #crypto (BTC, ETH)',
+        'Section: #geopolitics (trade, defense)',
         'Narrative deep-dives (2-3 slides)',
-        'Positioning table',
         'Risks & Opportunities',
         'Sources & disclaimer',
+        'Back cover',
       ],
       chart_principles: [
         'Every chart needs an assertion-evidence title',
@@ -233,7 +252,7 @@ export function seedMarketStrategyMemory(): { procedural: number; semantic: numb
       ],
       reference: 'Charlie Bilello @charliebilello "Week in Charts" (bilello.blog)',
     },
-    tags: ['crossinvest', 'presentation', 'design'],
+    tags: ['rossignoli', 'presentation', 'design'],
     confidence: 1.0,
     importance: 0.9,
   });

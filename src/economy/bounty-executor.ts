@@ -27,6 +27,8 @@ import {
   type IntelligentBountyScore,
 } from './bounty-intelligence.js';
 import { getBountyLearning, type BountyOutcome } from './bounty-learning.js';
+// v19.3: Deep feedback analysis
+import { getFeedbackAnalyzer, type PreSubmissionReport, type SkillProfile } from './feedback-analyzer.js';
 
 // ============================================================================
 // Types
@@ -576,6 +578,8 @@ export class BountyExecutor {
   private config: BountyExecutorConfig;
   // v19.2: Intelligent learning system
   private learningEngine = getBountyLearning();
+  // v19.3: Deep feedback analysis
+  private feedbackAnalyzer = getFeedbackAnalyzer();
 
   private activeExecutions = new Map<string, Promise<ExecutionResult>>();
 
@@ -963,6 +967,55 @@ export class BountyExecutor {
         };
       }
 
+      // 3.5 v19.3: Run pre-submission checks for near-infallibility
+      console.log('[BountyExecutor] Running pre-submission checks...');
+      for (const change of solution.changes) {
+        const preCheck = await this.feedbackAnalyzer.runPreSubmissionChecks(
+          change.content,
+          change.path,
+          bounty,
+          classification
+        );
+
+        console.log(`[BountyExecutor] Pre-check ${change.path}: ${preCheck.overallScore.toFixed(0)}/100`);
+
+        if (!preCheck.passed) {
+          console.log(`[BountyExecutor] ❌ Pre-submission check FAILED for ${change.path}`);
+          console.log(`[BountyExecutor] Blocking issues:`);
+          preCheck.blockingIssues.slice(0, 5).forEach(i => console.log(`  - ${i}`));
+
+          // Record failure
+          this.recordLearningOutcome(
+            bounty,
+            classification,
+            'validation_failed',
+            startTime,
+            preCheck.overallScore,
+            solution.confidence,
+            `Pre-submission failed: ${preCheck.blockingIssues.join('; ')}`
+          );
+
+          return {
+            bountyId: bounty.id,
+            status: 'failed',
+            solution,
+            error: `Pre-submission check failed: ${preCheck.blockingIssues[0]}`,
+            duration: Date.now() - startTime,
+          };
+        }
+
+        // Log warnings and recommendations
+        if (preCheck.warnings.length > 0) {
+          console.log(`[BountyExecutor] ⚠️ Warnings for ${change.path}:`);
+          preCheck.warnings.slice(0, 3).forEach(w => console.log(`  - ${w}`));
+        }
+        if (preCheck.recommendations.length > 0) {
+          console.log(`[BountyExecutor] 💡 Recommendations:`);
+          preCheck.recommendations.slice(0, 3).forEach(r => console.log(`  - ${r}`));
+        }
+      }
+      console.log('[BountyExecutor] ✅ Pre-submission checks passed');
+
       // 4. Submit PR (if autoSubmit enabled and not dry run)
       if (this.config.autoSubmit && !this.config.dryRun) {
         console.log('[BountyExecutor] Submitting PR...');
@@ -1109,6 +1162,28 @@ export class BountyExecutor {
   }
 
   /**
+   * v19.3: Start email integration for real-time feedback
+   */
+  startEmailIntegration(): void {
+    this.feedbackAnalyzer.startEmailIntegration();
+    console.log('[BountyExecutor] Email integration started - monitoring for PR updates');
+  }
+
+  /**
+   * v19.3: Get improvement report
+   */
+  getImprovementReport(): string {
+    return this.feedbackAnalyzer.generateImprovementReport();
+  }
+
+  /**
+   * v19.3: Get weak skill areas
+   */
+  getWeakSkills(): SkillProfile[] {
+    return this.feedbackAnalyzer.getWeakSkills();
+  }
+
+  /**
    * v19.2: Record outcome to learning engine for causal analysis
    */
   private recordLearningOutcome(
@@ -1165,9 +1240,32 @@ export class BountyExecutor {
           // v16.2: Track consecutive rejections for circuit breaker
           this.consecutiveRejections++;
           console.log(`[BountyExecutor] PR rejected: ${sub.prUrl} (consecutive rejections: ${this.consecutiveRejections})`);
+
+          // v19.3: Deep analyze rejection feedback
+          try {
+            console.log(`[BountyExecutor] Analyzing rejection feedback for ${sub.prUrl}...`);
+            const analysis = await this.feedbackAnalyzer.analyzePRFeedback(updated);
+            console.log(`[BountyExecutor] Analysis: ${analysis.overallSentiment} sentiment, ${analysis.issues.length} issues`);
+            if (analysis.issues.length > 0) {
+              console.log(`[BountyExecutor] Top issues:`);
+              analysis.issues.slice(0, 3).forEach(i => console.log(`  - [${i.severity}] ${i.type}: ${i.description.slice(0, 60)}`));
+            }
+            if (analysis.suggestedImprovements.length > 0) {
+              console.log(`[BountyExecutor] Improvements needed:`);
+              analysis.suggestedImprovements.slice(0, 3).forEach(s => console.log(`  - ${s}`));
+            }
+            if (analysis.skillGaps.length > 0) {
+              console.log(`[BountyExecutor] Skill gaps identified: ${analysis.skillGaps.join(', ')}`);
+            }
+          } catch (analysisErr) {
+            console.warn(`[BountyExecutor] Failed to analyze feedback:`, analysisErr);
+          }
+
           if (this.consecutiveRejections >= 3) {
             this.circuitBreakerPauseUntil = Date.now() + 24 * 60 * 60 * 1000; // 24h pause
             console.log(`[BountyExecutor] CIRCUIT BREAKER TRIGGERED: 3 consecutive rejections. Pausing for 24h.`);
+            // v19.3: Generate improvement report on circuit breaker
+            console.log(`\n${this.feedbackAnalyzer.generateImprovementReport()}\n`);
           }
 
           // v16.2.3: Per-repo rejection tracking

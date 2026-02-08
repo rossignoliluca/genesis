@@ -728,3 +728,19 @@ export type {
   LearningInsight,
   AdaptiveParameters,
 } from './bounty-learning.js';
+
+// v19.3: Feedback Analyzer (Deep PR Feedback + Email Integration)
+export {
+  FeedbackAnalyzer,
+  getFeedbackAnalyzer,
+  resetFeedbackAnalyzer,
+} from './feedback-analyzer.js';
+export type {
+  PRReviewComment,
+  FeedbackIssue,
+  FeedbackAnalysis,
+  ReviewerPattern,
+  SkillProfile,
+  PreSubmissionCheck,
+  PreSubmissionReport,
+} from './feedback-analyzer.js';

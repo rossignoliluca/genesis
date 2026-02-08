@@ -744,3 +744,16 @@ export type {
   PreSubmissionCheck,
   PreSubmissionReport,
 } from './feedback-analyzer.js';
+
+// v19.3: Feedback Loop (Unified Feedback Integration)
+export {
+  FeedbackLoop,
+  getFeedbackLoop,
+  resetFeedbackLoop,
+} from './feedback-loop.js';
+export type {
+  FeedbackLoopConfig,
+  FeedbackEvent,
+  ImprovementPlan,
+  ImprovementAction,
+} from './feedback-loop.js';

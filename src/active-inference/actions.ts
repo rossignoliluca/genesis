@@ -2138,18 +2138,30 @@ registerAction('strategy.collect', async (context) => {
     const collector = new MarketCollector(config);
     const snapshot = await collector.collectWeeklyData();
 
+    const resultData = {
+      week: snapshot.week,
+      date: snapshot.date,
+      headlineCount: snapshot.headlines.length,
+      marketCount: snapshot.markets.length,
+      themes: snapshot.themes,
+      sentiment: snapshot.sentiment.overall,
+      sources: snapshot.sources.map(s => s.name),
+    };
+
+    // v17.1: Memory learning
+    const { getMemorySystem } = await import('../memory/index.js');
+    getMemorySystem().remember({
+      what: 'Collected market data',
+      details: { week: resultData.week, headlines: resultData.headlineCount, themes: resultData.themes, sources: resultData.sources },
+      importance: 0.6,
+      tags: ['strategy', 'collect', resultData.week],
+      source: 'strategy.collect',
+    });
+
     return {
       success: true,
       action: 'strategy.collect' as ActionType,
-      data: {
-        week: snapshot.week,
-        date: snapshot.date,
-        headlineCount: snapshot.headlines.length,
-        marketCount: snapshot.markets.length,
-        themes: snapshot.themes,
-        sentiment: snapshot.sentiment.overall,
-        sources: snapshot.sources.map(s => s.name),
-      },
+      data: resultData,
       duration: Date.now() - start,
     };
   } catch (error) {
@@ -2189,18 +2201,30 @@ registerAction('strategy.analyze', async (context) => {
       memoryContext.historicalAnalogues,
     );
 
+    const resultData = {
+      narrativeCount: narratives.length,
+      narratives: narratives.map(n => ({
+        title: n.title,
+        horizon: n.horizon,
+        confidence: n.confidence,
+      })),
+      themes: snapshot.themes,
+    };
+
+    // v17.1: Memory learning
+    const { getMemorySystem } = await import('../memory/index.js');
+    getMemorySystem().remember({
+      what: 'Synthesized narratives',
+      details: { narratives: resultData.narratives, themes: resultData.themes, shifts: snapshot.sentiment.overall },
+      importance: 0.7,
+      tags: ['strategy', 'analyze', snapshot.week],
+      source: 'strategy.analyze',
+    });
+
     return {
       success: true,
       action: 'strategy.analyze' as ActionType,
-      data: {
-        narrativeCount: narratives.length,
-        narratives: narratives.map(n => ({
-          title: n.title,
-          horizon: n.horizon,
-          confidence: n.confidence,
-        })),
-        themes: snapshot.themes,
-      },
+      data: resultData,
       duration: Date.now() - start,
     };
   } catch (error) {
@@ -2224,20 +2248,32 @@ registerAction('strategy.brief', async (context) => {
     const strategist = new MarketStrategist(config);
     const brief = await strategist.generateWeeklyBrief();
 
+    const resultData = {
+      id: brief.id,
+      week: brief.week,
+      date: brief.date,
+      narrativeCount: brief.narratives.length,
+      positioningCount: brief.positioning.length,
+      riskCount: brief.risks.length,
+      opportunityCount: brief.opportunities.length,
+      hasPresentation: !!brief.presentationSpec,
+      presentationPath: brief.presentationSpec?.output_path,
+    };
+
+    // v17.1: Memory learning
+    const { getMemorySystem } = await import('../memory/index.js');
+    getMemorySystem().remember({
+      what: 'Generated weekly brief',
+      details: { week: resultData.week, narrativeCount: resultData.narrativeCount, positioning: resultData.positioningCount, hasPresentation: resultData.hasPresentation },
+      importance: 0.8,
+      tags: ['strategy', 'brief', resultData.week],
+      source: 'strategy.brief',
+    });
+
     return {
       success: true,
       action: 'strategy.brief' as ActionType,
-      data: {
-        id: brief.id,
-        week: brief.week,
-        date: brief.date,
-        narrativeCount: brief.narratives.length,
-        positioningCount: brief.positioning.length,
-        riskCount: brief.risks.length,
-        opportunityCount: brief.opportunities.length,
-        hasPresentation: !!brief.presentationSpec,
-        presentationPath: brief.presentationSpec?.output_path,
-      },
+      data: resultData,
       duration: Date.now() - start,
     };
   } catch (error) {

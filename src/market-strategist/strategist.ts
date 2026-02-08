@@ -25,10 +25,11 @@ import type {
   ScrapedChart,
   WeeklySnapshot,
   NarrativeThread,
-  DEFAULT_STRATEGY_CONFIG,
+  AssetSnapshot,
 } from './types.js';
 import { DEFAULT_STRATEGY_CONFIG as CONFIG } from './types.js';
 import type { PresentationSpec, SlideSpec, ChartSpec } from '../presentation/types.js';
+import type { GenesisEventBus } from '../bus/index.js';
 
 // ============================================================================
 // Market Strategist
@@ -39,12 +40,14 @@ export class MarketStrategist {
   private analyzer: MarketAnalyzer;
   private memoryLayers: MemoryLayers;
   private config: StrategyConfig;
+  private bus?: GenesisEventBus;
 
-  constructor(config?: Partial<StrategyConfig>) {
+  constructor(config?: Partial<StrategyConfig>, bus?: GenesisEventBus) {
     this.config = { ...CONFIG, ...config };
     this.collector = new MarketCollector(this.config);
     this.analyzer = new MarketAnalyzer();
     this.memoryLayers = new MemoryLayers();
+    this.bus = bus;
   }
 
   /**
@@ -57,6 +60,20 @@ export class MarketStrategist {
     // 2. Collect fresh data from web
     const snapshot = await this.collector.collectWeeklyData();
 
+    // 2b. Enrich with finance module data
+    await this.enrichFromFinanceModule(snapshot);
+
+    // Publish data collected event
+    this.publishEvent('strategy.data.collected', {
+      source: 'market-strategist',
+      precision: 0.8,
+      week: snapshot.week,
+      headlineCount: snapshot.headlines.length,
+      sourceCount: snapshot.sources.length,
+      themes: snapshot.themes,
+      sentiment: snapshot.sentiment.overall,
+    });
+
     // 3. Scrape real charts from institutional sources
     let charts: ScrapedChart[] = [];
     try {
@@ -65,11 +82,13 @@ export class MarketStrategist {
       console.error('[MarketStrategist] Chart scraping failed, continuing without charts:', error);
     }
 
-    // 4. Synthesize narratives (using memory + fresh data)
+    // 4. Synthesize narratives (using memory + fresh data + regime context)
+    const regimeContext = await this.getRegimeContext();
     const narratives = await this.analyzer.synthesizeNarrative(
       snapshot,
       context.recentWeeks,
       context.historicalAnalogues,
+      regimeContext,
     );
 
     // 5. Build the complete brief
@@ -94,6 +113,18 @@ export class MarketStrategist {
       const spec = this.buildPresentationSpec(brief, charts);
       brief.presentationSpec = spec;
     }
+
+    // Publish brief generated event
+    this.publishEvent('strategy.brief.generated', {
+      source: 'market-strategist',
+      precision: 0.9,
+      briefId: brief.id,
+      week: brief.week,
+      narrativeCount: brief.narratives.length,
+      positioningCount: brief.positioning.length,
+      hasPresentation: !!brief.presentationSpec,
+      outputPath: brief.presentationSpec?.output_path,
+    });
 
     return brief;
   }
@@ -275,7 +306,8 @@ export class MarketStrategist {
     });
 
     // If feedback mentions a specific learning, store as semantic
-    if (feedback.length > 50) {
+    const storedAsLesson = feedback.length > 50;
+    if (storedAsLesson) {
       memory.learn({
         concept: `strategy-lesson-${briefWeek}`,
         definition: feedback,
@@ -284,6 +316,98 @@ export class MarketStrategist {
         confidence: 0.7,
         importance: 0.7,
       });
+    }
+
+    // Publish feedback event
+    this.publishEvent('strategy.feedback.received', {
+      source: 'market-strategist',
+      precision: 0.7,
+      briefWeek,
+      feedbackLength: feedback.length,
+      storedAsLesson,
+    });
+  }
+
+  // ==========================================================================
+  // Finance Module Integration (v17.1)
+  // ==========================================================================
+
+  /**
+   * Enrich asset snapshots with data from the finance module
+   */
+  private async enrichFromFinanceModule(snapshot: WeeklySnapshot): Promise<void> {
+    try {
+      const { createFinanceModule } = await import('../finance/index.js');
+      const { getEventBus } = await import('../bus/index.js');
+
+      const bus = this.bus || getEventBus();
+      const financeModule = createFinanceModule(bus);
+
+      for (const asset of snapshot.markets) {
+        const symbol = asset.ticker || asset.name;
+        const marketSnapshot = financeModule.marketData.getSnapshot(symbol);
+
+        if (marketSnapshot) {
+          if (asset.level === 'N/A') {
+            asset.level = marketSnapshot.price.toFixed(2);
+          }
+          if (asset.change1w === 'N/A') {
+            asset.change1w = `${marketSnapshot.changePercent24h >= 0 ? '+' : ''}${marketSnapshot.changePercent24h.toFixed(1)}%`;
+          }
+        }
+
+        const detection = financeModule.regimeDetector.detectRegime(symbol);
+        if (detection.confidence > 0.5) {
+          const regimeToSignal: Record<string, 'bullish' | 'bearish' | 'neutral'> = {
+            bull: 'bullish',
+            bear: 'bearish',
+            neutral: 'neutral',
+            crisis: 'bearish',
+          };
+          asset.signal = regimeToSignal[detection.regime] || 'neutral';
+        }
+      }
+    } catch {
+      // Finance module not available — keep existing snapshot data
+    }
+  }
+
+  /**
+   * Get regime context from finance module for narrative synthesis
+   */
+  private async getRegimeContext(): Promise<{ regime: string; confidence: number; trendStrength: number } | undefined> {
+    try {
+      const { createFinanceModule } = await import('../finance/index.js');
+      const { getEventBus } = await import('../bus/index.js');
+
+      const bus = this.bus || getEventBus();
+      const financeModule = createFinanceModule(bus);
+
+      // Use SPY/S&P 500 as primary regime indicator
+      const detection = financeModule.regimeDetector.detectRegime('SPY');
+      if (detection.confidence > 0.3) {
+        return {
+          regime: detection.regime,
+          confidence: detection.confidence,
+          trendStrength: detection.trendStrength,
+        };
+      }
+    } catch {
+      // Finance module not available
+    }
+    return undefined;
+  }
+
+  // ==========================================================================
+  // Bus Event Helper
+  // ==========================================================================
+
+  private publishEvent<K extends keyof import('../bus/events.js').GenesisEventMap>(
+    topic: K,
+    payload: Omit<import('../bus/events.js').GenesisEventMap[K], 'seq' | 'timestamp'>,
+  ): void {
+    if (this.bus) {
+      this.bus.publish(topic, payload);
     }
   }
 }

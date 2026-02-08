@@ -20,7 +20,6 @@ import type {
   ScrapedChart,
   ResearchSummary,
   StrategyConfig,
-  DEFAULT_STRATEGY_CONFIG,
 } from './types.js';
 import { DEFAULT_STRATEGY_CONFIG as CONFIG } from './types.js';
 import * as fs from 'fs';
@@ -131,7 +130,7 @@ export class MarketCollector {
 
     for (const query of queries) {
       try {
-        const result = await this.mcp.call('brave-search' as any, 'brave_web_search', {
+        const result = await this.mcp.call('brave-search', 'brave_web_search', {
           query,
           count: 5,
         });
@@ -171,7 +170,7 @@ export class MarketCollector {
     // If no specific URLs, search via Exa
     if (urls.length === 0) {
       try {
-        const result = await this.mcp.call('exa' as any, 'web_search_exa', {
+        const result = await this.mcp.call('exa', 'web_search_exa', {
           query: 'institutional weekly market strategy outlook 2026',
           numResults: 5,
           type: 'auto',
@@ -197,7 +196,7 @@ export class MarketCollector {
     // Scrape specific URLs via Firecrawl
     for (const url of urls) {
       try {
-        const result = await this.mcp.call('firecrawl' as any, 'firecrawl_scrape', {
+        const result = await this.mcp.call('firecrawl', 'firecrawl_scrape', {
           url,
           formats: ['markdown'],
           onlyMainContent: true,
@@ -227,7 +226,7 @@ export class MarketCollector {
 
   private async scrapeBilello(): Promise<any> {
     try {
-      const result = await this.mcp.call('firecrawl' as any, 'firecrawl_scrape', {
+      const result = await this.mcp.call('firecrawl', 'firecrawl_scrape', {
         url: 'https://bilello.blog',
         formats: ['markdown'],
         onlyMainContent: true,
@@ -244,12 +243,12 @@ export class MarketCollector {
     if (source.method === 'playwright' && source.url) {
       try {
         // Navigate to source
-        await this.mcp.call('playwright' as any, 'browser_navigate', {
+        await this.mcp.call('playwright', 'browser_navigate', {
           url: `https://${source.url}`,
         });
 
         // Take screenshot
-        const screenshot = await this.mcp.call('playwright' as any, 'browser_take_screenshot', {});
+        const screenshot = await this.mcp.call('playwright', 'browser_take_screenshot', {});
 
         if (screenshot.data) {
           const filename = `${source.name}-${Date.now()}.png`;
@@ -280,9 +279,56 @@ export class MarketCollector {
     headlines: Headline[],
     bilelloData: any,
   ): Promise<AssetSnapshot[]> {
-    // Build snapshots for focus assets
-    // In production, this would parse real data from FRED, Bilello, etc.
-    // For now, create placeholder snapshots that can be enriched by the analyzer
+    // If bilelloData contains markdown, try to extract asset data via LLM
+    if (bilelloData?.markdown && typeof bilelloData.markdown === 'string' && bilelloData.markdown.length > 100) {
+      try {
+        const result = await this.mcp.call('openai', 'openai_chat', {
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: `Extract market data from the scraped content. Return a JSON array with objects:
+[{"name": "asset name", "level": "current price/level", "change1w": "weekly change %", "changeMtd": "MTD %", "changeYtd": "YTD %", "signal": "bullish"|"bearish"|"neutral", "commentary": "one-line insight"}]
+Only include assets from this list: ${this.config.focusAssets.join(', ')}.
+If data is not available for an asset, use "N/A" for missing fields.`,
+            },
+            {
+              role: 'user',
+              content: bilelloData.markdown.slice(0, 4000),
+            },
+          ],
+          temperature: 0.2,
+          max_tokens: 2048,
+        });
+
+        const content = result.data?.choices?.[0]?.message?.content || '';
+        const parsed = this.parseJSON(content);
+
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Merge parsed data with focus assets (ensure all assets are represented)
+          const parsedMap = new Map(parsed.map((p: any) => [p.name, p]));
+          return this.config.focusAssets.map(asset => {
+            const data = parsedMap.get(asset);
+            if (data) {
+              return {
+                name: asset,
+                level: String(data.level || 'N/A'),
+                change1w: String(data.change1w || 'N/A'),
+                changeMtd: String(data.changeMtd || 'N/A'),
+                changeYtd: String(data.changeYtd || 'N/A'),
+                signal: (['bullish', 'bearish', 'neutral'].includes(data.signal) ? data.signal : 'neutral') as 'bullish' | 'bearish' | 'neutral',
+                commentary: String(data.commentary || ''),
+              };
+            }
+            return { name: asset, level: 'N/A', change1w: 'N/A', changeMtd: 'N/A', changeYtd: 'N/A', signal: 'neutral' as const, commentary: '' };
+          });
+        }
+      } catch (error) {
+        console.error('[MarketCollector] LLM asset parsing failed, using placeholders:', error);
+      }
+    }
+
+    // Fallback: placeholder snapshots
     return this.config.focusAssets.map(asset => ({
       name: asset,
       level: 'N/A',
@@ -292,6 +338,22 @@ export class MarketCollector {
       signal: 'neutral' as const,
       commentary: '',
     }));
+  }
+
+  private parseJSON(text: string): any {
+    try {
+      return JSON.parse(text);
+    } catch {
+      const match = text.match(/\[[\s\S]*\]/);
+      if (match) {
+        try {
+          return JSON.parse(match[0]);
+        } catch {
+          return null;
+        }
+      }
+      return null;
+    }
   }
 
   private extractThemes(headlines: Headline[]): string[] {

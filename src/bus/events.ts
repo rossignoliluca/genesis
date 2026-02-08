@@ -642,6 +642,33 @@ export interface ContentInsightEvent extends BusEvent {
 }
 
 // ============================================================================
+// Strategy Events (v17.1)
+// ============================================================================
+
+export interface StrategyDataCollectedEvent extends BusEvent {
+  week: string;
+  headlineCount: number;
+  sourceCount: number;
+  themes: string[];
+  sentiment: string;
+}
+
+export interface StrategyBriefGeneratedEvent extends BusEvent {
+  briefId: string;
+  week: string;
+  narrativeCount: number;
+  positioningCount: number;
+  hasPresentation: boolean;
+  outputPath?: string;
+}
+
+export interface StrategyFeedbackEvent extends BusEvent {
+  briefWeek: string;
+  feedbackLength: number;
+  storedAsLesson: boolean;
+}
+
+// ============================================================================
 // CLI Events
 // ============================================================================
 
@@ -903,6 +930,11 @@ export interface GenesisEventMap {
   'content.engagement': ContentEngagementEvent;
   'content.revenue': ContentRevenueEvent;
   'content.insight': ContentInsightEvent;
+
+  // --- Strategy Events (v17.1) ---
+  'strategy.data.collected': StrategyDataCollectedEvent;
+  'strategy.brief.generated': StrategyBriefGeneratedEvent;
+  'strategy.feedback.received': StrategyFeedbackEvent;
 
   // --- CLI Events ---
   'cli.user.message': CLIUserMessageEvent;

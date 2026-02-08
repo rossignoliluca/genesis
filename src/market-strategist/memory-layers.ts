@@ -19,8 +19,6 @@ import type {
   WeeklySnapshot,
   NarrativeThread,
   HistoricalAnalogue,
-  MemoryHorizon,
-  HORIZON_CONFIGS,
 } from './types.js';
 import { HORIZON_CONFIGS as CONFIGS } from './types.js';
 
@@ -188,18 +186,42 @@ export class MemoryLayers {
   /**
    * Cross-horizon query: find relevant context across all 4 layers
    */
-  async recallContext(query: string): Promise<{
+  async recallContext(query: string, options?: {
+    weeks?: number;
+    months?: number;
+    years?: number;
+  }): Promise<{
     recentWeeks: EpisodicMemory[];
     monthlyTrends: SemanticMemory[];
     annualThemes: SemanticMemory[];
     historicalAnalogues: SemanticMemory[];
   }> {
+    const weeks = options?.weeks ?? 4;
+    const months = options?.months ?? 6;
+    const years = options?.years ?? 3;
+
     return {
-      recentWeeks: this.getRecentWeeks(4),
-      monthlyTrends: this.getMonthlyTrends(6),
-      annualThemes: this.getAnnualThemes(3),
+      recentWeeks: this.getRecentWeeks(weeks),
+      monthlyTrends: this.getMonthlyTrends(months),
+      annualThemes: this.getAnnualThemes(years),
       historicalAnalogues: this.getHistoricalAnalogues(query),
     };
+  }
+
+  /**
+   * Get count of memories per horizon layer
+   */
+  getStats(): { weekly: number; monthly: number; annual: number; history: number } {
+    const weekly = this.memory.episodic
+      .query({ tags: ['market', 'weekly'] }).length;
+    const monthly = this.memory.semantic
+      .query({ custom: (m) => m.tags.includes('market') && m.tags.includes('monthly') }).length;
+    const annual = this.memory.semantic
+      .query({ custom: (m) => m.tags.includes('market') && m.tags.includes('annual') }).length;
+    const history = this.memory.semantic
+      .query({ custom: (m) => m.tags.includes('market') && m.tags.includes('history') }).length;
+
+    return { weekly, monthly, annual, history };
   }
 
   // ==========================================================================

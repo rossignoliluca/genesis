@@ -38,6 +38,7 @@ export class MarketAnalyzer {
     snapshot: WeeklySnapshot,
     previousBriefs: Memory[],
     historicalAnalogues: SemanticMemory[],
+    regimeContext?: { regime: string; confidence: number; trendStrength: number },
   ): Promise<NarrativeThread[]> {
     const systemPrompt = `You are a senior market strategist at CrossInvest SA, a Swiss independent asset manager.
 Your style: contrarian with institutional rigor. You analyze data from Bilello, FRED, FactSet, JPM, GS, BLK.
@@ -59,10 +60,17 @@ Return EXACTLY a JSON array of narrative objects with this schema:
   "confidence": 0.0-1.0
 }]`;
 
-    const userPrompt = this.buildNarrativePrompt(snapshot, previousBriefs, historicalAnalogues);
+    let userPrompt = this.buildNarrativePrompt(snapshot, previousBriefs, historicalAnalogues);
+
+    if (regimeContext) {
+      userPrompt += `\n\nREGIME CONTEXT (from finance module):
+- Current regime: ${regimeContext.regime} (confidence: ${regimeContext.confidence.toFixed(2)})
+- Trend strength: ${regimeContext.trendStrength.toFixed(2)}
+Factor this regime assessment into your narrative synthesis.`;
+    }
 
     try {
-      const result = await this.mcp.call('openai' as any, 'openai_chat', {
+      const result = await this.mcp.call('openai', 'openai_chat', {
         model: 'gpt-4o-mini',
         messages: [
           { role: 'system', content: systemPrompt },
@@ -155,7 +163,7 @@ Return EXACTLY a JSON array of narrative objects with this schema:
     data: Record<string, any>,
   ): Promise<string> {
     try {
-      const result = await this.mcp.call('openai' as any, 'openai_chat', {
+      const result = await this.mcp.call('openai', 'openai_chat', {
         model: 'gpt-4o-mini',
         messages: [
           {
@@ -221,7 +229,7 @@ Be specific with data references, not generic.`,
     narratives: NarrativeThread[],
   ): Promise<PositioningView[]> {
     try {
-      const result = await this.mcp.call('openai' as any, 'openai_chat', {
+      const result = await this.mcp.call('openai', 'openai_chat', {
         model: 'gpt-4o-mini',
         messages: [
           {
@@ -303,7 +311,7 @@ Narratives: ${narratives.map(n => `${n.title}: ${n.thesis}`).join('\n')}`,
   }
 
   private fallbackNarratives(snapshot: WeeklySnapshot): NarrativeThread[] {
-    return [{
+    const narratives: NarrativeThread[] = [{
       id: randomUUID(),
       title: 'Weekly Market Review',
       horizon: 'short',
@@ -313,6 +321,25 @@ Narratives: ${narratives.map(n => `${n.title}: ${n.thesis}`).join('\n')}`,
       confidence: 0.4,
       lastUpdated: new Date(),
     }];
+
+    // Generate additional narratives from prominent themes
+    for (const theme of snapshot.themes.slice(0, 2)) {
+      const themeHeadlines = snapshot.headlines.filter(h => h.theme === theme);
+      if (themeHeadlines.length > 0) {
+        narratives.push({
+          id: randomUUID(),
+          title: theme,
+          horizon: 'medium',
+          thesis: `${theme} is a dominant theme this week, driven by ${themeHeadlines.length} headline(s).`,
+          evidence: themeHeadlines.slice(0, 2).map(h => h.title),
+          contrarian: `Monitor whether ${theme} persists or fades in coming weeks.`,
+          confidence: 0.3,
+          lastUpdated: new Date(),
+        });
+      }
+    }
+
+    return narratives;
   }
 
   private defaultPositioning(): PositioningView[] {

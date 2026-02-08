@@ -79,6 +79,10 @@ export type {
   HookExecutedEvent,
   // Self-modification events
   SelfImprovementEvent,
+  // Strategy events (v17.1)
+  StrategyDataCollectedEvent,
+  StrategyBriefGeneratedEvent,
+  StrategyFeedbackEvent,
 } from './events.js';
 
 // ============================================================================

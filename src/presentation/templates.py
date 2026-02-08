@@ -494,67 +494,185 @@ def make_content_slide(prs, palette, meta: dict, page_num: int, bg_image=None):
 # Slide Builders
 # ============================================================================
 
-def build_cover(prs, content: dict, palette, bg_image=None):
+def build_cover(prs, content: dict, palette, bg_image=None, meta=None):
     """
-    Full-bleed cover slide with AI-generated background.
-    Falls back to solid navy if no bg_image.
+    Cover slide. Editorial mode: clean white with bold orange headline.
+    Standard mode: full-bleed navy with AI background.
     """
+    meta = meta or {}
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide_w = prs.slide_width
     slide_h = prs.slide_height
 
-    # Background: AI image or solid navy
-    if bg_image and os.path.exists(bg_image):
-        slide.shapes.add_picture(bg_image, Emu(0), Emu(0), slide_w, slide_h)
-        # Add a dark overlay for text readability
-        overlay = slide.shapes.add_shape(
-            MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), slide_w, slide_h
-        )
-        overlay.fill.solid()
-        overlay.fill.fore_color.rgb = rgb("#000000")
-        overlay.line.fill.background()
-        _set_shape_alpha(overlay, 40)  # 40% opaque black overlay
-    else:
+    if is_editorial(palette) or meta.get("mode") == "editorial":
+        # ── EDITORIAL COVER ── clean white, bold orange, modern ──
         bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), slide_w, slide_h)
         bg.fill.solid()
-        bg.fill.fore_color.rgb = rgb(palette.navy)
+        bg.fill.fore_color.rgb = rgb("#FFFFFF")
         bg.line.fill.background()
 
-    # Gold accent bars
-    for y_pos in [0, 7.38]:
-        bar = slide.shapes.add_shape(
-            MSO_SHAPE.RECTANGLE, Inches(0), Inches(y_pos), slide_w, Inches(0.12)
+        # Bold orange accent bar at top
+        bar_top = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), slide_w, Inches(0.06)
         )
-        bar.fill.solid()
-        bar.fill.fore_color.rgb = rgb(palette.gold)
-        bar.line.fill.background()
+        bar_top.fill.solid()
+        bar_top.fill.fore_color.rgb = rgb(palette.orange)
+        bar_top.line.fill.background()
 
-    elements = [
-        (1.0, content.get("company", ""), 38, palette.gold, True),
-        (1.7, content.get("tagline", ""), 14, palette.gold, True),
-        (2.7, content.get("headline", ""), 44, palette.white, False),
-        (3.6, content.get("subheadline", ""), 24, palette.gold, False),
-        (4.2, content.get("date_range", ""), 16, "#AABBCC", False),
-        (4.85, content.get("theme", ""), 18, palette.white, True),
-        (6.4, content.get("footer_text", ""), 11, "#8899AA", False),
-    ]
+        # Vertical orange accent bar on left — gives visual weight
+        bar_left = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Inches(0), Inches(0),
+            Inches(0.2), slide_h
+        )
+        bar_left.fill.solid()
+        bar_left.fill.fore_color.rgb = rgb(palette.orange)
+        bar_left.line.fill.background()
 
-    for y_off, text, size, color, bold in elements:
-        if not text:
-            continue
-        tb = slide.shapes.add_textbox(Inches(0.8), Inches(y_off), Inches(11.7), Inches(0.7))
-        tf = tb.text_frame
-        p = tf.paragraphs[0]
-        p.alignment = PP_ALIGN.LEFT
-        r = p.add_run()
-        r.text = text
-        r.font.size = Pt(size)
-        r.font.bold = bold
-        r.font.name = "Arial"
-        r.font.color.rgb = rgb(color) if isinstance(color, str) and color.startswith("#") else rgb(color)
+        # Company name — small, uppercase, orange
+        company = content.get("company", "")
+        if company:
+            tb_c = slide.shapes.add_textbox(Inches(0.7), Inches(0.45), Inches(8), Inches(0.5))
+            tf = tb_c.text_frame
+            p = tf.paragraphs[0]
+            r = p.add_run()
+            r.text = company
+            r.font.size = Pt(15)
+            r.font.bold = True
+            r.font.color.rgb = rgb(palette.orange)
+            r.font.name = "Arial"
 
-    # Separator line under tagline
-    add_glow_line(slide, 0.8, 2.35, 2.5, palette)
+        # Tagline — elegant gray
+        tagline = content.get("tagline", "")
+        if tagline:
+            tb_t = slide.shapes.add_textbox(Inches(0.7), Inches(0.95), Inches(8), Inches(0.4))
+            tf = tb_t.text_frame
+            p = tf.paragraphs[0]
+            r = p.add_run()
+            r.text = tagline
+            r.font.size = Pt(12)
+            r.font.italic = True
+            r.font.color.rgb = rgb(palette.gray)
+            r.font.name = "Arial"
+
+        # Orange accent line
+        add_glow_line(slide, 0.7, 1.5, 3.5, palette, color=palette.orange)
+
+        # HEADLINE — massive, charcoal, the hero element
+        headline = content.get("headline", "")
+        if headline:
+            tb_h = slide.shapes.add_textbox(Inches(0.7), Inches(1.9), Inches(11.5), Inches(1.6))
+            tf = tb_h.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            r = p.add_run()
+            r.text = headline
+            r.font.size = Pt(52)
+            r.font.bold = True
+            r.font.color.rgb = rgb(palette.body_text)
+            r.font.name = "Arial"
+
+        # Subheadline — large orange
+        subheadline = content.get("subheadline", "")
+        if subheadline:
+            tb_s = slide.shapes.add_textbox(Inches(0.7), Inches(3.65), Inches(11.5), Inches(0.8))
+            tf = tb_s.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            r = p.add_run()
+            r.text = subheadline
+            r.font.size = Pt(24)
+            r.font.bold = True
+            r.font.color.rgb = rgb(palette.orange)
+            r.font.name = "Arial"
+
+        # Theme — italic charcoal
+        theme = content.get("theme", "")
+        if theme:
+            tb_th = slide.shapes.add_textbox(Inches(0.7), Inches(4.6), Inches(11.5), Inches(0.6))
+            tf = tb_th.text_frame
+            p = tf.paragraphs[0]
+            r = p.add_run()
+            r.text = theme
+            r.font.size = Pt(16)
+            r.font.italic = True
+            r.font.color.rgb = rgb(palette.body_text)
+            r.font.name = "Arial"
+
+        # Bottom: thin gray line + footer text + date
+        add_glow_line(slide, 0.7, 6.8, 11.9, palette, color=palette.light_gray)
+
+        footer_text = content.get("footer_text", "")
+        if footer_text:
+            tb_f = slide.shapes.add_textbox(Inches(0.7), Inches(6.9), Inches(8), Inches(0.4))
+            tf = tb_f.text_frame
+            p = tf.paragraphs[0]
+            r = p.add_run()
+            r.text = footer_text
+            r.font.size = Pt(9)
+            r.font.color.rgb = rgb(palette.source_color)
+            r.font.name = "Arial"
+
+        date_range = content.get("date_range", "")
+        if date_range:
+            tb_d = slide.shapes.add_textbox(Inches(9), Inches(6.9), Inches(3.5), Inches(0.4))
+            tf = tb_d.text_frame
+            p = tf.paragraphs[0]
+            p.alignment = PP_ALIGN.RIGHT
+            r = p.add_run()
+            r.text = date_range
+            r.font.size = Pt(9)
+            r.font.color.rgb = rgb(palette.source_color)
+            r.font.name = "Arial"
+    else:
+        # ── STANDARD COVER ── navy/dark with AI background ──
+        if bg_image and os.path.exists(bg_image):
+            slide.shapes.add_picture(bg_image, Emu(0), Emu(0), slide_w, slide_h)
+            overlay = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), slide_w, slide_h
+            )
+            overlay.fill.solid()
+            overlay.fill.fore_color.rgb = rgb("#000000")
+            overlay.line.fill.background()
+            _set_shape_alpha(overlay, 40)
+        else:
+            bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), slide_w, slide_h)
+            bg.fill.solid()
+            bg.fill.fore_color.rgb = rgb(palette.navy)
+            bg.line.fill.background()
+
+        for y_pos in [0, 7.38]:
+            bar = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE, Inches(0), Inches(y_pos), slide_w, Inches(0.12)
+            )
+            bar.fill.solid()
+            bar.fill.fore_color.rgb = rgb(palette.gold)
+            bar.line.fill.background()
+
+        elements = [
+            (1.0, content.get("company", ""), 38, palette.gold, True),
+            (1.7, content.get("tagline", ""), 14, palette.gold, True),
+            (2.7, content.get("headline", ""), 44, palette.white, False),
+            (3.6, content.get("subheadline", ""), 24, palette.gold, False),
+            (4.2, content.get("date_range", ""), 16, "#AABBCC", False),
+            (4.85, content.get("theme", ""), 18, palette.white, True),
+            (6.4, content.get("footer_text", ""), 11, "#8899AA", False),
+        ]
+
+        for y_off, text, size, color, bold in elements:
+            if not text:
+                continue
+            tb = slide.shapes.add_textbox(Inches(0.8), Inches(y_off), Inches(11.7), Inches(0.7))
+            tf = tb.text_frame
+            p = tf.paragraphs[0]
+            p.alignment = PP_ALIGN.LEFT
+            r = p.add_run()
+            r.text = text
+            r.font.size = Pt(size)
+            r.font.bold = bold
+            r.font.name = "Arial"
+            r.font.color.rgb = rgb(color) if isinstance(color, str) and color.startswith("#") else rgb(color)
+
+        add_glow_line(slide, 0.8, 2.35, 2.5, palette)
 
 
 def build_executive_summary(prs, content: dict, palette, meta: dict, page_num: int, bg_image=None):
@@ -741,94 +859,182 @@ def build_sources_slide(prs, content: dict, palette, meta: dict, page_num: int, 
         r_d.font.color.rgb = rgb(palette.source_color)
 
 
-def build_back_cover(prs, content: dict, palette, bg_image=None):
-    """Navy back cover with contact details and optional AI background."""
+def build_back_cover(prs, content: dict, palette, bg_image=None, meta=None):
+    """Back cover. Editorial mode: clean white. Standard mode: navy/dark."""
+    meta = meta or {}
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide_w = prs.slide_width
     slide_h = prs.slide_height
 
-    # Background
-    if bg_image and os.path.exists(bg_image):
-        slide.shapes.add_picture(bg_image, Emu(0), Emu(0), slide_w, slide_h)
-        overlay = slide.shapes.add_shape(
-            MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), slide_w, slide_h
-        )
-        overlay.fill.solid()
-        overlay.fill.fore_color.rgb = rgb("#000000")
-        overlay.line.fill.background()
-        _set_shape_alpha(overlay, 50)
-    else:
+    if is_editorial(palette) or meta.get("mode") == "editorial":
+        # ── EDITORIAL BACK COVER ── clean white, centered, elegant ──
         bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), slide_w, slide_h)
         bg.fill.solid()
-        bg.fill.fore_color.rgb = rgb(palette.navy)
+        bg.fill.fore_color.rgb = rgb("#FFFFFF")
         bg.line.fill.background()
 
-    # Gold accent lines
-    for y_pos in [2.0, 5.5]:
-        add_glow_line(slide, 4.5, y_pos, 4.333, palette)
+        # Orange accent bar top
+        bar_top = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), slide_w, Inches(0.06)
+        )
+        bar_top.fill.solid()
+        bar_top.fill.fore_color.rgb = rgb(palette.orange)
+        bar_top.line.fill.background()
 
-    # Company name
-    tb1 = slide.shapes.add_textbox(Inches(0), Inches(2.3), prs.slide_width, Inches(0.8))
-    tf1 = tb1.text_frame
-    p1 = tf1.paragraphs[0]
-    p1.alignment = PP_ALIGN.CENTER
-    r1 = p1.add_run()
-    r1.text = content.get("company", "CROSSINVEST SA")
-    r1.font.size = Pt(36)
-    r1.font.bold = True
-    r1.font.color.rgb = rgb(palette.gold)
-    r1.font.name = "Arial"
+        # Orange accent bar bottom — mirroring top, frames the slide
+        bar_bot = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Inches(0), Inches(7.44), slide_w, Inches(0.06)
+        )
+        bar_bot.fill.solid()
+        bar_bot.fill.fore_color.rgb = rgb(palette.orange)
+        bar_bot.line.fill.background()
 
-    # Tagline
-    tb2 = slide.shapes.add_textbox(Inches(0), Inches(3.1), prs.slide_width, Inches(0.5))
-    tf2 = tb2.text_frame
-    p2 = tf2.paragraphs[0]
-    p2.alignment = PP_ALIGN.CENTER
-    r2 = p2.add_run()
-    r2.text = content.get("tagline", "")
-    r2.font.size = Pt(16)
-    r2.font.color.rgb = rgb(palette.white)
-    r2.font.name = "Arial"
+        # Centered orange accent line above company
+        add_glow_line(slide, 4.5, 2.0, 4.3, palette, color=palette.orange)
 
-    # Contact lines
-    contact_y = 3.8
-    for line_text in content.get("contact_lines", []):
-        tb = slide.shapes.add_textbox(Inches(0), Inches(contact_y), prs.slide_width, Inches(0.35))
-        tf = tb.text_frame
-        p = tf.paragraphs[0]
-        p.alignment = PP_ALIGN.CENTER
-        r = p.add_run()
-        r.text = line_text
-        r.font.size = Pt(12)
-        r.font.color.rgb = rgb("#AABBCC")
-        r.font.name = "Arial"
-        contact_y += 0.35
+        # Company name — large, charcoal
+        tb1 = slide.shapes.add_textbox(Inches(0), Inches(2.3), slide_w, Inches(0.9))
+        tf1 = tb1.text_frame
+        p1 = tf1.paragraphs[0]
+        p1.alignment = PP_ALIGN.CENTER
+        r1 = p1.add_run()
+        r1.text = content.get("company", "ROSSIGNOLI & PARTNERS")
+        r1.font.size = Pt(40)
+        r1.font.bold = True
+        r1.font.color.rgb = rgb(palette.body_text)
+        r1.font.name = "Arial"
 
-    # Closing message
-    closing = content.get("closing", "")
-    if closing:
-        tb3 = slide.shapes.add_textbox(Inches(0), Inches(5.8), prs.slide_width, Inches(0.5))
-        tf3 = tb3.text_frame
-        p3 = tf3.paragraphs[0]
-        p3.alignment = PP_ALIGN.CENTER
-        r3 = p3.add_run()
-        r3.text = closing
-        r3.font.size = Pt(14)
-        r3.font.italic = True
-        r3.font.color.rgb = rgb(palette.gold)
+        # Tagline — orange, slightly larger
+        tagline = content.get("tagline", "")
+        if tagline:
+            tb2 = slide.shapes.add_textbox(Inches(0), Inches(3.25), slide_w, Inches(0.5))
+            tf2 = tb2.text_frame
+            p2 = tf2.paragraphs[0]
+            p2.alignment = PP_ALIGN.CENTER
+            r2 = p2.add_run()
+            r2.text = tagline
+            r2.font.size = Pt(17)
+            r2.font.italic = True
+            r2.font.color.rgb = rgb(palette.orange)
+            r2.font.name = "Arial"
 
-    # Regulatory & copyright
-    for y_off, text_key, size in [(6.4, "regulatory", 9), (6.8, "copyright", 8)]:
-        text = content.get(text_key, "")
-        if text:
-            tb = slide.shapes.add_textbox(Inches(0), Inches(y_off), prs.slide_width, Inches(0.35))
+        # Contact lines — warm gray
+        contact_y = 4.1
+        for line_text in content.get("contact_lines", []):
+            tb = slide.shapes.add_textbox(Inches(0), Inches(contact_y), slide_w, Inches(0.35))
             tf = tb.text_frame
             p = tf.paragraphs[0]
             p.alignment = PP_ALIGN.CENTER
             r = p.add_run()
-            r.text = text
-            r.font.size = Pt(size)
-            r.font.color.rgb = rgb("#8899AA")
+            r.text = line_text
+            r.font.size = Pt(12)
+            r.font.color.rgb = rgb(palette.gray)
+            r.font.name = "Arial"
+            contact_y += 0.35
+
+        # Closing — italic charcoal with accent line
+        closing = content.get("closing", "")
+        if closing:
+            add_glow_line(slide, 4.5, contact_y + 0.2, 4.3, palette, color=palette.orange)
+            tb3 = slide.shapes.add_textbox(Inches(0), Inches(contact_y + 0.45), slide_w, Inches(0.5))
+            tf3 = tb3.text_frame
+            p3 = tf3.paragraphs[0]
+            p3.alignment = PP_ALIGN.CENTER
+            r3 = p3.add_run()
+            r3.text = closing
+            r3.font.size = Pt(17)
+            r3.font.italic = True
+            r3.font.color.rgb = rgb(palette.body_text)
+
+        # Regulatory & copyright — small gray at bottom
+        for y_off, text_key, size in [(6.3, "regulatory", 9), (6.7, "copyright", 8)]:
+            text = content.get(text_key, "")
+            if text:
+                tb = slide.shapes.add_textbox(Inches(0), Inches(y_off), slide_w, Inches(0.35))
+                tf = tb.text_frame
+                p = tf.paragraphs[0]
+                p.alignment = PP_ALIGN.CENTER
+                r = p.add_run()
+                r.text = text
+                r.font.size = Pt(size)
+                r.font.color.rgb = rgb(palette.source_color)
+    else:
+        # ── STANDARD BACK COVER ── navy/dark ──
+        if bg_image and os.path.exists(bg_image):
+            slide.shapes.add_picture(bg_image, Emu(0), Emu(0), slide_w, slide_h)
+            overlay = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), slide_w, slide_h
+            )
+            overlay.fill.solid()
+            overlay.fill.fore_color.rgb = rgb("#000000")
+            overlay.line.fill.background()
+            _set_shape_alpha(overlay, 50)
+        else:
+            bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), slide_w, slide_h)
+            bg.fill.solid()
+            bg.fill.fore_color.rgb = rgb(palette.navy)
+            bg.line.fill.background()
+
+        for y_pos in [2.0, 5.5]:
+            add_glow_line(slide, 4.5, y_pos, 4.333, palette)
+
+        tb1 = slide.shapes.add_textbox(Inches(0), Inches(2.3), prs.slide_width, Inches(0.8))
+        tf1 = tb1.text_frame
+        p1 = tf1.paragraphs[0]
+        p1.alignment = PP_ALIGN.CENTER
+        r1 = p1.add_run()
+        r1.text = content.get("company", "CROSSINVEST SA")
+        r1.font.size = Pt(36)
+        r1.font.bold = True
+        r1.font.color.rgb = rgb(palette.gold)
+        r1.font.name = "Arial"
+
+        tb2 = slide.shapes.add_textbox(Inches(0), Inches(3.1), prs.slide_width, Inches(0.5))
+        tf2 = tb2.text_frame
+        p2 = tf2.paragraphs[0]
+        p2.alignment = PP_ALIGN.CENTER
+        r2 = p2.add_run()
+        r2.text = content.get("tagline", "")
+        r2.font.size = Pt(16)
+        r2.font.color.rgb = rgb(palette.white)
+        r2.font.name = "Arial"
+
+        contact_y = 3.8
+        for line_text in content.get("contact_lines", []):
+            tb = slide.shapes.add_textbox(Inches(0), Inches(contact_y), prs.slide_width, Inches(0.35))
+            tf = tb.text_frame
+            p = tf.paragraphs[0]
+            p.alignment = PP_ALIGN.CENTER
+            r = p.add_run()
+            r.text = line_text
+            r.font.size = Pt(12)
+            r.font.color.rgb = rgb("#AABBCC")
+            r.font.name = "Arial"
+            contact_y += 0.35
+
+        closing = content.get("closing", "")
+        if closing:
+            tb3 = slide.shapes.add_textbox(Inches(0), Inches(5.8), prs.slide_width, Inches(0.5))
+            tf3 = tb3.text_frame
+            p3 = tf3.paragraphs[0]
+            p3.alignment = PP_ALIGN.CENTER
+            r3 = p3.add_run()
+            r3.text = closing
+            r3.font.size = Pt(14)
+            r3.font.italic = True
+            r3.font.color.rgb = rgb(palette.gold)
+
+        for y_off, text_key, size in [(6.4, "regulatory", 9), (6.8, "copyright", 8)]:
+            text = content.get(text_key, "")
+            if text:
+                tb = slide.shapes.add_textbox(Inches(0), Inches(y_off), prs.slide_width, Inches(0.35))
+                tf = tb.text_frame
+                p = tf.paragraphs[0]
+                p.alignment = PP_ALIGN.CENTER
+                r = p.add_run()
+                r.text = text
+                r.font.size = Pt(size)
+                r.font.color.rgb = rgb("#8899AA")
 
 
 def build_section_divider(prs, content: dict, palette, bg_image=None, meta=None):
@@ -849,7 +1055,7 @@ def build_section_divider(prs, content: dict, palette, bg_image=None, meta=None)
     slide_h = prs.slide_height
 
     if is_editorial(palette) or meta.get("mode") == "editorial":
-        # Editorial mode: white background + colored accent bar
+        # Editorial mode: white bg + bold colored accent bar + dramatic typography
         bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), slide_w, slide_h)
         bg.fill.solid()
         bg.fill.fore_color.rgb = rgb("#FFFFFF")
@@ -858,48 +1064,70 @@ def build_section_divider(prs, content: dict, palette, bg_image=None, meta=None)
         section = content.get("section", "")
         accent_color = SECTION_BADGE_COLORS.get(section, palette.orange)
 
-        # Thick colored accent bar on left
+        # Bold colored accent bar on left (wider = more dramatic)
         bar = slide.shapes.add_shape(
             MSO_SHAPE.RECTANGLE, Inches(0), Inches(0),
-            Inches(0.15), slide_h
+            Inches(0.25), slide_h
         )
         bar.fill.solid()
         bar.fill.fore_color.rgb = rgb(accent_color)
         bar.line.fill.background()
 
+        # Horizontal accent stripe across top
+        stripe = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Inches(0), Inches(0),
+            slide_w, Inches(0.04)
+        )
+        stripe.fill.solid()
+        stripe.fill.fore_color.rgb = rgb(accent_color)
+        stripe.line.fill.background()
+
+        # Section number (if provided) — oversized watermark
+        section_num = content.get("section_num", "")
+        if section_num:
+            tb_num = slide.shapes.add_textbox(Inches(0.7), Inches(1.8), Inches(2), Inches(0.8))
+            tf = tb_num.text_frame
+            p = tf.paragraphs[0]
+            r = p.add_run()
+            r.text = section_num
+            r.font.size = Pt(72)
+            r.font.bold = True
+            r.font.color.rgb = rgb(accent_color)
+            r.font.name = "Arial"
+
         # Section badge
         if section:
-            add_section_badge(slide, section, 0.6, 2.5, palette)
+            add_section_badge(slide, section, 0.7, 2.6, palette)
 
-        # Section title in section color
+        # Section title — massive, in section color
         title = content.get("title", "")
         if title:
-            tb_t = slide.shapes.add_textbox(Inches(0.6), Inches(3.0), Inches(11), Inches(1.2))
+            tb_t = slide.shapes.add_textbox(Inches(0.7), Inches(3.05), Inches(11), Inches(1.4))
             tf = tb_t.text_frame
             tf.word_wrap = True
             p = tf.paragraphs[0]
             r = p.add_run()
             r.text = title
-            r.font.size = Pt(40)
+            r.font.size = Pt(48)
             r.font.bold = True
             r.font.color.rgb = rgb(accent_color)
             r.font.name = "Arial"
 
-        # Subtitle
+        # Subtitle — warm gray, elegant
         subtitle = content.get("subtitle", content.get("tag", ""))
         if subtitle:
-            tb_s = slide.shapes.add_textbox(Inches(0.6), Inches(4.3), Inches(10), Inches(0.8))
+            tb_s = slide.shapes.add_textbox(Inches(0.7), Inches(4.5), Inches(10), Inches(0.8))
             tf = tb_s.text_frame
             tf.word_wrap = True
             p = tf.paragraphs[0]
             r = p.add_run()
             r.text = subtitle
-            r.font.size = Pt(14)
+            r.font.size = Pt(16)
             r.font.color.rgb = rgb(palette.gray)
             r.font.name = "Arial"
 
-        # Thin accent line below subtitle
-        add_glow_line(slide, 0.6, 5.2, 3.0, palette, color=accent_color)
+        # Accent underline below subtitle
+        add_glow_line(slide, 0.7, 5.4, 4.0, palette, color=accent_color)
     else:
         # Standard mode: AI background or solid navy
         if bg_image and os.path.exists(bg_image):
@@ -1457,39 +1685,39 @@ def build_editorial(prs, content: dict, palette, meta: dict, page_num: int,
     if section:
         add_section_badge(slide, section, el.margin_left, el.badge_top, palette)
 
-    # Hashtag title in section color
+    # Hashtag title in section color — compact, punchy
     hashtags = content.get("hashtags", "")
     if hashtags:
         tb_hash = slide.shapes.add_textbox(
             Inches(el.margin_left), Inches(el.hashtag_top),
-            Inches(el.content_width), Inches(0.3)
+            Inches(el.content_width), Inches(0.28)
         )
         tf = tb_hash.text_frame
         p = tf.paragraphs[0]
         r = p.add_run()
         r.text = hashtags
-        r.font.size = Pt(11)
+        r.font.size = Pt(10)
         r.font.bold = True
         r.font.color.rgb = rgb(section_color)
         r.font.name = "Arial"
 
-    # Title (if provided, goes above commentary)
+    # Title (if provided) — bold, authoritative
     title = content.get("title", "")
     if title:
         tb_title = slide.shapes.add_textbox(
-            Inches(el.margin_left), Inches(el.commentary_top - 0.35),
-            Inches(el.content_width), Inches(0.35)
+            Inches(el.margin_left), Inches(el.commentary_top - 0.38),
+            Inches(el.content_width), Inches(0.38)
         )
         tf = tb_title.text_frame
         p = tf.paragraphs[0]
         r = p.add_run()
         r.text = title
-        r.font.size = Pt(16)
+        r.font.size = Pt(18)
         r.font.bold = True
         r.font.color.rgb = rgb(palette.body_text)
         r.font.name = "Arial"
 
-    # Editorial commentary
+    # Editorial commentary — tight, professional
     commentary = content.get("commentary", "")
     if commentary:
         comm_top = el.commentary_top if not title else el.commentary_top + 0.1
@@ -1500,10 +1728,10 @@ def build_editorial(prs, content: dict, palette, meta: dict, page_num: int,
         tf = tb_comm.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
-        p.line_spacing = Pt(16)
+        p.line_spacing = Pt(15)
         r = p.add_run()
         r.text = commentary
-        r.font.size = Pt(11)
+        r.font.size = Pt(10.5)
         r.font.color.rgb = rgb(palette.body_text)
         r.font.name = "Arial"
 
@@ -1575,49 +1803,62 @@ def build_quote_slide(prs, content: dict, palette, meta: dict, page_num: int, bg
 
     # Section badge
     if section:
-        add_section_badge(slide, section, 0.6, 0.7, palette)
+        add_section_badge(slide, section, 0.6, 0.68, palette)
 
-    # Optional yellow highlight box
+    # Decorative oversized opening quote mark — magazine-style accent
+    tb_deco = slide.shapes.add_textbox(
+        Inches(1.2), Inches(1.3), Inches(1.5), Inches(1.2)
+    )
+    tf_deco = tb_deco.text_frame
+    p_deco = tf_deco.paragraphs[0]
+    r_deco = p_deco.add_run()
+    r_deco.text = "\u201C"
+    r_deco.font.size = Pt(120)
+    r_deco.font.bold = True
+    r_deco.font.color.rgb = rgb(section_color)
+    r_deco.font.name = "Georgia"
+
+    # Optional highlight box
     if content.get("highlight", False):
         highlight = slide.shapes.add_shape(
             MSO_SHAPE.ROUNDED_RECTANGLE,
-            Inches(1.5), Inches(1.8), Inches(10.3), Inches(3.0)
+            Inches(2.2), Inches(1.9), Inches(9.5), Inches(3.0)
         )
         highlight.fill.solid()
         highlight.fill.fore_color.rgb = rgb("#FFF8E1")
         highlight.line.color.rgb = rgb("#FFE082")
         highlight.line.width = Pt(1)
 
-    # Large curly quote
+    # Quote text — large, elegant Georgia
     quote_text = content.get("quote", "")
     if quote_text:
         tb_q = slide.shapes.add_textbox(
-            Inches(2.0), Inches(2.0), Inches(9.3), Inches(2.2)
+            Inches(2.5), Inches(2.1), Inches(9.0), Inches(2.4)
         )
         tf = tb_q.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
         p.alignment = PP_ALIGN.LEFT
-        p.line_spacing = Pt(24)
+        p.line_spacing = Pt(28)
         r = p.add_run()
-        r.text = f"\u201C{quote_text}\u201D"
-        r.font.size = Pt(20)
+        r.text = f"{quote_text}\u201D"
+        r.font.size = Pt(22)
         r.font.italic = True
         r.font.color.rgb = rgb(palette.body_text)
         r.font.name = "Georgia"
 
-    # Attribution with em-dash
+    # Attribution — bold, section-colored, right-aligned
     attribution = content.get("attribution", "")
     if attribution:
         tb_attr = slide.shapes.add_textbox(
-            Inches(2.0), Inches(4.4), Inches(9.3), Inches(0.4)
+            Inches(2.5), Inches(4.6), Inches(9.0), Inches(0.4)
         )
         tf = tb_attr.text_frame
         p = tf.paragraphs[0]
         p.alignment = PP_ALIGN.RIGHT
         r = p.add_run()
         r.text = f"\u2014 {attribution}"
-        r.font.size = Pt(13)
+        r.font.size = Pt(14)
         r.font.bold = True
         r.font.color.rgb = rgb(section_color)
         r.font.name = "Arial"
@@ -1626,7 +1867,7 @@ def build_quote_slide(prs, content: dict, palette, meta: dict, page_num: int, bg
     source = content.get("source", "")
     if source:
         tb_src = slide.shapes.add_textbox(
-            Inches(2.0), Inches(4.85), Inches(9.3), Inches(0.3)
+            Inches(2.5), Inches(5.05), Inches(9.0), Inches(0.3)
         )
         tf = tb_src.text_frame
         p = tf.paragraphs[0]
@@ -1641,15 +1882,15 @@ def build_quote_slide(prs, content: dict, palette, meta: dict, page_num: int, bg
     commentary = content.get("commentary", "")
     if commentary:
         tb_comm = slide.shapes.add_textbox(
-            Inches(1.5), Inches(5.5), Inches(10.3), Inches(1.0)
+            Inches(1.5), Inches(5.6), Inches(10.3), Inches(0.9)
         )
         tf = tb_comm.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
-        p.line_spacing = Pt(16)
+        p.line_spacing = Pt(15)
         r = p.add_run()
         r.text = commentary
-        r.font.size = Pt(11)
+        r.font.size = Pt(10.5)
         r.font.color.rgb = rgb(palette.body_text)
 
 

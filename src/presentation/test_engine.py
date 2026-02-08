@@ -209,6 +209,24 @@ class TestNewPalettes(unittest.TestCase):
                           os.path.join(output_dir, "test_okabe.png"))
         self.assertTrue(os.path.exists(path))
 
+    def test_swiss_institutional_palette(self):
+        palette = get_palette("swiss_institutional")
+        self.assertEqual(palette.chart_primary, "#003366")
+        self.assertEqual(palette.slide_bg, "#F5F5F5")
+        self.assertEqual(palette.fig_bg, "#FFFFFF")  # Light mode
+        setup_matplotlib(palette)
+        output_dir = tempfile.mkdtemp(prefix="genesis_test_swiss_")
+        data = {
+            "labels": ["Jan", "Feb", "Mar", "Apr"],
+            "series": [
+                {"name": "Fund A", "values": [100, 103, 101, 106]},
+                {"name": "Fund B", "values": [100, 98, 102, 104]},
+            ],
+        }
+        path = render_line(data, {"slope_labels": True}, palette, "Source: Test",
+                          os.path.join(output_dir, "test_swiss.png"))
+        self.assertTrue(os.path.exists(path))
+
     def test_blue_orange_diverging_palette(self):
         palette = get_palette("blue_orange_diverging")
         self.assertEqual(palette.chart_primary, "#2166AC")
@@ -382,6 +400,22 @@ class TestNewChartTypes(unittest.TestCase):
         path = render_small_multiples(data, config, self.palette, "Source: Test",
                                        os.path.join(self.output_dir, "test_small_mult.png"))
         self.assertTrue(os.path.exists(path))
+
+    def test_small_multiples_incompatible_ranges(self):
+        """Panels with wildly different ranges should NOT share Y axis."""
+        data = {
+            "panels": [
+                {"title": "GDP %", "labels": ["Q1", "Q2", "Q3", "Q4"], "values": [2.1, 2.3, 1.8, 2.5]},
+                {"title": "Inflation %", "labels": ["Q1", "Q2", "Q3", "Q4"], "values": [0.3, 0.4, 0.5, 0.6]},
+                {"title": "Defense $Bn", "labels": ["Q1", "Q2", "Q3", "Q4"], "values": [240, 310, 370, 420]},
+                {"title": "Rates %", "labels": ["Q1", "Q2", "Q3", "Q4"], "values": [4.5, 4.25, 4.0, 3.75]},
+            ],
+        }
+        config = {"chart_type": "line", "title": "Mixed Scale Metrics"}
+        path = render_small_multiples(data, config, self.palette, "Source: Test",
+                                       os.path.join(self.output_dir, "test_small_mult_mixed.png"))
+        self.assertTrue(os.path.exists(path))
+        self.assertGreater(os.path.getsize(path), 1000)
 
 
 class TestEndToEndMixedCharts(unittest.TestCase):

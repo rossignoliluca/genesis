@@ -335,6 +335,13 @@ export interface ChartGridContent {
   source?: string;
 }
 
+export interface SectionDividerContent {
+  title?: string;
+  subtitle?: string;
+  section?: string;
+  section_num?: string;
+}
+
 export type SlideType =
   | 'cover'
   | 'executive_summary'
@@ -354,7 +361,7 @@ export type SlideType =
 
 export interface SlideSpec {
   type: SlideType;
-  content: CoverContent | ExecSummaryContent | ChartSlideContent | TextSlideContent | SourcesSlideContent | BackCoverContent | EditorialContent | QuoteSlideContent | ChartGridContent;
+  content: CoverContent | ExecSummaryContent | ChartSlideContent | TextSlideContent | SourcesSlideContent | BackCoverContent | EditorialContent | QuoteSlideContent | ChartGridContent | SectionDividerContent;
   chart?: ChartSpec;
   charts?: ChartSpec[];
   chart_num?: number;

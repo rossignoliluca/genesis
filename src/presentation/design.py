@@ -441,19 +441,19 @@ class EditorialLayout:
     """Fixed dimensions for the editorial slide layout."""
     # Header
     accent_line_top: float = 0.0
-    accent_line_height: float = 0.03  # 2pt orange line
+    accent_line_height: float = 0.04  # 3pt orange line — bolder
     header_tag_top: float = 0.12
     header_tag_height: float = 0.35
     header_sep_top: float = 0.5
     # Content area
-    badge_top: float = 0.7
+    badge_top: float = 0.68
     badge_height: float = 0.3
-    hashtag_top: float = 1.1
-    commentary_top: float = 1.5
-    commentary_height: float = 1.0
-    chart_top: float = 2.6
-    chart_height: float = 3.8
-    source_top: float = 6.5
+    hashtag_top: float = 1.05
+    commentary_top: float = 1.4
+    commentary_height: float = 0.75  # tighter — chart is the hero
+    chart_top: float = 2.25
+    chart_height: float = 4.2  # massive chart area
+    source_top: float = 6.55
     # Footer
     footer_sep_top: float = 6.85
     footer_top: float = 6.95

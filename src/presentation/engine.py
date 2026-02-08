@@ -274,7 +274,7 @@ def generate(spec: dict) -> dict:
         content = slide_spec.get("content", {})
 
         if slide_type == "cover":
-            build_cover(prs, content, palette, bg_image=bg_cover)
+            build_cover(prs, content, palette, bg_image=bg_cover, meta=meta)
             slide_count += 1
 
         elif slide_type == "executive_summary":
@@ -387,7 +387,7 @@ def generate(spec: dict) -> dict:
             slide_count += 1
 
         elif slide_type == "back_cover":
-            build_back_cover(prs, content, palette, bg_image=bg_cover)
+            build_back_cover(prs, content, palette, bg_image=bg_cover, meta=meta)
             slide_count += 1
 
         else:

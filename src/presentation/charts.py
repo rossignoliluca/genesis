@@ -1007,9 +1007,14 @@ def render_return_quilt(data: dict, config: dict, palette, source: str, output_p
         asset_colors[asset] = cycle[i % len(cycle)]
 
     # Gradient colormap for performance coloring
+    # Use institutional blue→white→green (not red→white→green) for better readability
+    # Red is reserved for text of negative values, not cell backgrounds
     all_vals = returns.flatten()
     vmin, vmax = np.nanmin(all_vals), np.nanmax(all_vals)
-    cmap = LinearSegmentedColormap.from_list("quilt", [palette.red, "#F5F5F5", palette.green])
+    neg_color = "#D4E6F1" if not _is_dark(palette) else "#1A3A5C"  # muted blue for negative
+    mid_color = "#FFFFFF" if not _is_dark(palette) else "#1E2D42"  # white/dark mid
+    pos_color = "#C8E6C9" if not _is_dark(palette) else "#1B4332"  # muted green for positive
+    cmap = LinearSegmentedColormap.from_list("quilt", [neg_color, mid_color, pos_color])
 
     ax.set_xlim(-0.5, n_years - 0.5)
     ax.set_ylim(-0.5, n_assets - 0.5)
@@ -1033,8 +1038,11 @@ def render_return_quilt(data: dict, config: dict, palette, source: str, output_p
             else:
                 norm_val = (val - vmin) / (vmax - vmin + 1e-9)
                 cell_color = cmap(norm_val)
-                # Dark text on light cells, light text on dark cells
-                text_color = "#1A1A2E" if norm_val > 0.4 else "#FFFFFF"
+                # Text color: use red for negative, green for positive, dark for near-zero
+                if dark:
+                    text_color = "#FF6B6B" if val < -5 else ("#66BB6A" if val > 5 else "#E8EDF3")
+                else:
+                    text_color = "#B71C1C" if val < -5 else ("#1B5E20" if val > 5 else "#1A1A2E")
 
             rect = plt.Rectangle((yi - 0.45, n_assets - 1 - rank - 0.45), 0.9, 0.9,
                                   facecolor=cell_color, edgecolor="white", linewidth=0.5)
@@ -1485,15 +1493,35 @@ def render_small_multiples(data: dict, config: dict, palette, source: str, outpu
 
     chart_type = config.get("chart_type", "line")
 
-    # Shared y limits across all panels
+    # Determine Y limits: shared only when ranges are comparable (< 10x ratio)
+    # or when explicitly requested via config.shared_y
+    shared_y = config.get("shared_y", None)  # None = auto, True = force, False = never
+    ylim_per_panel = [None] * n
+
     all_vals = [v for p in panels for v in p.get("values", [])]
-    if all_vals:
-        shared_min = min(all_vals)
-        shared_max = max(all_vals)
-        margin = (shared_max - shared_min) * 0.1 or 1
-        ylim = (shared_min - margin, shared_max + margin)
-    else:
-        ylim = None
+    if all_vals and shared_y is not False:
+        # Compute per-panel ranges to detect incompatible scales
+        panel_ranges = []
+        for p in panels:
+            pv = p.get("values", [])
+            if pv:
+                pr = max(pv) - min(pv)
+                panel_ranges.append(pr if pr > 0 else 1)
+            else:
+                panel_ranges.append(1)
+
+        max_range = max(panel_ranges)
+        min_range = min(panel_ranges)
+        ratio = max_range / min_range if min_range > 0 else float('inf')
+
+        if shared_y is True or ratio < 10:
+            # Ranges are comparable → share Y axis
+            shared_min = min(all_vals)
+            shared_max = max(all_vals)
+            margin = (shared_max - shared_min) * 0.1 or 1
+            global_ylim = (shared_min - margin, shared_max + margin)
+            ylim_per_panel = [global_ylim] * n
+        # else: each panel gets its own Y limits (auto)
 
     for idx in range(nrows * ncols):
         row, col = divmod(idx, ncols)
@@ -1516,8 +1544,8 @@ def render_small_multiples(data: dict, config: dict, palette, source: str, outpu
             ax.fill_between(x, values, alpha=0.15, color=palette.chart_primary)
 
         ax.set_title(panel.get("title", ""), fontsize=9, fontweight="bold", pad=4)
-        if ylim:
-            ax.set_ylim(ylim)
+        if ylim_per_panel[idx]:
+            ax.set_ylim(ylim_per_panel[idx])
         ax.tick_params(labelsize=6)
         if len(labels) > 0:
             step = max(1, len(labels) // 4)

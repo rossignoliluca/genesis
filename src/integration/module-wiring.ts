@@ -68,6 +68,20 @@ export interface ModuleRegistry {
 
   // v17.0: Active Inference
   activeInference?: AutonomousLoop;
+
+  // v19.0: Full Module Wiring (P4 — Orphan Integration)
+  semiotics?: import('../semiotics/index.js').LargeSemiosisModel;
+  umwelt?: import('../umwelt/index.js').AgentUmwelt;
+  morphogenetic?: import('../morphogenetic/index.js').AgentColony;
+  strangeLoop?: import('../strange-loop/index.js').StrangeLoop;
+  secondOrder?: import('../second-order/index.js').SecondOrderCybernetics;
+  rsi?: import('../rsi/index.js').RSIOrchestrator;
+  autopoiesis?: import('../autopoiesis/index.js').AutopoiesisEngine;
+  swarm?: import('../swarm/index.js').SwarmDynamics;
+  symbiotic?: import('../symbiotic/index.js').SymbioticPartnership;
+  exotic?: import('../exotic/index.js').ExoticComputing;
+  embodiment?: import('../embodiment/sensorimotor-loop.js').SensoriMotorLoop;
+  metaRL?: import('../learning/meta-rl.js').MetaRLLearner;
 }
 
 export interface WiringResult {
@@ -356,6 +370,371 @@ function wireActiveInference(
   console.debug('[ModuleWiring] Active Inference wired to event bus');
 }
 
+// ============================================================================
+// v19.0: Orphan Module Wiring (P4)
+// ============================================================================
+
+/**
+ * Wire semiotics — triad formation + hallucination assessment → bus
+ */
+function wireSemiotics(
+  semiotics: NonNullable<ModuleRegistry['semiotics']>,
+  bus: GenesisEventBus
+): void {
+  semiotics.on('triad:formed', (triad: any) => {
+    bus.publish('semiotics.interpreted', {
+      source: 'semiotics',
+      precision: triad.confidence ?? 0.5,
+      sign: triad.representamen ?? triad.sign ?? '',
+      interpretant: triad.interpretant ?? '',
+      confidence: triad.confidence ?? 0.5,
+    });
+  });
+
+  semiotics.on('hallucination:assessed', (assessment: any) => {
+    bus.publish('semiotics.hallucination.detected', {
+      source: 'semiotics',
+      precision: 1.0,
+      claim: assessment.claim ?? '',
+      risk: assessment.risk ?? 0,
+      grounded: assessment.grounded ?? false,
+    });
+  });
+
+  console.debug('[ModuleWiring] Semiotics wired to event bus');
+}
+
+/**
+ * Wire umwelt — perception + action events from Merkwelt/Wirkwelt → bus
+ */
+function wireUmwelt(
+  umwelt: NonNullable<ModuleRegistry['umwelt']>,
+  bus: GenesisEventBus
+): void {
+  // Merkwelt perception events
+  (umwelt as any).merkwelt?.on?.('perception:received', (data: any) => {
+    bus.publish('umwelt.perception', {
+      source: 'umwelt',
+      precision: 0.7,
+      agentId: (umwelt as any).agentId ?? 'genesis',
+      sensorId: data.sensorId ?? data.sensor ?? '',
+      filtered: false,
+    });
+  });
+
+  (umwelt as any).merkwelt?.on?.('perception:filtered', (data: any) => {
+    bus.publish('umwelt.perception', {
+      source: 'umwelt',
+      precision: 0.3,
+      agentId: (umwelt as any).agentId ?? 'genesis',
+      sensorId: data.sensorId ?? data.sensor ?? '',
+      filtered: true,
+    });
+  });
+
+  // Wirkwelt action events
+  (umwelt as any).wirkwelt?.on?.('action:completed', (data: any) => {
+    bus.publish('umwelt.action.completed', {
+      source: 'umwelt',
+      precision: 0.8,
+      agentId: (umwelt as any).agentId ?? 'genesis',
+      actionId: data.actionId ?? data.id ?? '',
+      success: data.success ?? true,
+    });
+  });
+
+  console.debug('[ModuleWiring] Umwelt wired to event bus');
+}
+
+/**
+ * Wire morphogenetic colony — error detection + repair → bus
+ * Cross-wire: repair failure → nociception pain signal
+ */
+function wireMorphogenetic(
+  colony: NonNullable<ModuleRegistry['morphogenetic']>,
+  bus: GenesisEventBus,
+  nociception?: NociceptiveSystem
+): void {
+  // Colony-level: listen for agent events via colony step
+  // Individual agents emit errors:detected and repair:completed
+  // We wire at colony level by iterating agents
+  const wireAgent = (agent: any) => {
+    if (!agent?.on) return;
+
+    agent.on('errors:detected', (data: any) => {
+      bus.publish('morphogenetic.error.detected', {
+        source: 'morphogenetic',
+        precision: 0.9,
+        agentId: agent.id ?? '',
+        errorCount: data.errorCount ?? data.count ?? 1,
+        severity: data.severity ?? 0.5,
+      });
+    });
+
+    agent.on('repair:completed', (data: any) => {
+      bus.publish('morphogenetic.repair.completed', {
+        source: 'morphogenetic',
+        precision: 0.8,
+        agentId: agent.id ?? '',
+        action: data.action ?? 'repair',
+        success: data.success ?? true,
+      });
+    });
+
+    agent.on('repair:failed', (data: any) => {
+      if (nociception) {
+        nociception.stimulus('cognitive', 0.4, 'morphogenetic-repair-failed');
+      }
+    });
+  };
+
+  // Wire existing agents
+  const agents = (colony as any).agents ?? (colony as any).getAgents?.();
+  if (agents) {
+    for (const agent of (agents instanceof Map ? agents.values() : agents)) {
+      wireAgent(agent);
+    }
+  }
+
+  // Wire future agents
+  colony.on('agent:added', (agent: any) => wireAgent(agent));
+
+  console.debug('[ModuleWiring] Morphogenetic colony wired to event bus');
+}
+
+/**
+ * Wire strange loop — thought + identity events → bus
+ */
+function wireStrangeLoop(
+  loop: NonNullable<ModuleRegistry['strangeLoop']>,
+  bus: GenesisEventBus
+): void {
+  loop.on('thought:created', (thought: any) => {
+    bus.publish('strange-loop.thought.created', {
+      source: 'strange-loop',
+      precision: 0.6,
+      level: thought.level ?? 0,
+      content: thought.content ?? '',
+      isMeta: (thought.level ?? 0) > 0,
+    });
+  });
+
+  loop.on('identity:crystallized', (identity: any) => {
+    bus.publish('strange-loop.identity.crystallized', {
+      source: 'strange-loop',
+      precision: 0.9,
+      coreBeliefs: identity.coreBeliefs ?? identity.beliefs ?? [],
+      stability: identity.stability ?? 0.5,
+    });
+  });
+
+  console.debug('[ModuleWiring] Strange Loop wired to event bus');
+}
+
+/**
+ * Wire second-order cybernetics — observation + coupling → bus
+ */
+function wireSecondOrder(
+  cybernetics: NonNullable<ModuleRegistry['secondOrder']>,
+  bus: GenesisEventBus
+): void {
+  cybernetics.on('observation:made', (data: any) => {
+    bus.publish('second-order.observation', {
+      source: 'second-order',
+      precision: 0.7,
+      observerId: data.observerId ?? data.observer?.name ?? '',
+      level: data.level ?? 1,
+      what: data.what ?? data.description ?? '',
+    });
+  });
+
+  cybernetics.on('coupling:established', (data: any) => {
+    bus.publish('second-order.coupling.established', {
+      source: 'second-order',
+      precision: 0.8,
+      system1: data.system1 ?? '',
+      system2: data.system2 ?? '',
+      resonance: data.resonance ?? 0.5,
+    });
+  });
+
+  console.debug('[ModuleWiring] Second-Order Cybernetics wired to event bus');
+}
+
+/**
+ * Wire RSI orchestrator — cycle + limitation events → bus
+ * Cross-wire: successful cycle → self.improvement.applied
+ */
+function wireRSI(
+  rsi: NonNullable<ModuleRegistry['rsi']>,
+  bus: GenesisEventBus
+): void {
+  rsi.on('cycle:completed', (data: any) => {
+    bus.publish('rsi.cycle.completed', {
+      source: 'rsi',
+      precision: 0.9,
+      cycleNumber: data.cycleNumber ?? data.cycle ?? 0,
+      phase: 'completed',
+      success: data.success ?? true,
+      limitationsFound: data.limitationsFound ?? 0,
+    });
+
+    // Cross-wire: successful RSI cycle → self-improvement applied
+    if (data.success) {
+      bus.publish('self.improvement.applied', {
+        source: 'rsi',
+        precision: 0.8,
+        improvementType: 'rsi-cycle',
+        phase: 'applied',
+        description: `RSI cycle ${data.cycleNumber ?? data.cycle ?? 0} completed`,
+        expectedBenefit: data.expectedBenefit ?? 0.1,
+      });
+    }
+  });
+
+  rsi.on('limitation:detected', (data: any) => {
+    bus.publish('rsi.limitation.detected', {
+      source: 'rsi',
+      precision: 0.8,
+      cycleNumber: data.cycleNumber ?? 0,
+      phase: 'limitation',
+      success: false,
+      limitationsFound: 1,
+    });
+  });
+
+  console.debug('[ModuleWiring] RSI Orchestrator wired to event bus');
+}
+
+/**
+ * Wire autopoiesis — cycle callback → bus
+ */
+function wireAutopoiesis(
+  engine: NonNullable<ModuleRegistry['autopoiesis']>,
+  bus: GenesisEventBus
+): void {
+  engine.onCycle((cycleNumber: number, observations: any[], opportunities: any[]) => {
+    bus.publish('autopoiesis.cycle.completed', {
+      source: 'autopoiesis',
+      precision: 0.7,
+      cycleNumber,
+      observationCount: observations?.length ?? 0,
+      opportunities: (opportunities ?? []).map((o: any) => o.description ?? o.name ?? String(o)),
+    });
+  });
+
+  console.debug('[ModuleWiring] Autopoiesis wired to event bus');
+}
+
+/**
+ * Wire swarm dynamics — step + pattern detection → bus
+ * Step events are throttled: 1 per 10 steps
+ */
+function wireSwarm(
+  swarm: NonNullable<ModuleRegistry['swarm']>,
+  bus: GenesisEventBus
+): void {
+  let stepCount = 0;
+
+  swarm.on('step', (data: any) => {
+    stepCount++;
+    if (stepCount % 10 !== 0) return; // Throttle: publish every 10 steps
+
+    const metrics = swarm.getMetrics();
+    bus.publish('swarm.step', {
+      source: 'swarm',
+      precision: 0.5,
+      agentCount: metrics.agentCount ?? (data as any)?.agentCount ?? 0,
+      orderParameter: metrics.orderParameter ?? 0,
+      entropy: metrics.entropy ?? 0,
+    });
+  });
+
+  swarm.on('pattern:detected', (pattern: any) => {
+    bus.publish('swarm.pattern.detected', {
+      source: 'swarm',
+      precision: 0.8,
+      patternType: pattern.type ?? pattern.patternType ?? 'unknown',
+      agentCount: pattern.agentCount ?? 0,
+      strength: pattern.strength ?? 0.5,
+    });
+  });
+
+  console.debug('[ModuleWiring] Swarm Dynamics wired to event bus');
+}
+
+/**
+ * Wire embodiment sensorimotor loop — sense + reflex + prediction error → bus
+ * Note: Does NOT replace the cognitive callback wiring in genesis.ts
+ */
+function wireEmbodiment(
+  sensorimotor: NonNullable<ModuleRegistry['embodiment']>,
+  bus: GenesisEventBus
+): void {
+  sensorimotor.on('sense:update', (data: any) => {
+    bus.publish('embodiment.sense.updated', {
+      source: 'embodiment',
+      precision: 0.6,
+      sensorId: data.sensorId ?? data.sensor ?? '',
+      predictionError: 0,
+    });
+  });
+
+  sensorimotor.on('prediction:error', (data: any) => {
+    bus.publish('embodiment.sense.updated', {
+      source: 'embodiment',
+      precision: 0.9,
+      sensorId: data.sensorId ?? 'forward-model',
+      predictionError: data.error ?? data.magnitude ?? 0,
+    });
+  });
+
+  sensorimotor.on('reflex:triggered', (data: any) => {
+    bus.publish('embodiment.reflex.triggered', {
+      source: 'embodiment',
+      precision: 1.0,
+      reflexType: data.type ?? data.reflexType ?? 'unknown',
+      stimulus: data.stimulus ?? '',
+    });
+  });
+
+  console.debug('[ModuleWiring] Embodiment (SensoriMotor) wired to event bus');
+}
+
+/**
+ * Wire symbiotic partnership — friction + autonomy events → bus
+ */
+function wireSymbiotic(
+  partnership: NonNullable<ModuleRegistry['symbiotic']>,
+  bus: GenesisEventBus
+): void {
+  partnership.on('friction:adapted', (data: any) => {
+    bus.publish('symbiotic.friction.adapted', {
+      source: 'symbiotic',
+      precision: 0.7,
+      humanId: data.humanId ?? 'human',
+      frictionLevel: data.frictionLevel ?? data.friction ?? 0,
+      learningOpportunity: data.learningOpportunity ?? false,
+    });
+  });
+
+  // HumanStateManager emits autonomy:updated — access via partnership
+  const hsm = (partnership as any).humanState ?? (partnership as any).stateManager;
+  if (hsm?.on) {
+    hsm.on('autonomy:updated', (data: any) => {
+      bus.publish('symbiotic.autonomy.updated', {
+        source: 'symbiotic',
+        precision: 0.8,
+        humanId: data.humanId ?? 'human',
+        autonomyScore: data.autonomyScore ?? data.autonomy ?? 0.5,
+        cognitiveLoad: data.cognitiveLoad ?? data.load ?? 0,
+      });
+    });
+  }
+
+  console.debug('[ModuleWiring] Symbiotic Partnership wired to event bus');
+}
+
 /**
  * v13.9: Wire daemon with neuromodulation, nociception, and allostasis
  * This enables:
@@ -549,6 +928,19 @@ export function wireAllModules(modules: ModuleRegistry): WiringResult {
     modulesWired++;
     publishersCreated++;
   }
+
+  // v19.0: Wire remaining cognitive modules (P4 — Orphan Integration)
+  if (modules.semiotics) { wireSemiotics(modules.semiotics, bus); modulesWired++; }
+  if (modules.umwelt) { wireUmwelt(modules.umwelt, bus); modulesWired++; }
+  if (modules.morphogenetic) { wireMorphogenetic(modules.morphogenetic, bus, modules.nociception); modulesWired++; }
+  if (modules.strangeLoop) { wireStrangeLoop(modules.strangeLoop, bus); modulesWired++; }
+  if (modules.secondOrder) { wireSecondOrder(modules.secondOrder, bus); modulesWired++; }
+  if (modules.rsi) { wireRSI(modules.rsi, bus); modulesWired++; }
+  if (modules.autopoiesis) { wireAutopoiesis(modules.autopoiesis, bus); modulesWired++; }
+  if (modules.swarm) { wireSwarm(modules.swarm, bus); modulesWired++; }
+  if (modules.symbiotic) { wireSymbiotic(modules.symbiotic, bus); modulesWired++; }
+  if (modules.embodiment) { wireEmbodiment(modules.embodiment, bus); modulesWired++; }
+  // exotic, metaRL: pure compute, no events to bridge
 
   // Apply neuromodulation effects
   if (modules.neuromodulation) {

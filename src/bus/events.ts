@@ -429,6 +429,118 @@ export interface SelfImprovementEvent extends BusEvent {
 }
 
 // ============================================================================
+// v19.0: Cognitive Module Events (P4 — Orphan Wiring)
+// ============================================================================
+
+// --- Semiotics Events ---
+export interface SemioticsInterpretationEvent extends BusEvent {
+  sign: string;
+  interpretant: string;
+  confidence: number;
+}
+export interface SemioticsHallucinationEvent extends BusEvent {
+  claim: string;
+  risk: number;
+  grounded: boolean;
+}
+
+// --- Umwelt Events ---
+export interface UmweltPerceptionEvent extends BusEvent {
+  agentId: string;
+  sensorId: string;
+  filtered: boolean;
+}
+export interface UmweltActionEvent extends BusEvent {
+  agentId: string;
+  actionId: string;
+  success: boolean;
+}
+
+// --- Morphogenetic Events ---
+export interface MorphogeneticErrorEvent extends BusEvent {
+  agentId: string;
+  errorCount: number;
+  severity: number;
+}
+export interface MorphogeneticRepairEvent extends BusEvent {
+  agentId: string;
+  action: string;
+  success: boolean;
+}
+
+// --- Strange Loop Events ---
+export interface StrangeLoopThoughtEvent extends BusEvent {
+  level: number;
+  content: string;
+  isMeta: boolean;
+}
+export interface StrangeLoopIdentityEvent extends BusEvent {
+  coreBeliefs: string[];
+  stability: number;
+}
+
+// --- Second-Order Cybernetics Events ---
+export interface SecondOrderObservationEvent extends BusEvent {
+  observerId: string;
+  level: number;
+  what: string;
+}
+export interface SecondOrderCouplingEvent extends BusEvent {
+  system1: string;
+  system2: string;
+  resonance: number;
+}
+
+// --- RSI Events ---
+export interface RSICycleEvent extends BusEvent {
+  cycleNumber: number;
+  phase: string;
+  success: boolean;
+  limitationsFound: number;
+}
+
+// --- Autopoiesis Events ---
+export interface AutopoiesisCycleEvent extends BusEvent {
+  cycleNumber: number;
+  observationCount: number;
+  opportunities: string[];
+}
+
+// --- Swarm Events ---
+export interface SwarmStepEvent extends BusEvent {
+  agentCount: number;
+  orderParameter: number;
+  entropy: number;
+}
+export interface SwarmPatternEvent extends BusEvent {
+  patternType: string;
+  agentCount: number;
+  strength: number;
+}
+
+// --- Symbiotic Events ---
+export interface SymbioticFrictionEvent extends BusEvent {
+  humanId: string;
+  frictionLevel: number;
+  learningOpportunity: boolean;
+}
+export interface SymbioticAutonomyEvent extends BusEvent {
+  humanId: string;
+  autonomyScore: number;
+  cognitiveLoad: number;
+}
+
+// --- Embodiment Events ---
+export interface EmbodimentSenseEvent extends BusEvent {
+  sensorId: string;
+  predictionError: number;
+}
+export interface EmbodimentReflexEvent extends BusEvent {
+  reflexType: string;
+  stimulus: string;
+}
+
+// ============================================================================
 // Finance Module Events
 // ============================================================================
 
@@ -939,6 +1051,27 @@ export interface GenesisEventMap {
   // --- Self-Modification Events ---
   'self.improvement.proposed': SelfImprovementEvent;
   'self.improvement.applied': SelfImprovementEvent;
+
+  // --- v19.0: Cognitive Module Events (P4 — Orphan Wiring) ---
+  'semiotics.interpreted': SemioticsInterpretationEvent;
+  'semiotics.hallucination.detected': SemioticsHallucinationEvent;
+  'umwelt.perception': UmweltPerceptionEvent;
+  'umwelt.action.completed': UmweltActionEvent;
+  'morphogenetic.error.detected': MorphogeneticErrorEvent;
+  'morphogenetic.repair.completed': MorphogeneticRepairEvent;
+  'strange-loop.thought.created': StrangeLoopThoughtEvent;
+  'strange-loop.identity.crystallized': StrangeLoopIdentityEvent;
+  'second-order.observation': SecondOrderObservationEvent;
+  'second-order.coupling.established': SecondOrderCouplingEvent;
+  'rsi.cycle.completed': RSICycleEvent;
+  'rsi.limitation.detected': RSICycleEvent;
+  'autopoiesis.cycle.completed': AutopoiesisCycleEvent;
+  'swarm.step': SwarmStepEvent;
+  'swarm.pattern.detected': SwarmPatternEvent;
+  'symbiotic.friction.adapted': SymbioticFrictionEvent;
+  'symbiotic.autonomy.updated': SymbioticAutonomyEvent;
+  'embodiment.sense.updated': EmbodimentSenseEvent;
+  'embodiment.reflex.triggered': EmbodimentReflexEvent;
 
   // --- Finance Events ---
   'finance.market.updated': MarketDataUpdateEvent;

@@ -125,9 +125,24 @@ import {
   AutonomousSystem,
   getDecisionEngine,
   getStrategyOrchestrator,
+  getSelfReflectionEngine,
+  getGoalSystem,
+  getAttentionController,
+  getSkillAcquisitionSystem,
   type DecisionEngine,
   type StrategyOrchestrator,
+  type SelfReflectionEngine,
+  type GoalSystem,
+  type AttentionController,
+  type SkillAcquisitionSystem,
 } from './autonomous/index.js';
+
+// Concurrency — parallel execution primitives (v33.0)
+import {
+  getParallelEngine,
+  type ParallelExecutionEngine,
+  type ParallelEngineConfig,
+} from './concurrency/index.js';
 
 // Integration — cross-module wiring
 import { bootstrapIntegration, wireAllModules, type WiringResult, getCognitiveBridge, type CognitiveBridge } from './integration/index.js';
@@ -189,6 +204,17 @@ import {
   type MarketBrief,
   type StrategyConfig,
 } from './market-strategist/index.js';
+
+// v19.0: Orphan Cognitive Modules — P4 Full Wiring
+import { getLSM, resetLSM, type LargeSemiosisModel } from './semiotics/index.js';
+import { getUmwelt, clearUmwelts, type AgentUmwelt } from './umwelt/index.js';
+import { getColony, resetColony, type AgentColony } from './morphogenetic/index.js';
+import { getStrangeLoop, resetStrangeLoop, type StrangeLoop } from './strange-loop/index.js';
+import { getCybernetics, resetCybernetics, type SecondOrderCybernetics } from './second-order/index.js';
+import { getRSIOrchestrator, resetRSIOrchestrator, type RSIOrchestrator } from './rsi/index.js';
+import { getAutopoiesisEngine, resetAutopoiesisEngine, type AutopoiesisEngine } from './autopoiesis/index.js';
+import { getSwarmDynamics, resetSwarmDynamics, type SwarmDynamics } from './swarm/index.js';
+import { getPartnership, resetPartnership, type SymbioticPartnership } from './symbiotic/index.js';
 
 // Unified REST API — production HTTP server (v23.0)
 import {
@@ -494,6 +520,21 @@ export class Genesis {
   // v28.0: Strategy Orchestrator — meta-level resource allocation
   private strategyOrchestrator: StrategyOrchestrator | null = null;
 
+  // v29.0: Self-Reflection Engine — metacognitive introspection
+  private selfReflection: SelfReflectionEngine | null = null;
+
+  // v30.0: Goal System — autonomous goal pursuit
+  private goalSystem: GoalSystem | null = null;
+
+  // v31.0: Attention Controller — cognitive focus management
+  private attentionController: AttentionController | null = null;
+
+  // v32.0: Skill Acquisition System — capability learning
+  private skillAcquisition: SkillAcquisitionSystem | null = null;
+
+  // v33.0: Parallel Execution Engine — work-stealing scheduler
+  private parallelEngine: ParallelExecutionEngine | null = null;
+
   // v26.0: WebSocket Real-Time API
   private websocket: GenesisWebSocket | null = null;
 
@@ -505,6 +546,17 @@ export class Genesis {
   private polymarketTrader: PolymarketTrader | null = null;
   private mcpFinance: MCPFinanceManager | null = null;
   private exotic: ExoticComputing | null = null;
+
+  // v19.0: Cognitive modules (P4 — Orphan Wiring)
+  private semiotics: LargeSemiosisModel | null = null;
+  private umweltInstance: AgentUmwelt | null = null;
+  private colony: AgentColony | null = null;
+  private strangeLoop: StrangeLoop | null = null;
+  private secondOrder: SecondOrderCybernetics | null = null;
+  private rsiOrchestrator: RSIOrchestrator | null = null;
+  private autopoiesis: AutopoiesisEngine | null = null;
+  private swarm: SwarmDynamics | null = null;
+  private symbiotic: SymbioticPartnership | null = null;
 
   // v18.1.0: Content creator module
   private contentOrchestrator: ContentOrchestrator | null = null;
@@ -1827,6 +1879,18 @@ export class Genesis {
       console.log('[Genesis] Exotic computing initialized (thermodynamic, HDC, reservoir)');
     }
 
+    // v19.0: Wire orphaned cognitive modules (P4)
+    this.semiotics = getLSM();
+    this.umweltInstance = getUmwelt('genesis');
+    this.colony = getColony();
+    this.strangeLoop = getStrangeLoop();
+    this.secondOrder = getCybernetics();
+    this.rsiOrchestrator = getRSIOrchestrator();
+    this.autopoiesis = getAutopoiesisEngine();
+    this.swarm = getSwarmDynamics();
+    this.symbiotic = getPartnership();
+    console.log('[Genesis] Cognitive modules instantiated (semiotics, umwelt, morphogenetic, strange-loop, second-order, rsi, autopoiesis, swarm, symbiotic)');
+
     // v13.12.0: Revenue System — autonomous revenue streams
     if (this.config.revenue) {
       this.revenueSystem = createRevenueSystem({
@@ -2050,6 +2114,19 @@ export class Genesis {
       governance: this.governance ?? undefined,
       fiber: this.fiber ?? undefined,
       ness: this.nessMonitor ?? undefined,
+      // v19.0: Newly wired cognitive modules (P4)
+      semiotics: this.semiotics ?? undefined,
+      umwelt: this.umweltInstance ?? undefined,
+      morphogenetic: this.colony ?? undefined,
+      strangeLoop: this.strangeLoop ?? undefined,
+      secondOrder: this.secondOrder ?? undefined,
+      rsi: this.rsiOrchestrator ?? undefined,
+      autopoiesis: this.autopoiesis ?? undefined,
+      swarm: this.swarm ?? undefined,
+      symbiotic: this.symbiotic ?? undefined,
+      exotic: this.exotic ?? undefined,
+      embodiment: this.sensorimotor ?? undefined,
+      metaRL: this.metaRL ?? undefined,
     });
 
     console.log(`[Genesis] Central Awareness active: ${this.wiringResult.modulesWired} modules wired`);
@@ -2102,6 +2179,74 @@ export class Genesis {
     this.strategyOrchestrator.start();
     this.fiber?.registerModule('strategy-orchestrator');
     console.log('[Genesis] Strategy Orchestrator active: adaptive resource allocation');
+
+    // v29.0: Self-Reflection Engine — metacognitive introspection
+    this.selfReflection = getSelfReflectionEngine({
+      reflectionInterval: 30 * 60 * 1000,  // 30 minutes
+      minDecisionsForReflection: 10,
+      analysisWindow: 100,
+      biasThreshold: 0.6,
+      failurePatternThreshold: 0.3,
+      autoPropose: true,
+    });
+    this.selfReflection.start();
+    this.fiber?.registerModule('self-reflection');
+    console.log('[Genesis] Self-Reflection Engine active: metacognitive introspection');
+
+    // v30.0: Goal System — autonomous goal pursuit
+    this.goalSystem = getGoalSystem({
+      maxActiveGoals: 5,
+      evaluationInterval: 5 * 60 * 1000,  // 5 minutes
+      autoGenerate: true,
+      minPriority: 0.3,
+      goalTimeout: 24 * 60 * 60 * 1000,   // 24 hours
+    });
+    this.goalSystem.start();
+    this.fiber?.registerModule('goal-system');
+    console.log('[Genesis] Goal System active: autonomous goal pursuit');
+
+    // v31.0: Attention Controller — cognitive focus management
+    this.attentionController = getAttentionController({
+      evaluationInterval: 10 * 1000,     // 10 seconds
+      switchCooldown: 30 * 1000,         // 30 seconds min focus
+      urgencyWeight: 0.35,
+      importanceWeight: 0.4,
+      noveltyWeight: 0.25,
+      maxQueueSize: 50,
+      salienceDecay: 0.01,
+      salienceThreshold: 0.1,
+    });
+    this.attentionController.start();
+    this.fiber?.registerModule('attention-controller');
+    console.log('[Genesis] Attention Controller active: cognitive focus management');
+
+    // v32.0: Skill Acquisition System — capability learning
+    this.skillAcquisition = getSkillAcquisitionSystem({
+      minExecutionsToLearn: 5,
+      masteryThreshold: 0.85,
+      evaluationInterval: 15 * 60 * 1000,  // 15 minutes
+      skillDecayRate: 0.001,
+      autoExtract: true,
+    });
+    this.skillAcquisition.start();
+    this.fiber?.registerModule('skill-acquisition');
+    console.log('[Genesis] Skill Acquisition active: capability learning');
+
+    // v33.0: Parallel Execution Engine — work-stealing scheduler
+    this.parallelEngine = getParallelEngine({
+      maxWorkers: 16,
+      numQueues: 4,
+      maxQueueDepth: 1000,
+      stealThreshold: 5,
+      adaptiveBatching: true,
+      initialBatchSize: 5,
+      circuitBreakerThreshold: 5,
+      circuitBreakerTimeout: 30000,
+      tracing: true,
+    });
+    this.parallelEngine.start();
+    this.fiber?.registerModule('parallel-engine');
+    console.log('[Genesis] Parallel Engine active: work-stealing, adaptive batching, circuit breakers');
 
     this.levels.L4 = true;
   }
@@ -3236,6 +3381,16 @@ export class Genesis {
     // v18.3: Reset singletons to avoid stale instances on reboot
     resetNociceptiveSystem();
     resetNeuromodulationSystem();
+    // v19.0: Reset cognitive module singletons (P4)
+    resetLSM();
+    clearUmwelts();
+    resetColony();
+    resetStrangeLoop();
+    resetCybernetics();
+    resetRSIOrchestrator();
+    resetAutopoiesisEngine();
+    resetSwarmDynamics();
+    resetPartnership();
     if (this.fek) {
       this.fek.stop();
     }

@@ -29,6 +29,8 @@ import {
 import { getBountyLearning, type BountyOutcome } from './bounty-learning.js';
 // v19.3: Deep feedback analysis
 import { getFeedbackAnalyzer, type PreSubmissionReport, type SkillProfile } from './feedback-analyzer.js';
+// v19.4: Multi-model consensus validation
+import { getMultiValidator, type ConsensusResult } from './multi-validator.js';
 
 // ============================================================================
 // Types
@@ -580,6 +582,8 @@ export class BountyExecutor {
   private learningEngine = getBountyLearning();
   // v19.3: Deep feedback analysis
   private feedbackAnalyzer = getFeedbackAnalyzer();
+  // v19.4: Multi-model consensus validation
+  private multiValidator = getMultiValidator();
 
   private activeExecutions = new Map<string, Promise<ExecutionResult>>();
 
@@ -1015,6 +1019,63 @@ export class BountyExecutor {
         }
       }
       console.log('[BountyExecutor] ✅ Pre-submission checks passed');
+
+      // 3.6 v19.4: Multi-model consensus validation for near-infallibility
+      console.log('[BountyExecutor] Running multi-model validation...');
+      const consensus = await this.multiValidator.validate(
+        solution.changes,
+        bounty,
+        classification
+      );
+
+      console.log(`[BountyExecutor] Consensus: ${consensus.finalRecommendation} (${(consensus.confidence * 100).toFixed(0)}% confidence)`);
+
+      // Log validation details
+      for (const v of consensus.validations) {
+        console.log(`  - ${v.model}: ${v.overallScore}/100 (${v.wouldApprove ? 'APPROVE' : 'REJECT'})`);
+      }
+
+      // Block if consensus is not to submit
+      if (consensus.finalRecommendation === 'reject') {
+        console.log(`[BountyExecutor] ❌ Multi-model validation REJECTED`);
+        if (consensus.consensusIssues.length > 0) {
+          console.log(`[BountyExecutor] Consensus issues:`);
+          consensus.consensusIssues.slice(0, 3).forEach(i => console.log(`  - ${i}`));
+        }
+        if (consensus.requiredFixes.length > 0) {
+          console.log(`[BountyExecutor] Required fixes:`);
+          consensus.requiredFixes.slice(0, 3).forEach(f => console.log(`  - ${f}`));
+        }
+
+        this.recordLearningOutcome(
+          bounty,
+          classification,
+          'validation_failed',
+          startTime,
+          Math.round(consensus.confidence * 100),
+          solution.confidence,
+          `Multi-model validation rejected: ${consensus.consensusIssues.join('; ')}`
+        );
+
+        return {
+          bountyId: bounty.id,
+          status: 'failed',
+          solution,
+          error: `Multi-model validation rejected (${consensus.consensusIssues[0] || 'consensus disagreement'})`,
+          duration: Date.now() - startTime,
+        };
+      }
+
+      // If recommendation is to revise, log warning but continue if confidence is acceptable
+      if (consensus.finalRecommendation === 'revise') {
+        console.log(`[BountyExecutor] ⚠️ Multi-model suggests revisions, but continuing with submission`);
+        if (consensus.requiredFixes.length > 0) {
+          console.log(`[BountyExecutor] Suggested fixes (not blocking):`);
+          consensus.requiredFixes.slice(0, 3).forEach(f => console.log(`  - ${f}`));
+        }
+      }
+
+      console.log('[BountyExecutor] ✅ Multi-model validation passed');
 
       // 4. Submit PR (if autoSubmit enabled and not dry run)
       if (this.config.autoSubmit && !this.config.dryRun) {

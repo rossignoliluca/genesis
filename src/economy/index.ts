@@ -757,3 +757,28 @@ export type {
   ImprovementPlan,
   ImprovementAction,
 } from './feedback-loop.js';
+
+// v19.4: Auto-Revision (Automatic Code Revision on Feedback)
+export {
+  AutoRevisionEngine,
+  getAutoRevision,
+  resetAutoRevision,
+} from './auto-revision.js';
+export type {
+  RevisionRequest,
+  RevisionResult,
+  RevisionConfig,
+} from './auto-revision.js';
+
+// v19.4: Multi-Model Validator (Consensus-Based Validation)
+export {
+  MultiModelValidator,
+  getMultiValidator,
+  resetMultiValidator,
+} from './multi-validator.js';
+export type {
+  ValidationCheck,
+  ModelValidation,
+  ConsensusResult,
+  MultiValidatorConfig,
+} from './multi-validator.js';

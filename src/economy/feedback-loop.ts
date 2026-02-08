@@ -19,6 +19,7 @@ import { EventEmitter } from 'events';
 import { getEmailMonitor, type EmailNotification } from './live/email-monitor.js';
 import { getFeedbackAnalyzer, type FeedbackAnalysis, type SkillProfile } from './feedback-analyzer.js';
 import { getBountyLearning } from './bounty-learning.js';
+import { getAutoRevision } from './auto-revision.js';
 import { getMCPClient } from '../mcp/index.js';
 import type { PRSubmission } from './live/pr-pipeline.js';
 import * as fs from 'fs';
@@ -75,6 +76,7 @@ export class FeedbackLoop extends EventEmitter {
   private feedbackAnalyzer = getFeedbackAnalyzer();
   private learningEngine = getBountyLearning();
   private emailMonitor = getEmailMonitor();
+  private autoRevision = getAutoRevision();
 
   private running = false;
   private githubPollTimer: NodeJS.Timeout | null = null;
@@ -257,24 +259,75 @@ export class FeedbackLoop extends EventEmitter {
     if (notification.repo && notification.prNumber) {
       try {
         const [owner, repo] = notification.repo.split('/');
-        if (owner && repo) {
-          const comments = await this.feedbackAnalyzer.fetchPRComments(
-            owner,
-            repo,
-            notification.prNumber
-          );
+        if (!owner || !repo) return;
 
-          console.log(`[FeedbackLoop] Fetched ${comments.length} comments`);
+        // Find tracked PR
+        const prKey = `${notification.repo}#${notification.prNumber}`;
+        let submission = this.trackedPRs.get(prKey);
 
-          // Learn from the requested changes
-          for (const comment of comments) {
-            if (comment.state === 'CHANGES_REQUESTED') {
-              console.log(`[FeedbackLoop] Reviewer ${comment.author}: ${comment.body.slice(0, 100)}...`);
-            }
+        if (!submission) {
+          // Create submission record if not tracking
+          submission = {
+            bountyId: prKey,
+            bountyTitle: notification.subject,
+            bountyValue: 0,
+            prUrl: notification.prUrl || '',
+            prNumber: notification.prNumber,
+            repo: notification.repo,
+            branch: 'unknown',
+            status: 'changes_requested',
+            submittedAt: new Date(),
+          };
+          this.trackedPRs.set(prKey, submission);
+        }
+
+        // Fetch comments for analysis
+        const comments = await this.feedbackAnalyzer.fetchPRComments(
+          owner,
+          repo,
+          notification.prNumber
+        );
+        console.log(`[FeedbackLoop] Fetched ${comments.length} comments`);
+
+        // Log the requested changes
+        for (const comment of comments) {
+          if (comment.state === 'CHANGES_REQUESTED') {
+            console.log(`[FeedbackLoop] Reviewer ${comment.author}: ${comment.body.slice(0, 100)}...`);
           }
         }
+
+        // v19.4: Attempt AUTO-REVISION if configured
+        if (this.config.autoImprove && submission) {
+          console.log(`[FeedbackLoop] 🔄 Attempting auto-revision for ${prKey}`);
+
+          // Analyze if we can auto-revise
+          const analysis = await this.autoRevision.analyzeForRevision(submission);
+
+          if (analysis.canRevise) {
+            console.log(`[FeedbackLoop] Auto-revision possible: ${analysis.reason}`);
+            console.log(`[FeedbackLoop] Estimated effort: ${analysis.estimatedEffort}`);
+
+            // Only auto-revise for trivial/easy issues
+            if (analysis.estimatedEffort === 'trivial' || analysis.estimatedEffort === 'easy') {
+              const result = await this.autoRevision.revise(submission);
+
+              if (result.success) {
+                console.log(`[FeedbackLoop] ✅ Auto-revision successful!`);
+                console.log(`[FeedbackLoop] Issues addressed: ${result.issuesAddressed.join(', ')}`);
+                this.emit('auto_revised', { prKey, result });
+              } else {
+                console.log(`[FeedbackLoop] Auto-revision failed: ${result.error}`);
+              }
+            } else {
+              console.log(`[FeedbackLoop] Effort too high (${analysis.estimatedEffort}) - skipping auto-revision`);
+            }
+          } else {
+            console.log(`[FeedbackLoop] Cannot auto-revise: ${analysis.reason}`);
+          }
+        }
+
       } catch (error) {
-        console.error('[FeedbackLoop] Failed to fetch change requests:', error);
+        console.error('[FeedbackLoop] Failed to handle change request:', error);
       }
     }
   }

@@ -72,11 +72,23 @@ function generateMetrics(): SystemMetrics {
       phi,
       state: phi > 0.7 ? 'alert' : phi > 0.5 ? 'aware' : phi > 0.3 ? 'drowsy' : 'dormant',
       integration: phi * 0.9,
+      complexity: phi * 0.8,
+      attentionFocus: null,
+      workspaceContents: [],
     },
     kernel: {
       state: states[stateIndex],
       energy: Math.max(0, 1 - freeEnergy / 5),
       cycles: cycleCount,
+      mode: states[stateIndex],
+      levels: {
+        l1: { active: true, load: 0.3 + Math.random() * 0.2 },
+        l2: { active: true, load: 0.4 + Math.random() * 0.2 },
+        l3: { active: true, load: 0.5 + Math.random() * 0.2 },
+        l4: { active: true, load: 0.2 + Math.random() * 0.2 },
+      },
+      freeEnergy,
+      predictionError: 0.1 + Math.random() * 0.1,
     },
     agents: {
       total: 10,

@@ -41,11 +41,23 @@ export interface SystemMetrics {
     phi: number;
     state: string;
     integration: number;
+    complexity: number;
+    attentionFocus: string | null;
+    workspaceContents: Array<{ id: string; type: string; salience: number }>;
   };
   kernel: {
     state: string;
     energy: number;
     cycles: number;
+    mode: string;
+    levels: {
+      l1: { active: boolean; load: number };
+      l2: { active: boolean; load: number };
+      l3: { active: boolean; load: number };
+      l4: { active: boolean; load: number };
+    };
+    freeEnergy: number;
+    predictionError: number;
   };
   agents: {
     total: number;
@@ -82,6 +94,152 @@ export interface SystemMetrics {
     totalChunks: number;
     indexedFiles: number;
     lastQuery: string | null;
+  };
+  // Active Inference
+  activeInference?: {
+    currentCycle: number;
+    beliefs: Record<string, string>;
+    selectedAction: string | null;
+    lastSurprise: number;
+    avgSurprise: number;
+    isRunning: boolean;
+  };
+  // Neuromodulation
+  neuromod?: {
+    dopamine: number;
+    serotonin: number;
+    norepinephrine: number;
+    acetylcholine: number;
+    effects: {
+      explorationRate: number;
+      learningRate: number;
+      precisionGain: number;
+      discountFactor: number;
+    };
+  };
+  // Nociception (Pain)
+  nociception?: {
+    totalPain: number;
+    threshold: number;
+    adaptation: number;
+    activeStimuli: Array<{
+      location: string;
+      intensity: number;
+      type: 'acute' | 'chronic' | 'phantom';
+    }>;
+  };
+  // Allostasis
+  allostasis?: {
+    variables: Array<{
+      name: string;
+      current: number;
+      setpoint: number;
+      urgency: number;
+    }>;
+    isThrottled: boolean;
+    isHibernating: boolean;
+    deferredVariables: string[];
+  };
+  // World Model
+  worldModel?: {
+    totalFacts: number;
+    recentPredictions: Array<{
+      domain: string;
+      prediction: string;
+      confidence: number;
+      timestamp: number;
+    }>;
+    consistencyViolations: number;
+    causalChainsActive: number;
+  };
+  // Daemon
+  daemon?: {
+    state: 'stopped' | 'starting' | 'running' | 'dreaming' | 'maintaining' | 'stopping' | 'error';
+    scheduledTasks: number;
+    completedTasks: number;
+    failedTasks: number;
+    dreamPhase: string | null;
+    lastMaintenance: number | null;
+    nextScheduledTask: {
+      name: string;
+      scheduledFor: number;
+    } | null;
+  };
+  // Finance/Trading
+  finance?: {
+    totalPortfolioValue: number;
+    unrealizedPnL: number;
+    realizedPnL: number;
+    positions: Array<{
+      symbol: string;
+      size: number;
+      entryPrice: number;
+      currentPrice: number;
+      pnl: number;
+      direction: 'long' | 'short';
+    }>;
+    activeSignals: Array<{
+      symbol: string;
+      direction: 'long' | 'short' | 'neutral';
+      strength: number;
+    }>;
+    regime: string;
+    riskLevel: number;
+    drawdown: number;
+  };
+  // Revenue
+  revenue?: {
+    totalEarned: number;
+    activeStreams: string[];
+    pendingOpportunities: number;
+    avgROI: number;
+    recentTasks: Array<{
+      stream: string;
+      amount: number;
+      success: boolean;
+      timestamp: number;
+    }>;
+  };
+  // Content
+  content?: {
+    totalPublished: number;
+    totalScheduled: number;
+    engagementRate: number;
+    topPlatform: string | null;
+    recentContent: Array<{
+      id: string;
+      type: string;
+      platforms: string[];
+      status: 'draft' | 'scheduled' | 'published';
+    }>;
+    insights: Array<{
+      type: string;
+      recommendation: string;
+      confidence: number;
+    }>;
+  };
+  // Swarm / Agents Extended
+  swarm?: {
+    agentCount: number;
+    activeCoordinations: number;
+    emergentPatterns: string[];
+    collectiveIntelligence: number;
+    consensusLevel: number;
+  };
+  // Healing / Self-Repair
+  healing?: {
+    activeHealing: boolean;
+    target: string | null;
+    issuesDetected: number;
+    issuesRepaired: number;
+    lastHealingResult: 'success' | 'partial' | 'failed' | null;
+  };
+  // Grounding / Verification
+  grounding?: {
+    claimsVerified: number;
+    claimsPending: number;
+    factAccuracy: number;
+    lastVerification: number | null;
   };
 }
 
@@ -510,11 +668,23 @@ export class DashboardServer extends EventEmitter {
         phi: 0,
         state: 'unknown',
         integration: 0,
+        complexity: 0,
+        attentionFocus: null,
+        workspaceContents: [],
       },
       kernel: {
         state: 'unknown',
         energy: 0,
         cycles: 0,
+        mode: 'idle',
+        levels: {
+          l1: { active: false, load: 0 },
+          l2: { active: false, load: 0 },
+          l3: { active: false, load: 0 },
+          l4: { active: false, load: 0 },
+        },
+        freeEnergy: 0,
+        predictionError: 0,
       },
       agents: {
         total: 0,
@@ -1050,6 +1220,424 @@ export function broadcastLessonStored(lesson: {
  */
 export function broadcastLessonRecalled(lessonId: string): void {
   broadcastToDashboard('learning:lesson_recalled', { lessonId, timestamp: Date.now() });
+}
+
+// ============================================================================
+// Active Inference Event Helpers
+// ============================================================================
+
+export function broadcastActiveInferenceCycle(data: {
+  cycle: number;
+  beliefs?: Record<string, string>;
+  action?: string;
+}): void {
+  broadcastToDashboard('active-inference:cycle', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastActiveInferenceSurprise(data: {
+  surprise: number;
+  threshold: number;
+  action: string;
+  outcome: string;
+}): void {
+  broadcastToDashboard('active-inference:surprise', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastActiveInferenceStopped(data: {
+  reason: string;
+  cycles: number;
+  avgSurprise: number;
+}): void {
+  broadcastToDashboard('active-inference:stopped', { ...data, timestamp: Date.now() });
+}
+
+// ============================================================================
+// Neuromodulation Event Helpers
+// ============================================================================
+
+export function broadcastNeuromodLevels(data: {
+  dopamine: number;
+  serotonin: number;
+  norepinephrine: number;
+  acetylcholine: number;
+  effects: {
+    explorationRate: number;
+    learningRate: number;
+    precisionGain: number;
+    discountFactor: number;
+  };
+}): void {
+  broadcastToDashboard('neuromod:levels', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastNeuromodSignal(data: {
+  type: 'reward' | 'punishment' | 'novelty' | 'threat' | 'calm';
+  magnitude: number;
+  cause: string;
+}): void {
+  broadcastToDashboard('neuromod:signal', { ...data, timestamp: Date.now() });
+}
+
+// ============================================================================
+// Nociception (Pain) Event Helpers
+// ============================================================================
+
+export function broadcastPainStimulus(data: {
+  location: string;
+  intensity: number;
+  type: 'acute' | 'chronic' | 'phantom';
+}): void {
+  broadcastToDashboard('pain:stimulus', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastPainState(data: {
+  totalPain: number;
+  threshold: number;
+  adaptation: number;
+}): void {
+  broadcastToDashboard('pain:state', { ...data, timestamp: Date.now() });
+}
+
+// ============================================================================
+// Allostasis Event Helpers
+// ============================================================================
+
+export function broadcastAllostasisRegulation(data: {
+  variable: string;
+  currentValue: number;
+  setpoint: number;
+  action: string;
+  urgency: number;
+}): void {
+  broadcastToDashboard('allostasis:regulation', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastAllostasisSetpointAdapted(data: {
+  variable: string;
+  oldSetpoint: number;
+  newSetpoint: number;
+  reason: string;
+}): void {
+  broadcastToDashboard('allostasis:setpoint_adapted', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastAllostasisThrottle(magnitude: number): void {
+  broadcastToDashboard('allostasis:throttle', { magnitude, timestamp: Date.now() });
+}
+
+export function broadcastAllostasisDefer(variable: string): void {
+  broadcastToDashboard('allostasis:defer', { variable, timestamp: Date.now() });
+}
+
+export function broadcastAllostasisHibernate(duration: number): void {
+  broadcastToDashboard('allostasis:hibernate', { duration, timestamp: Date.now() });
+}
+
+// ============================================================================
+// World Model Event Helpers
+// ============================================================================
+
+export function broadcastWorldPrediction(data: {
+  domain: string;
+  prediction: string;
+  confidence: number;
+}): void {
+  broadcastToDashboard('worldmodel:prediction', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastConsistencyViolation(data: {
+  claim: string;
+  conflictsWith: string;
+  resolution: string;
+}): void {
+  broadcastToDashboard('worldmodel:consistency_violation', { ...data, timestamp: Date.now() });
+}
+
+// ============================================================================
+// Daemon Event Helpers
+// ============================================================================
+
+export function broadcastDaemonState(data: {
+  state: 'stopped' | 'starting' | 'running' | 'dreaming' | 'maintaining' | 'stopping' | 'error';
+  previousState?: string;
+}): void {
+  broadcastToDashboard('daemon:state', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastDaemonTask(data: {
+  taskId?: string;
+  taskName?: string;
+  status: 'scheduled' | 'started' | 'completed' | 'failed' | 'cancelled';
+  priority?: 'critical' | 'high' | 'normal' | 'low' | 'idle';
+  durationMs?: number;
+  error?: string;
+}): void {
+  broadcastToDashboard('daemon:task', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastDaemonDream(data: {
+  phase: 'started' | 'completed' | 'interrupted' | 'phase_changed';
+  dreamPhase?: string;
+  consolidations?: number;
+  creativeInsights?: number;
+  durationMs?: number;
+}): void {
+  broadcastToDashboard('daemon:dream', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastDaemonMaintenance(data: {
+  status: 'started' | 'completed' | 'issue_detected';
+  issuesFound?: number;
+  issuesFixed?: number;
+  memoryReclaimed?: number;
+}): void {
+  broadcastToDashboard('daemon:maintenance', { ...data, timestamp: Date.now() });
+}
+
+// ============================================================================
+// Finance/Trading Event Helpers
+// ============================================================================
+
+export function broadcastMarketData(data: {
+  symbol: string;
+  price: number;
+  volatility: number;
+  volume: number;
+}): void {
+  broadcastToDashboard('finance:market', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastTradingSignal(data: {
+  symbol: string;
+  direction: 'long' | 'short' | 'neutral';
+  strength: number;
+  uncertainty: number;
+  action: 'buy' | 'sell' | 'hold';
+}): void {
+  broadcastToDashboard('finance:signal', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastPositionOpened(data: {
+  symbol: string;
+  size: number;
+  entryPrice: number;
+  direction: 'long' | 'short';
+}): void {
+  broadcastToDashboard('finance:position_opened', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastPositionClosed(data: {
+  symbol: string;
+  size: number;
+  entryPrice: number;
+  exitPrice: number;
+  realizedPnL: number;
+}): void {
+  broadcastToDashboard('finance:position_closed', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastDrawdownAlert(data: {
+  symbol: string;
+  drawdown: number;
+  painLevel: number;
+  threshold: number;
+}): void {
+  broadcastToDashboard('finance:drawdown_alert', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastRegimeChange(data: {
+  symbol: string;
+  previousRegime: string;
+  newRegime: string;
+  confidence: number;
+}): void {
+  broadcastToDashboard('finance:regime_change', { ...data, timestamp: Date.now() });
+}
+
+// ============================================================================
+// Revenue Event Helpers
+// ============================================================================
+
+export function broadcastRevenueOpportunity(data: {
+  opportunityId: string;
+  stream: string;
+  estimatedRevenue: number;
+  estimatedCost: number;
+  roi: number;
+  risk: number;
+}): void {
+  broadcastToDashboard('revenue:opportunity', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastRevenueTask(data: {
+  taskId: string;
+  stream: string;
+  success: boolean;
+  actualRevenue: number;
+  actualCost: number;
+}): void {
+  broadcastToDashboard('revenue:task', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastRevenueStream(data: {
+  stream: string;
+  status: 'active' | 'paused' | 'error';
+  totalEarned: number;
+  successRate: number;
+}): void {
+  broadcastToDashboard('revenue:stream', { ...data, timestamp: Date.now() });
+}
+
+// ============================================================================
+// Content Event Helpers
+// ============================================================================
+
+export function broadcastContentCreated(data: {
+  contentId: string;
+  type: string;
+  topic: string;
+  platforms: string[];
+  keywords: string[];
+}): void {
+  broadcastToDashboard('content:created', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastContentPublished(data: {
+  contentId: string;
+  platform: string;
+  postId: string;
+  url?: string;
+  status: 'success' | 'failed';
+  error?: string;
+}): void {
+  broadcastToDashboard('content:published', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastContentEngagement(data: {
+  contentId: string;
+  platform: string;
+  impressions: number;
+  engagements: number;
+  engagementRate: number;
+}): void {
+  broadcastToDashboard('content:engagement', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastContentInsight(data: {
+  insightType: 'best_platform' | 'optimal_time' | 'trending_topic' | 'performance_alert';
+  platform?: string;
+  recommendation: string;
+  confidence: number;
+}): void {
+  broadcastToDashboard('content:insight', { ...data, timestamp: Date.now() });
+}
+
+// ============================================================================
+// Swarm/Coordination Event Helpers
+// ============================================================================
+
+export function broadcastSwarmCoordination(data: {
+  agentCount: number;
+  coordinationType: string;
+  emergentPattern?: string;
+  consensusLevel: number;
+}): void {
+  broadcastToDashboard('swarm:coordination', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastEmergentPattern(data: {
+  pattern: string;
+  agents: string[];
+  confidence: number;
+}): void {
+  broadcastToDashboard('swarm:emergence', { ...data, timestamp: Date.now() });
+}
+
+// ============================================================================
+// Healing Event Helpers
+// ============================================================================
+
+export function broadcastHealingStarted(target: string): void {
+  broadcastToDashboard('healing:started', { target, timestamp: Date.now() });
+}
+
+export function broadcastHealingCompleted(data: {
+  target: string;
+  success: boolean;
+  issuesFixed: number;
+}): void {
+  broadcastToDashboard('healing:completed', { ...data, timestamp: Date.now() });
+}
+
+// ============================================================================
+// Grounding/Verification Event Helpers
+// ============================================================================
+
+export function broadcastClaimVerified(data: {
+  claim: string;
+  verified: boolean;
+  confidence: number;
+  source?: string;
+}): void {
+  broadcastToDashboard('grounding:verified', { ...data, timestamp: Date.now() });
+}
+
+// ============================================================================
+// Consciousness Extended Event Helpers
+// ============================================================================
+
+export function broadcastAttentionShift(data: {
+  from: string | null;
+  to: string;
+  reason: string;
+}): void {
+  broadcastToDashboard('consciousness:attention_shift', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastWorkspaceIgnition(data: {
+  contentId: string;
+  sourceModule: string;
+  contentType: string;
+  salience: number;
+}): void {
+  broadcastToDashboard('consciousness:ignition', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastPhiUpdate(data: {
+  phi: number;
+  previousPhi: number;
+  delta: number;
+}): void {
+  broadcastToDashboard('consciousness:phi_update', { ...data, timestamp: Date.now() });
+}
+
+// ============================================================================
+// Kernel Extended Event Helpers
+// ============================================================================
+
+export function broadcastKernelCycle(data: {
+  cycle: number;
+  mode: string;
+  totalFE: number;
+  levels: Record<string, number>;
+  emotional: { valence: number; arousal: number };
+}): void {
+  broadcastToDashboard('kernel:cycle', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastKernelModeChange(data: {
+  newMode: string;
+  previousMode: string;
+}): void {
+  broadcastToDashboard('kernel:mode_change', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastKernelPanic(data: {
+  reason: string;
+  severity: 'warning' | 'critical' | 'fatal';
+  recoverable: boolean;
+}): void {
+  broadcastToDashboard('kernel:panic', { ...data, timestamp: Date.now() });
 }
 
 export default DashboardServer;

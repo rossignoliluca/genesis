@@ -19,6 +19,102 @@ import { MessageBus, messageBus } from './message-bus.js';
 import { randomUUID } from 'crypto';
 
 // ============================================================================
+// Circuit Breaker
+// ============================================================================
+
+export type CircuitState = 'closed' | 'open' | 'half-open';
+
+export interface CircuitBreakerConfig {
+  /** Consecutive failures before opening the circuit */
+  failureThreshold: number;
+  /** Time in ms before trying half-open recovery */
+  resetTimeout: number;
+  /** Successes needed in half-open to close the circuit */
+  halfOpenSuccesses: number;
+}
+
+const DEFAULT_CIRCUIT_CONFIG: CircuitBreakerConfig = {
+  failureThreshold: 5,
+  resetTimeout: 30000,   // 30s
+  halfOpenSuccesses: 2,
+};
+
+export class CircuitBreaker {
+  state: CircuitState = 'closed';
+  consecutiveFailures = 0;
+  consecutiveSuccesses = 0;
+  lastFailureTime = 0;
+  totalTrips = 0;
+
+  constructor(private config: CircuitBreakerConfig = DEFAULT_CIRCUIT_CONFIG) {}
+
+  /** Record a successful operation */
+  recordSuccess(): void {
+    if (this.state === 'half-open') {
+      this.consecutiveSuccesses++;
+      if (this.consecutiveSuccesses >= this.config.halfOpenSuccesses) {
+        this.close();
+      }
+    } else {
+      this.consecutiveFailures = 0;
+      this.consecutiveSuccesses++;
+    }
+  }
+
+  /** Record a failed operation */
+  recordFailure(): void {
+    this.consecutiveFailures++;
+    this.consecutiveSuccesses = 0;
+    this.lastFailureTime = Date.now();
+
+    if (this.state === 'half-open') {
+      this.open();
+    } else if (this.consecutiveFailures >= this.config.failureThreshold) {
+      this.open();
+    }
+  }
+
+  /** Check if the circuit allows a request through */
+  canExecute(): boolean {
+    if (this.state === 'closed') return true;
+
+    if (this.state === 'open') {
+      // Check if reset timeout has elapsed for half-open transition
+      if (Date.now() - this.lastFailureTime >= this.config.resetTimeout) {
+        this.state = 'half-open';
+        this.consecutiveSuccesses = 0;
+        return true;
+      }
+      return false;
+    }
+
+    // half-open: allow limited traffic
+    return true;
+  }
+
+  private open(): void {
+    this.state = 'open';
+    this.totalTrips++;
+    this.consecutiveSuccesses = 0;
+  }
+
+  private close(): void {
+    this.state = 'closed';
+    this.consecutiveFailures = 0;
+    this.consecutiveSuccesses = 0;
+  }
+
+  getStatus(): { state: CircuitState; failures: number; trips: number; lastFailure: number } {
+    return {
+      state: this.state,
+      failures: this.consecutiveFailures,
+      trips: this.totalTrips,
+      lastFailure: this.lastFailureTime,
+    };
+  }
+}
+
+// ============================================================================
 // Base Agent Class
 // ============================================================================
 
@@ -44,6 +140,10 @@ export abstract class BaseAgent implements Agent {
   protected timeout: number;
   protected currentTasks = 0;
 
+  // Circuit breaker for resilience
+  readonly circuitBreaker: CircuitBreaker;
+  private autoRestartTimer: NodeJS.Timeout | null = null;
+
   constructor(config: AgentConfig, bus: MessageBus = messageBus) {
     this.id = config.id || `${config.type}-${randomUUID().slice(0, 8)}`;
     this.type = config.type;
@@ -52,6 +152,7 @@ export abstract class BaseAgent implements Agent {
     this.timeout = config.timeout || 30000;
     this.startTime = new Date();
     this.lastActivity = new Date();
+    this.circuitBreaker = new CircuitBreaker();
   }
 
   // ============================================================================
@@ -80,6 +181,10 @@ export abstract class BaseAgent implements Agent {
   }
 
   shutdown(): void {
+    if (this.autoRestartTimer) {
+      clearTimeout(this.autoRestartTimer);
+      this.autoRestartTimer = null;
+    }
     this.sleep();
     this.log('Shutdown');
   }
@@ -89,6 +194,13 @@ export abstract class BaseAgent implements Agent {
   // ============================================================================
 
   private async handleMessage(message: Message): Promise<void> {
+    // Circuit breaker check
+    if (!this.circuitBreaker.canExecute()) {
+      this.log(`Circuit OPEN — rejecting message ${message.id}, will retry after cooldown`);
+      this.scheduleAutoRestart();
+      return;
+    }
+
     // Skip if at capacity
     if (this.currentTasks >= this.maxConcurrent) {
       this.log(`At capacity, queuing message ${message.id}`);
@@ -107,19 +219,47 @@ export abstract class BaseAgent implements Agent {
       }
 
       this.messagesProcessed++;
+      this.circuitBreaker.recordSuccess();
+
+      // If we were in error state and recovered, log it
+      if (this.state === 'error') {
+        this.log('Recovered from error state');
+      }
     } catch (error) {
       this.errors++;
-      this.state = 'error';
+      this.circuitBreaker.recordFailure();
       this.log(`Error processing message: ${error}`);
+
+      if (this.circuitBreaker.state === 'open') {
+        this.state = 'error';
+        this.log(`Circuit OPENED after ${this.circuitBreaker.consecutiveFailures} consecutive failures`);
+        this.scheduleAutoRestart();
+      }
 
       // Send error response
       await this.sendError(message, error);
     } finally {
       this.currentTasks--;
-      if (this.currentTasks === 0) {
+      if (this.currentTasks === 0 && this.circuitBreaker.state !== 'open') {
         this.state = 'idle';
       }
     }
+  }
+
+  /**
+   * Schedule automatic restart attempt when circuit is open
+   */
+  private scheduleAutoRestart(): void {
+    if (this.autoRestartTimer) return; // Already scheduled
+
+    const resetTimeout = this.circuitBreaker['config'].resetTimeout;
+    this.autoRestartTimer = setTimeout(() => {
+      this.autoRestartTimer = null;
+      if (this.circuitBreaker.state === 'open' || this.state === 'error') {
+        this.log('Attempting auto-restart (half-open)...');
+        this.state = 'idle'; // Allow messages through
+      }
+    }, resetTimeout);
   }
 
   /**
@@ -193,7 +333,7 @@ export abstract class BaseAgent implements Agent {
   // Health
   // ============================================================================
 
-  health(): HealthStatus {
+  health(): HealthStatus & { circuitBreaker: ReturnType<CircuitBreaker['getStatus']> } {
     return {
       agentId: this.id,
       state: this.state,
@@ -201,6 +341,7 @@ export abstract class BaseAgent implements Agent {
       messagesProcessed: this.messagesProcessed,
       errors: this.errors,
       lastActivity: this.lastActivity,
+      circuitBreaker: this.circuitBreaker.getStatus(),
     };
   }
 

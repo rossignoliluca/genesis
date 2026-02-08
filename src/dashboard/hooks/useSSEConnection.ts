@@ -73,10 +73,33 @@ export function useSSEConnection(dashboardUrl: string) {
     updateEconomy,
     updateMemory,
     updateSelfImprovement,
+    updateActiveInference,
+    updateNociception,
+    updateAllostasis,
+    updateWorldModel,
+    updateDaemon,
+    updateFinance,
+    updateRevenue,
+    updateContent,
+    updateSwarm,
+    updateHealing,
+    updateGrounding,
     addModification,
     addLesson,
     addCodeQuery,
     addBuildOutput,
+    addPainStimulus,
+    addWorldPrediction,
+    addConsistencyViolation,
+    addDaemonTask,
+    addFinancePosition,
+    addTradingSignal,
+    addRevenueOpportunity,
+    addContentItem,
+    addContentInsight,
+    addEmergentPattern,
+    addHealingEvent,
+    addVerifiedClaim,
     addEvent
   } = useGenesisStore();
 
@@ -221,26 +244,99 @@ export function useSSEConnection(dashboardUrl: string) {
         break;
 
       case 'allostasis':
-        // Allostasis regulation events affect kernel state
-        if (action === 'regulation') {
-          addEvent({ type: eventType, data });
+        switch (action) {
+          case 'regulation':
+            const currentVariables = useGenesisStore.getState().allostasis.variables;
+            const updatedVariables = currentVariables.map(v =>
+              v.name === data.variable
+                ? { ...v, current: data.currentValue ?? v.current, setpoint: data.setpoint ?? v.setpoint, urgency: data.urgency ?? v.urgency, action: data.action }
+                : v
+            );
+            updateAllostasis({ variables: updatedVariables });
+            break;
+          case 'setpoint_adapted':
+            const vars = useGenesisStore.getState().allostasis.variables;
+            updateAllostasis({
+              variables: vars.map(v =>
+                v.name === data.variable ? { ...v, setpoint: data.newSetpoint ?? v.setpoint } : v
+              ),
+            });
+            break;
+          case 'throttle':
+            updateAllostasis({
+              isThrottled: true,
+              throttleMagnitude: data.magnitude ?? 0.5,
+            });
+            break;
+          case 'defer':
+            const deferred = useGenesisStore.getState().allostasis.deferredVariables;
+            if (!deferred.includes(data.variable)) {
+              updateAllostasis({ deferredVariables: [...deferred, data.variable] });
+            }
+            break;
+          case 'hibernate':
+            updateAllostasis({
+              isHibernating: true,
+              hibernationDuration: data.duration ?? 0,
+            });
+            break;
         }
+        addEvent({ type: eventType, data });
         break;
 
       case 'nociception':
-        // Pain events - could affect UI state
-        if (action === 'pain') {
+      case 'pain':
+        // Pain events
+        if (action === 'stimulus') {
+          addPainStimulus({
+            id: data.id ?? crypto.randomUUID(),
+            location: data.location ?? 'unknown',
+            intensity: data.intensity ?? 0,
+            type: data.type ?? 'acute',
+            timestamp: Date.now(),
+          });
           // Map pain level to cortisol
-          const painToCortisol = {
-            'none': 0.1,
-            'discomfort': 0.3,
-            'pain': 0.6,
-            'agony': 0.9,
-          };
-          const cortisol = painToCortisol[data.level as keyof typeof painToCortisol] ?? 0.2;
+          const cortisol = Math.min(1, data.intensity ?? 0);
           updateNeuromod({ cortisol });
-          addEvent({ type: eventType, data });
         }
+        if (action === 'state') {
+          updateNociception({
+            totalPain: data.totalPain ?? 0,
+            threshold: data.threshold ?? 0.7,
+            adaptation: data.adaptation ?? 0,
+          });
+        }
+        addEvent({ type: eventType, data });
+        break;
+
+      case 'active-inference':
+        switch (action) {
+          case 'cycle':
+            updateActiveInference({
+              currentCycle: data.cycle ?? 0,
+              beliefs: data.beliefs ?? {},
+              selectedAction: data.action ?? null,
+              isRunning: true,
+            });
+            break;
+          case 'surprise':
+            const surpriseHistory = useGenesisStore.getState().activeInference.surpriseHistory;
+            updateActiveInference({
+              lastSurprise: data.surprise ?? 0,
+              surpriseHistory: [
+                { value: data.surprise ?? 0, timestamp: Date.now() },
+                ...surpriseHistory.slice(0, 99),
+              ],
+            });
+            break;
+          case 'stopped':
+            updateActiveInference({
+              isRunning: false,
+              avgSurprise: data.avgSurprise ?? 0,
+            });
+            break;
+        }
+        addEvent({ type: eventType, data });
         break;
 
       case 'economy':
@@ -390,11 +486,314 @@ export function useSSEConnection(dashboardUrl: string) {
         addEvent({ type: eventType, data });
         break;
 
+      case 'worldmodel':
+        switch (action) {
+          case 'prediction':
+            addWorldPrediction({
+              id: data.id ?? crypto.randomUUID(),
+              domain: data.domain ?? 'unknown',
+              prediction: data.prediction ?? '',
+              confidence: data.confidence ?? 0,
+              timestamp: Date.now(),
+            });
+            break;
+          case 'consistency_violation':
+            addConsistencyViolation({
+              id: data.id ?? crypto.randomUUID(),
+              claim: data.claim ?? '',
+              conflictsWith: data.conflictsWith ?? '',
+              resolution: data.resolution ?? '',
+              timestamp: Date.now(),
+            });
+            break;
+        }
+        addEvent({ type: eventType, data });
+        break;
+
+      case 'daemon':
+        switch (action) {
+          case 'state':
+            updateDaemon({
+              state: data.state ?? 'stopped',
+              previousState: data.previousState,
+            });
+            break;
+          case 'task':
+            addDaemonTask({
+              id: data.taskId ?? crypto.randomUUID(),
+              name: data.taskName ?? 'Unknown',
+              status: data.status ?? 'scheduled',
+              priority: data.priority ?? 'normal',
+              scheduledFor: data.scheduledFor,
+              startedAt: data.startedAt,
+              completedAt: data.completedAt,
+              error: data.error,
+            });
+            break;
+          case 'dream':
+            updateDaemon({
+              dreamPhase: data.dreamPhase ?? null,
+              dreamConsolidations: data.consolidations ?? 0,
+              dreamInsights: data.creativeInsights ?? 0,
+            });
+            break;
+          case 'maintenance':
+            updateDaemon({
+              lastMaintenance: Date.now(),
+              maintenanceIssues: data.issuesFound ?? 0,
+              maintenanceFixed: data.issuesFixed ?? 0,
+            });
+            break;
+        }
+        addEvent({ type: eventType, data });
+        break;
+
+      case 'finance':
+        switch (action) {
+          case 'market':
+            // Update market data
+            break;
+          case 'signal':
+            addTradingSignal({
+              id: data.id ?? crypto.randomUUID(),
+              symbol: data.symbol ?? 'UNKNOWN',
+              direction: data.direction ?? 'neutral',
+              strength: data.strength ?? 0,
+              uncertainty: data.uncertainty ?? 0,
+              action: data.action ?? 'hold',
+              timestamp: Date.now(),
+            });
+            break;
+          case 'position_opened':
+            addFinancePosition({
+              symbol: data.symbol ?? 'UNKNOWN',
+              size: data.size ?? 0,
+              entryPrice: data.entryPrice ?? 0,
+              currentPrice: data.entryPrice ?? 0,
+              pnl: 0,
+              pnlPercent: 0,
+              direction: data.direction ?? 'long',
+              openedAt: Date.now(),
+            });
+            break;
+          case 'position_closed':
+            updateFinance({
+              realizedPnL: (useGenesisStore.getState().finance.realizedPnL ?? 0) + (data.realizedPnL ?? 0),
+            });
+            break;
+          case 'regime_change':
+            updateFinance({
+              regime: data.newRegime ?? 'neutral',
+            });
+            break;
+          case 'drawdown_alert':
+            updateFinance({
+              drawdown: data.drawdown ?? 0,
+            });
+            break;
+        }
+        addEvent({ type: eventType, data });
+        break;
+
+      case 'revenue':
+        switch (action) {
+          case 'opportunity':
+            addRevenueOpportunity({
+              id: data.opportunityId ?? crypto.randomUUID(),
+              stream: data.stream ?? 'unknown',
+              estimatedRevenue: data.estimatedRevenue ?? 0,
+              estimatedCost: data.estimatedCost ?? 0,
+              roi: data.roi ?? 0,
+              risk: data.risk ?? 0,
+              timestamp: Date.now(),
+            });
+            break;
+          case 'task':
+            const currentTasks = useGenesisStore.getState().revenue.recentTasks;
+            updateRevenue({
+              recentTasks: [
+                {
+                  id: data.taskId ?? crypto.randomUUID(),
+                  stream: data.stream ?? 'unknown',
+                  success: data.success ?? false,
+                  actualRevenue: data.actualRevenue ?? 0,
+                  actualCost: data.actualCost ?? 0,
+                  timestamp: Date.now(),
+                },
+                ...currentTasks.slice(0, 49),
+              ],
+              totalEarned: (useGenesisStore.getState().revenue.totalEarned ?? 0) + (data.actualRevenue ?? 0),
+            });
+            break;
+          case 'stream':
+            const streams = useGenesisStore.getState().revenue.streams;
+            const existingIdx = streams.findIndex(s => s.name === data.stream);
+            if (existingIdx >= 0) {
+              streams[existingIdx] = {
+                ...streams[existingIdx],
+                status: data.status ?? 'active',
+                totalEarned: data.totalEarned ?? 0,
+                successRate: data.successRate ?? 0,
+              };
+              updateRevenue({ streams: [...streams] });
+            } else {
+              updateRevenue({
+                streams: [...streams, {
+                  name: data.stream ?? 'unknown',
+                  status: data.status ?? 'active',
+                  totalEarned: data.totalEarned ?? 0,
+                  successRate: data.successRate ?? 0,
+                  taskCount: 0,
+                }],
+              });
+            }
+            break;
+        }
+        addEvent({ type: eventType, data });
+        break;
+
+      case 'content':
+        switch (action) {
+          case 'created':
+            addContentItem({
+              id: data.contentId ?? crypto.randomUUID(),
+              type: data.type ?? 'post',
+              topic: data.topic ?? '',
+              platforms: data.platforms ?? [],
+              status: 'draft',
+            });
+            break;
+          case 'published':
+            const items = useGenesisStore.getState().content.content;
+            const itemIdx = items.findIndex(i => i.id === data.contentId);
+            if (itemIdx >= 0) {
+              items[itemIdx] = { ...items[itemIdx], status: 'published', publishedAt: Date.now() };
+              updateContent({
+                content: [...items],
+                totalPublished: useGenesisStore.getState().content.totalPublished + 1,
+              });
+            }
+            break;
+          case 'engagement':
+            updateContent({
+              avgEngagementRate: data.engagementRate ?? 0,
+            });
+            break;
+          case 'insight':
+            addContentInsight({
+              id: crypto.randomUUID(),
+              type: data.insightType ?? 'performance_alert',
+              platform: data.platform,
+              recommendation: data.recommendation ?? '',
+              confidence: data.confidence ?? 0,
+              timestamp: Date.now(),
+            });
+            break;
+        }
+        addEvent({ type: eventType, data });
+        break;
+
+      case 'swarm':
+        switch (action) {
+          case 'coordination':
+            updateSwarm({
+              agentCount: data.agentCount ?? 0,
+              activeCoordinations: useGenesisStore.getState().swarm.activeCoordinations + 1,
+              consensusLevel: data.consensusLevel ?? 0,
+            });
+            break;
+          case 'emergence':
+            addEmergentPattern({
+              id: crypto.randomUUID(),
+              pattern: data.pattern ?? '',
+              agents: data.agents ?? [],
+              confidence: data.confidence ?? 0,
+              timestamp: Date.now(),
+            });
+            break;
+        }
+        addEvent({ type: eventType, data });
+        break;
+
+      case 'healing':
+        switch (action) {
+          case 'started':
+            updateHealing({
+              isActive: true,
+              currentTarget: data.target ?? null,
+            });
+            addHealingEvent({
+              id: crypto.randomUUID(),
+              target: data.target ?? 'unknown',
+              status: 'started',
+              issuesFixed: 0,
+              timestamp: Date.now(),
+            });
+            break;
+          case 'completed':
+            updateHealing({
+              isActive: false,
+              currentTarget: null,
+              issuesRepaired: useGenesisStore.getState().healing.issuesRepaired + (data.issuesFixed ?? 0),
+            });
+            addHealingEvent({
+              id: crypto.randomUUID(),
+              target: data.target ?? 'unknown',
+              status: data.success ? 'completed' : 'failed',
+              issuesFixed: data.issuesFixed ?? 0,
+              timestamp: Date.now(),
+            });
+            break;
+        }
+        addEvent({ type: eventType, data });
+        break;
+
+      case 'grounding':
+        if (action === 'verified') {
+          addVerifiedClaim({
+            id: crypto.randomUUID(),
+            claim: data.claim ?? '',
+            verified: data.verified ?? false,
+            confidence: data.confidence ?? 0,
+            source: data.source,
+            timestamp: Date.now(),
+          });
+          updateGrounding({
+            factAccuracy: data.verified
+              ? (useGenesisStore.getState().grounding.factAccuracy * 0.9 + 0.1)
+              : (useGenesisStore.getState().grounding.factAccuracy * 0.9),
+          });
+        }
+        addEvent({ type: eventType, data });
+        break;
+
+      case 'neuromod':
+        if (action === 'levels') {
+          updateNeuromod({
+            dopamine: data.dopamine ?? 0.5,
+            serotonin: data.serotonin ?? 0.5,
+            norepinephrine: data.norepinephrine ?? 0.3,
+            cortisol: data.acetylcholine ?? 0.2, // Map acetylcholine to cortisol for now
+          });
+        }
+        addEvent({ type: eventType, data });
+        break;
+
       default:
         // Generic event
         addEvent({ type: eventType, data });
     }
-  }, [updateConsciousness, updateKernel, updateNeuromod, updateEconomy, updateSelfImprovement, addModification, addLesson, addCodeQuery, addBuildOutput, addEvent]);
+  }, [
+    updateConsciousness, updateKernel, updateNeuromod, updateEconomy, updateSelfImprovement,
+    updateActiveInference, updateNociception, updateAllostasis, updateWorldModel,
+    updateDaemon, updateFinance, updateRevenue, updateContent, updateSwarm,
+    updateHealing, updateGrounding,
+    addModification, addLesson, addCodeQuery, addBuildOutput,
+    addPainStimulus, addWorldPrediction, addConsistencyViolation, addDaemonTask,
+    addFinancePosition, addTradingSignal, addRevenueOpportunity,
+    addContentItem, addContentInsight, addEmergentPattern, addHealingEvent, addVerifiedClaim,
+    addEvent
+  ]);
 
   useEffect(() => {
     let mounted = true;
@@ -454,7 +853,12 @@ export function useSSEConnection(dashboardUrl: string) {
         };
 
         // Handle specific named events
-        ['consciousness', 'kernel', 'neuromodulation', 'allostasis', 'nociception', 'metrics', 'selfimprovement', 'coderag', 'learning'].forEach(category => {
+        [
+          'consciousness', 'kernel', 'neuromodulation', 'allostasis', 'nociception',
+          'metrics', 'selfimprovement', 'coderag', 'learning', 'active-inference',
+          'worldmodel', 'daemon', 'finance', 'revenue', 'content', 'swarm',
+          'healing', 'grounding', 'neuromod', 'pain'
+        ].forEach(category => {
           eventSource.addEventListener(category, (event: MessageEvent) => {
             if (!mounted) return;
             try {

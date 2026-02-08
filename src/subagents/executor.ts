@@ -17,7 +17,7 @@ import {
 } from './types.js';
 import { getSubagent, BUILTIN_SUBAGENTS } from './registry.js';
 import { LLMBridge, createLLMBridge } from '../llm/index.js';
-import { ToolDispatcher } from '../cli/dispatcher.js';
+import { ToolDispatcher, TOOL_ALIASES } from '../cli/dispatcher.js';
 
 // ============================================================================
 // Subagent Executor
@@ -331,10 +331,8 @@ After completing your task, provide a clear summary of:
 
       const toolCalls = this.dispatcher.parseToolCalls(lastResponse);
 
-      // Filter to allowed tools only
-      const allowedCalls = allowedTools.includes('*')
-        ? toolCalls
-        : toolCalls.filter(call => allowedTools.includes(call.name));
+      // Filter to allowed tools only (with alias resolution)
+      const allowedCalls = toolCalls.filter(call => this.isToolAllowed(call.name, allowedTools));
 
       if (allowedCalls.length === 0) {
         // No tool calls, we're done
@@ -371,6 +369,40 @@ After completing your task, provide a clear summary of:
     }
 
     return lastResponse;
+  }
+
+  /**
+   * Resolve a tool name through aliases to its canonical name.
+   * Handles cases where LLMs generate variations like "web-search"
+   * instead of "brave_web_search".
+   */
+  private resolveToolAlias(name: string): string {
+    const lowerName = name.toLowerCase().replace(/-/g, '_');
+    return TOOL_ALIASES[lowerName] || TOOL_ALIASES[name] || name;
+  }
+
+  /**
+   * Check if a tool call name matches any of the allowed tools,
+   * considering aliases. E.g., if "brave_web_search" is allowed,
+   * then "web-search" should also pass.
+   */
+  private isToolAllowed(callName: string, allowedTools: string[]): boolean {
+    if (allowedTools.includes('*')) return true;
+
+    // Direct match
+    if (allowedTools.includes(callName)) return true;
+
+    // Resolve the call name through aliases and check
+    const resolved = this.resolveToolAlias(callName);
+    if (resolved !== callName && allowedTools.includes(resolved)) return true;
+
+    // Reverse check: resolve each allowed tool and see if it matches
+    for (const allowed of allowedTools) {
+      const resolvedAllowed = this.resolveToolAlias(allowed);
+      if (resolvedAllowed === callName || resolvedAllowed === resolved) return true;
+    }
+
+    return false;
   }
 
   private timeoutPromise(ms: number, taskId: string): Promise<never> {

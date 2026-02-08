@@ -206,12 +206,88 @@ const AGENT_CAPABILITIES: Record<AgentType, AgentCapability> = {
 };
 
 // ============================================================================
+// Priority Task Queue
+// ============================================================================
+
+const PRIORITY_WEIGHTS: Record<MessagePriority, number> = {
+  critical: 0,
+  high: 1,
+  normal: 2,
+  low: 3,
+};
+
+/**
+ * Priority queue for task scheduling.
+ * Critical/high tasks always execute before normal/low.
+ * O(1) enqueue, O(1) dequeue (4 FIFO buckets).
+ */
+export class PriorityTaskQueue {
+  private buckets: Record<MessagePriority, TaskRequest[]> = {
+    critical: [],
+    high: [],
+    normal: [],
+    low: [],
+  };
+  private _size = 0;
+
+  enqueue(request: TaskRequest): void {
+    const priority = request.priority || 'normal';
+    this.buckets[priority].push(request);
+    this._size++;
+  }
+
+  dequeue(): TaskRequest | undefined {
+    const priorities: MessagePriority[] = ['critical', 'high', 'normal', 'low'];
+    for (const p of priorities) {
+      if (this.buckets[p].length > 0) {
+        this._size--;
+        return this.buckets[p].shift();
+      }
+    }
+    return undefined;
+  }
+
+  peek(): TaskRequest | undefined {
+    const priorities: MessagePriority[] = ['critical', 'high', 'normal', 'low'];
+    for (const p of priorities) {
+      if (this.buckets[p].length > 0) {
+        return this.buckets[p][0];
+      }
+    }
+    return undefined;
+  }
+
+  get size(): number {
+    return this._size;
+  }
+
+  isEmpty(): boolean {
+    return this._size === 0;
+  }
+
+  /** Get queue breakdown by priority */
+  breakdown(): Record<MessagePriority, number> {
+    return {
+      critical: this.buckets.critical.length,
+      high: this.buckets.high.length,
+      normal: this.buckets.normal.length,
+      low: this.buckets.low.length,
+    };
+  }
+
+  clear(): void {
+    this.buckets = { critical: [], high: [], normal: [], low: [] };
+    this._size = 0;
+  }
+}
+
+// ============================================================================
 // Agent Pool Class
 // ============================================================================
 
 export class AgentPool {
   private pool: Map<AgentType, PooledAgent[]> = new Map();
-  private taskQueue: TaskRequest[] = [];
+  private taskQueue = new PriorityTaskQueue();
   private activeTaskCount = 0;
   private bus: MessageBus;
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -350,17 +426,26 @@ export class AgentPool {
   }
 
   /**
-   * Execute multiple tasks in parallel (with concurrency limit)
+   * Execute multiple tasks in parallel (with concurrency limit).
+   * Tasks are dequeued in priority order: critical > high > normal > low.
    */
   async executeParallel(requests: TaskRequest[]): Promise<TaskResult[]> {
-    const results: TaskResult[] = [];
+    // Enqueue all requests in priority order
+    for (const request of requests) {
+      this.taskQueue.enqueue(request);
+    }
+
     const executing: Promise<TaskResult>[] = [];
 
-    for (const request of requests) {
+    // Drain queue in priority order
+    while (!this.taskQueue.isEmpty()) {
       // Wait if at max concurrency
       while (this.activeTaskCount >= this.config.maxConcurrent) {
         await this.waitForSlot();
       }
+
+      const request = this.taskQueue.dequeue();
+      if (!request) break;
 
       this.activeTaskCount++;
       const promise = this.execute(request)
@@ -373,6 +458,16 @@ export class AgentPool {
 
     // Wait for all to complete
     return Promise.all(executing);
+  }
+
+  /**
+   * Get the current task queue status
+   */
+  getQueueStatus(): { size: number; breakdown: Record<MessagePriority, number> } {
+    return {
+      size: this.taskQueue.size,
+      breakdown: this.taskQueue.breakdown(),
+    };
   }
 
   /**

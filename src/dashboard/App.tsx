@@ -10,7 +10,7 @@ import { useSSEConnection } from './hooks/useSSEConnection';
 // GENESIS - Full Interactive Web Interface
 // ============================================================================
 
-type View = 'overview' | 'consciousness' | 'neuromod' | 'ness' | 'chat' | 'agents' | 'tasks' | 'creator' | 'terminal' | 'analytics' | 'files' | 'memory' | 'settings' | 'workflow' | 'playground' | 'integrations' | 'marketplace' | 'mcp' | 'codemind' | 'evolution' | 'sandbox' | 'lessons' | 'history';
+type View = 'overview' | 'consciousness' | 'neuromod' | 'ness' | 'chat' | 'agents' | 'tasks' | 'creator' | 'terminal' | 'analytics' | 'files' | 'memory' | 'settings' | 'workflow' | 'playground' | 'integrations' | 'marketplace' | 'mcp' | 'codemind' | 'evolution' | 'sandbox' | 'lessons' | 'history' | 'inference' | 'pain' | 'allostasis' | 'worldmodel' | 'daemon' | 'finance' | 'revenue' | 'content' | 'swarm' | 'healing' | 'grounding';
 
 // Icons as simple components
 const Icons = {
@@ -88,6 +88,17 @@ const Icons = {
   sandbox: () => <span>🧪</span>,
   lessons: () => <span>🧠</span>,
   modhistory: () => <span>📜</span>,
+  inference: () => <span>🎯</span>,
+  pain: () => <span>⚡</span>,
+  allostasis: () => <span>⚖</span>,
+  worldmodel: () => <span>🌐</span>,
+  daemon: () => <span>👻</span>,
+  finance: () => <span>📈</span>,
+  revenue: () => <span>💰</span>,
+  content: () => <span>📝</span>,
+  swarm: () => <span>🐝</span>,
+  healing: () => <span>💊</span>,
+  grounding: () => <span>✓</span>,
 };
 
 // ============================================================================
@@ -3411,6 +3422,17 @@ function Breadcrumbs({ currentView }: { currentView: View }) {
     sandbox: 'Sandbox',
     lessons: 'Lessons',
     history: 'History',
+    inference: 'Active Inference',
+    pain: 'Nociception',
+    allostasis: 'Allostasis',
+    worldmodel: 'World Model',
+    daemon: 'Daemon',
+    finance: 'Finance',
+    revenue: 'Revenue',
+    content: 'Content',
+    swarm: 'Swarm',
+    healing: 'Healing',
+    grounding: 'Grounding',
   };
 
   return (
@@ -7109,6 +7131,1021 @@ function LessonsView() {
 }
 
 // ============================================================================
+// ACTIVE INFERENCE VIEW
+// ============================================================================
+
+function ActiveInferenceView() {
+  const { activeInference, kernel } = useGenesisStore();
+  const { currentCycle, beliefs, selectedAction, lastSurprise, avgSurprise, isRunning, surpriseHistory } = activeInference;
+
+  return (
+    <div className="inference-view">
+      <div className="view-header glass">
+        <h2>Active Inference</h2>
+        <span className={`status-badge ${isRunning ? 'active' : 'idle'}`}>
+          {isRunning ? '● RUNNING' : '○ IDLE'}
+        </span>
+      </div>
+
+      <div className="inference-grid">
+        {/* Cycle Info */}
+        <div className="inference-card cycle-card glass">
+          <h3>Current Cycle</h3>
+          <div className="cycle-number">{currentCycle}</div>
+          <div className="cycle-metrics">
+            <div className="metric">
+              <span className="label">Free Energy</span>
+              <span className="value">{kernel.freeEnergy.toFixed(3)}</span>
+            </div>
+            <div className="metric">
+              <span className="label">Prediction Error</span>
+              <span className="value">{kernel.predictionError.toFixed(3)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Beliefs */}
+        <div className="inference-card beliefs-card glass">
+          <h3>Current Beliefs</h3>
+          <div className="beliefs-list">
+            {Object.entries(beliefs).length > 0 ? (
+              Object.entries(beliefs).map(([key, value]) => (
+                <div key={key} className="belief-item">
+                  <span className="belief-key">{key}</span>
+                  <span className="belief-value">{value}</span>
+                </div>
+              ))
+            ) : (
+              <div className="no-data">No beliefs formed yet</div>
+            )}
+          </div>
+        </div>
+
+        {/* Selected Action */}
+        <div className="inference-card action-card glass">
+          <h3>Selected Action</h3>
+          <div className="action-display">
+            {selectedAction ? (
+              <>
+                <span className="action-icon">→</span>
+                <span className="action-text">{selectedAction}</span>
+              </>
+            ) : (
+              <span className="no-action">No action selected</span>
+            )}
+          </div>
+        </div>
+
+        {/* Surprise Metrics */}
+        <div className="inference-card surprise-card glass">
+          <h3>Surprise</h3>
+          <div className="surprise-metrics">
+            <div className="surprise-current">
+              <span className="label">Last Surprise</span>
+              <span className={`value ${lastSurprise > 0.5 ? 'high' : 'low'}`}>
+                {lastSurprise.toFixed(3)}
+              </span>
+            </div>
+            <div className="surprise-avg">
+              <span className="label">Average</span>
+              <span className="value">{avgSurprise.toFixed(3)}</span>
+            </div>
+          </div>
+          <div className="surprise-history">
+            {surpriseHistory.slice(0, 20).map((s, i) => (
+              <div
+                key={i}
+                className="surprise-bar"
+                style={{ height: `${s.value * 100}%` }}
+                title={`${s.value.toFixed(3)} at ${new Date(s.timestamp).toLocaleTimeString()}`}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// NOCICEPTION (PAIN) VIEW
+// ============================================================================
+
+function NociceptionView() {
+  const { nociception } = useGenesisStore();
+  const { totalPain, threshold, adaptation, activeStimuli, painHistory } = nociception;
+
+  const getPainLevel = (pain: number) => {
+    if (pain < 0.3) return 'low';
+    if (pain < 0.6) return 'medium';
+    if (pain < 0.8) return 'high';
+    return 'critical';
+  };
+
+  return (
+    <div className="nociception-view">
+      <div className="view-header glass">
+        <h2>Nociception System</h2>
+        <span className={`pain-level ${getPainLevel(totalPain)}`}>
+          Pain Level: {(totalPain * 100).toFixed(0)}%
+        </span>
+      </div>
+
+      <div className="nociception-grid">
+        {/* Pain Gauge */}
+        <div className="nociception-card gauge-card glass">
+          <h3>Total Pain</h3>
+          <div className="pain-gauge">
+            <div className="gauge-ring">
+              <svg viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="45" className="gauge-bg" />
+                <circle
+                  cx="50" cy="50" r="45"
+                  className={`gauge-fill ${getPainLevel(totalPain)}`}
+                  strokeDasharray={`${totalPain * 283} 283`}
+                />
+              </svg>
+              <div className="gauge-value">{(totalPain * 100).toFixed(0)}%</div>
+            </div>
+          </div>
+          <div className="pain-metrics">
+            <div className="metric">
+              <span className="label">Threshold</span>
+              <span className="value">{(threshold * 100).toFixed(0)}%</span>
+            </div>
+            <div className="metric">
+              <span className="label">Adaptation</span>
+              <span className="value">{(adaptation * 100).toFixed(0)}%</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Active Stimuli */}
+        <div className="nociception-card stimuli-card glass">
+          <h3>Active Stimuli</h3>
+          <div className="stimuli-list">
+            {activeStimuli.length > 0 ? (
+              activeStimuli.map((stimulus) => (
+                <div key={stimulus.id} className={`stimulus-item ${stimulus.type}`}>
+                  <div className="stimulus-header">
+                    <span className="stimulus-location">{stimulus.location}</span>
+                    <span className={`stimulus-type ${stimulus.type}`}>{stimulus.type}</span>
+                  </div>
+                  <div className="stimulus-intensity">
+                    <div
+                      className="intensity-bar"
+                      style={{ width: `${stimulus.intensity * 100}%` }}
+                    />
+                    <span className="intensity-value">{(stimulus.intensity * 100).toFixed(0)}%</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="no-stimuli">
+                <span className="icon">✓</span>
+                <span>No pain stimuli detected</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Pain History */}
+        <div className="nociception-card history-card glass">
+          <h3>Pain History</h3>
+          <div className="pain-chart">
+            {painHistory.slice(0, 30).map((p, i) => (
+              <div
+                key={i}
+                className={`pain-bar ${getPainLevel(p.value)}`}
+                style={{ height: `${p.value * 100}%` }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// ALLOSTASIS VIEW
+// ============================================================================
+
+function AllostasisView() {
+  const { allostasis } = useGenesisStore();
+  const { variables, isThrottled, throttleMagnitude, isHibernating, hibernationDuration, deferredVariables } = allostasis;
+
+  return (
+    <div className="allostasis-view">
+      <div className="view-header glass">
+        <h2>Allostatic Regulation</h2>
+        <div className="status-badges">
+          {isThrottled && <span className="badge throttle">⚠ THROTTLED ({(throttleMagnitude * 100).toFixed(0)}%)</span>}
+          {isHibernating && <span className="badge hibernate">💤 HIBERNATING ({hibernationDuration}ms)</span>}
+        </div>
+      </div>
+
+      <div className="allostasis-grid">
+        {/* Variables */}
+        <div className="allostasis-card variables-card glass">
+          <h3>Regulated Variables</h3>
+          <div className="variables-list">
+            {variables.map((variable) => {
+              const deviation = Math.abs(variable.current - variable.setpoint);
+              const status = deviation < 0.1 ? 'stable' : deviation < 0.3 ? 'adjusting' : 'critical';
+              return (
+                <div key={variable.name} className={`variable-item ${status}`}>
+                  <div className="variable-header">
+                    <span className="variable-name">{variable.name}</span>
+                    <span className={`urgency-badge ${variable.urgency > 0.5 ? 'high' : 'low'}`}>
+                      Urgency: {(variable.urgency * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="variable-bar">
+                    <div className="bar-track">
+                      <div
+                        className="setpoint-marker"
+                        style={{ left: `${variable.setpoint * 100}%` }}
+                      />
+                      <div
+                        className="current-fill"
+                        style={{ width: `${variable.current * 100}%` }}
+                      />
+                    </div>
+                    <div className="bar-labels">
+                      <span>Current: {(variable.current * 100).toFixed(0)}%</span>
+                      <span>Setpoint: {(variable.setpoint * 100).toFixed(0)}%</span>
+                    </div>
+                  </div>
+                  {variable.action && (
+                    <div className="variable-action">
+                      Action: {variable.action}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Deferred Variables */}
+        {deferredVariables.length > 0 && (
+          <div className="allostasis-card deferred-card glass">
+            <h3>Deferred Regulations</h3>
+            <div className="deferred-list">
+              {deferredVariables.map((v) => (
+                <div key={v} className="deferred-item">
+                  <span className="icon">⏸</span>
+                  <span>{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Homeostatic Summary */}
+        <div className="allostasis-card summary-card glass">
+          <h3>System Balance</h3>
+          <div className="balance-indicator">
+            <div className="balance-scale">
+              {variables.map((v) => (
+                <div
+                  key={v.name}
+                  className="balance-dot"
+                  style={{
+                    left: `${v.current * 100}%`,
+                    backgroundColor: Math.abs(v.current - v.setpoint) < 0.1 ? '#10b981' : '#f59e0b',
+                  }}
+                  title={v.name}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// WORLD MODEL VIEW
+// ============================================================================
+
+function WorldModelView() {
+  const { worldModel } = useGenesisStore();
+  const { totalFacts, predictions, violations, causalChainsActive } = worldModel;
+
+  return (
+    <div className="worldmodel-view">
+      <div className="view-header glass">
+        <h2>World Model</h2>
+        <div className="stats">
+          <span className="stat">{totalFacts} facts</span>
+          <span className="stat">{causalChainsActive} causal chains</span>
+        </div>
+      </div>
+
+      <div className="worldmodel-grid">
+        {/* Predictions */}
+        <div className="worldmodel-card predictions-card glass">
+          <h3>Active Predictions</h3>
+          <div className="predictions-list">
+            {predictions.length > 0 ? (
+              predictions.slice(0, 10).map((pred) => (
+                <div key={pred.id} className="prediction-item">
+                  <div className="prediction-header">
+                    <span className="prediction-domain">{pred.domain}</span>
+                    <span className={`confidence ${pred.confidence > 0.7 ? 'high' : 'low'}`}>
+                      {(pred.confidence * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="prediction-text">{pred.prediction}</div>
+                  {pred.verified !== undefined && (
+                    <span className={`verified-badge ${pred.verified ? 'true' : 'false'}`}>
+                      {pred.verified ? '✓ Verified' : '✗ Failed'}
+                    </span>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="no-data">No active predictions</div>
+            )}
+          </div>
+        </div>
+
+        {/* Consistency Violations */}
+        <div className="worldmodel-card violations-card glass">
+          <h3>Consistency Violations</h3>
+          <div className="violations-list">
+            {violations.length > 0 ? (
+              violations.slice(0, 10).map((viol) => (
+                <div key={viol.id} className="violation-item">
+                  <div className="violation-claim">"{viol.claim}"</div>
+                  <div className="violation-conflict">
+                    <span className="icon">↔</span>
+                    Conflicts with: "{viol.conflictsWith}"
+                  </div>
+                  <div className="violation-resolution">
+                    Resolution: {viol.resolution}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="no-violations">
+                <span className="icon">✓</span>
+                <span>No consistency violations</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Causal Graph Placeholder */}
+        <div className="worldmodel-card graph-card glass">
+          <h3>Causal Structure</h3>
+          <div className="graph-placeholder">
+            <span className="icon">🌐</span>
+            <span>{causalChainsActive} active causal chains</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// DAEMON VIEW
+// ============================================================================
+
+function DaemonView() {
+  const { daemon } = useGenesisStore();
+  const { state, tasks, dreamPhase, dreamConsolidations, dreamInsights, lastMaintenance, maintenanceIssues, maintenanceFixed } = daemon;
+
+  const getStateColor = (s: string) => {
+    switch (s) {
+      case 'running': return '#10b981';
+      case 'dreaming': return '#8b5cf6';
+      case 'maintaining': return '#f59e0b';
+      case 'error': return '#ef4444';
+      default: return '#6b7280';
+    }
+  };
+
+  return (
+    <div className="daemon-view">
+      <div className="view-header glass">
+        <h2>Daemon Controller</h2>
+        <span className="state-badge" style={{ color: getStateColor(state) }}>
+          ● {state.toUpperCase()}
+        </span>
+      </div>
+
+      <div className="daemon-grid">
+        {/* State Overview */}
+        <div className="daemon-card state-card glass">
+          <h3>Current State</h3>
+          <div className="state-display">
+            <span className="state-icon" style={{ color: getStateColor(state) }}>
+              {state === 'dreaming' ? '💤' : state === 'maintaining' ? '🔧' : state === 'running' ? '▶' : '⏸'}
+            </span>
+            <span className="state-text">{state}</span>
+          </div>
+          {dreamPhase && (
+            <div className="dream-info">
+              <span className="label">Dream Phase:</span>
+              <span className="value">{dreamPhase}</span>
+              <div className="dream-stats">
+                <span>{dreamConsolidations} consolidations</span>
+                <span>{dreamInsights} insights</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Task Queue */}
+        <div className="daemon-card tasks-card glass">
+          <h3>Task Queue</h3>
+          <div className="tasks-list">
+            {tasks.length > 0 ? (
+              tasks.slice(0, 10).map((task) => (
+                <div key={task.id} className={`task-item ${task.status}`}>
+                  <div className="task-header">
+                    <span className="task-name">{task.name}</span>
+                    <span className={`priority-badge ${task.priority}`}>{task.priority}</span>
+                  </div>
+                  <div className="task-status">
+                    <span className={`status ${task.status}`}>{task.status}</span>
+                    {task.error && <span className="error">{task.error}</span>}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="no-tasks">No scheduled tasks</div>
+            )}
+          </div>
+        </div>
+
+        {/* Maintenance Stats */}
+        <div className="daemon-card maintenance-card glass">
+          <h3>Last Maintenance</h3>
+          {lastMaintenance ? (
+            <div className="maintenance-info">
+              <div className="maintenance-time">
+                {new Date(lastMaintenance).toLocaleString()}
+              </div>
+              <div className="maintenance-stats">
+                <div className="stat">
+                  <span className="label">Issues Found</span>
+                  <span className="value">{maintenanceIssues}</span>
+                </div>
+                <div className="stat">
+                  <span className="label">Fixed</span>
+                  <span className="value good">{maintenanceFixed}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="no-maintenance">No maintenance run yet</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// FINANCE VIEW
+// ============================================================================
+
+function FinanceView() {
+  const { finance } = useGenesisStore();
+  const { totalPortfolioValue, unrealizedPnL, realizedPnL, positions, signals, regime, riskLevel, drawdown, winRate, sharpeRatio } = finance;
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+  };
+
+  return (
+    <div className="finance-view">
+      <div className="view-header glass">
+        <h2>Finance & Trading</h2>
+        <div className="header-stats">
+          <span className={`regime-badge ${regime}`}>{regime} regime</span>
+          <span className="risk-level">Risk: {(riskLevel * 100).toFixed(0)}%</span>
+        </div>
+      </div>
+
+      <div className="finance-grid">
+        {/* Portfolio Overview */}
+        <div className="finance-card portfolio-card glass">
+          <h3>Portfolio</h3>
+          <div className="portfolio-value">{formatCurrency(totalPortfolioValue)}</div>
+          <div className="pnl-stats">
+            <div className={`pnl unrealized ${unrealizedPnL >= 0 ? 'positive' : 'negative'}`}>
+              <span className="label">Unrealized P&L</span>
+              <span className="value">{formatCurrency(unrealizedPnL)}</span>
+            </div>
+            <div className={`pnl realized ${realizedPnL >= 0 ? 'positive' : 'negative'}`}>
+              <span className="label">Realized P&L</span>
+              <span className="value">{formatCurrency(realizedPnL)}</span>
+            </div>
+          </div>
+          <div className="performance-metrics">
+            <div className="metric">
+              <span className="label">Win Rate</span>
+              <span className="value">{(winRate * 100).toFixed(1)}%</span>
+            </div>
+            <div className="metric">
+              <span className="label">Sharpe Ratio</span>
+              <span className="value">{sharpeRatio.toFixed(2)}</span>
+            </div>
+            <div className="metric">
+              <span className="label">Drawdown</span>
+              <span className={`value ${drawdown > 0.1 ? 'warning' : ''}`}>
+                {(drawdown * 100).toFixed(1)}%
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Positions */}
+        <div className="finance-card positions-card glass">
+          <h3>Open Positions</h3>
+          <div className="positions-list">
+            {positions.length > 0 ? (
+              positions.map((pos) => (
+                <div key={pos.symbol} className={`position-item ${pos.direction}`}>
+                  <div className="position-header">
+                    <span className="symbol">{pos.symbol}</span>
+                    <span className={`direction ${pos.direction}`}>{pos.direction.toUpperCase()}</span>
+                  </div>
+                  <div className="position-details">
+                    <span>Size: {pos.size}</span>
+                    <span>Entry: {formatCurrency(pos.entryPrice)}</span>
+                    <span>Current: {formatCurrency(pos.currentPrice)}</span>
+                  </div>
+                  <div className={`position-pnl ${pos.pnl >= 0 ? 'positive' : 'negative'}`}>
+                    {formatCurrency(pos.pnl)} ({pos.pnlPercent >= 0 ? '+' : ''}{pos.pnlPercent.toFixed(2)}%)
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="no-positions">No open positions</div>
+            )}
+          </div>
+        </div>
+
+        {/* Signals */}
+        <div className="finance-card signals-card glass">
+          <h3>Trading Signals</h3>
+          <div className="signals-list">
+            {signals.length > 0 ? (
+              signals.slice(0, 5).map((sig) => (
+                <div key={sig.id} className={`signal-item ${sig.direction}`}>
+                  <div className="signal-header">
+                    <span className="symbol">{sig.symbol}</span>
+                    <span className={`action ${sig.action}`}>{sig.action.toUpperCase()}</span>
+                  </div>
+                  <div className="signal-strength">
+                    <div className="strength-bar" style={{ width: `${sig.strength * 100}%` }} />
+                    <span>{(sig.strength * 100).toFixed(0)}% strength</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="no-signals">No active signals</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// REVENUE VIEW
+// ============================================================================
+
+function RevenueView() {
+  const { revenue } = useGenesisStore();
+  const { totalEarned, streams, opportunities, recentTasks, avgROI } = revenue;
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+  };
+
+  return (
+    <div className="revenue-view">
+      <div className="view-header glass">
+        <h2>Revenue Streams</h2>
+        <div className="total-earned">{formatCurrency(totalEarned)} earned</div>
+      </div>
+
+      <div className="revenue-grid">
+        {/* Streams */}
+        <div className="revenue-card streams-card glass">
+          <h3>Active Streams</h3>
+          <div className="streams-list">
+            {streams.length > 0 ? (
+              streams.map((stream) => (
+                <div key={stream.name} className={`stream-item ${stream.status}`}>
+                  <div className="stream-header">
+                    <span className="stream-name">{stream.name}</span>
+                    <span className={`status-badge ${stream.status}`}>{stream.status}</span>
+                  </div>
+                  <div className="stream-stats">
+                    <span>Earned: {formatCurrency(stream.totalEarned)}</span>
+                    <span>Success: {(stream.successRate * 100).toFixed(0)}%</span>
+                    <span>Tasks: {stream.taskCount}</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="no-streams">No active revenue streams</div>
+            )}
+          </div>
+        </div>
+
+        {/* Opportunities */}
+        <div className="revenue-card opportunities-card glass">
+          <h3>Opportunities</h3>
+          <div className="opportunities-list">
+            {opportunities.length > 0 ? (
+              opportunities.slice(0, 5).map((opp) => (
+                <div key={opp.id} className="opportunity-item">
+                  <div className="opportunity-header">
+                    <span className="stream">{opp.stream}</span>
+                    <span className={`roi ${opp.roi > 1 ? 'positive' : 'negative'}`}>
+                      ROI: {(opp.roi * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="opportunity-details">
+                    <span>Est. Revenue: {formatCurrency(opp.estimatedRevenue)}</span>
+                    <span>Est. Cost: {formatCurrency(opp.estimatedCost)}</span>
+                    <span className={`risk ${opp.risk > 0.5 ? 'high' : 'low'}`}>
+                      Risk: {(opp.risk * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="no-opportunities">No pending opportunities</div>
+            )}
+          </div>
+        </div>
+
+        {/* Recent Tasks */}
+        <div className="revenue-card tasks-card glass">
+          <h3>Recent Tasks</h3>
+          <div className="tasks-list">
+            {recentTasks.length > 0 ? (
+              recentTasks.slice(0, 5).map((task) => (
+                <div key={task.id} className={`task-item ${task.success ? 'success' : 'failed'}`}>
+                  <div className="task-header">
+                    <span className="stream">{task.stream}</span>
+                    <span className={`status ${task.success ? 'success' : 'failed'}`}>
+                      {task.success ? '✓' : '✗'}
+                    </span>
+                  </div>
+                  <div className="task-result">
+                    Revenue: {formatCurrency(task.actualRevenue)} | Cost: {formatCurrency(task.actualCost)}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="no-tasks">No recent tasks</div>
+            )}
+          </div>
+        </div>
+
+        {/* ROI Summary */}
+        <div className="revenue-card roi-card glass">
+          <h3>Average ROI</h3>
+          <div className={`roi-value ${avgROI > 1 ? 'positive' : 'negative'}`}>
+            {(avgROI * 100).toFixed(1)}%
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// CONTENT VIEW
+// ============================================================================
+
+function ContentView() {
+  const { content } = useGenesisStore();
+  const { totalPublished, totalScheduled, avgEngagementRate, topPlatform, content: contentItems, insights } = content;
+
+  return (
+    <div className="content-view">
+      <div className="view-header glass">
+        <h2>Content Engine</h2>
+        <div className="header-stats">
+          <span>{totalPublished} published</span>
+          <span>{totalScheduled} scheduled</span>
+        </div>
+      </div>
+
+      <div className="content-grid">
+        {/* Overview */}
+        <div className="content-card overview-card glass">
+          <h3>Performance</h3>
+          <div className="performance-stats">
+            <div className="stat">
+              <span className="label">Avg Engagement</span>
+              <span className="value">{(avgEngagementRate * 100).toFixed(1)}%</span>
+            </div>
+            {topPlatform && (
+              <div className="stat">
+                <span className="label">Top Platform</span>
+                <span className="value">{topPlatform}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Content Items */}
+        <div className="content-card items-card glass">
+          <h3>Recent Content</h3>
+          <div className="content-list">
+            {contentItems.length > 0 ? (
+              contentItems.slice(0, 5).map((item) => (
+                <div key={item.id} className={`content-item ${item.status}`}>
+                  <div className="content-header">
+                    <span className="content-type">{item.type}</span>
+                    <span className={`status-badge ${item.status}`}>{item.status}</span>
+                  </div>
+                  <div className="content-topic">{item.topic}</div>
+                  <div className="content-platforms">
+                    {item.platforms.map((p) => (
+                      <span key={p} className="platform-tag">{p}</span>
+                    ))}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="no-content">No content created yet</div>
+            )}
+          </div>
+        </div>
+
+        {/* Insights */}
+        <div className="content-card insights-card glass">
+          <h3>AI Insights</h3>
+          <div className="insights-list">
+            {insights.length > 0 ? (
+              insights.slice(0, 5).map((insight) => (
+                <div key={insight.id} className="insight-item">
+                  <div className="insight-type">{insight.type.replace('_', ' ')}</div>
+                  <div className="insight-recommendation">{insight.recommendation}</div>
+                  <div className="insight-confidence">
+                    Confidence: {(insight.confidence * 100).toFixed(0)}%
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="no-insights">No insights yet</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// SWARM VIEW
+// ============================================================================
+
+function SwarmView() {
+  const { swarm, agents } = useGenesisStore();
+  const { agentCount, activeCoordinations, patterns, collectiveIntelligence, consensusLevel } = swarm;
+
+  return (
+    <div className="swarm-view">
+      <div className="view-header glass">
+        <h2>Swarm Intelligence</h2>
+        <div className="header-stats">
+          <span>{agentCount} agents</span>
+          <span>{activeCoordinations} coordinations</span>
+        </div>
+      </div>
+
+      <div className="swarm-grid">
+        {/* Collective Metrics */}
+        <div className="swarm-card metrics-card glass">
+          <h3>Collective Metrics</h3>
+          <div className="swarm-metrics">
+            <div className="metric-gauge">
+              <span className="label">Collective Intelligence</span>
+              <div className="gauge-bar">
+                <div className="gauge-fill" style={{ width: `${collectiveIntelligence * 100}%` }} />
+              </div>
+              <span className="value">{(collectiveIntelligence * 100).toFixed(0)}%</span>
+            </div>
+            <div className="metric-gauge">
+              <span className="label">Consensus Level</span>
+              <div className="gauge-bar">
+                <div className="gauge-fill" style={{ width: `${consensusLevel * 100}%` }} />
+              </div>
+              <span className="value">{(consensusLevel * 100).toFixed(0)}%</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Emergent Patterns */}
+        <div className="swarm-card patterns-card glass">
+          <h3>Emergent Patterns</h3>
+          <div className="patterns-list">
+            {patterns.length > 0 ? (
+              patterns.map((pattern) => (
+                <div key={pattern.id} className="pattern-item">
+                  <div className="pattern-name">{pattern.pattern}</div>
+                  <div className="pattern-agents">
+                    {pattern.agents.slice(0, 3).map((a) => (
+                      <span key={a} className="agent-tag">{a}</span>
+                    ))}
+                    {pattern.agents.length > 3 && (
+                      <span className="more">+{pattern.agents.length - 3} more</span>
+                    )}
+                  </div>
+                  <div className="pattern-confidence">
+                    Confidence: {(pattern.confidence * 100).toFixed(0)}%
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="no-patterns">No emergent patterns detected</div>
+            )}
+          </div>
+        </div>
+
+        {/* Agent Distribution */}
+        <div className="swarm-card distribution-card glass">
+          <h3>Agent Status</h3>
+          <div className="distribution-stats">
+            <div className="stat">
+              <span className="label">Total</span>
+              <span className="value">{agents.total}</span>
+            </div>
+            <div className="stat active">
+              <span className="label">Active</span>
+              <span className="value">{agents.active}</span>
+            </div>
+            <div className="stat queued">
+              <span className="label">Queued</span>
+              <span className="value">{agents.queued}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// HEALING VIEW
+// ============================================================================
+
+function HealingView() {
+  const { healing } = useGenesisStore();
+  const { isActive, currentTarget, issuesDetected, issuesRepaired, history } = healing;
+
+  return (
+    <div className="healing-view">
+      <div className="view-header glass">
+        <h2>Self-Healing System</h2>
+        <span className={`status-badge ${isActive ? 'active' : 'idle'}`}>
+          {isActive ? '● HEALING' : '○ IDLE'}
+        </span>
+      </div>
+
+      <div className="healing-grid">
+        {/* Current Status */}
+        <div className="healing-card status-card glass">
+          <h3>Current Status</h3>
+          {isActive && currentTarget ? (
+            <div className="active-healing">
+              <span className="healing-icon">💊</span>
+              <span className="target">Healing: {currentTarget}</span>
+            </div>
+          ) : (
+            <div className="idle-status">
+              <span className="icon">✓</span>
+              <span>System healthy</span>
+            </div>
+          )}
+          <div className="healing-stats">
+            <div className="stat">
+              <span className="label">Detected</span>
+              <span className="value">{issuesDetected}</span>
+            </div>
+            <div className="stat success">
+              <span className="label">Repaired</span>
+              <span className="value">{issuesRepaired}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* History */}
+        <div className="healing-card history-card glass">
+          <h3>Healing History</h3>
+          <div className="history-list">
+            {history.length > 0 ? (
+              history.slice(0, 10).map((event) => (
+                <div key={event.id} className={`history-item ${event.status}`}>
+                  <div className="event-header">
+                    <span className="target">{event.target}</span>
+                    <span className={`status ${event.status}`}>
+                      {event.status === 'completed' ? '✓' : event.status === 'failed' ? '✗' : '●'}
+                    </span>
+                  </div>
+                  <div className="event-details">
+                    <span>{event.issuesFixed} issues fixed</span>
+                    <span>{new Date(event.timestamp).toLocaleTimeString()}</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="no-history">No healing events</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// GROUNDING VIEW
+// ============================================================================
+
+function GroundingView() {
+  const { grounding } = useGenesisStore();
+  const { claimsVerified, claimsPending, factAccuracy, recentClaims } = grounding;
+
+  return (
+    <div className="grounding-view">
+      <div className="view-header glass">
+        <h2>Fact Grounding</h2>
+        <div className="accuracy-badge">
+          Accuracy: {(factAccuracy * 100).toFixed(1)}%
+        </div>
+      </div>
+
+      <div className="grounding-grid">
+        {/* Stats */}
+        <div className="grounding-card stats-card glass">
+          <h3>Verification Stats</h3>
+          <div className="stats-grid">
+            <div className="stat">
+              <span className="value">{claimsVerified}</span>
+              <span className="label">Verified</span>
+            </div>
+            <div className="stat pending">
+              <span className="value">{claimsPending}</span>
+              <span className="label">Pending</span>
+            </div>
+            <div className="stat accuracy">
+              <span className="value">{(factAccuracy * 100).toFixed(0)}%</span>
+              <span className="label">Accuracy</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Recent Claims */}
+        <div className="grounding-card claims-card glass">
+          <h3>Recent Verifications</h3>
+          <div className="claims-list">
+            {recentClaims.length > 0 ? (
+              recentClaims.slice(0, 10).map((claim) => (
+                <div key={claim.id} className={`claim-item ${claim.verified ? 'verified' : 'unverified'}`}>
+                  <div className="claim-text">"{claim.claim}"</div>
+                  <div className="claim-result">
+                    <span className={`status ${claim.verified ? 'verified' : 'unverified'}`}>
+                      {claim.verified ? '✓ Verified' : '✗ Unverified'}
+                    </span>
+                    <span className="confidence">
+                      {(claim.confidence * 100).toFixed(0)}% confidence
+                    </span>
+                  </div>
+                  {claim.source && (
+                    <div className="claim-source">Source: {claim.source}</div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="no-claims">No claims verified yet</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // HISTORY VIEW - Modification Timeline
 // ============================================================================
 
@@ -7355,6 +8392,14 @@ export default function App() {
     { id: 'consciousness', label: 'Consciousness', icon: Icons.consciousness, section: 'genesis' },
     { id: 'neuromod', label: 'Neuromod', icon: Icons.neuromod, section: 'genesis' },
     { id: 'ness', label: 'NESS Economy', icon: Icons.ness, section: 'genesis' },
+    // Active Inference & Predictive Processing
+    { id: 'inference', label: 'Active Inference', icon: Icons.inference, section: 'inference' },
+    { id: 'worldmodel', label: 'World Model', icon: Icons.worldmodel, section: 'inference' },
+    { id: 'grounding', label: 'Grounding', icon: Icons.grounding, section: 'inference' },
+    // Homeostasis & Pain
+    { id: 'pain', label: 'Nociception', icon: Icons.pain, section: 'homeostasis' },
+    { id: 'allostasis', label: 'Allostasis', icon: Icons.allostasis, section: 'homeostasis' },
+    { id: 'healing', label: 'Healing', icon: Icons.healing, section: 'homeostasis' },
     // Self-Improvement
     { id: 'codemind', label: 'Code Mind', icon: Icons.codemind, section: 'evolution' },
     { id: 'evolution', label: 'Evolution', icon: Icons.evolution, section: 'evolution' },
@@ -7363,9 +8408,15 @@ export default function App() {
     { id: 'history', label: 'History', icon: Icons.modhistory, section: 'evolution' },
     // Operations
     { id: 'agents', label: 'Agents', icon: Icons.agents, section: 'ops' },
+    { id: 'swarm', label: 'Swarm', icon: Icons.swarm, section: 'ops' },
+    { id: 'daemon', label: 'Daemon', icon: Icons.daemon, section: 'ops' },
     { id: 'tasks', label: 'Tasks', icon: Icons.tasks, section: 'ops' },
     { id: 'memory', label: 'Memory', icon: Icons.memory, section: 'ops' },
     { id: 'mcp', label: 'MCP Hub', icon: Icons.mcp, section: 'ops' },
+    // Finance & Revenue
+    { id: 'finance', label: 'Finance', icon: Icons.finance, section: 'finance' },
+    { id: 'revenue', label: 'Revenue', icon: Icons.revenue, section: 'finance' },
+    { id: 'content', label: 'Content', icon: Icons.content, section: 'finance' },
     // Development
     { id: 'chat', label: 'Chat', icon: Icons.chat, section: 'dev' },
     { id: 'terminal', label: 'Terminal', icon: Icons.terminal, section: 'dev' },
@@ -7400,6 +8451,22 @@ export default function App() {
       case 'marketplace': return <MarketplaceView />;
       case 'mcp': return <MCPHubView />;
       case 'settings': return <SettingsView />;
+      case 'codemind': return <CodeMindView />;
+      case 'evolution': return <EvolutionView />;
+      case 'sandbox': return <SandboxMonitorView />;
+      case 'lessons': return <LessonsView />;
+      case 'history': return <HistoryView />;
+      case 'inference': return <ActiveInferenceView />;
+      case 'pain': return <NociceptionView />;
+      case 'allostasis': return <AllostasisView />;
+      case 'worldmodel': return <WorldModelView />;
+      case 'daemon': return <DaemonView />;
+      case 'finance': return <FinanceView />;
+      case 'revenue': return <RevenueView />;
+      case 'content': return <ContentView />;
+      case 'swarm': return <SwarmView />;
+      case 'healing': return <HealingView />;
+      case 'grounding': return <GroundingView />;
       default: return <OverviewView />;
     }
   };

@@ -80,7 +80,7 @@ export interface LLMToolCall {
  * - "web_search" instead of "brave_web_search"
  * - "search" instead of specific search tools
  */
-const TOOL_ALIASES: Record<string, string> = {
+export const TOOL_ALIASES: Record<string, string> = {
   // Filesystem aliases
   'filesystem': 'list_directory',  // Default filesystem action
   'fs': 'list_directory',

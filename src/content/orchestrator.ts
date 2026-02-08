@@ -62,6 +62,10 @@ export class ContentOrchestrator {
   static getInstance(generator?: ContentGenerator, researcher?: ContentResearcher): ContentOrchestrator {
     if (!ContentOrchestrator.instance) {
       ContentOrchestrator.instance = new ContentOrchestrator(generator, researcher);
+    } else {
+      // Update generator/researcher if provided
+      if (generator) ContentOrchestrator.instance.setGenerator(generator);
+      if (researcher) ContentOrchestrator.instance.setResearcher(researcher);
     }
     return ContentOrchestrator.instance;
   }

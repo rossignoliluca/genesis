@@ -27,6 +27,18 @@ export {
   type WiringResult,
 } from './module-wiring.js';
 
+// v21.0: Cognitive Bridge (Perception → Consciousness → Active Inference)
+export {
+  CognitiveBridge,
+  getCognitiveBridge,
+  resetCognitiveBridge,
+  type CognitiveBridgeConfig,
+  type PerceptionOutput,
+  type ConsciousnessInput,
+  type GroundedAction,
+  type BridgeEvent,
+} from './cognitive-bridge.js';
+
 import { onStreamCompletion } from '../streaming/orchestrator.js';
 import { getLatencyTracker } from '../streaming/latency-tracker.js';
 import { StreamMetrics } from '../streaming/types.js';

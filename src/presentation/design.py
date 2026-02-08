@@ -305,6 +305,68 @@ PALETTES: Dict[str, ColorPalette] = {
         ],
     ),
 
+    # Swiss Institutional Elegance — light cream/gray background
+    # Inspired by: Julius Baer Royal Blue, Pictet understated luxury,
+    # Lombard Odier warm neutrals, Valerie Noel (BlackRock) clean institutional
+    # Color psychology: Navy = trust/authority, warm gray = sophistication,
+    # muted green/red = financial semantics without alarm
+    # Light background (#F5F5F5) preferred over dark for Swiss private banking
+    "swiss_institutional": ColorPalette(
+        navy="#003366",
+        gold="#8d6e63",
+        white="#FFFFFF",
+        chart_primary="#003366",
+        chart_secondary="#4A90D9",
+        green="#2E865F",
+        red="#C0392B",
+        orange="#D4A056",
+        body_text="#2C3E50",
+        gray="#6B7B8D",
+        source_color="#8899AA",
+        light_gray="#D5D8DC",
+        chart_bg="#FAFBFC",
+        fig_bg="#FFFFFF",
+        slide_bg="#F5F5F5",
+        title_color="#003366",
+        card_bg="#FFFFFF",
+        card_border="#D5D8DC",
+        extra_colors=["#5B9BD5", "#8d6e63", "#A5C882", "#D4A056", "#7986CB", "#90A4AE"],
+        series_cycle=[
+            "#003366", "#4A90D9", "#2E865F", "#C0392B",
+            "#8d6e63", "#5B9BD5", "#D4A056", "#7986CB"
+        ],
+    ),
+
+    # Rossignoli Editorial — SYZ-inspired clean white editorial layout
+    # White backgrounds, orange #E8792B as primary accent (editorial DNA)
+    # Charcoal text for warmer editorial tone, no navy headers
+    # title_color = "#E8792B" signals editorial mode to templates.py
+    "rossignoli_editorial": ColorPalette(
+        navy="#2C3E50",
+        gold="#E8792B",
+        white="#FFFFFF",
+        chart_primary="#2C3E50",
+        chart_secondary="#4A90D9",
+        green="#27AE60",
+        red="#C0392B",
+        orange="#E8792B",
+        body_text="#2C3E50",
+        gray="#6B7B8D",
+        source_color="#8899AA",
+        light_gray="#D5D8DC",
+        chart_bg="#FAFBFC",
+        fig_bg="#FFFFFF",
+        slide_bg="#FFFFFF",
+        title_color="#E8792B",
+        card_bg="#FFFFFF",
+        card_border="#E0E0E0",
+        extra_colors=["#5B9BD5", "#8E44AD", "#D4A056", "#1ABC9C", "#F39C12", "#34495E"],
+        series_cycle=[
+            "#2C3E50", "#4A90D9", "#27AE60", "#C0392B",
+            "#E8792B", "#8E44AD", "#D4A056", "#1ABC9C"
+        ],
+    ),
+
     # Morgan Stanley — 5-shade blue system
     "morgan_stanley": ColorPalette(
         navy="#00263A",
@@ -347,6 +409,62 @@ def get_palette(name: str = "crossinvest_navy_gold") -> ColorPalette:
 def is_dark(palette: ColorPalette) -> bool:
     """Check if palette is dark mode."""
     return palette.fig_bg not in ("#FFFFFF", "#FAFBFC")
+
+
+def is_editorial(palette: ColorPalette) -> bool:
+    """Check if palette is in editorial mode (orange title = editorial DNA)."""
+    return palette.title_color == "#E8792B"
+
+
+# ============================================================================
+# Section Badge Colors (SYZ-style colored category badges)
+# ============================================================================
+
+SECTION_BADGE_COLORS: Dict[str, str] = {
+    "equities": "#27AE60",
+    "fixed_income": "#8E44AD",
+    "fx": "#2980B9",
+    "commodities": "#D4A056",
+    "macro": "#E74C3C",
+    "crypto": "#F39C12",
+    "geopolitics": "#1ABC9C",
+    "central_banks": "#34495E",
+}
+
+
+# ============================================================================
+# Editorial Layout (fixed dimensions for SYZ-style slides)
+# ============================================================================
+
+@dataclass
+class EditorialLayout:
+    """Fixed dimensions for the editorial slide layout."""
+    # Header
+    accent_line_top: float = 0.0
+    accent_line_height: float = 0.03  # 2pt orange line
+    header_tag_top: float = 0.12
+    header_tag_height: float = 0.35
+    header_sep_top: float = 0.5
+    # Content area
+    badge_top: float = 0.7
+    badge_height: float = 0.3
+    hashtag_top: float = 1.1
+    commentary_top: float = 1.5
+    commentary_height: float = 1.0
+    chart_top: float = 2.6
+    chart_height: float = 3.8
+    source_top: float = 6.5
+    # Footer
+    footer_sep_top: float = 6.85
+    footer_top: float = 6.95
+    footer_height: float = 0.4
+    # Margins
+    margin_left: float = 0.6
+    margin_right: float = 0.6
+    content_width: float = 12.1
+
+
+EDITORIAL_LAYOUT = EditorialLayout()
 
 
 # ============================================================================

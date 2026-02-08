@@ -296,6 +296,45 @@ export interface BackCoverContent {
   copyright?: string;
 }
 
+export interface EditorialContent {
+  section?: string;
+  hashtags?: string;
+  commentary?: string;
+  title?: string;
+  image_path?: string;
+  source?: string;
+  source_url?: string;
+  chart_dims?: {
+    left?: number;
+    top?: number;
+    width?: number;
+    height?: number;
+  };
+}
+
+export interface QuoteSlideContent {
+  quote: string;
+  attribution?: string;
+  source?: string;
+  section?: string;
+  highlight?: boolean;
+  commentary?: string;
+}
+
+export interface ChartGridItem {
+  label?: string;
+  image_path?: string;
+}
+
+export interface ChartGridContent {
+  title?: string;
+  section?: string;
+  hashtags?: string;
+  grid?: ChartGridItem[];
+  cols?: number;
+  source?: string;
+}
+
 export type SlideType =
   | 'cover'
   | 'executive_summary'
@@ -308,13 +347,18 @@ export type SlideType =
   | 'news'
   | 'image'
   | 'dual_chart'
-  | 'callout';
+  | 'callout'
+  | 'editorial'
+  | 'quote_slide'
+  | 'chart_grid';
 
 export interface SlideSpec {
   type: SlideType;
-  content: CoverContent | ExecSummaryContent | ChartSlideContent | TextSlideContent | SourcesSlideContent | BackCoverContent;
+  content: CoverContent | ExecSummaryContent | ChartSlideContent | TextSlideContent | SourcesSlideContent | BackCoverContent | EditorialContent | QuoteSlideContent | ChartGridContent;
   chart?: ChartSpec;
+  charts?: ChartSpec[];
   chart_num?: number;
+  bg_image?: string;
 }
 
 // ============================================================================
@@ -331,6 +375,8 @@ export interface PresentationMeta {
   palette?: string;
   slide_width?: number;
   slide_height?: number;
+  mode?: 'editorial' | 'standard';
+  logo_path?: string;
 }
 
 export interface PresentationSpec {

@@ -39,6 +39,9 @@ from templates import (
     build_image_slide,
     build_dual_chart_slide,
     build_callout_slide,
+    build_editorial,
+    build_quote_slide,
+    build_chart_grid,
 )
 
 
@@ -239,6 +242,10 @@ def generate(spec: dict) -> dict:
         if hasattr(palette, key):
             setattr(palette, key, value)
 
+    # Auto-detect editorial mode from palette
+    if palette_name == "rossignoli_editorial":
+        meta.setdefault("mode", "editorial")
+
     # Setup matplotlib
     setup_matplotlib(palette)
 
@@ -312,7 +319,7 @@ def generate(spec: dict) -> dict:
         elif slide_type == "section_divider":
             # Section dividers use per-slide bg_image if provided, else cover bg
             divider_bg = slide_spec.get("bg_image") or bg_cover
-            build_section_divider(prs, content, palette, bg_image=divider_bg)
+            build_section_divider(prs, content, palette, bg_image=divider_bg, meta=meta)
             slide_count += 1
 
         elif slide_type == "kpi_dashboard":
@@ -345,6 +352,38 @@ def generate(spec: dict) -> dict:
         elif slide_type == "callout":
             page_num += 1
             build_callout_slide(prs, content, palette, meta, page_num, bg_image=bg_content)
+            slide_count += 1
+
+        elif slide_type == "editorial":
+            page_num += 1
+            chart_spec = slide_spec.get("chart", {})
+            editorial_chart_path = None
+            if chart_spec and chart_spec.get("type"):
+                _normalize_chart_spec(chart_spec)
+                if chart_spec.get("type") == "table_heatmap":
+                    _normalize_table_heatmap(chart_spec)
+                editorial_chart_path = render_chart(chart_spec, palette, chart_dir)
+                chart_count += 1
+            build_editorial(prs, content, palette, meta, page_num,
+                            chart_path=editorial_chart_path, bg_image=bg_content)
+            slide_count += 1
+
+        elif slide_type == "quote_slide":
+            page_num += 1
+            build_quote_slide(prs, content, palette, meta, page_num, bg_image=bg_content)
+            slide_count += 1
+
+        elif slide_type == "chart_grid":
+            page_num += 1
+            chart_specs = slide_spec.get("charts", [])
+            grid_chart_paths = []
+            for cs in chart_specs:
+                _normalize_chart_spec(cs)
+                cp = render_chart(cs, palette, chart_dir)
+                grid_chart_paths.append(cp)
+                chart_count += 1
+            build_chart_grid(prs, content, palette, meta, page_num,
+                             chart_paths=grid_chart_paths, bg_image=bg_content)
             slide_count += 1
 
         elif slide_type == "back_cover":

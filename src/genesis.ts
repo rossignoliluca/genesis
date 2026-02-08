@@ -59,6 +59,16 @@ import { getMetacognitiveController, type MetacognitiveController } from './reas
 // Memory — full episodic/semantic/procedural stack
 import { getMemorySystem, type MemorySystem } from './memory/index.js';
 
+// Component Memory — per-component FSRS scheduling and personalized profiles
+import {
+  getComponentMemory,
+  getAllComponentManagers,
+  resetAllComponentManagers,
+  type ComponentMemoryManager,
+  type ComponentId,
+  COMPONENT_PROFILES,
+} from './memory/index.js';
+
 // Grounding — epistemic verification of claims
 import { getGroundingSystem, type GroundingSystem } from './grounding/index.js';
 
@@ -251,6 +261,8 @@ export interface GenesisConfig {
   content: boolean;
   /** Enable market strategist (weekly market briefs, data collection, PPTX generation) */
   marketStrategist: boolean;
+  /** Enable component-specific memory with FSRS v4 scheduling */
+  componentMemory: boolean;
   /** Confidence threshold below which Brain defers to metacognition */
   deferThreshold: number;
   /** Audit all responses for hallucinations */
@@ -338,6 +350,12 @@ export interface GenesisStatus {
     running: boolean;
     briefsGenerated: number;
     lastBriefWeek: string | null;
+  } | null;
+  componentMemory: {
+    active: boolean;
+    managers: number;
+    totalMemories: number;
+    avgRetention: number;
   } | null;
   modulesWired: number;
   calibrationError: number;
@@ -443,6 +461,9 @@ export class Genesis {
   private marketStrategistBriefsGenerated = 0;
   private marketStrategistLastBrief: string | null = null;
 
+  // v18.3.0: Component-specific memory managers (FSRS v4 scheduling)
+  private componentMemoryManagers: Map<ComponentId, ComponentMemoryManager> = new Map();
+
   // State
   private booted = false;
   private bootTime = 0;
@@ -492,6 +513,7 @@ export class Genesis {
       exotic: true,         // v14.2: Exotic computing (thermodynamic, HDC, reservoir)
       content: true,        // v18.1: Content creator (social media, SEO, scheduling)
       marketStrategist: true, // v18.2: Market strategist (weekly briefs, PPTX)
+      componentMemory: true,  // v18.3: Component-specific memory with FSRS v4
       deferThreshold: 0.3,
       auditResponses: true,
     };
@@ -799,6 +821,40 @@ export class Genesis {
             totalEpisodes: memStats.episodic.total,
             totalFacts: memStats.semantic.total,
             totalSkills: memStats.procedural.total,
+          }
+        });
+      }
+    }
+
+    // v18.3: Component-specific memory managers with FSRS v4 scheduling
+    if (this.config.componentMemory) {
+      // Initialize core component memory managers
+      const coreComponents: ComponentId[] = [
+        'brain', 'content', 'market-strategist', 'economy', 'agents',
+        'self-improvement', 'causal', 'consciousness', 'world-model',
+        'neuromodulation', 'allostasis', 'daemon', 'thinking', 'grounding',
+      ];
+      for (const componentId of coreComponents) {
+        this.componentMemoryManagers.set(componentId, getComponentMemory(componentId));
+      }
+      this.fiber?.registerModule('component-memory');
+
+      // Wire component memory consolidation to daemon maintenance
+      if (this.daemon) {
+        this.daemon.on((event) => {
+          if (event.type === 'maintenance_completed') {
+            // Consolidate all component memories during maintenance
+            for (const [id, manager] of this.componentMemoryManagers) {
+              const candidates = manager.getConsolidationCandidates();
+              if (candidates.length > 0) {
+                this.eventBus?.publish('memory.component.consolidation', {
+                  source: 'genesis:component-memory',
+                  precision: 0.8,
+                  componentId: id,
+                  candidateCount: candidates.length,
+                });
+              }
+            }
           }
         });
       }
@@ -2886,6 +2942,23 @@ export class Genesis {
         briefsGenerated: this.marketStrategistBriefsGenerated,
         lastBriefWeek: this.marketStrategistLastBrief,
       } : null,
+      componentMemory: this.componentMemoryManagers.size > 0 ? (() => {
+        let totalMemories = 0;
+        let totalRetention = 0;
+        let count = 0;
+        for (const manager of this.componentMemoryManagers.values()) {
+          const stats = manager.getStats();
+          totalMemories += stats.episodicCount + stats.semanticCount + stats.proceduralCount;
+          totalRetention += stats.avgRetention;
+          count++;
+        }
+        return {
+          active: true,
+          managers: this.componentMemoryManagers.size,
+          totalMemories,
+          avgRetention: count > 0 ? totalRetention / count : 0,
+        };
+      })() : null,
       modulesWired: this.wiringResult?.modulesWired ?? 0,
       calibrationError: this.getCalibrationError(),
       uptime: this.bootTime > 0 ? Date.now() - this.bootTime : 0,
@@ -2915,6 +2988,12 @@ export class Genesis {
       this.contentOrchestrator = null;
       this.contentScheduler = null;
       this.contentAnalytics = null;
+    }
+
+    // v18.3.0: Component memory shutdown
+    if (this.componentMemoryManagers.size > 0) {
+      resetAllComponentManagers();
+      this.componentMemoryManagers.clear();
     }
 
     // L3: Cognitive shutdown
@@ -3174,6 +3253,51 @@ export class Genesis {
       briefsGenerated: this.marketStrategistBriefsGenerated,
       lastBriefWeek: this.marketStrategistLastBrief,
     };
+  }
+
+  /**
+   * v18.3: Get component-specific memory manager
+   */
+  getComponentMemory(componentId: ComponentId): ComponentMemoryManager | null {
+    return this.componentMemoryManagers.get(componentId) ?? null;
+  }
+
+  /**
+   * v18.3: Get all active component memory managers
+   */
+  getAllComponentMemoryManagers(): Map<ComponentId, ComponentMemoryManager> {
+    return this.componentMemoryManagers;
+  }
+
+  /**
+   * v18.3: Get component memory statistics
+   */
+  getComponentMemoryStats(): Record<string, {
+    episodicCount: number;
+    semanticCount: number;
+    proceduralCount: number;
+    avgRetention: number;
+    dueForReview: number;
+  }> | null {
+    if (this.componentMemoryManagers.size === 0) return null;
+    const stats: Record<string, {
+      episodicCount: number;
+      semanticCount: number;
+      proceduralCount: number;
+      avgRetention: number;
+      dueForReview: number;
+    }> = {};
+    for (const [id, manager] of this.componentMemoryManagers) {
+      const s = manager.getStats();
+      stats[id] = {
+        episodicCount: s.episodicCount,
+        semanticCount: s.semanticCount,
+        proceduralCount: s.proceduralCount,
+        avgRetention: s.avgRetention,
+        dueForReview: s.dueForReview,
+      };
+    }
+    return stats;
   }
 
   // ==========================================================================

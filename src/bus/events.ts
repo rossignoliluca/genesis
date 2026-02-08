@@ -330,6 +330,25 @@ export interface MemoryDreamEvent extends BusEvent {
   creativityIndex: number;
 }
 
+// v18.3: Component Memory Events
+export interface MemoryComponentConsolidationEvent extends BusEvent {
+  componentId: string;
+  candidateCount: number;
+}
+
+export interface MemoryComponentReviewEvent extends BusEvent {
+  componentId: string;
+  memoryId: string;
+  rating: 'again' | 'hard' | 'good' | 'easy';
+  newStability: number;
+}
+
+export interface MemoryComponentStoredEvent extends BusEvent {
+  componentId: string;
+  memoryType: 'episodic' | 'semantic' | 'procedural';
+  memoryId: string;
+}
+
 // ============================================================================
 // World Model Events
 // ============================================================================
@@ -876,6 +895,10 @@ export interface GenesisEventMap {
   'memory.recalled': MemoryRecalledEvent;
   'memory.consolidated': MemoryConsolidatedEvent;
   'memory.dreamed': MemoryDreamEvent;
+  // v18.3: Component Memory Events
+  'memory.component.consolidation': MemoryComponentConsolidationEvent;
+  'memory.component.review': MemoryComponentReviewEvent;
+  'memory.component.stored': MemoryComponentStoredEvent;
 
   // --- World Model Events ---
   'worldmodel.consistency.violation': ConsistencyViolationEvent;

@@ -87,7 +87,7 @@ const Icons = {
   evolution: () => <span>⟳</span>,
   sandbox: () => <span>🧪</span>,
   lessons: () => <span>🧠</span>,
-  history: () => <span>📜</span>,
+  modhistory: () => <span>📜</span>,
 };
 
 // ============================================================================
@@ -3405,7 +3405,12 @@ function Breadcrumbs({ currentView }: { currentView: View }) {
     playground: 'API Playground',
     integrations: 'Integrations',
     marketplace: 'Marketplace',
-    mcp: 'MCP Hub'
+    mcp: 'MCP Hub',
+    codemind: 'Code Mind',
+    evolution: 'Evolution',
+    sandbox: 'Sandbox',
+    lessons: 'Lessons',
+    history: 'History',
   };
 
   return (
@@ -6610,6 +6615,599 @@ function OverviewView() {
 }
 
 // ============================================================================
+// CODE MIND VIEW - Genesis Code Introspection
+// ============================================================================
+
+function CodeMindView() {
+  const { selfImprovement } = useGenesisStore();
+  const { recentQueries, moduleUnderstanding, analyzingFile, analyzingProgress } = selfImprovement;
+
+  return (
+    <div className="codemind-view">
+      <div className="view-header glass">
+        <h2>Code Mind</h2>
+        <span className={`status-badge ${analyzingFile ? 'analyzing' : 'idle'}`}>
+          {analyzingFile ? '● ANALYZING' : '○ IDLE'}
+        </span>
+      </div>
+
+      <div className="codemind-grid">
+        {/* Currently Analyzing */}
+        <div className="codemind-card analyzing-card glass">
+          <h3>Currently Analyzing</h3>
+          {analyzingFile ? (
+            <div className="analyzing-content">
+              <div className="file-name">{analyzingFile}</div>
+              <div className="progress-bar">
+                <motion.div
+                  className="progress-fill"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${analyzingProgress}%` }}
+                />
+              </div>
+              <span className="progress-label">{analyzingProgress}%</span>
+            </div>
+          ) : (
+            <div className="no-analysis">
+              <span className="empty-icon">◎</span>
+              <p>No file currently being analyzed</p>
+            </div>
+          )}
+        </div>
+
+        {/* Recent Queries */}
+        <div className="codemind-card queries-card glass">
+          <h3>Recent Code Queries</h3>
+          <div className="queries-list">
+            {recentQueries.length > 0 ? (
+              recentQueries.slice(0, 5).map((query, i) => (
+                <div key={i} className="query-item">
+                  <span className="query-icon">⌕</span>
+                  <div className="query-info">
+                    <span className="query-text">"{query.query}"</span>
+                    <span className="query-results">→ {query.results} results</span>
+                    {query.file && <span className="query-file">{query.file}</span>}
+                  </div>
+                  <span className="query-time">
+                    {Math.floor((Date.now() - query.timestamp) / 1000)}s ago
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="no-queries">
+                <span className="empty-icon">⌕</span>
+                <p>No recent queries</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Code Understanding */}
+        <div className="codemind-card understanding-card glass">
+          <h3>Code Understanding</h3>
+          <div className="understanding-grid">
+            {Object.entries(moduleUnderstanding).map(([module, level]) => (
+              <div key={module} className="understanding-item">
+                <span className="module-name">{module}</span>
+                <div className="understanding-bar">
+                  <motion.div
+                    className="understanding-fill"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${level * 100}%` }}
+                    style={{
+                      background: `linear-gradient(90deg, var(--accent-purple), var(--accent-cyan))`,
+                    }}
+                  />
+                </div>
+                <span className="understanding-value">{(level * 100).toFixed(0)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// EVOLUTION VIEW - Self-Improvement Pipeline
+// ============================================================================
+
+function EvolutionView() {
+  const { selfImprovement, consciousness } = useGenesisStore();
+  const { currentStage, cycleEnabled, currentProposal, phi, errorRate, memoryReuse, responseTime } = selfImprovement;
+
+  const stages: Array<{ id: string; label: string }> = [
+    { id: 'observe', label: 'OBSERVE' },
+    { id: 'reflect', label: 'REFLECT' },
+    { id: 'propose', label: 'PROPOSE' },
+    { id: 'apply', label: 'APPLY' },
+    { id: 'verify', label: 'VERIFY' },
+  ];
+
+  const getStageStatus = (stageId: string) => {
+    const stageOrder = stages.map(s => s.id);
+    const currentIndex = stageOrder.indexOf(currentStage);
+    const stageIndex = stageOrder.indexOf(stageId);
+
+    if (currentStage === 'idle') return 'pending';
+    if (stageIndex < currentIndex) return 'completed';
+    if (stageIndex === currentIndex) return 'active';
+    return 'pending';
+  };
+
+  return (
+    <div className="evolution-view">
+      <div className="view-header glass">
+        <h2>Evolution</h2>
+        <div className="header-badges">
+          <span className="phi-badge">φ={consciousness.phi.toFixed(2)}</span>
+          <span className={`cycle-badge ${cycleEnabled ? 'enabled' : 'disabled'}`}>
+            {cycleEnabled ? '✓ ENABLED' : '○ DISABLED'}
+          </span>
+        </div>
+      </div>
+
+      <div className="evolution-grid">
+        {/* Pipeline */}
+        <div className="evolution-card pipeline-card glass">
+          <h3>Improvement Pipeline</h3>
+          <div className="pipeline">
+            {stages.map((stage, i) => (
+              <React.Fragment key={stage.id}>
+                <div className={`pipeline-stage ${getStageStatus(stage.id)}`}>
+                  <div className="stage-icon">
+                    {getStageStatus(stage.id) === 'completed' && '✓'}
+                    {getStageStatus(stage.id) === 'active' && '●'}
+                    {getStageStatus(stage.id) === 'pending' && '○'}
+                  </div>
+                  <span className="stage-label">{stage.label}</span>
+                </div>
+                {i < stages.length - 1 && <div className="pipeline-connector">───▶</div>}
+              </React.Fragment>
+            ))}
+          </div>
+          {currentStage !== 'idle' && (
+            <div className="current-stage-indicator">
+              ↑ CURRENT
+            </div>
+          )}
+        </div>
+
+        {/* Current Proposal */}
+        <div className="evolution-card proposal-card glass">
+          <h3>Current Proposal</h3>
+          {currentProposal ? (
+            <div className="proposal-content">
+              <div className="proposal-header">
+                <span className="proposal-id">{currentProposal.id}</span>
+                <span className={`risk-badge ${currentProposal.risk.toLowerCase()}`}>
+                  {currentProposal.risk}
+                </span>
+              </div>
+              <div className="proposal-field">
+                <span className="field-label">Category:</span>
+                <span className="field-value">{currentProposal.category}</span>
+              </div>
+              <div className="proposal-field">
+                <span className="field-label">Target:</span>
+                <span className="field-value code">{currentProposal.target}</span>
+              </div>
+              <div className="proposal-field">
+                <span className="field-label">Change:</span>
+                <span className="field-value">{currentProposal.change}</span>
+              </div>
+              <div className="proposal-field">
+                <span className="field-label">Reason:</span>
+                <span className="field-value">{currentProposal.reason}</span>
+              </div>
+              <div className="proposal-field">
+                <span className="field-label">Expected:</span>
+                <span className="field-value">{currentProposal.expected}</span>
+              </div>
+              <div className="proposal-footer">
+                <span className={`reversible-badge ${currentProposal.reversible ? 'yes' : 'no'}`}>
+                  {currentProposal.reversible ? '✓ Reversible' : '✗ Irreversible'}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="no-proposal">
+              <span className="empty-icon">◇</span>
+              <p>No active proposal</p>
+            </div>
+          )}
+        </div>
+
+        {/* Metrics Tracked */}
+        <div className="evolution-card metrics-card glass">
+          <h3>Metrics Tracked</h3>
+          <div className="metrics-grid">
+            <div className="metric-item">
+              <span className="metric-label">φ (phi)</span>
+              <span className="metric-value">{phi.toFixed(2)}</span>
+              <span className="metric-trend">↗</span>
+            </div>
+            <div className="metric-item">
+              <span className="metric-label">Error Rate</span>
+              <span className="metric-value">{(errorRate * 100).toFixed(1)}%</span>
+              <span className="metric-trend">↘</span>
+            </div>
+            <div className="metric-item">
+              <span className="metric-label">Memory Reuse</span>
+              <span className="metric-value">{(memoryReuse * 100).toFixed(0)}%</span>
+              <span className="metric-trend">↗</span>
+            </div>
+            <div className="metric-item">
+              <span className="metric-label">Response</span>
+              <span className="metric-value">{responseTime}ms</span>
+              <span className="metric-trend">→</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// SANDBOX MONITOR VIEW - Darwin-Gödel Engine
+// ============================================================================
+
+function SandboxMonitorView() {
+  const { selfImprovement } = useGenesisStore();
+  const { sandboxPath, sandboxProgress, invariantResults, buildOutput } = selfImprovement;
+
+  const getStepIcon = (status: string) => {
+    switch (status) {
+      case 'completed': return '✓';
+      case 'running': return '●';
+      case 'failed': return '✗';
+      default: return '○';
+    }
+  };
+
+  return (
+    <div className="sandbox-view">
+      <div className="view-header glass">
+        <h2>Sandbox</h2>
+        <span className={`status-badge ${sandboxPath ? 'running' : 'idle'}`}>
+          {sandboxPath ? '● RUNNING' : '○ IDLE'}
+        </span>
+      </div>
+
+      <div className="sandbox-grid">
+        {/* Sandbox Path */}
+        {sandboxPath && (
+          <div className="sandbox-path glass">
+            <span className="path-label">Sandbox:</span>
+            <code className="path-value">{sandboxPath}</code>
+          </div>
+        )}
+
+        {/* Verification Steps */}
+        <div className="sandbox-card steps-card glass">
+          <h3>Verification Steps</h3>
+          <div className="steps-list">
+            {sandboxProgress.length > 0 ? (
+              sandboxProgress.map(step => (
+                <div key={step.id} className={`step-item ${step.status}`}>
+                  <span className={`step-icon ${step.status}`}>{getStepIcon(step.status)}</span>
+                  <span className="step-name">{step.name}</span>
+                  {step.status === 'running' && step.progress !== undefined && (
+                    <div className="step-progress">
+                      <div className="step-progress-bar">
+                        <div className="step-progress-fill" style={{ width: `${step.progress}%` }} />
+                      </div>
+                      <span className="step-progress-label">{step.progress}%</span>
+                    </div>
+                  )}
+                  {step.duration && (
+                    <span className="step-duration">{(step.duration / 1000).toFixed(1)}s</span>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="no-steps">
+                <span className="empty-icon">🧪</span>
+                <p>No sandbox activity</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Invariant Status */}
+        <div className="sandbox-card invariants-card glass">
+          <h3>Invariant Status</h3>
+          <div className="invariants-list">
+            {invariantResults.length > 0 ? (
+              invariantResults.map(inv => (
+                <div key={inv.id} className={`invariant-item ${inv.passed ? 'passed' : 'failed'}`}>
+                  <span className="invariant-id">{inv.id}</span>
+                  <span className="invariant-name">{inv.name}</span>
+                  <span className={`invariant-status ${inv.passed ? 'pass' : 'fail'}`}>
+                    {inv.passed ? '✓ PASS' : '✗ FAIL'}
+                  </span>
+                  {inv.message && <span className="invariant-message">{inv.message}</span>}
+                </div>
+              ))
+            ) : (
+              <div className="no-invariants">
+                <span className="empty-icon">⚖</span>
+                <p>No invariant checks yet</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Build Output */}
+        <div className="sandbox-card output-card glass">
+          <h3>Build Output</h3>
+          <div className="output-terminal">
+            {buildOutput.length > 0 ? (
+              buildOutput.map((line, i) => (
+                <div key={i} className={`output-line ${line.startsWith('✓') ? 'success' : line.startsWith('✗') ? 'error' : ''}`}>
+                  {line}
+                </div>
+              ))
+            ) : (
+              <div className="no-output">
+                <span className="cursor">▌</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// LESSONS VIEW - Learning Memory
+// ============================================================================
+
+function LessonsView() {
+  const { selfImprovement } = useGenesisStore();
+  const { lessons, successRate, totalAttempts } = selfImprovement;
+
+  const categoryIcons: Record<string, string> = {
+    performance: '⚡',
+    memory: '🧠',
+    errors: '🐛',
+    phi: 'φ',
+    agents: '⬡',
+  };
+
+  const categoryColors: Record<string, string> = {
+    performance: 'var(--accent-green)',
+    memory: 'var(--accent-purple)',
+    errors: 'var(--accent-red)',
+    phi: 'var(--accent-cyan)',
+    agents: 'var(--accent-yellow)',
+  };
+
+  // Count lessons by category
+  const categoryCount: Record<string, number> = {};
+  lessons.forEach(l => {
+    categoryCount[l.category] = (categoryCount[l.category] || 0) + 1;
+  });
+
+  return (
+    <div className="lessons-view">
+      <div className="view-header glass">
+        <h2>Lessons Learned</h2>
+        <span className="lessons-count">{lessons.length} memories</span>
+      </div>
+
+      <div className="lessons-grid">
+        {/* Success Rate */}
+        <div className="lessons-card rate-card glass">
+          <h3>Success/Failure Rate</h3>
+          <div className="success-rate-bar">
+            <div
+              className="success-fill"
+              style={{ width: `${successRate * 100}%` }}
+            />
+          </div>
+          <span className="rate-label">
+            {(successRate * 100).toFixed(0)}% Success ({Math.round(successRate * totalAttempts)}/{totalAttempts})
+          </span>
+        </div>
+
+        {/* Recent Lessons */}
+        <div className="lessons-card recent-card glass">
+          <h3>Recent Lessons</h3>
+          <div className="lessons-list">
+            {lessons.length > 0 ? (
+              lessons.slice(0, 10).map(lesson => (
+                <div key={lesson.id} className={`lesson-item ${lesson.type}`}>
+                  <span className={`lesson-icon ${lesson.type}`}>
+                    {lesson.type === 'positive' ? '✓' : '✗'}
+                  </span>
+                  <div className="lesson-content">
+                    <span className="lesson-text">"{lesson.content}"</span>
+                    <div className="lesson-meta">
+                      <span className="lesson-confidence">Confidence: {(lesson.confidence * 100).toFixed(0)}%</span>
+                      <span className="lesson-applied">Applied: {lesson.appliedCount}x</span>
+                    </div>
+                    <div className="lesson-retention">
+                      <span className="retention-label">Retention:</span>
+                      <div className="retention-bar">
+                        <div
+                          className="retention-fill"
+                          style={{ width: `${lesson.retention * 100}%` }}
+                        />
+                      </div>
+                      <span className="retention-value">{(lesson.retention * 100).toFixed(0)}%</span>
+                    </div>
+                  </div>
+                  <span
+                    className="lesson-category"
+                    style={{ color: categoryColors[lesson.category] || 'var(--text-secondary)' }}
+                  >
+                    {categoryIcons[lesson.category] || '○'} {lesson.category}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="no-lessons">
+                <span className="empty-icon">🧠</span>
+                <p>No lessons learned yet</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Knowledge by Category */}
+        <div className="lessons-card categories-card glass">
+          <h3>Knowledge by Category</h3>
+          <div className="categories-grid">
+            {Object.entries(categoryCount).map(([cat, count]) => (
+              <div key={cat} className="category-item">
+                <span className="category-icon" style={{ color: categoryColors[cat] }}>
+                  {categoryIcons[cat] || '○'}
+                </span>
+                <span className="category-name">{cat}</span>
+                <span className="category-count">{count}</span>
+              </div>
+            ))}
+            {Object.keys(categoryCount).length === 0 && (
+              <div className="no-categories">
+                <p>No categorized knowledge yet</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Forgetting Curve Info */}
+        <div className="lessons-card curve-card glass">
+          <h3>Forgetting Curve (Ebbinghaus)</h3>
+          <div className="curve-viz">
+            <svg viewBox="0 0 200 100" className="curve-svg">
+              <path
+                d="M 0 10 Q 50 20, 100 50 T 200 90"
+                fill="none"
+                stroke="var(--accent-purple)"
+                strokeWidth="2"
+              />
+              <text x="10" y="15" className="curve-label">100%</text>
+              <text x="10" y="95" className="curve-label">0%</text>
+              <text x="20" y="85" className="curve-label">0</text>
+              <text x="50" y="85" className="curve-label">1d</text>
+              <text x="90" y="85" className="curve-label">7d</text>
+              <text x="130" y="85" className="curve-label">30d</text>
+              <text x="170" y="85" className="curve-label">90d</text>
+            </svg>
+            <div className="curve-formula">
+              R(t) = R₀ × e<sup>−t/S</sup>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// HISTORY VIEW - Modification Timeline
+// ============================================================================
+
+function HistoryView() {
+  const { selfImprovement } = useGenesisStore();
+  const { modifications, totalAttempts } = selfImprovement;
+
+  const formatTime = (timestamp: number) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'success': return '●';
+      case 'failed': return '●';
+      case 'rolled_back': return '↩';
+      default: return '○';
+    }
+  };
+
+  return (
+    <div className="history-view">
+      <div className="view-header glass">
+        <h2>Modification History</h2>
+        <span className="history-count">{totalAttempts} total</span>
+      </div>
+
+      <div className="history-timeline">
+        {modifications.length > 0 ? (
+          modifications.map((mod, i) => (
+            <div key={mod.id} className={`timeline-item ${mod.status}`}>
+              <div className="timeline-connector">
+                <div className={`timeline-dot ${mod.status}`}>
+                  {getStatusIcon(mod.status)}
+                </div>
+                {i < modifications.length - 1 && <div className="timeline-line" />}
+              </div>
+              <div className="timeline-content glass">
+                <div className="timeline-header">
+                  <span className="timeline-time">{formatTime(mod.timestamp)}</span>
+                  <span className={`timeline-status ${mod.status}`}>
+                    {mod.status.toUpperCase()}
+                  </span>
+                </div>
+                <div className="timeline-description">{mod.description}</div>
+                {mod.metrics && (
+                  <div className="timeline-metrics">
+                    {Object.entries(mod.metrics.before).map(([key, before]) => {
+                      const after = mod.metrics!.after[key];
+                      const change = after - (before as number);
+                      const changePercent = ((change / (before as number)) * 100).toFixed(0);
+                      return (
+                        <span key={key} className={`metric-change ${change >= 0 ? 'positive' : 'negative'}`}>
+                          {key}: {(before as number).toFixed(2)} → {after.toFixed(2)} ({change >= 0 ? '+' : ''}{changePercent}%)
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+                {mod.commitHash && (
+                  <div className="timeline-commit">
+                    <span className="commit-label">Commit:</span>
+                    <code className="commit-hash">{mod.commitHash}</code>
+                  </div>
+                )}
+                {mod.rollbackHash && (
+                  <div className="timeline-rollback">
+                    <span className="rollback-label">Rollback:</span>
+                    <code className="rollback-hash">{mod.rollbackHash}</code>
+                  </div>
+                )}
+                {mod.reason && (
+                  <div className="timeline-reason">
+                    <span className="reason-label">Reason:</span>
+                    <span className="reason-text">{mod.reason}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="no-history glass">
+            <span className="empty-icon">📜</span>
+            <p>No modification history yet</p>
+            <span className="empty-hint">Self-improvement modifications will appear here</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // MAIN APP
 // ============================================================================
 
@@ -6757,6 +7355,12 @@ export default function App() {
     { id: 'consciousness', label: 'Consciousness', icon: Icons.consciousness, section: 'genesis' },
     { id: 'neuromod', label: 'Neuromod', icon: Icons.neuromod, section: 'genesis' },
     { id: 'ness', label: 'NESS Economy', icon: Icons.ness, section: 'genesis' },
+    // Self-Improvement
+    { id: 'codemind', label: 'Code Mind', icon: Icons.codemind, section: 'evolution' },
+    { id: 'evolution', label: 'Evolution', icon: Icons.evolution, section: 'evolution' },
+    { id: 'sandbox', label: 'Sandbox', icon: Icons.sandbox, section: 'evolution' },
+    { id: 'lessons', label: 'Lessons', icon: Icons.lessons, section: 'evolution' },
+    { id: 'history', label: 'History', icon: Icons.modhistory, section: 'evolution' },
     // Operations
     { id: 'agents', label: 'Agents', icon: Icons.agents, section: 'ops' },
     { id: 'tasks', label: 'Tasks', icon: Icons.tasks, section: 'ops' },

@@ -77,6 +77,31 @@ export { KeeperStream } from './streams/keeper.js';
 export { ContentStream } from './streams/content.js';
 export { YieldStream } from './streams/yield.js';
 
+// Revenue Activation (v19.0.0)
+export {
+  RevenueActivationManager,
+  getRevenueActivation,
+  resetRevenueActivation,
+  SERVICE_CATALOG,
+  MCP_TOOL_PRICING,
+  DEFAULT_ACTIVATION_CONFIG,
+  type RevenueActivationConfig,
+  type RevenueMetrics as ActivationMetrics,
+  type RevenueOpportunity as ActivationOpportunity,
+  type ServiceOffering,
+} from './activation.js';
+
+// Revenue CLI (v19.0.0)
+export {
+  handleRevenueCommand,
+  showStatus,
+  activateRevenue,
+  listOpportunities,
+  listServices,
+  listToolPricing,
+  projectRevenue,
+} from './cli.js';
+
 // ============================================================================
 // Revenue System Facade
 // ============================================================================

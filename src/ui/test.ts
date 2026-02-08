@@ -29,11 +29,26 @@ const mockMetrics: SystemMetrics = {
     phi: 0.742,
     state: 'awake',
     integration: 0.85,
+    complexity: 0.65,
+    attentionFocus: 'revenue-optimization',
+    workspaceContents: [
+      { id: 'task-1', type: 'goal', salience: 0.9 },
+      { id: 'ctx-1', type: 'context', salience: 0.7 },
+    ],
   },
   kernel: {
     state: 'focused',
     energy: 1.23,
     cycles: 1000,
+    mode: 'exploit',
+    levels: {
+      l1: { active: true, load: 0.3 },
+      l2: { active: true, load: 0.5 },
+      l3: { active: true, load: 0.7 },
+      l4: { active: false, load: 0.1 },
+    },
+    freeEnergy: 0.45,
+    predictionError: 0.12,
   },
   agents: {
     total: 5,

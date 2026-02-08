@@ -1072,15 +1072,31 @@ export class Genesis {
           timestamp: Date.now(),
           uptime: this.bootTime > 0 ? (Date.now() - this.bootTime) / 1000 : 0,
           memory: { heapUsed: mem.heapUsed, heapTotal: mem.heapTotal, external: mem.external, rss: mem.rss },
-          consciousness: {
-            phi: this.consciousness?.getSnapshot()?.level?.rawPhi ?? 0,
-            state: this.consciousness?.getState() ?? 'unknown',
-            integration: this.consciousness?.getSnapshot()?.phi?.integratedInfo ?? 0,
-          },
+          consciousness: (() => {
+            const snapshot = this.consciousness?.getSnapshot();
+            const attFocus = snapshot?.attention?.focus;
+            return {
+              phi: snapshot?.level?.rawPhi ?? 0,
+              state: this.consciousness?.getState() ?? 'unknown',
+              integration: snapshot?.phi?.integratedInfo ?? 0,
+              complexity: 0,
+              attentionFocus: attFocus && typeof attFocus === 'object' ? (attFocus as { id?: string }).id ?? null : null,
+              workspaceContents: [],
+            };
+          })(),
           kernel: {
             state: this.fek?.getMode?.() ?? 'unknown',
             energy: this.fek ? Math.max(0, 1 - (this.fek.getTotalFE?.() ?? 0) / 5) : 0,
             cycles: this.cycleCount,
+            mode: this.fek?.getMode?.() ?? 'explore',
+            levels: {
+              l1: { active: true, load: 0.5 },
+              l2: { active: true, load: 0.5 },
+              l3: { active: true, load: 0.5 },
+              l4: { active: true, load: 0.5 },
+            },
+            freeEnergy: this.fek?.getTotalFE?.() ?? 0,
+            predictionError: 0,
           },
           agents: { total: 0, active: this.brain ? 1 : 0, queued: 0 },
           memory_system: { episodic: 0, semantic: 0, procedural: 0, total: 0 },

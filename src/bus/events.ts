@@ -592,6 +592,17 @@ export interface RevenueStreamEvent extends BusEvent {
   successRate: number;
 }
 
+// v19.0: Revenue Activation Events
+export interface RevenueActivatedEvent extends BusEvent {
+  config: {
+    x402Enabled: boolean;
+    contentEnabled: boolean;
+    servicesEnabled: boolean;
+    network: 'base' | 'base-sepolia';
+    dailyTarget: number;
+  };
+}
+
 // ============================================================================
 // x402 Payment Events
 // ============================================================================
@@ -956,6 +967,7 @@ export interface GenesisEventMap {
   'revenue.opportunity.found': RevenueOpportunityEvent;
   'revenue.task.completed': RevenueTaskEvent;
   'revenue.stream.status': RevenueStreamEvent;
+  'revenue.activated': RevenueActivatedEvent;
 
   // --- x402 Payment Events ---
   'x402.challenge.issued': X402ChallengeEvent;

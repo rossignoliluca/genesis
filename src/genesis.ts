@@ -121,7 +121,7 @@ import { createRevenueLoop, type RevenueLoop } from './services/revenue-loop.js'
 import { VercelDeployer } from './deployment/index.js';
 
 // Autonomous — unified autonomous system
-import { AutonomousSystem } from './autonomous/index.js';
+import { AutonomousSystem, getDecisionEngine, type DecisionEngine } from './autonomous/index.js';
 
 // Integration — cross-module wiring
 import { bootstrapIntegration, wireAllModules, type WiringResult, getCognitiveBridge, type CognitiveBridge } from './integration/index.js';
@@ -191,6 +191,13 @@ import {
   type GenesisAPI,
   type APIConfig,
 } from './api/index.js';
+
+// WebSocket Real-Time API (v26.0)
+import {
+  getGenesisWebSocket,
+  type GenesisWebSocket,
+  type WebSocketConfig,
+} from './api/websocket.js';
 
 // ============================================================================
 // Types
@@ -283,6 +290,10 @@ export interface GenesisConfig {
   apiServer: boolean;
   /** API server port */
   apiPort: number;
+  /** Enable WebSocket real-time API (v26.0) */
+  websocket: boolean;
+  /** WebSocket server port */
+  wsPort: number;
   /** Confidence threshold below which Brain defers to metacognition */
   deferThreshold: number;
   /** Audit all responses for hallucinations */
@@ -471,6 +482,12 @@ export class Genesis {
   // v23.0: REST API Server — production HTTP endpoints
   private apiServer: GenesisAPI | null = null;
 
+  // v25.0: Decision Engine — unified autonomous decision making
+  private decisionEngine: DecisionEngine | null = null;
+
+  // v26.0: WebSocket Real-Time API
+  private websocket: GenesisWebSocket | null = null;
+
   // v13.12.0: Finance, Revenue, UI modules
   private financeModule: FinanceModule | null = null;
   private revenueSystem: RevenueSystem | null = null;
@@ -546,6 +563,8 @@ export class Genesis {
       componentMemory: true,  // v18.3: Component-specific memory with FSRS v4
       apiServer: true,        // v23.0: REST API server
       apiPort: 3001,          // v23.0: API server port
+      websocket: true,        // v26.0: WebSocket real-time API
+      wsPort: 3002,           // v26.0: WebSocket server port
       deferThreshold: 0.3,
       auditResponses: true,
     };
@@ -2036,6 +2055,30 @@ export class Genesis {
       await this.apiServer.start();
       this.fiber?.registerModule('api-server');
       console.log(`[Genesis] REST API server started on port ${this.config.apiPort}`);
+    }
+
+    // v25.0: Decision Engine — unified autonomous decision making
+    this.decisionEngine = getDecisionEngine({
+      explorationRate: 0.2,
+      riskTolerance: 0.4,
+      minConfidence: 0.6,
+      phiThreshold: 0.3,
+      usePainAvoidance: true,
+      useGrounding: true,
+    });
+    this.fiber?.registerModule('decision-engine');
+    console.log('[Genesis] Decision Engine active: unified autonomous decision making');
+
+    // v26.0: WebSocket Real-Time API
+    if (this.config.websocket) {
+      this.websocket = getGenesisWebSocket({
+        port: this.config.wsPort,
+        heartbeatInterval: 30000,
+        clientTimeout: 60000,
+      });
+      await this.websocket.start();
+      this.fiber?.registerModule('websocket');
+      console.log(`[Genesis] WebSocket server started on port ${this.config.wsPort}`);
     }
 
     this.levels.L4 = true;

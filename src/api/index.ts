@@ -33,6 +33,19 @@ import { getPhiMonitor } from '../consciousness/phi-monitor.js';
 // Re-export chat API
 export { ChatAPI, getChatAPI } from './chat-api.js';
 
+// Re-export WebSocket API (v26.0)
+export {
+  GenesisWebSocket,
+  getGenesisWebSocket,
+  resetGenesisWebSocket,
+  startWebSocketServer,
+  type WSChannel,
+  type WSMessage,
+  type WSClient,
+  type WSBroadcast,
+  type WebSocketConfig,
+} from './websocket.js';
+
 // ============================================================================
 // Types
 // ============================================================================

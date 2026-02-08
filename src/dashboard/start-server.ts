@@ -5,7 +5,7 @@
  * Run with: npx tsx src/dashboard/start-server.ts
  */
 
-import { getDashboard, type SystemMetrics } from '../observability/dashboard.js';
+import { getDashboard, type SystemMetrics } from '../../dist/src/observability/dashboard.js';
 
 // ============================================================================
 // Demo Metrics Generator

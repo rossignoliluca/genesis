@@ -658,3 +658,27 @@ export type {
   GeneratedSolution,
   ExecutionResult,
 } from './bounty-executor.js';
+
+// v19.1: Revenue Executor (closes revenue loops)
+export {
+  RevenueExecutor,
+  getRevenueExecutor,
+  resetRevenueExecutor,
+} from './revenue-executor.js';
+export type {
+  RevenueSource,
+  RevenueExecution,
+  ExecutionResult as RevenueExecutionResult,
+} from './revenue-executor.js';
+
+// v19.1: GitHub Executor (real PR submission)
+export {
+  GitHubExecutor,
+  getGitHubExecutor,
+  resetGitHubExecutor,
+} from './live/github-executor.js';
+export type {
+  GitHubConfig,
+  PRSubmission,
+  PRResult,
+} from './live/github-executor.js';

@@ -309,3 +309,38 @@ export {
   type ContentStrategyConfig,
   type ContentCalendarEntry,
 } from './strategy-wiring.js';
+
+// =============================================================================
+// Monetization (v19.1.0)
+// =============================================================================
+
+export {
+  // Revenue recording
+  recordContentRevenue,
+  recordAdRevenue,
+  recordSubscriptionRevenue,
+
+  // Affiliate management
+  createAffiliateLink,
+  recordAffiliateClick,
+  recordAffiliateConversion,
+  getActiveAffiliateLinks,
+
+  // Sponsor deals
+  createSponsorDeal,
+  updateSponsorDealStatus,
+  getActiveSponsorDeals,
+  getAllSponsorDeals,
+
+  // Queries
+  getRevenueStats,
+  getRevenueByContent,
+  getRevenueByPlatform,
+  getRevenueByDateRange,
+
+  // Types
+  type ContentRevenueSource,
+  type ContentRevenueRecord,
+  type AffiliateLink,
+  type SponsorDeal,
+} from './monetization/index.js';

@@ -20,6 +20,9 @@ import { getSEOEngine } from './seo/index.js';
 import { getContentScheduler } from './scheduler/index.js';
 import { getAnalyticsAggregator } from './analytics/index.js';
 
+// v18.3: Component-specific memory with FSRS scheduling
+import { getComponentMemory, type ComponentMemoryManager } from '../memory/index.js';
+
 export type ContentGenerator = (
   topic: string,
   type: ContentType,
@@ -51,12 +54,15 @@ const defaultResearcher: ContentResearcher = async (topic) => {
 export class ContentOrchestrator {
   private generator: ContentGenerator;
   private researcher: ContentResearcher;
+  private componentMemory: ComponentMemoryManager;
 
   private static instance: ContentOrchestrator | null = null;
 
   private constructor(generator?: ContentGenerator, researcher?: ContentResearcher) {
     this.generator = generator || defaultGenerator;
     this.researcher = researcher || defaultResearcher;
+    // v18.3: Component-specific memory for learning from past content
+    this.componentMemory = getComponentMemory('content');
   }
 
   static getInstance(generator?: ContentGenerator, researcher?: ContentResearcher): ContentOrchestrator {
@@ -147,6 +153,37 @@ export class ContentOrchestrator {
       });
     }
 
+    // v18.3: Store content creation episode to component memory for FSRS-based learning
+    const successfulPublishes = publishResults?.filter(r => r.success).length ?? 0;
+    this.componentMemory.storeEpisodic({
+      id: `content-${contentId}`,
+      type: 'episodic',
+      created: new Date(),
+      lastAccessed: new Date(),
+      accessCount: 0,
+      R0: 0.9,
+      S: 14, // Content memories have longer base stability
+      importance: Math.min(1, 0.5 + successfulPublishes * 0.1), // More publishes = more important
+      emotionalValence: 0,
+      associations: [],
+      tags: ['content', request.type, ...request.platforms, ...keywords.slice(0, 3)],
+      consolidated: false,
+      content: {
+        what: `Created ${request.type}: ${draft.title}`,
+        details: {
+          topic: request.topic,
+          type: request.type,
+          platforms: request.platforms,
+          keywords,
+          seoScore: draft.seoScore,
+          successfulPublishes,
+        },
+      },
+      when: {
+        timestamp: new Date(),
+      },
+    });
+
     return {
       id: contentId,
       status: request.schedule ? 'scheduled' : 'published',
@@ -158,7 +195,23 @@ export class ContentOrchestrator {
     };
   }
 
-  async research(topic: string) { return this.researcher(topic); }
+  async research(topic: string) {
+    // v18.3: Retrieve relevant past content episodes for informed research
+    const pastEpisodes = this.componentMemory.search(topic, { limit: 3, tags: ['content'] });
+    const pastTopics = pastEpisodes.map(ep => {
+      const content = ep.memory.content as { details?: { keywords?: string[] } };
+      return content.details?.keywords ?? [];
+    }).flat();
+
+    const research = await this.researcher(topic);
+
+    // Enhance research with past successful keywords
+    if (pastTopics.length > 0) {
+      research.keywords = [...new Set([...research.keywords, ...pastTopics])].slice(0, 10);
+    }
+
+    return research;
+  }
 
   async generate(topic: string, type: ContentType, keywords: string[], options?: { tone?: string; targetLength?: number }) {
     return this.generator(topic, type, keywords, options);

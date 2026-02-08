@@ -78,6 +78,10 @@ export type {
   ConnectorHealth,
   BaseConnector,
   AudienceData,
+
+  // Publication types
+  PublicationResult,
+  PublicationReport,
 } from './types.js';
 
 export {

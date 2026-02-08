@@ -7,11 +7,17 @@
  * - Track engagement on market content
  */
 
-import type { Platform, ContentType } from './types.js';
+import type { Platform, ContentType, PublicationResult, PublicationReport } from './types.js';
 import { getContentOrchestrator } from './orchestrator.js';
 import { getContentScheduler } from './scheduler/index.js';
 import { getAnalyticsAggregator } from './analytics/index.js';
 import { getSEOEngine } from './seo/index.js';
+import {
+  getTwitterConnector,
+  getLinkedInConnector,
+  getBlueskyConnector,
+} from './connectors/index.js';
+import { randomUUID } from 'crypto';
 
 // =============================================================================
 // Market Brief to Social Content
@@ -221,72 +227,116 @@ function generateBlueskyThread(brief: MarketBriefSummary, hashtags: string[]): s
 // =============================================================================
 
 /**
- * Publish a market brief to social platforms
+ * Publish a market brief to social platforms using real connectors.
+ * Twitter: postThread() (not postTweet + join)
+ * LinkedIn: createPost()
+ * Bluesky: createThread() (not createPost)
+ * Email: via Gmail MCP (optional)
  */
 export async function publishMarketBrief(
   brief: MarketBriefSummary,
   config: Partial<ContentStrategyConfig> = {},
-): Promise<{
-  success: boolean;
-  results: Array<{ platform: Platform; success: boolean; url?: string; error?: string }>;
-}> {
+  options?: {
+    sendEmail?: boolean;
+    emailRecipients?: string[];
+    pptxPath?: string;
+  },
+): Promise<PublicationReport> {
   const cfg = { ...DEFAULT_CONFIG, ...config };
   const content = briefToSocialContent(brief, cfg);
-  const scheduler = getContentScheduler();
-  const results: Array<{ platform: Platform; success: boolean; url?: string; error?: string }> = [];
+  const results: PublicationResult[] = [];
+  const now = new Date();
 
   // Track content for analytics
   const analytics = getAnalyticsAggregator();
   const contentId = `market-brief-${brief.week}`;
 
-  for (const platform of cfg.platforms) {
-    try {
-      let platformContent: string;
-
-      if (platform === 'twitter') {
-        // For threads, join with newlines for crossPost
-        platformContent = content.twitter.join('\n\n---\n\n');
-      } else if (platform === 'linkedin') {
-        platformContent = content.linkedin;
-      } else if (platform === 'bluesky') {
-        platformContent = content.bluesky.join('\n\n---\n\n');
-      } else {
-        platformContent = content.linkedin; // Default to long-form
-      }
-
-      if (cfg.scheduleTime) {
-        await scheduler.enqueue({
-          content: platformContent,
-          title: `Market Strategy ${brief.week}`,
-          type: 'post',
-          platforms: [platform],
-          publishAt: cfg.scheduleTime,
-          hashtags: generateMarketHashtags(brief.themes, brief.sentiment.overall),
-        });
-        results.push({ platform, success: true });
-      } else if (cfg.autoPublish) {
-        const result = await scheduler.crossPost(platformContent, [platform], {
-          title: `Market Strategy ${brief.week}`,
-          hashtags: generateMarketHashtags(brief.themes, brief.sentiment.overall),
-        });
-        const platformResult = result.results[0];
+  // ---- TWITTER: Use postThread (real thread, not joined text) ----
+  if (cfg.platforms.includes('twitter')) {
+    const twitter = getTwitterConnector();
+    if (twitter.isConfigured() && cfg.autoPublish) {
+      try {
+        const threadResult = await twitter.postThread(content.twitter);
         results.push({
-          platform,
-          success: platformResult?.success || false,
-          url: platformResult?.url,
-          error: platformResult?.error,
+          platform: 'twitter',
+          success: true,
+          postId: threadResult.threadId,
+          url: threadResult.url,
+          threadUrls: threadResult.tweets.map(t => t.url),
+          publishedAt: now,
         });
-      } else {
-        // Just prepare, don't publish
-        results.push({ platform, success: true });
+      } catch (error) {
+        results.push({
+          platform: 'twitter',
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+          publishedAt: now,
+        });
       }
-    } catch (error) {
-      results.push({
-        platform,
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    } else if (!cfg.autoPublish) {
+      results.push({ platform: 'twitter', success: true, publishedAt: now });
     }
+  }
+
+  // ---- LINKEDIN: Use createPost ----
+  if (cfg.platforms.includes('linkedin')) {
+    const linkedin = getLinkedInConnector();
+    if (linkedin.isConfigured() && cfg.autoPublish) {
+      try {
+        const postResult = await linkedin.createPost(content.linkedin);
+        results.push({
+          platform: 'linkedin',
+          success: true,
+          postId: postResult.id,
+          url: postResult.url,
+          publishedAt: now,
+        });
+      } catch (error) {
+        results.push({
+          platform: 'linkedin',
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+          publishedAt: now,
+        });
+      }
+    } else if (!cfg.autoPublish) {
+      results.push({ platform: 'linkedin', success: true, publishedAt: now });
+    }
+  }
+
+  // ---- BLUESKY: Use createThread (real thread, not joined) ----
+  if (cfg.platforms.includes('bluesky')) {
+    const bluesky = getBlueskyConnector();
+    if (bluesky.isConfigured() && cfg.autoPublish) {
+      try {
+        const threadResult = await bluesky.createThread(content.bluesky);
+        results.push({
+          platform: 'bluesky',
+          success: true,
+          postId: threadResult.threadId,
+          url: threadResult.url,
+          threadUrls: threadResult.posts.map(p => p.url),
+          publishedAt: now,
+        });
+      } catch (error) {
+        results.push({
+          platform: 'bluesky',
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+          publishedAt: now,
+        });
+      }
+    } else if (!cfg.autoPublish) {
+      results.push({ platform: 'bluesky', success: true, publishedAt: now });
+    }
+  }
+
+  // ---- EMAIL via Gmail MCP ----
+  let emailSent = false;
+  if (options?.sendEmail) {
+    const emailResult = await sendEmailNewsletter(brief, content, options.emailRecipients, options.pptxPath);
+    results.push(emailResult);
+    emailSent = emailResult.success;
   }
 
   // Track in analytics
@@ -294,17 +344,114 @@ export async function publishMarketBrief(
     title: `Market Strategy ${brief.week}`,
     type: 'post',
     platforms: cfg.platforms,
-    posts: results.filter(r => r.success).map(r => ({
-      platform: r.platform,
-      postId: contentId,
+    posts: results.filter(r => r.success && r.postId).map(r => ({
+      platform: r.platform as Platform,
+      postId: r.postId || contentId,
       url: r.url,
     })),
   });
 
+  const totalPublished = results.filter(r => r.success).length;
+  const totalFailed = results.filter(r => !r.success).length;
+
   return {
-    success: results.every(r => r.success),
+    id: randomUUID(),
+    week: brief.week,
     results,
+    totalPublished,
+    totalFailed,
+    emailSent,
+    publishedAt: now,
   };
+}
+
+/**
+ * Send email newsletter via Gmail MCP
+ */
+async function sendEmailNewsletter(
+  brief: MarketBriefSummary,
+  content: { twitter: string[]; linkedin: string; bluesky: string[] },
+  recipients?: string[],
+  pptxPath?: string,
+): Promise<PublicationResult> {
+  const now = new Date();
+  const toList = recipients || process.env.NEWSLETTER_RECIPIENTS?.split(',').map(s => s.trim()).filter(Boolean);
+
+  if (!toList || toList.length === 0) {
+    return {
+      platform: 'email',
+      success: false,
+      error: 'No email recipients configured (set NEWSLETTER_RECIPIENTS or pass emailRecipients)',
+      publishedAt: now,
+    };
+  }
+
+  try {
+    const { getMCPClient } = await import('../mcp/index.js');
+    const mcp = getMCPClient();
+
+    const subject = `Weekly Market Strategy — ${brief.week} | ${brief.sentiment.overall.toUpperCase()}`;
+    const body = buildNewsletterHtml(brief, content.linkedin);
+
+    await mcp.call('gmail' as any, 'send_email', {
+      to: toList,
+      subject,
+      body,
+    });
+
+    return {
+      platform: 'email',
+      success: true,
+      recipients: toList.length,
+      publishedAt: now,
+    };
+  } catch (error) {
+    return {
+      platform: 'email',
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      publishedAt: now,
+    };
+  }
+}
+
+/**
+ * Build HTML email body from brief + LinkedIn content
+ */
+function buildNewsletterHtml(brief: MarketBriefSummary, linkedinContent: string): string {
+  const sentimentColor = brief.sentiment.overall === 'bullish' ? '#27AE60'
+    : brief.sentiment.overall === 'bearish' ? '#E74C3C' : '#D4A056';
+
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: 'Georgia', serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1a1a1a; line-height: 1.6;">
+  <div style="border-bottom: 3px solid ${sentimentColor}; padding-bottom: 10px; margin-bottom: 20px;">
+    <h1 style="margin: 0; font-size: 22px; font-weight: normal; letter-spacing: 1px;">ROSSIGNOLI & PARTNERS</h1>
+    <p style="margin: 5px 0 0; font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 2px;">Independent Wealth Management</p>
+  </div>
+
+  <h2 style="font-size: 18px; color: ${sentimentColor}; border-left: 4px solid ${sentimentColor}; padding-left: 12px;">
+    Weekly Market Strategy — ${brief.week}
+  </h2>
+  <p style="font-size: 14px; color: #666;">
+    Sentiment: <strong style="color: ${sentimentColor}">${brief.sentiment.overall.toUpperCase()}</strong> |
+    Themes: ${brief.themes.slice(0, 3).join(' | ')}
+  </p>
+
+  <div style="white-space: pre-wrap; font-size: 14px; margin: 20px 0;">
+${linkedinContent.split('\n').map(line => `    ${line}`).join('\n')}
+  </div>
+
+  <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+  <p style="font-size: 11px; color: #999; line-height: 1.5;">
+    This material is for informational purposes only and does not constitute investment advice.
+    Past performance is not indicative of future results. Rossignoli & Partners is regulated by FINMA.<br>
+    Via Nassa 21, CH-6900 Lugano | +41 91 922 44 00 | www.rossignolipartners.ch<br>
+    &copy; ${new Date().getFullYear()} Rossignoli & Partners. All rights reserved.
+  </p>
+</body>
+</html>`;
 }
 
 // =============================================================================

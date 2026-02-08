@@ -123,6 +123,41 @@ export interface SystemAwarenessState {
     lastAgentResult: string | null;
   };
 
+  // v19.0: P4 Cognitive Modules
+  semiotics: {
+    hallucinationRisk: number;
+    interpretationConfidence: number;
+    lastSign: string | null;
+  };
+  morphogenetic: {
+    colonyHealth: number;
+    repairSuccessRate: number;
+    activeErrors: number;
+  };
+  strangeLoop: {
+    identityStability: number;
+    metaThoughtDepth: number;
+    coreBeliefCount: number;
+  };
+  rsi: {
+    cycleCount: number;
+    successRate: number;
+    limitationsFound: number;
+  };
+  swarm: {
+    orderParameter: number;
+    entropy: number;
+    patternsDetected: number;
+  };
+  symbiotic: {
+    frictionLevel: number;
+    autonomyScore: number;
+  };
+  embodiment: {
+    predictionError: number;
+    reflexesTriggered: number;
+  };
+
   // System Health
   health: {
     heapUsage: number;
@@ -370,6 +405,75 @@ export class CentralAwareness {
       this.state.allostasis.urgentRegulation = e.urgency > 0.7;
       this.state.allostasis.currentAction = e.action;
     }, { priority: 75 });
+
+    // v19.0: P4 Cognitive Module Events
+    this.subscriber.on('semiotics.interpreted', (e: any) => {
+      this.state.semiotics.interpretationConfidence = e.confidence ?? 0.5;
+      this.state.semiotics.lastSign = e.sign ?? null;
+    }, { priority: 50 });
+
+    this.subscriber.on('semiotics.hallucination.detected', (e: any) => {
+      this.state.semiotics.hallucinationRisk = e.risk ?? 0;
+    }, { priority: 60 });
+
+    this.subscriber.on('morphogenetic.error.detected', (e: any) => {
+      this.state.morphogenetic.activeErrors++;
+      this.state.morphogenetic.colonyHealth = Math.max(0, this.state.morphogenetic.colonyHealth - (e.severity ?? 0.1));
+    }, { priority: 55 });
+
+    this.subscriber.on('morphogenetic.repair.completed', (e: any) => {
+      if (e.success) {
+        this.state.morphogenetic.activeErrors = Math.max(0, this.state.morphogenetic.activeErrors - 1);
+        this.state.morphogenetic.colonyHealth = Math.min(1, this.state.morphogenetic.colonyHealth + 0.1);
+      }
+      // Running average
+      const total = this.state.morphogenetic.repairSuccessRate;
+      this.state.morphogenetic.repairSuccessRate = e.success ? total * 0.9 + 0.1 : total * 0.9;
+    }, { priority: 50 });
+
+    this.subscriber.on('strange-loop.identity.crystallized', (e: any) => {
+      this.state.strangeLoop.identityStability = e.stability ?? 0.5;
+      this.state.strangeLoop.coreBeliefCount = e.coreBeliefs?.length ?? 0;
+    }, { priority: 50 });
+
+    this.subscriber.on('strange-loop.thought.created', (e: any) => {
+      this.state.strangeLoop.metaThoughtDepth = Math.max(this.state.strangeLoop.metaThoughtDepth, e.level ?? 0);
+    }, { priority: 30 });
+
+    this.subscriber.on('rsi.cycle.completed', (e: any) => {
+      this.state.rsi.cycleCount++;
+      const rate = this.state.rsi.successRate;
+      this.state.rsi.successRate = e.success ? rate * 0.9 + 0.1 : rate * 0.9;
+    }, { priority: 50 });
+
+    this.subscriber.on('rsi.limitation.detected', (e: any) => {
+      this.state.rsi.limitationsFound++;
+    }, { priority: 55 });
+
+    this.subscriber.on('swarm.step', (e: any) => {
+      this.state.swarm.orderParameter = e.orderParameter ?? 0;
+      this.state.swarm.entropy = e.entropy ?? 0;
+    }, { priority: 30 });
+
+    this.subscriber.on('swarm.pattern.detected', (e: any) => {
+      this.state.swarm.patternsDetected++;
+    }, { priority: 50 });
+
+    this.subscriber.on('symbiotic.friction.adapted', (e: any) => {
+      this.state.symbiotic.frictionLevel = e.frictionLevel ?? 0;
+    }, { priority: 45 });
+
+    this.subscriber.on('symbiotic.autonomy.updated', (e: any) => {
+      this.state.symbiotic.autonomyScore = e.autonomyScore ?? 0.5;
+    }, { priority: 45 });
+
+    this.subscriber.on('embodiment.sense.updated', (e: any) => {
+      this.state.embodiment.predictionError = e.predictionError ?? 0;
+    }, { priority: 40 });
+
+    this.subscriber.on('embodiment.reflex.triggered', (e: any) => {
+      this.state.embodiment.reflexesTriggered++;
+    }, { priority: 50 });
   }
 
   private processEvent(event: BusEvent): void {
@@ -502,6 +606,13 @@ export class CentralAwareness {
       salience += 0.1;
     }
 
+    // P4: Hallucination risk is highly salient
+    salience += this.state.semiotics.hallucinationRisk * 0.15;
+    // P4: Identity instability is concerning
+    salience += (1 - this.state.strangeLoop.identityStability) * 0.1;
+    // P4: High embodiment prediction error
+    salience += Math.min(this.state.embodiment.predictionError, 1) * 0.05;
+
     return Math.min(salience, 1);
   }
 
@@ -591,7 +702,9 @@ Neuromod: ${s.neuromodulation.dominantState} (DA:${s.neuromodulation.dopamine.to
 Pain: ${s.pain.currentLevel.toFixed(2)}${s.pain.inAgony ? ' [AGONY]' : ''}
 Economy: ${s.economy.sustainable ? 'SUSTAINABLE' : 'STRESSED'} (NESS dev: ${s.economy.nessDeviation.toFixed(2)})
 Memory: ${s.memory.dreamMode ? 'DREAMING' : 'AWAKE'} | WM load: ${(s.memory.workingMemoryLoad * 100).toFixed(0)}%
-Coherence: ${(s.consciousness.coherence * 100).toFixed(0)}%`;
+Coherence: ${(s.consciousness.coherence * 100).toFixed(0)}%
+Semiotics: risk=${s.semiotics.hallucinationRisk.toFixed(2)} | Identity: stability=${s.strangeLoop.identityStability.toFixed(2)} | Swarm: order=${s.swarm.orderParameter.toFixed(2)} entropy=${s.swarm.entropy.toFixed(2)}
+Embodiment: PE=${s.embodiment.predictionError.toFixed(2)} | RSI: cycles=${s.rsi.cycleCount} rate=${(s.rsi.successRate*100).toFixed(0)}% | Symbiotic: friction=${s.symbiotic.frictionLevel.toFixed(2)}`;
   }
 
   /**
@@ -715,6 +828,41 @@ Coherence: ${(s.consciousness.coherence * 100).toFixed(0)}%`;
         activeAgents: 0,
         queuedTasks: 0,
         lastAgentResult: null,
+      },
+
+      // v19.0: P4 Cognitive Modules
+      semiotics: {
+        hallucinationRisk: 0,
+        interpretationConfidence: 0.5,
+        lastSign: null,
+      },
+      morphogenetic: {
+        colonyHealth: 1.0,
+        repairSuccessRate: 0.5,
+        activeErrors: 0,
+      },
+      strangeLoop: {
+        identityStability: 0.5,
+        metaThoughtDepth: 0,
+        coreBeliefCount: 0,
+      },
+      rsi: {
+        cycleCount: 0,
+        successRate: 0.5,
+        limitationsFound: 0,
+      },
+      swarm: {
+        orderParameter: 0,
+        entropy: 0,
+        patternsDetected: 0,
+      },
+      symbiotic: {
+        frictionLevel: 0,
+        autonomyScore: 0.5,
+      },
+      embodiment: {
+        predictionError: 0,
+        reflexesTriggered: 0,
       },
 
       health: {

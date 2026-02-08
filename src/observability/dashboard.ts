@@ -15,6 +15,7 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
+import { getChatAPI, ChatAPI } from '../api/chat-api.js';
 
 // ============================================================================
 // Types
@@ -240,6 +241,16 @@ export interface SystemMetrics {
     claimsPending: number;
     factAccuracy: number;
     lastVerification: number | null;
+  };
+  // v19.0: P4 Cognitive Modules
+  cognitive?: {
+    semiotics: { hallucinationRisk: number; interpretationCount: number };
+    morphogenetic: { colonyHealth: number; repairRate: number };
+    strangeLoop: { identityStability: number; metaDepth: number };
+    rsi: { cycleCount: number; successRate: number };
+    swarm: { orderParameter: number; entropy: number; patternsDetected: number };
+    symbiotic: { frictionLevel: number; autonomyScore: number };
+    embodiment: { predictionError: number; reflexCount: number };
   };
 }
 
@@ -631,10 +642,12 @@ export class DashboardServer extends EventEmitter {
   private sseClients: http.ServerResponse[] = [];
   private metricsProvider: (() => SystemMetrics) | null = null;
   private startTime = Date.now();
+  private chatAPI: ChatAPI;
 
   constructor(config: Partial<DashboardConfig> = {}) {
     super();
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.chatAPI = getChatAPI();
   }
 
   /**
@@ -775,6 +788,17 @@ export class DashboardServer extends EventEmitter {
     } else if (url === '/api/learning/load' && req.method === 'GET') {
       // Load learning state from disk
       this.handleLearningLoad(res);
+    } else if (url?.startsWith('/api/chat') || url?.startsWith('/api/conversations')) {
+      // Chat API endpoints
+      this.chatAPI.handleRequest(req, res, url).then(handled => {
+        if (!handled) {
+          res.writeHead(404);
+          res.end('Not Found');
+        }
+      }).catch(err => {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: String(err) }));
+      });
     } else {
       res.writeHead(404);
       res.end('Not Found');
@@ -1580,6 +1604,74 @@ export function broadcastClaimVerified(data: {
   source?: string;
 }): void {
   broadcastToDashboard('grounding:verified', { ...data, timestamp: Date.now() });
+}
+
+// ============================================================================
+// v19.0: P4 Cognitive Module Event Helpers
+// ============================================================================
+
+export function broadcastSemioticsEvent(data: {
+  type: string;
+  sign?: string;
+  claim?: string;
+  risk?: number;
+  confidence?: number;
+}): void {
+  broadcastToDashboard('semiotics:event', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastMorphogeneticEvent(data: {
+  type: string;
+  agentId: string;
+  errorCount?: number;
+  severity?: number;
+  success?: boolean;
+}): void {
+  broadcastToDashboard('morphogenetic:event', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastStrangeLoopEvent(data: {
+  type: string;
+  stability?: number;
+  content?: string;
+  level?: number;
+}): void {
+  broadcastToDashboard('strange-loop:event', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastRSIEvent(data: {
+  type: string;
+  cycleNumber: number;
+  success?: boolean;
+  limitationsFound?: number;
+}): void {
+  broadcastToDashboard('rsi:event', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastAutopoiesisEvent(data: {
+  cycleNumber: number;
+  observationCount: number;
+  opportunities: string[];
+}): void {
+  broadcastToDashboard('autopoiesis:event', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastEmbodimentEvent(data: {
+  type: string;
+  sensorId?: string;
+  predictionError?: number;
+  reflexType?: string;
+}): void {
+  broadcastToDashboard('embodiment:event', { ...data, timestamp: Date.now() });
+}
+
+export function broadcastSymbioticEvent(data: {
+  type: string;
+  frictionLevel?: number;
+  autonomyScore?: number;
+  cognitiveLoad?: number;
+}): void {
+  broadcastToDashboard('symbiotic:event', { ...data, timestamp: Date.now() });
 }
 
 // ============================================================================

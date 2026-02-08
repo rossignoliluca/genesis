@@ -797,6 +797,105 @@ function wireDaemon(
 }
 
 // ============================================================================
+// v19.0: Cross-Module Feedback Loops (P5)
+// ============================================================================
+
+/**
+ * Create feedback subscribers that react to P4 bus events
+ * and propagate effects to other modules (neuromod, nociception, world-model, memory).
+ */
+function wireP4FeedbackLoops(modules: ModuleRegistry, bus: GenesisEventBus): number {
+  let count = 0;
+  const sub = createSubscriber('p4-feedback');
+
+  // 1. Hallucination → world-model degrade + cortisol
+  if (modules.worldModel || modules.neuromodulation) {
+    sub.on('semiotics.hallucination.detected', (e: any) => {
+      if (e.risk > 0.5 && modules.worldModel) {
+        bus.publish('worldmodel.consistency.violation', {
+          source: 'semiotics', precision: 1.0,
+          claim: e.claim ?? '', conflictsWith: 'hallucination-detected', resolution: 'pending',
+        });
+      }
+      if (e.risk > 0.5 && modules.neuromodulation) {
+        modules.neuromodulation!.modulate('cortisol', e.risk * 0.1, 'hallucination-risk');
+      }
+    });
+    count++;
+  }
+
+  // 2. Morphogenetic errors → nociception pain
+  if (modules.nociception) {
+    sub.on('morphogenetic.error.detected', (e: any) => {
+      if ((e.severity ?? 0) > 0.6) {
+        modules.nociception!.stimulus('cognitive', (e.severity ?? 0.5) * 0.5, 'morphogenetic-error');
+      }
+    });
+    count++;
+  }
+
+  // 3. Identity crystallized → dopamine reward
+  if (modules.neuromodulation) {
+    sub.on('strange-loop.identity.crystallized', (e: any) => {
+      if ((e.stability ?? 0) > 0.7) {
+        modules.neuromodulation!.modulate('dopamine', 0.05, 'identity-stable');
+      }
+    });
+    count++;
+  }
+
+  // 4. RSI limitation → norepinephrine alertness
+  if (modules.neuromodulation) {
+    sub.on('rsi.limitation.detected', (e: any) => {
+      modules.neuromodulation!.modulate('norepinephrine', 0.1, 'rsi-limitation');
+    });
+    count++;
+  }
+
+  // 5. Swarm pattern → dopamine novelty
+  if (modules.neuromodulation) {
+    sub.on('swarm.pattern.detected', (e: any) => {
+      modules.neuromodulation!.modulate('dopamine', 0.08, 'swarm-emergence');
+    });
+    count++;
+  }
+
+  // 6. Symbiotic friction → serotonin (calming adaptation)
+  if (modules.neuromodulation) {
+    sub.on('symbiotic.friction.adapted', (e: any) => {
+      modules.neuromodulation!.modulate('serotonin', 0.05, 'symbiotic-adaptation');
+    });
+    count++;
+  }
+
+  // 7. High embodiment prediction error → pain
+  if (modules.nociception) {
+    sub.on('embodiment.sense.updated', (e: any) => {
+      if ((e.predictionError ?? 0) > 0.7) {
+        modules.nociception!.stimulus('embodiment', (e.predictionError ?? 0) * 0.3, 'prediction-error');
+      }
+    });
+    count++;
+  }
+
+  // 8. Autopoiesis opportunities → log as memory
+  sub.on('autopoiesis.cycle.completed', (e: any) => {
+    if ((e.opportunities?.length ?? 0) > 0) {
+      import('../memory/index.js').then(({ getMemorySystem }) => {
+        getMemorySystem().remember({
+          what: `Autopoiesis: ${e.opportunities.length} opportunities found: ${e.opportunities.slice(0, 3).join(', ')}`,
+          tags: ['autopoiesis', 'self-observation'],
+          importance: 0.3,
+        });
+      }).catch(() => { /* memory optional */ });
+    }
+  });
+  count++;
+
+  return count;
+}
+
+// ============================================================================
 // Neuromodulation Effect Integration
 // ============================================================================
 
@@ -941,6 +1040,11 @@ export function wireAllModules(modules: ModuleRegistry): WiringResult {
   if (modules.symbiotic) { wireSymbiotic(modules.symbiotic, bus); modulesWired++; }
   if (modules.embodiment) { wireEmbodiment(modules.embodiment, bus); modulesWired++; }
   // exotic, metaRL: pure compute, no events to bridge
+
+  // v19.0: Cross-module feedback loops for P4 events
+  const feedbackCount = wireP4FeedbackLoops(modules, bus);
+  subscribersCreated += feedbackCount;
+  console.debug(`[ModuleWiring] P4 feedback loops created: ${feedbackCount}`);
 
   // Apply neuromodulation effects
   if (modules.neuromodulation) {

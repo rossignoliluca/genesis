@@ -90,7 +90,7 @@ import { createAdaptiveConformal, type AdaptiveConformalPredictor } from './unce
 // ============================================================================
 
 // Bus — central event backbone (pub/sub for all modules)
-import { getEventBus, type GenesisEventBus } from './bus/index.js';
+import { getEventBus, createSubscriber, type GenesisEventBus } from './bus/index.js';
 
 // Persistence — state storage to disk
 import { StateStore } from './persistence/index.js';
@@ -1219,6 +1219,19 @@ export class Genesis {
             providers: [],
           },
           mcp: { connectedServers: 0, availableTools: 0, totalCalls: 0 },
+          // v19.0: P4 Cognitive Modules
+          cognitive: (() => {
+            const s = this.centralAwareness?.getState();
+            return s ? {
+              semiotics: { hallucinationRisk: s.semiotics.hallucinationRisk, interpretationCount: 0 },
+              morphogenetic: { colonyHealth: s.morphogenetic.colonyHealth, repairRate: s.morphogenetic.repairSuccessRate },
+              strangeLoop: { identityStability: s.strangeLoop.identityStability, metaDepth: s.strangeLoop.metaThoughtDepth },
+              rsi: { cycleCount: s.rsi.cycleCount, successRate: s.rsi.successRate },
+              swarm: { orderParameter: s.swarm.orderParameter, entropy: s.swarm.entropy, patternsDetected: s.swarm.patternsDetected },
+              symbiotic: { frictionLevel: s.symbiotic.frictionLevel, autonomyScore: s.symbiotic.autonomyScore },
+              embodiment: { predictionError: s.embodiment.predictionError, reflexCount: s.embodiment.reflexesTriggered },
+            } : undefined;
+          })(),
         };
       });
 
@@ -1279,6 +1292,15 @@ export class Genesis {
             signals: state.activeSignals.length,
             cycle: this.cycleCount,
           });
+        });
+      }
+
+      // v19.0: Wire P4 cognitive module events → dashboard SSE
+      const p4DashSub = createSubscriber('p4-dashboard');
+      const p4Prefixes = ['semiotics.', 'morphogenetic.', 'strange-loop.', 'rsi.', 'autopoiesis.', 'swarm.', 'symbiotic.', 'embodiment.'];
+      for (const prefix of p4Prefixes) {
+        p4DashSub.onPrefix(prefix, (event: any) => {
+          broadcastToDashboard(event.topic ?? prefix.slice(0, -1), event);
         });
       }
     }

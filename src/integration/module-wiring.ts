@@ -96,14 +96,28 @@ function wireConsciousness(
 
     if (eventType === 'phi_updated' || eventType.includes('phi')) {
       const phi = (event as any).phi ?? 0.5;
+      const delta = (event as any).delta ?? 0;
 
       bus.publish('consciousness.phi.updated', {
         source: 'consciousness',
         precision: 0.9,
         phi,
         previousPhi: (event as any).previousPhi ?? 0.5,
-        delta: (event as any).delta ?? 0,
+        delta,
       });
+
+      // v18.1: Auto-record significant phi shifts to episodic memory
+      if (Math.abs(delta) > 0.15) {
+        try {
+          const { getMemorySystem } = require('../memory/index.js');
+          const memory = getMemorySystem();
+          memory.remember({
+            what: `Phi shifted ${delta > 0 ? 'up' : 'down'} by ${Math.abs(delta).toFixed(2)} to ${phi.toFixed(2)}`,
+            tags: ['consciousness', 'phi-shift', delta > 0 ? 'increase' : 'decrease'],
+            importance: Math.abs(delta),
+          });
+        } catch { /* memory optional */ }
+      }
 
       // v16.2.0: Bidirectional feedback - φ modulates neurotransmitters
       if (neuromodulation) {
@@ -187,6 +201,24 @@ function wireNociception(nociception: NociceptiveSystem, bus: GenesisEventBus): 
       threshold: 0.8,
       adaptation: state.chronic ? 0.5 : 0,
     });
+
+    // v18.1: React to pain with corrective action
+    if (state.aggregatePain > 0.8) {
+      // High pain → trigger allostasis throttle
+      bus.publish('allostasis.throttle', {
+        source: 'nociception', precision: 1.0,
+        magnitude: Math.min(1.0, state.aggregatePain),
+      });
+    }
+    if (state.aggregatePain > 0.5) {
+      // Medium pain → boost cortisol (stress response) and norepinephrine (alertness)
+      try {
+        const { getNeuromodulationSystem } = require('../neuromodulation/index.js');
+        const neuromod = getNeuromodulationSystem();
+        neuromod.modulate('cortisol', state.aggregatePain * 0.2, 'pain-response');
+        neuromod.modulate('norepinephrine', 0.1, 'pain-alertness');
+      } catch { /* neuromod optional */ }
+    }
   });
 }
 
@@ -277,6 +309,24 @@ function wireActiveInference(
       action,
       beliefs: activeInference.getMostLikelyState(),
     });
+  });
+
+  // v18.1: WM → AI prediction feedback (bidirectional)
+  bus.subscribe('worldmodel.prediction.updated', (event) => {
+    const confidence = (event as any).confidence ?? 0.5;
+    const domain = (event as any).domain ?? 'general';
+
+    // Feed world model predictions into observation precision
+    try {
+      const obs = activeInference.getComponents().observations;
+      if (domain === 'economic') {
+        obs.setPrecision('economic', confidence);
+      } else if (domain === 'tool') {
+        obs.setPrecision('tool', confidence);
+      } else if (domain === 'energy') {
+        obs.setPrecision('energy', confidence);
+      }
+    } catch { /* optional */ }
   });
 
   // Subscribe to stop events

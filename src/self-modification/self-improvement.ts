@@ -17,6 +17,15 @@ import { DarwinGodelEngine, getDarwinGodelEngine, ModificationPlan, Modification
 import { PhiMonitor, createPhiMonitor } from '../consciousness/phi-monitor.js';
 import { CognitiveWorkspace, getCognitiveWorkspace } from '../memory/cognitive-workspace.js';
 import { invariantRegistry, InvariantContext } from '../kernel/invariants.js';
+import {
+  broadcastCycleStarted,
+  broadcastStageChanged,
+  broadcastProposalCreated,
+  broadcastMetricsUpdated,
+  broadcastModificationApplied,
+  broadcastModificationFailed,
+  broadcastLessonStored,
+} from '../observability/dashboard.js';
 
 // ============================================================================
 // Types
@@ -299,16 +308,37 @@ export class SelfImprovementEngine extends EventEmitter {
   }> {
     const startTime = Date.now();
     this.emit('cycle:started', { timestamp: new Date() });
+    broadcastCycleStarted();
+    broadcastStageChanged('observe');
 
     // 1. OBSERVE - Collect metrics
     const metrics = this.collectMetrics();
     this.currentMetrics = metrics;
     this.emit('metrics:collected', { metrics });
+    broadcastMetricsUpdated({
+      phi: metrics.phi,
+      errorRate: metrics.errorRate,
+      memoryReuse: metrics.memoryReuse,
+      responseTime: metrics.avgResponseTime,
+    });
 
     // 2. REFLECT - Find improvement opportunities
+    broadcastStageChanged('reflect');
     const opportunities = this.findOpportunities(metrics);
     for (const opp of opportunities) {
       this.emit('opportunity:found', { opportunity: opp });
+      if (opp.suggestedFix) {
+        broadcastProposalCreated({
+          id: opp.id,
+          category: opp.category,
+          target: opp.suggestedFix.modifications[0]?.targetFile || 'unknown',
+          change: opp.suggestedFix.modifications[0]?.description || opp.description,
+          reason: opp.description,
+          expected: opp.suggestedFix.modifications[0]?.expectedImprovement || 'improvement',
+          risk: 'LOW',
+          reversible: true,
+        });
+      }
     }
 
     // 3. CHECK - Can we improve?
@@ -317,10 +347,13 @@ export class SelfImprovementEngine extends EventEmitter {
 
     if (!canImprove) {
       this.emit('improvement:skipped', { reason: 'conditions not met', metrics });
+      broadcastStageChanged('idle');
     } else if (!this.config.autoImprove) {
       this.emit('improvement:skipped', { reason: 'auto-improve disabled' });
+      broadcastStageChanged('idle');
     } else {
       // 4. APPLY - Try improvements
+      broadcastStageChanged('apply');
       const sorted = opportunities.sort((a, b) => b.priority - a.priority);
       const toApply = sorted.slice(0, this.config.maxImprovementsPerCycle);
 
@@ -332,6 +365,7 @@ export class SelfImprovementEngine extends EventEmitter {
       }
     }
 
+    broadcastStageChanged('verify');
     this.emit('cycle:completed', {
       duration: Date.now() - startTime,
       metrics,
@@ -339,6 +373,28 @@ export class SelfImprovementEngine extends EventEmitter {
       improvementsApplied: results.filter(r => r.success).length,
     });
 
+    // Store lessons learned
+    for (const result of results) {
+      if (result.success) {
+        broadcastLessonStored({
+          id: `lesson-${Date.now()}`,
+          content: `Improvement "${result.opportunityId}" succeeded`,
+          type: 'positive',
+          confidence: 0.8,
+          category: 'performance',
+        });
+      } else if (result.error) {
+        broadcastLessonStored({
+          id: `lesson-${Date.now()}`,
+          content: `Improvement "${result.opportunityId}" failed: ${result.error}`,
+          type: 'negative',
+          confidence: 0.9,
+          category: 'errors',
+        });
+      }
+    }
+
+    broadcastStageChanged('idle');
     return { metrics, opportunities, results };
   }
 
@@ -595,6 +651,19 @@ export class SelfImprovementEngine extends EventEmitter {
 
       if (improved) {
         this.emit('improvement:success', { opportunity, result: improvementResult });
+        broadcastModificationApplied({
+          id: opportunity.id,
+          description: opportunity.description,
+          commitHash: result.commitHash,
+          metrics: {
+            before: {
+              [opportunity.metric]: beforeMetrics[opportunity.metric] as number,
+            },
+            after: {
+              [opportunity.metric]: afterMetrics[opportunity.metric] as number,
+            },
+          },
+        });
       } else {
         // Rollback if no improvement
         if (result.rollbackHash) {
@@ -604,6 +673,12 @@ export class SelfImprovementEngine extends EventEmitter {
           opportunity,
           reason: 'no measurable improvement',
           result: improvementResult,
+        });
+        broadcastModificationFailed({
+          id: opportunity.id,
+          description: opportunity.description,
+          reason: 'no measurable improvement',
+          rollbackHash: result.rollbackHash,
         });
       }
 

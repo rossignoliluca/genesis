@@ -19,6 +19,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { EmbeddingProvider, VectorDatabase, getEmbeddingProvider } from '../embeddings/index.js';
+import {
+  broadcastCodeQueryExecuted,
+  broadcastFileAnalyzed,
+  broadcastUnderstandingUpdated,
+} from '../observability/dashboard.js';
 
 // ============================================================================
 // Types
@@ -284,7 +289,14 @@ export class CodeRAG {
     const chunks: CodeChunk[] = [];
     let totalLines = 0;
 
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const relativePath = path.relative(this.config.rootPath, file);
+      const progress = Math.round(((i + 1) / files.length) * 100);
+
+      // Broadcast file analysis progress
+      broadcastFileAnalyzed(relativePath, progress);
+
       try {
         const fileChunks = this.chunker.parseFile(file);
         chunks.push(...fileChunks);
@@ -320,6 +332,25 @@ export class CodeRAG {
         byType,
       },
     };
+
+    // Broadcast understanding updated with module analysis
+    const moduleUnderstanding: Record<string, number> = {};
+    for (const chunk of chunks) {
+      // Extract module name from path (first directory after src/)
+      const parts = chunk.relativePath.split('/');
+      const moduleName = parts.length > 1 ? parts[0] : 'root';
+      if (!moduleUnderstanding[moduleName]) {
+        moduleUnderstanding[moduleName] = 0;
+      }
+      // Each chunk represents some understanding (normalized by total)
+      moduleUnderstanding[moduleName] += 1;
+    }
+    // Normalize to 0-1 range
+    const maxChunks = Math.max(...Object.values(moduleUnderstanding), 1);
+    for (const key of Object.keys(moduleUnderstanding)) {
+      moduleUnderstanding[key] = Math.min(1, moduleUnderstanding[key] / maxChunks);
+    }
+    broadcastUnderstandingUpdated(moduleUnderstanding);
 
     return this.index;
   }
@@ -542,7 +573,13 @@ export class CodeRAG {
 
     // Sort by score descending
     results.sort((a, b) => b.score - a.score);
-    return results.slice(0, topK);
+    const topResults = results.slice(0, topK);
+
+    // Broadcast query execution
+    const topFile = topResults.length > 0 ? topResults[0].chunk.relativePath : undefined;
+    broadcastCodeQueryExecuted(queryText, topResults.length, topFile);
+
+    return topResults;
   }
 
   /**

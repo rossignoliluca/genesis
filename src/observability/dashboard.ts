@@ -69,6 +69,20 @@ export interface SystemMetrics {
     availableTools: number;
     totalCalls: number;
   };
+  selfImprovement?: {
+    currentStage: string;
+    cycleEnabled: boolean;
+    successRate: number;
+    totalAttempts: number;
+    phi: number;
+    errorRate: number;
+    memoryReuse: number;
+  };
+  codeRag?: {
+    totalChunks: number;
+    indexedFiles: number;
+    lastQuery: string | null;
+  };
 }
 
 export interface EventData {
@@ -566,9 +580,199 @@ export class DashboardServer extends EventEmitter {
     } else if (url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', uptime: (Date.now() - this.startTime) / 1000 }));
+    } else if (url === '/api/mcp/execute' && req.method === 'POST') {
+      // MCP Execution Bridge
+      this.handleMCPExecution(req, res);
+    } else if (url === '/api/mcp/execute' && req.method === 'OPTIONS') {
+      // CORS preflight
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.writeHead(204);
+      res.end();
+    } else if (url?.startsWith('/api/mcp/result/')) {
+      // Get MCP result by ID
+      const requestId = url.replace('/api/mcp/result/', '');
+      this.handleMCPResult(requestId, res);
+    } else if (url === '/api/learning/save' && req.method === 'POST') {
+      // Save learning state to disk
+      this.handleLearningSave(req, res);
+    } else if (url === '/api/learning/save' && req.method === 'OPTIONS') {
+      // CORS preflight
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.writeHead(204);
+      res.end();
+    } else if (url === '/api/learning/load' && req.method === 'GET') {
+      // Load learning state from disk
+      this.handleLearningLoad(res);
     } else {
       res.writeHead(404);
       res.end('Not Found');
+    }
+  }
+
+  /**
+   * Handle MCP execution request
+   * Writes request to queue file for Claude Code to process
+   */
+  private handleMCPExecution(
+    req: http.IncomingMessage,
+    res: http.ServerResponse
+  ): void {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const request = JSON.parse(body);
+        const queuePath = path.join(process.cwd(), '.genesis', 'mcp-queue');
+
+        // Ensure queue directory exists
+        if (!fs.existsSync(queuePath)) {
+          fs.mkdirSync(queuePath, { recursive: true });
+        }
+
+        // Write request to queue
+        const requestFile = path.join(queuePath, `request-${request.id}.json`);
+        fs.writeFileSync(requestFile, JSON.stringify({
+          ...request,
+          status: 'pending',
+          createdAt: Date.now(),
+        }, null, 2));
+
+        // Check for result (poll for up to 30 seconds)
+        const resultFile = path.join(queuePath, `result-${request.id}.json`);
+        let attempts = 0;
+        const maxAttempts = 60; // 30 seconds at 500ms intervals
+
+        const checkResult = () => {
+          if (fs.existsSync(resultFile)) {
+            try {
+              const result = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
+              // Clean up files
+              try { fs.unlinkSync(requestFile); } catch {}
+              try { fs.unlinkSync(resultFile); } catch {}
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(result));
+              return;
+            } catch (e) {
+              // Result file exists but isn't ready
+            }
+          }
+
+          attempts++;
+          if (attempts < maxAttempts) {
+            setTimeout(checkResult, 500);
+          } else {
+            // Timeout - return pending status
+            res.writeHead(202, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              success: false,
+              status: 'pending',
+              message: 'MCP execution pending. Run the MCP watcher to process requests.',
+              requestId: request.id,
+              tool: request.tool,
+            }));
+          }
+        };
+
+        checkResult();
+
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid request', details: String(err) }));
+      }
+    });
+  }
+
+  /**
+   * Get MCP result by request ID
+   */
+  private handleMCPResult(requestId: string, res: http.ServerResponse): void {
+    const queuePath = path.join(process.cwd(), '.genesis', 'mcp-queue');
+    const resultFile = path.join(queuePath, `result-${requestId}.json`);
+
+    if (fs.existsSync(resultFile)) {
+      const result = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } else {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Result not found' }));
+    }
+  }
+
+  /**
+   * Save MCP learning state to disk
+   * Persists usage patterns, insights, and history for memory integration
+   */
+  private handleLearningSave(
+    req: http.IncomingMessage,
+    res: http.ServerResponse
+  ): void {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const learningState = JSON.parse(body);
+        const statePath = path.join(process.cwd(), '.genesis', 'mcp-learning-data.json');
+
+        // Ensure .genesis directory exists
+        const genesisDir = path.join(process.cwd(), '.genesis');
+        if (!fs.existsSync(genesisDir)) {
+          fs.mkdirSync(genesisDir, { recursive: true });
+        }
+
+        // Save with metadata
+        const stateWithMeta = {
+          ...learningState,
+          savedAt: new Date().toISOString(),
+          version: '1.0.0',
+        };
+
+        fs.writeFileSync(statePath, JSON.stringify(stateWithMeta, null, 2));
+
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          savedAt: stateWithMeta.savedAt,
+          patterns: learningState.patterns?.length || 0,
+        }));
+      } catch (err) {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: (err as Error).message }));
+      }
+    });
+  }
+
+  /**
+   * Load MCP learning state from disk
+   */
+  private handleLearningLoad(res: http.ServerResponse): void {
+    const statePath = path.join(process.cwd(), '.genesis', 'mcp-learning-data.json');
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    if (fs.existsSync(statePath)) {
+      try {
+        const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(state));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: (err as Error).message }));
+      }
+    } else {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        patterns: [],
+        totalCalls: 0,
+        successfulCalls: 0,
+        favoriteTools: [],
+        lastSession: null,
+        insights: [],
+      }));
     }
   }
 
@@ -692,6 +896,160 @@ export function broadcastToDashboard(type: string, data: unknown): void {
       data,
     });
   }
+}
+
+// ============================================================================
+// Self-Improvement Event Helpers
+// ============================================================================
+
+/**
+ * Broadcast self-improvement cycle start
+ */
+export function broadcastCycleStarted(): void {
+  broadcastToDashboard('selfimprovement:cycle_started', { timestamp: Date.now() });
+}
+
+/**
+ * Broadcast stage change in improvement cycle
+ */
+export function broadcastStageChanged(stage: 'idle' | 'observe' | 'reflect' | 'propose' | 'apply' | 'verify'): void {
+  broadcastToDashboard('selfimprovement:stage_changed', { stage, timestamp: Date.now() });
+}
+
+/**
+ * Broadcast a new improvement proposal
+ */
+export function broadcastProposalCreated(proposal: {
+  id: string;
+  category: string;
+  target: string;
+  change: string;
+  reason: string;
+  expected: string;
+  risk: 'LOW' | 'MEDIUM' | 'HIGH';
+  reversible: boolean;
+}): void {
+  broadcastToDashboard('selfimprovement:proposal_created', { proposal, timestamp: Date.now() });
+}
+
+/**
+ * Broadcast sandbox progress
+ */
+export function broadcastSandboxProgress(sandboxPath: string | null, steps: Array<{
+  id: string;
+  name: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  duration?: number;
+  progress?: number;
+}>): void {
+  broadcastToDashboard('selfimprovement:sandbox_progress', { sandboxPath, steps, timestamp: Date.now() });
+}
+
+/**
+ * Broadcast invariant check results
+ */
+export function broadcastInvariantChecked(results: Array<{
+  id: string;
+  name: string;
+  passed: boolean;
+  message?: string;
+}>): void {
+  broadcastToDashboard('selfimprovement:invariant_checked', { results, timestamp: Date.now() });
+}
+
+/**
+ * Broadcast build output line
+ */
+export function broadcastBuildOutput(line: string): void {
+  broadcastToDashboard('selfimprovement:build_output', { line, timestamp: Date.now() });
+}
+
+/**
+ * Broadcast successful modification
+ */
+export function broadcastModificationApplied(data: {
+  id: string;
+  description: string;
+  commitHash?: string;
+  metrics?: {
+    before: Record<string, number>;
+    after: Record<string, number>;
+  };
+}): void {
+  broadcastToDashboard('selfimprovement:modification_applied', { ...data, timestamp: Date.now() });
+}
+
+/**
+ * Broadcast failed modification
+ */
+export function broadcastModificationFailed(data: {
+  id: string;
+  description: string;
+  reason: string;
+  rollbackHash?: string;
+}): void {
+  broadcastToDashboard('selfimprovement:modification_failed', { ...data, timestamp: Date.now() });
+}
+
+/**
+ * Broadcast metrics update
+ */
+export function broadcastMetricsUpdated(metrics: {
+  phi: number;
+  errorRate: number;
+  memoryReuse: number;
+  responseTime?: number;
+}): void {
+  broadcastToDashboard('selfimprovement:metrics_updated', { ...metrics, timestamp: Date.now() });
+}
+
+// ============================================================================
+// Code RAG Event Helpers
+// ============================================================================
+
+/**
+ * Broadcast code query execution
+ */
+export function broadcastCodeQueryExecuted(query: string, resultsCount: number, topFile?: string): void {
+  broadcastToDashboard('coderag:query_executed', { query, resultsCount, topFile, timestamp: Date.now() });
+}
+
+/**
+ * Broadcast file analysis progress
+ */
+export function broadcastFileAnalyzed(file: string, progress: number): void {
+  broadcastToDashboard('coderag:file_analyzed', { file, progress, timestamp: Date.now() });
+}
+
+/**
+ * Broadcast understanding update
+ */
+export function broadcastUnderstandingUpdated(modules: Record<string, number>): void {
+  broadcastToDashboard('coderag:understanding_updated', { modules, timestamp: Date.now() });
+}
+
+// ============================================================================
+// Learning Event Helpers
+// ============================================================================
+
+/**
+ * Broadcast new lesson stored
+ */
+export function broadcastLessonStored(lesson: {
+  id: string;
+  content: string;
+  type: 'positive' | 'negative';
+  confidence: number;
+  category: string;
+}): void {
+  broadcastToDashboard('learning:lesson_stored', { ...lesson, timestamp: Date.now() });
+}
+
+/**
+ * Broadcast lesson recall
+ */
+export function broadcastLessonRecalled(lessonId: string): void {
+  broadcastToDashboard('learning:lesson_recalled', { lessonId, timestamp: Date.now() });
 }
 
 export default DashboardServer;

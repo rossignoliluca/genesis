@@ -863,20 +863,31 @@ export class Genesis {
           ? Math.min(1, this.cognitiveWorkspace.getStats().itemCount / Math.max(1, this.cognitiveWorkspace.getStats().maxItems))
           : 0.4;
 
+        // v18.1: Neuromodulation entropy from modulatory balance
+        const neuromodEntropy = this.neuromodulation
+          ? Math.abs(this.neuromodulation.getEffect().explorationRate - 0.5) * 2
+          : 0.5;
+
+        const now = new Date();
         return {
           components: [
-            { id: 'fek', type: 'kernel', active: !!this.fek, state: { mode: this.fek?.getMode?.() ?? 'dormant' }, entropy: fekEntropy, lastUpdate: new Date() },
-            { id: 'brain', type: 'processor', active: !!this.brain, state: { calibrationError: brainEntropy }, entropy: brainEntropy, lastUpdate: new Date() },
-            { id: 'fiber', type: 'economic', active: !!this.fiber, state: { sustainable: fiberSection?.sustainable ?? false, netFlow: fiberSection?.netFlow ?? 0 }, entropy: econEntropy, lastUpdate: new Date() },
-            { id: 'memory', type: 'storage', active: !!this.cognitiveWorkspace, state: {}, entropy: memEntropy, lastUpdate: new Date() },
+            { id: 'fek', type: 'kernel', active: !!this.fek, state: { mode: this.fek?.getMode?.() ?? 'dormant' }, entropy: fekEntropy, lastUpdate: now },
+            { id: 'brain', type: 'processor', active: !!this.brain, state: { calibrationError: brainEntropy }, entropy: brainEntropy, lastUpdate: now },
+            { id: 'fiber', type: 'economic', active: !!this.fiber, state: { sustainable: fiberSection?.sustainable ?? false, netFlow: fiberSection?.netFlow ?? 0 }, entropy: econEntropy, lastUpdate: now },
+            { id: 'memory', type: 'storage', active: !!this.cognitiveWorkspace, state: {}, entropy: memEntropy, lastUpdate: now },
+            { id: 'neuromod', type: 'modulator', active: !!this.neuromodulation, state: {}, entropy: neuromodEntropy, lastUpdate: now },
+            { id: 'world-model', type: 'predictor', active: !!this.worldModel, state: {}, entropy: 0.4, lastUpdate: now },
+            { id: 'nociception', type: 'sentinel', active: !!this.nociception, state: {}, entropy: 0.3, lastUpdate: now },
           ],
           connections: [
             { from: 'fek', to: 'brain', strength: 0.9, informationFlow: Math.max(0.3, 1 - fekEntropy), bidirectional: true },
             { from: 'brain', to: 'memory', strength: 0.8, informationFlow: 0.7, bidirectional: true },
             { from: 'fiber', to: 'fek', strength: 0.6, informationFlow: fiberSection?.sustainable ? 0.8 : 0.3, bidirectional: true },
+            { from: 'neuromod', to: 'world-model', strength: 0.7, informationFlow: 0.6, bidirectional: false },
+            { from: 'nociception', to: 'neuromod', strength: 0.6, informationFlow: 0.5, bidirectional: false },
           ],
-          stateHash: `cycle-${this.cycleCount}-fe${fekEntropy.toFixed(2)}`,
-          timestamp: new Date(),
+          stateHash: `cycle-${this.cycleCount}-fe${fekEntropy.toFixed(2)}-nm${neuromodEntropy.toFixed(2)}`,
+          timestamp: now,
         };
       });
 

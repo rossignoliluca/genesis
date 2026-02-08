@@ -86,6 +86,9 @@ export class ObservationGatherer {
   private lastStripeBalance: number = -1; // -1 = never checked
   private realSourcesInitialized = false;
 
+  // v18.1: External precision overrides from world model predictions
+  private precisionOverrides: Partial<Record<keyof ObservationPrecision, number>> = {};
+
   // v11.0: Precision tracking per modality
   private precisionHistory: {
     energy: number[];    // Recent energy observation stability
@@ -391,13 +394,19 @@ export class ObservationGatherer {
       }
     }
 
+    // v18.1: Blend computed precision with world model overrides
+    const blend = (computed: number, key: keyof ObservationPrecision): number => {
+      const override = this.precisionOverrides[key];
+      return override !== undefined ? 0.5 * computed + 0.5 * override : computed;
+    };
+
     return {
-      energy: this.channelPrecision(this.precisionHistory.energy, 'continuous'),
-      phi: this.channelPrecision(this.precisionHistory.phi, 'continuous'),
-      tool: this.channelPrecision(this.precisionHistory.tool, 'binary'),
-      coherence: this.channelPrecision(this.precisionHistory.coherence, 'binary'),
-      task: this.channelPrecision(this.precisionHistory.task, 'continuous'),
-      economic: this.channelPrecision(this.precisionHistory.economic, 'binary'),
+      energy: blend(this.channelPrecision(this.precisionHistory.energy, 'continuous'), 'energy'),
+      phi: blend(this.channelPrecision(this.precisionHistory.phi, 'continuous'), 'phi'),
+      tool: blend(this.channelPrecision(this.precisionHistory.tool, 'binary'), 'tool'),
+      coherence: blend(this.channelPrecision(this.precisionHistory.coherence, 'binary'), 'coherence'),
+      task: blend(this.channelPrecision(this.precisionHistory.task, 'continuous'), 'task'),
+      economic: blend(this.channelPrecision(this.precisionHistory.economic, 'binary'), 'economic'),
     };
   }
 
@@ -442,6 +451,18 @@ export class ObservationGatherer {
       coherence: raw.coherent === undefined ? 2 : (raw.coherent ? 2 : 0),
       task: this.mapTask(raw.taskStatus ?? 'none'),
     };
+  }
+
+  /**
+   * v18.1: Set external precision override for a modality.
+   * Used by world model predictions to boost observation precision
+   * when WM has high confidence in a domain.
+   */
+  setPrecision(modality: string, precision: number): void {
+    const key = modality as keyof ObservationPrecision;
+    if (['energy', 'phi', 'tool', 'coherence', 'task', 'economic'].includes(key)) {
+      this.precisionOverrides[key] = Math.max(0, Math.min(1, precision));
+    }
   }
 
   // ============================================================================

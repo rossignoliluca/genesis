@@ -351,7 +351,7 @@ function createDefaultDMatrix(): DMatrix {
 // ============================================================================
 
 export class ActiveInferenceEngine {
-  private config: ActiveInferenceConfig;
+  public config: ActiveInferenceConfig;
 
   // Generative model
   private A: AMatrix;

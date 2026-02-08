@@ -847,8 +847,39 @@ export class AllostasisSystem extends EventEmitter {
         break;
     }
 
-    // In a real implementation, we would actually execute the action here
-    // For now, we just emit an event
+    // v18.1: Execute real regulatory actions via event bus
+    try {
+      const { getEventBus } = await import('../bus/index.js');
+      const bus = getEventBus();
+
+      switch (action.type) {
+        case 'throttle': {
+          bus.publish('allostasis.throttle', {
+            source: 'allostasis', precision: 1.0,
+            magnitude: action.magnitude,
+          });
+          break;
+        }
+        case 'defer': {
+          bus.publish('allostasis.defer', {
+            source: 'allostasis', precision: 1.0,
+            variable: action.target,
+          });
+          break;
+        }
+        case 'hibernate': {
+          bus.publish('allostasis.hibernate', {
+            source: 'allostasis', precision: 1.0,
+            duration: action.magnitude * 10000,
+          });
+          break;
+        }
+        case 'scale_down': {
+          if (typeof global !== 'undefined' && (global as any).gc) { (global as any).gc(); }
+          break;
+        }
+      }
+    } catch { /* bus optional */ }
 
     this.emit('action-executed', action);
 

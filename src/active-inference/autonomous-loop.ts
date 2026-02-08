@@ -190,6 +190,18 @@ export class AutonomousLoop {
       this.eventBus = null;
     }
 
+    // v18.1: React to allostasis regulation events
+    try {
+      const bus = getEventBus();
+      bus.subscribe('allostasis.throttle', (event) => {
+        const mag = (event as any).magnitude ?? 0.5;
+        this.config.cycleInterval = Math.max(this.config.cycleInterval, 2000 * mag);
+      });
+      bus.subscribe('allostasis.hibernate', () => {
+        this.runDreamConsolidation();
+      });
+    } catch { /* bus optional */ }
+
     // Subscribe to engine events
     this.engine.on(this.handleEngineEvent.bind(this));
   }
@@ -295,6 +307,19 @@ export class AutonomousLoop {
 
     // 1. Gather observations (v12.0: non-blocking with cache)
     const obs = await this.gatherNonBlocking();
+
+    // v18.1: Neuromodulation → inference parameters
+    try {
+      const { getNeuromodulationSystem } = await import('../neuromodulation/index.js');
+      const neuromod = getNeuromodulationSystem();
+      const effect = neuromod.getEffect();
+
+      // Modulate engine parameters based on neuromodulatory state
+      this.engine.config.learningRateA = 0.05 * effect.learningRate;
+      this.engine.config.learningRateB = 0.05 * effect.learningRate;
+      this.engine.config.actionTemperature = Math.max(0.1, effect.explorationRate);
+      this.engine.config.explorationBonus = effect.explorationRate;
+    } catch { /* neuromodulation optional */ }
 
     if (this.config.verbose) {
       console.log(`[AI Loop] Cycle ${this.cycleCount} - Observation:`, obs);
@@ -429,6 +454,19 @@ export class AutonomousLoop {
       });
     }
     this.previousObservation = obs;
+
+    // v18.1: Auto-record significant events to episodic memory
+    if (surprise > 3.0 || outcome === 'negative' || this.cycleCount % 50 === 0) {
+      try {
+        const { getMemorySystem } = await import('../memory/index.js');
+        const mem = getMemorySystem();
+        mem.remember({
+          what: `Cycle ${this.cycleCount}: action=${action}, surprise=${surprise.toFixed(2)}, outcome=${outcome}`,
+          tags: ['active-inference', 'auto-record', action, outcome],
+          importance: surprise / 10,
+        });
+      } catch { /* memory optional */ }
+    }
 
     // 5b. v10.8.1: Meta-learning triggers (every 20 cycles)
     if (this.cycleCount % 20 === 0 && this.cycleCount >= 40) {

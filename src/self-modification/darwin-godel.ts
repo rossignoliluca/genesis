@@ -36,6 +36,11 @@ import {
 import { join, relative } from 'path';
 import { createHash } from 'crypto';
 import { invariantRegistry, InvariantContext, InvariantResult } from '../kernel/invariants.js';
+import {
+  broadcastSandboxProgress,
+  broadcastInvariantChecked,
+  broadcastBuildOutput,
+} from '../observability/dashboard.js';
 
 // ============================================================================
 // Types
@@ -350,13 +355,20 @@ export class DarwinGodelEngine {
 
     // 1. Build
     try {
+      broadcastBuildOutput('> npm run build');
       const buildResult = this.runCommand('npm', ['run', 'build'], sandboxPath, this.config.buildTimeout);
       buildSuccess = buildResult.status === 0;
       if (!buildSuccess) {
-        errors.push(`Build failed: ${buildResult.stderr?.toString() || 'unknown error'}`);
+        const errorMsg = buildResult.stderr?.toString() || 'unknown error';
+        errors.push(`Build failed: ${errorMsg}`);
+        broadcastBuildOutput(`✗ Build failed: ${errorMsg.slice(0, 200)}`);
+      } else {
+        broadcastBuildOutput('✓ Build successful');
       }
     } catch (error) {
-      errors.push(`Build error: ${error instanceof Error ? error.message : String(error)}`);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      errors.push(`Build error: ${errorMsg}`);
+      broadcastBuildOutput(`✗ Build error: ${errorMsg}`);
     }
 
     if (!buildSuccess) {
@@ -383,20 +395,36 @@ export class DarwinGodelEngine {
     if (this.config.skipRuntimeCheck) {
       invariantsPass = true;
       runtimeCheck = true;
+      broadcastBuildOutput('⊘ Runtime check skipped (skipRuntimeCheck=true)');
     } else {
       try {
+        broadcastBuildOutput('> Checking runtime invariants...');
         const runtimeResult = await this.checkRuntimeInvariants(sandboxPath);
         invariantsPass = runtimeResult.passed;
         invariantResults = runtimeResult.results;
         runtimeCheck = runtimeResult.ranSuccessfully;
 
+        // Broadcast invariant results
+        const broadcastResults = invariantResults.map(r => ({
+          id: r.id,
+          name: r.id,
+          passed: r.passed,
+          message: r.message,
+        }));
+        broadcastInvariantChecked(broadcastResults);
+
         if (!invariantsPass) {
           for (const inv of invariantResults.filter(r => !r.passed)) {
             errors.push(`Invariant ${inv.id} failed: ${inv.message}`);
+            broadcastBuildOutput(`✗ Invariant ${inv.id} failed: ${inv.message}`);
           }
+        } else {
+          broadcastBuildOutput(`✓ All ${invariantResults.length} invariants passed`);
         }
       } catch (error) {
-        errors.push(`Runtime check error: ${error instanceof Error ? error.message : String(error)}`);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        errors.push(`Runtime check error: ${errorMsg}`);
+        broadcastBuildOutput(`✗ Runtime check error: ${errorMsg}`);
       }
     }
 
@@ -563,8 +591,28 @@ export class DarwinGodelEngine {
       rollbackHash = this.createCheckpoint(`Before: ${plan.name}`);
       plan.rollbackPoint = rollbackHash || undefined;
 
+      // Broadcast sandbox progress - starting
+      broadcastSandboxProgress(null, [
+        { id: 'clone', name: 'Clone to sandbox', status: 'running' },
+        { id: 'apply', name: 'Apply modifications', status: 'pending' },
+        { id: 'build', name: 'TypeScript build', status: 'pending' },
+        { id: 'test', name: 'Run tests', status: 'pending' },
+        { id: 'invariants', name: 'Verify invariants', status: 'pending' },
+        { id: 'apply-live', name: 'Apply to live', status: 'pending' },
+      ]);
+
       // 3. Create sandbox
       sandboxPath = this.createSandbox();
+
+      // Broadcast sandbox created
+      broadcastSandboxProgress(sandboxPath, [
+        { id: 'clone', name: 'Clone to sandbox', status: 'completed' },
+        { id: 'apply', name: 'Apply modifications', status: 'running' },
+        { id: 'build', name: 'TypeScript build', status: 'pending' },
+        { id: 'test', name: 'Run tests', status: 'pending' },
+        { id: 'invariants', name: 'Verify invariants', status: 'pending' },
+        { id: 'apply-live', name: 'Apply to live', status: 'pending' },
+      ]);
 
       // 4. Apply modifications to sandbox
       const applyResult = this.applyToSandbox(plan, sandboxPath);
@@ -586,10 +634,29 @@ export class DarwinGodelEngine {
         };
       }
 
+      // Broadcast modifications applied
+      broadcastSandboxProgress(sandboxPath, [
+        { id: 'clone', name: 'Clone to sandbox', status: 'completed' },
+        { id: 'apply', name: 'Apply modifications', status: 'completed' },
+        { id: 'build', name: 'TypeScript build', status: 'running' },
+        { id: 'test', name: 'Run tests', status: 'pending' },
+        { id: 'invariants', name: 'Verify invariants', status: 'pending' },
+        { id: 'apply-live', name: 'Apply to live', status: 'pending' },
+      ]);
+
       // 5. Verify sandbox
       const verification = await this.verify(sandboxPath);
 
       if (!verification.passed) {
+        // Broadcast verification failed
+        broadcastSandboxProgress(sandboxPath, [
+          { id: 'clone', name: 'Clone to sandbox', status: 'completed' },
+          { id: 'apply', name: 'Apply modifications', status: 'completed' },
+          { id: 'build', name: 'TypeScript build', status: verification.buildSuccess ? 'completed' : 'failed' },
+          { id: 'test', name: 'Run tests', status: verification.testsSuccess ? 'completed' : 'failed' },
+          { id: 'invariants', name: 'Verify invariants', status: verification.invariantsPass ? 'completed' : 'failed' },
+          { id: 'apply-live', name: 'Apply to live', status: 'pending' },
+        ]);
         return {
           success: false,
           planId: plan.id,
@@ -598,6 +665,16 @@ export class DarwinGodelEngine {
           duration: Date.now() - startTime,
         };
       }
+
+      // Broadcast all checks passed, applying to live
+      broadcastSandboxProgress(sandboxPath, [
+        { id: 'clone', name: 'Clone to sandbox', status: 'completed' },
+        { id: 'apply', name: 'Apply modifications', status: 'completed' },
+        { id: 'build', name: 'TypeScript build', status: 'completed' },
+        { id: 'test', name: 'Run tests', status: 'completed' },
+        { id: 'invariants', name: 'Verify invariants', status: 'completed' },
+        { id: 'apply-live', name: 'Apply to live', status: 'running' },
+      ]);
 
       // 6. Apply to real source (ONLY if all checks pass)
       for (const mod of plan.modifications) {
@@ -617,7 +694,19 @@ export class DarwinGodelEngine {
       const commitHash = this.createCheckpoint(`Applied: ${plan.name}`);
 
       // 8. Rebuild real source
+      broadcastBuildOutput('> Rebuilding live source...');
       this.runCommand('npm', ['run', 'build'], this.config.genesisRoot);
+      broadcastBuildOutput('✓ Live rebuild complete');
+
+      // Broadcast success - all steps completed
+      broadcastSandboxProgress(sandboxPath, [
+        { id: 'clone', name: 'Clone to sandbox', status: 'completed' },
+        { id: 'apply', name: 'Apply modifications', status: 'completed' },
+        { id: 'build', name: 'TypeScript build', status: 'completed' },
+        { id: 'test', name: 'Run tests', status: 'completed' },
+        { id: 'invariants', name: 'Verify invariants', status: 'completed' },
+        { id: 'apply-live', name: 'Apply to live', status: 'completed' },
+      ]);
 
       const result: ApplyResult = {
         success: true,

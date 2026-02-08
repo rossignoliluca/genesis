@@ -231,6 +231,19 @@ export interface SetpointAdaptedEvent extends BusEvent {
   reason: string;
 }
 
+// v18.1: Allostasis action events (real regulatory actions)
+export interface AllostasisThrottleEvent extends BusEvent {
+  magnitude: number;
+}
+
+export interface AllostasisDeferEvent extends BusEvent {
+  variable: string;
+}
+
+export interface AllostasisHibernateEvent extends BusEvent {
+  duration: number;
+}
+
 // ============================================================================
 // Economic Events
 // ============================================================================
@@ -840,6 +853,9 @@ export interface GenesisEventMap {
   // --- Allostasis Events ---
   'allostasis.regulation': AllostasisRegulationEvent;
   'allostasis.setpoint.adapted': SetpointAdaptedEvent;
+  'allostasis.throttle': AllostasisThrottleEvent;
+  'allostasis.defer': AllostasisDeferEvent;
+  'allostasis.hibernate': AllostasisHibernateEvent;
 
   // --- Economic Events ---
   'economy.cost.recorded': EconomicCostEvent;

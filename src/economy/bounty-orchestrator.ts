@@ -42,6 +42,7 @@ import { getIssueAnalyzer, type IssueAnalysis } from './issue-analyzer.js';
 import { getCompetitionDetector, type CompetitionAnalysis } from './competition-detector.js';
 import { getSolutionComparator } from './solution-comparator.js';
 import { getModelSelector } from './model-selector.js';
+import { getBountySwarm, type BountySwarm, type SwarmResult } from './bounty-swarm.js';
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -157,6 +158,7 @@ export class BountyOrchestrator {
   // Module references
   private hunter = getBountyHunter();
   private executor = getBountyExecutor();
+  private swarm = getBountySwarm();
   private learningEngine = getBountyLearning();
   private feedbackAnalyzer = getFeedbackAnalyzer();
   private feedbackLoop = getFeedbackLoop();
@@ -587,10 +589,40 @@ export class BountyOrchestrator {
     console.log(`\n[Orchestrator] ▶ Executing: ${bounty.title}`);
     console.log(`[Orchestrator]   Type: ${classification.type}, EFE: ${(efeScore * 100).toFixed(0)}%`);
 
+    // Determine if this bounty requires multi-agent swarm solving
+    const complexTypes = ['feature', 'refactor', 'architecture', 'integration', 'security', 'performance'];
+    const isComplex = complexTypes.includes(classification.type) ||
+                      classification.estimatedDifficulty > 0.7 ||
+                      (issueAnalysis?.estimatedComplexity && issueAnalysis.estimatedComplexity > 6);
+
     try {
-      // Execute via the bounty executor
       activeBounty.phase = 'generating';
-      const result = await this.executor.executeBounty(bounty);
+      let result: ExecutionResult;
+
+      if (isComplex) {
+        // Route complex bounties through the multi-agent swarm
+        console.log(`[Orchestrator]   Using Swarm (complex: ${classification.type}, difficulty: ${classification.estimatedDifficulty.toFixed(2)})`);
+
+        const swarmResult = await this.swarm.solve(bounty, classification, issueAnalysis);
+
+        // Convert SwarmResult to ExecutionResult
+        result = {
+          bountyId: bounty.id,
+          status: swarmResult.success ? 'success' : 'failed',
+          solution: swarmResult.solution ? {
+            success: swarmResult.success,
+            changes: swarmResult.solution.changes,
+            description: swarmResult.solution.prDescription,
+            confidence: swarmResult.solution.confidence,
+          } : undefined,
+          error: swarmResult.success ? undefined : (swarmResult.error || 'Swarm solving failed'),
+          duration: swarmResult.totalTime,
+        };
+      } else {
+        // Route simple bounties through the standard executor
+        console.log(`[Orchestrator]   Using Executor (simple: ${classification.type})`);
+        result = await this.executor.executeBounty(bounty);
+      }
 
       if (result.status === 'success' && result.submission) {
         activeBounty.phase = 'awaiting-feedback';

@@ -134,6 +134,13 @@ import { createFinanceModule, type FinanceModule } from './finance/index.js';
 // Revenue — autonomous revenue streams (bounty, MCP, keeper, content, yield)
 import { createRevenueSystem, type RevenueSystem } from './revenue/index.js';
 
+// Revenue Activation — unified revenue control (x402, content, services)
+import {
+  getRevenueActivation,
+  type RevenueActivationManager,
+  type RevenueActivationConfig,
+} from './revenue/activation.js';
+
 // x402 Payments — HTTP 402 micropayment protocol (USDC on Base)
 import { isClientConfigured as isX402Configured } from './payments/x402/index.js';
 
@@ -445,6 +452,7 @@ export class Genesis {
   // v13.12.0: Finance, Revenue, UI modules
   private financeModule: FinanceModule | null = null;
   private revenueSystem: RevenueSystem | null = null;
+  private revenueActivation: RevenueActivationManager | null = null;
   private observatory: Observatory | null = null;
   private polymarketTrader: PolymarketTrader | null = null;
   private mcpFinance: MCPFinanceManager | null = null;
@@ -1760,6 +1768,27 @@ export class Genesis {
       this.revenueSystem.start();
       this.fiber?.registerModule('revenue');
       console.log('[Genesis] Revenue system started (simulation mode)');
+
+      // v19.0.0: Revenue Activation — unified control of x402, content, services
+      this.revenueActivation = getRevenueActivation({
+        x402Enabled: isX402Configured(),
+        network: process.env.BASE_NETWORK === 'mainnet' ? 'base' : 'base-sepolia',
+        dailyTarget: parseInt(process.env.REVENUE_DAILY_TARGET || '100', 10),
+        contentEnabled: this.config.content ?? true,
+        servicesEnabled: true,
+        reinvestRate: parseFloat(process.env.REVENUE_REINVEST_RATE || '0.2'),
+      });
+
+      // Auto-activate if x402 is configured
+      if (isX402Configured()) {
+        this.revenueActivation.activate().then(() => {
+          console.log('[Genesis] Revenue activation: x402 enabled on', process.env.BASE_NETWORK || 'testnet');
+        }).catch((err) => {
+          console.warn('[Genesis] Revenue activation failed:', err.message);
+        });
+      } else {
+        console.log('[Genesis] Revenue activation: waiting for GENESIS_PRIVATE_KEY');
+      }
     }
 
     // v18.1.0: Content Creator Module — multi-platform publishing, SEO, scheduling
@@ -3276,6 +3305,46 @@ export class Genesis {
    */
   getComponentMemory(componentId: ComponentId): ComponentMemoryManager | null {
     return this.componentMemoryManagers.get(componentId) ?? null;
+  }
+
+  // ==========================================================================
+  // Revenue Activation Interface (v19.0.0)
+  // ==========================================================================
+
+  /**
+   * Get the revenue activation manager
+   */
+  getRevenueActivation(): RevenueActivationManager | null {
+    return this.revenueActivation;
+  }
+
+  /**
+   * Activate all revenue streams
+   */
+  async activateRevenue(): Promise<void> {
+    if (!this.revenueActivation) {
+      throw new Error('Revenue system not initialized. Set revenue: true in config.');
+    }
+    await this.revenueActivation.activate();
+  }
+
+  /**
+   * Get revenue status and metrics
+   */
+  getRevenueStatus(): {
+    isActive: boolean;
+    metrics: import('./revenue/activation.js').RevenueMetrics;
+    opportunities: number;
+    x402Ready: boolean;
+  } | null {
+    if (!this.revenueActivation) return null;
+    const status = this.revenueActivation.getStatus();
+    return {
+      isActive: status.isActive,
+      metrics: status.metrics,
+      opportunities: status.opportunities,
+      x402Ready: isX402Configured(),
+    };
   }
 
   /**

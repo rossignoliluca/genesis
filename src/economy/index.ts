@@ -782,3 +782,53 @@ export type {
   ConsensusResult,
   MultiValidatorConfig,
 } from './multi-validator.js';
+
+// v19.5: Repository Style Learner (Adaptive Code Style)
+export {
+  RepoStyleLearner,
+  getRepoStyleLearner,
+  resetRepoStyleLearner,
+} from './repo-style-learner.js';
+export type {
+  CodeStyle,
+  RepoStyleProfile,
+} from './repo-style-learner.js';
+
+// v19.5: Test Generator (Automatic Test Generation)
+export {
+  TestGenerator,
+  getTestGenerator,
+  resetTestGenerator,
+} from './test-generator.js';
+export type {
+  TestFramework,
+  GeneratedTest,
+  TestGeneratorConfig,
+} from './test-generator.js';
+
+// v19.5: Smart Retry (Intelligent Retry Strategies)
+export {
+  SmartRetryEngine,
+  getSmartRetry,
+  resetSmartRetry,
+} from './smart-retry.js';
+export type {
+  RetryStrategy,
+  RetryAttempt,
+  RetryState,
+  SmartRetryConfig,
+} from './smart-retry.js';
+
+// v19.5: Success Pattern Miner (Learning from Successes)
+export {
+  SuccessPatternMiner,
+  getSuccessPatterns,
+  resetSuccessPatterns,
+} from './success-patterns.js';
+export type {
+  SuccessPattern,
+  PatternExample,
+  PatternCondition,
+  PatternMatch,
+  SuccessAnalysis,
+} from './success-patterns.js';

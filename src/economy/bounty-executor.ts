@@ -31,6 +31,11 @@ import { getBountyLearning, type BountyOutcome } from './bounty-learning.js';
 import { getFeedbackAnalyzer, type PreSubmissionReport, type SkillProfile } from './feedback-analyzer.js';
 // v19.4: Multi-model consensus validation
 import { getMultiValidator, type ConsensusResult } from './multi-validator.js';
+// v19.5: Advanced capabilities
+import { getRepoStyleLearner } from './repo-style-learner.js';
+import { getTestGenerator } from './test-generator.js';
+import { getSmartRetry } from './smart-retry.js';
+import { getSuccessPatterns } from './success-patterns.js';
 
 // ============================================================================
 // Types
@@ -584,6 +589,11 @@ export class BountyExecutor {
   private feedbackAnalyzer = getFeedbackAnalyzer();
   // v19.4: Multi-model consensus validation
   private multiValidator = getMultiValidator();
+  // v19.5: Advanced capabilities
+  private styleLearner = getRepoStyleLearner();
+  private testGenerator = getTestGenerator();
+  private smartRetry = getSmartRetry();
+  private successPatterns = getSuccessPatterns();
 
   private activeExecutions = new Map<string, Promise<ExecutionResult>>();
 
@@ -932,6 +942,13 @@ export class BountyExecutor {
 
       // 2. Generate solution
       console.log('[BountyExecutor] Generating solution...');
+
+      // v19.5: Get success pattern guidance for code generation
+      const patternGuidance = this.successPatterns.generatePatternGuidance(bounty, classification);
+      if (patternGuidance) {
+        console.log('[BountyExecutor] Applying success patterns...');
+      }
+
       const solution = await this.codeGenerator.generate(bounty);
 
       if (!solution.success) {
@@ -955,6 +972,54 @@ export class BountyExecutor {
           error: solution.error,
           duration: Date.now() - startTime,
         };
+      }
+
+      // 2.5 v19.5: Apply repository style to generated code
+      if (bounty.sourceMetadata?.org && bounty.sourceMetadata?.repo) {
+        console.log('[BountyExecutor] Applying repository code style...');
+        try {
+          const styleProfile = await this.styleLearner.learnStyle(
+            bounty.sourceMetadata.org,
+            bounty.sourceMetadata.repo
+          );
+          console.log(`[BountyExecutor] Style learned: ${styleProfile.primaryLanguage} (${(styleProfile.style.confidence * 100).toFixed(0)}% confidence)`);
+
+          // Apply style to each file
+          for (let i = 0; i < solution.changes.length; i++) {
+            const change = solution.changes[i];
+            const styledContent = await this.styleLearner.applyStyle(change.content, styleProfile);
+            solution.changes[i] = { ...change, content: styledContent };
+          }
+        } catch (styleError) {
+          console.warn('[BountyExecutor] Style application failed, continuing:', styleError);
+        }
+      }
+
+      // 2.6 v19.5: Generate tests if bounty requires them or repo expects them
+      if (bounty.sourceMetadata?.org && bounty.sourceMetadata?.repo) {
+        const shouldAddTests = classification.type === 'feature-small' ||
+                               classification.type === 'feature-large' ||
+                               classification.type === 'bug-fix-complex' ||
+                               bounty.description.toLowerCase().includes('test');
+
+        if (shouldAddTests) {
+          console.log('[BountyExecutor] Generating tests...');
+          try {
+            const enhancedChanges = await this.testGenerator.enhanceWithTests(
+              solution.changes,
+              bounty.sourceMetadata.org,
+              bounty.sourceMetadata.repo
+            );
+
+            const addedTests = enhancedChanges.length - solution.changes.length;
+            if (addedTests > 0) {
+              solution.changes = enhancedChanges;
+              console.log(`[BountyExecutor] Added ${addedTests} test file(s)`);
+            }
+          } catch (testError) {
+            console.warn('[BountyExecutor] Test generation failed, continuing:', testError);
+          }
+        }
       }
 
       // 3. Check confidence threshold
@@ -1297,6 +1362,27 @@ export class BountyExecutor {
           totalRevenue += updated.bountyValue;
           // v16.2: Reset rejection counter on merge (positive signal)
           this.consecutiveRejections = 0;
+
+          // v19.5: Learn from success - extract patterns
+          try {
+            console.log(`[BountyExecutor] 🎉 PR merged! Learning from success...`);
+            // Get all bounties and find the matching one
+            const allBounties = this.hunter.getAllBounties();
+            const bounty = allBounties.find((b: Bounty) => b.id === updated.bountyId);
+            if (bounty) {
+              const classification = classifyBounty(bounty);
+              // Get changes from somewhere (would need to store or re-fetch)
+              // For now, just record the success with empty changes
+              await this.successPatterns.learnFromSuccess(
+                updated,
+                [], // Would need stored changes
+                bounty,
+                classification
+              );
+            }
+          } catch (learnError) {
+            console.warn('[BountyExecutor] Failed to learn from success:', learnError);
+          }
         } else if (updated && updated.status === 'closed') {
           // v16.2: Track consecutive rejections for circuit breaker
           this.consecutiveRejections++;
@@ -1317,6 +1403,16 @@ export class BountyExecutor {
             }
             if (analysis.skillGaps.length > 0) {
               console.log(`[BountyExecutor] Skill gaps identified: ${analysis.skillGaps.join(', ')}`);
+            }
+
+            // v19.5: Check if smart retry is possible
+            const retryAnalysis = await this.smartRetry.analyzeForRetry(updated, []);
+            if (retryAnalysis.canRetry) {
+              console.log(`[BountyExecutor] 🔄 Smart retry possible: ${retryAnalysis.reason}`);
+              console.log(`[BountyExecutor] Retry attempt: ${retryAnalysis.attemptNumber}`);
+              console.log(`[BountyExecutor] Strategy: ${retryAnalysis.strategy?.name || 'none'}`);
+            } else {
+              console.log(`[BountyExecutor] ❌ No retry possible: ${retryAnalysis.reason}`);
             }
           } catch (analysisErr) {
             console.warn(`[BountyExecutor] Failed to analyze feedback:`, analysisErr);

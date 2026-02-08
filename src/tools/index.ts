@@ -214,6 +214,24 @@ toolRegistry.set('market_strategist', {
 });
 
 // =============================================================================
+// Weekly Report Pipeline (v18.5 — Repeatable Process)
+// =============================================================================
+
+import { WeeklyReportPipeline } from '../market-strategist/weekly-pipeline.js';
+import type { PipelineConfig } from '../market-strategist/weekly-pipeline.js';
+
+toolRegistry.set('weekly_report', {
+  name: 'weekly_report',
+  description: 'Run the full weekly market report pipeline: collect from 20+ MCP sources → verify → analyze → generate PPTX → prepare social content → store in memory. Rossignoli & Partners branding. Single command, fully automated, repeatable.',
+  execute: async (params: Record<string, unknown>) => {
+    const config = params.config as Partial<PipelineConfig> | undefined;
+    const pipeline = new WeeklyReportPipeline(config);
+    return pipeline.run();
+  },
+  validate: () => ({ valid: true }),
+});
+
+// =============================================================================
 // Content Module Tools
 // =============================================================================
 
@@ -400,6 +418,31 @@ toolRegistry.set('market_to_social', {
     if (!brief.sentiment) return { valid: false, reason: 'Brief must have sentiment field' };
     return { valid: true };
   },
+});
+
+// =============================================================================
+// Publication Report Tool (Loop 3)
+// =============================================================================
+
+toolRegistry.set('publish_report', {
+  name: 'publish_report',
+  description: 'Publish the latest weekly report to social platforms (Twitter thread, LinkedIn post, Bluesky thread) and optionally send email newsletter. Defaults to dry-run (publishSocial=false). Set publishSocial=true to actually post.',
+  execute: async (params: Record<string, unknown>) => {
+    const config = params.config as Partial<PipelineConfig> | undefined;
+    const publishSocial = params.publishSocial as boolean ?? false;
+    const sendEmail = params.sendEmail as boolean ?? false;
+    const emailRecipients = params.emailRecipients as string[] | undefined;
+
+    const pipeline = new WeeklyReportPipeline({
+      ...config,
+      publishSocial,
+      sendEmail,
+      emailRecipients,
+      prepareSocial: true,
+    });
+    return pipeline.run();
+  },
+  validate: () => ({ valid: true }),
 });
 
 toolRegistry.set('content_calendar', {

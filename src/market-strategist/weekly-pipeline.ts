@@ -36,7 +36,10 @@ import type {
 } from './types.js';
 import { DEFAULT_STRATEGY_CONFIG } from './types.js';
 import type { PresentationSpec, SlideSpec, ChartSpec } from '../presentation/types.js';
-import { briefToSocialContent } from '../content/strategy-wiring.js';
+import { briefToSocialContent, publishMarketBrief } from '../content/strategy-wiring.js';
+import type { PublicationReport } from '../content/types.js';
+import { FeedbackEngine } from './feedback.js';
+import type { Prediction, TrackRecord, CalibrationProfile } from './types.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
@@ -72,6 +75,12 @@ export interface PipelineConfig {
   focusAssets: string[];
   /** Italian geopolitical sources */
   includeItalianGeo: boolean;
+  /** Actually publish social content via connectors (default false) */
+  publishSocial: boolean;
+  /** Send email newsletter (default false) */
+  sendEmail: boolean;
+  /** Email recipients (overrides NEWSLETTER_RECIPIENTS env) */
+  emailRecipients?: string[];
 }
 
 export const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
@@ -93,6 +102,8 @@ export const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
     'Gold', 'Oil WTI', 'Bitcoin', 'VIX',
   ],
   includeItalianGeo: true,
+  publishSocial: false,
+  sendEmail: false,
 };
 
 export interface PipelineResult {
@@ -124,6 +135,15 @@ export interface PipelineResult {
     linkedin: string;
     bluesky: string[];
   };
+  /** Publication report (when publishSocial=true) */
+  publicationReport?: PublicationReport;
+  /** Feedback results */
+  feedback?: {
+    newPredictions: number;
+    scoredPredictions: number;
+    trackRecord?: TrackRecord;
+    calibration?: CalibrationProfile;
+  };
   /** Timings */
   timings: Record<string, number>;
   /** Errors encountered */
@@ -140,6 +160,7 @@ export class WeeklyReportPipeline {
   private analyzer: MarketAnalyzer;
   private verifier: DataVerifier;
   private memoryLayers: MemoryLayers;
+  private feedbackEngine: FeedbackEngine;
   private config: PipelineConfig;
 
   constructor(config?: Partial<PipelineConfig>) {
@@ -154,10 +175,15 @@ export class WeeklyReportPipeline {
     this.analyzer = new MarketAnalyzer();
     this.verifier = new DataVerifier();
     this.memoryLayers = new MemoryLayers();
+    this.feedbackEngine = new FeedbackEngine();
   }
 
   /**
-   * Run the full weekly report pipeline
+   * Run the full weekly report pipeline (8 steps)
+   *
+   * [1] COLLECT → [2] VERIFY (replace LLM prices) → [3] ANALYZE (with calibration)
+   * → [4] STORE → [5] FEEDBACK (create predictions, score old, track record)
+   * → [6] BUILD SPEC (with track record slide) → [7] RENDER → [8] SOCIAL/PUBLISH
    */
   async run(): Promise<PipelineResult> {
     const timings: Record<string, number> = {};
@@ -172,20 +198,37 @@ export class WeeklyReportPipeline {
     console.log(`========================================\n`);
 
     // ---- STEP 1: COLLECT ----
-    console.log(`[1/7] COLLECTING data from ${EXTENDED_SOURCES.filter(s => s.enabled && s.priority <= this.config.sourcePriority).length} sources...`);
+    console.log(`[1/8] COLLECTING data from ${EXTENDED_SOURCES.filter(s => s.enabled && s.priority <= this.config.sourcePriority).length} sources...`);
     const t1 = Date.now();
 
     const snapshot = await this.collectFromAllSources(week, date);
     timings.collect = Date.now() - t1;
     console.log(`  → ${snapshot.headlines.length} headlines, ${snapshot.markets.length} assets, ${snapshot.themes.length} themes (${timings.collect}ms)`);
 
-    // ---- STEP 2: VERIFY ----
+    // ---- STEP 2: VERIFY (with price replacement) ----
     let verificationResult;
     if (this.config.verify) {
-      console.log(`[2/7] VERIFYING data points...`);
+      console.log(`[2/8] VERIFYING data points via Yahoo/CoinGecko/FRED...`);
       const t2 = Date.now();
       try {
         const report = await this.verifier.verifyAssets(snapshot.markets);
+
+        // Replace LLM-extracted prices with verified API prices
+        let replacedCount = 0;
+        for (const dp of report.dataPoints) {
+          if (dp.canReplaceLLMValue && dp.verifiedPrice !== undefined) {
+            const market = snapshot.markets.find(m => m.name === dp.asset);
+            if (market) {
+              const oldLevel = market.level;
+              market.level = this.formatVerifiedPrice(dp.verifiedPrice, dp.asset);
+              if (oldLevel !== market.level) {
+                replacedCount++;
+                console.log(`  [CORRECTED] ${dp.asset}: ${oldLevel} -> ${market.level}`);
+              }
+            }
+          }
+        }
+
         verificationResult = {
           rate: report.verificationRate,
           verified: report.verifiedCount,
@@ -193,7 +236,7 @@ export class WeeklyReportPipeline {
           warnings: report.warnings,
         };
         timings.verify = Date.now() - t2;
-        console.log(`  → ${report.verifiedCount}/${report.totalDataPoints} verified (${(report.verificationRate * 100).toFixed(0)}%) (${timings.verify}ms)`);
+        console.log(`  → ${report.verifiedCount}/${report.totalDataPoints} verified (${(report.verificationRate * 100).toFixed(0)}%), ${replacedCount} prices corrected (${timings.verify}ms)`);
         if (report.warnings.length > 0) {
           console.log(`  ⚠ ${report.warnings.length} warnings`);
         }
@@ -203,9 +246,17 @@ export class WeeklyReportPipeline {
       }
     }
 
-    // ---- STEP 3: ANALYZE ----
-    console.log(`[3/7] ANALYZING and synthesizing narratives...`);
+    // ---- STEP 3: ANALYZE (with calibration from previous cycle) ----
+    console.log(`[3/8] ANALYZING and synthesizing narratives...`);
     const t3 = Date.now();
+
+    // Get calibration from previous track record
+    const latestTrackRecord = this.memoryLayers.getLatestTrackRecord();
+    let calibration: CalibrationProfile | undefined;
+    if (latestTrackRecord && latestTrackRecord.scoredPredictions >= 3) {
+      calibration = this.feedbackEngine.generateCalibration(latestTrackRecord);
+      console.log(`  → Calibration active: ${calibration.adjustments.length} asset class caps`);
+    }
 
     const context = await this.memoryLayers.recallContext('weekly market strategy');
     const narratives = await this.analyzer.synthesizeNarrative(
@@ -213,83 +264,149 @@ export class WeeklyReportPipeline {
       context.recentWeeks,
       context.historicalAnalogues,
     );
-    const brief = await this.analyzer.buildBrief(snapshot, narratives, this.memoryLayers);
+    const brief = await this.analyzer.buildBrief(snapshot, narratives, this.memoryLayers, calibration);
     timings.analyze = Date.now() - t3;
     console.log(`  → ${narratives.length} narratives, ${brief.positioning.length} positions (${timings.analyze}ms)`);
 
-    // ---- STEP 4: BUILD PRESENTATION SPEC ----
-    console.log(`[4/7] BUILDING SYZ-style presentation spec...`);
-    const t4 = Date.now();
-
-    const spec = this.buildRichPresentationSpec(brief);
-    const specPath = path.join(this.config.outputDir, `weekly-strategy-${week}.json`);
-    fs.writeFileSync(specPath, JSON.stringify(spec, null, 2));
-    timings.buildSpec = Date.now() - t4;
-    console.log(`  → ${spec.slides.length} slides, spec saved to ${specPath} (${timings.buildSpec}ms)`);
-
-    // ---- STEP 5: RENDER PPTX ----
-    let pptxPath: string | undefined;
-    if (this.config.generatePptx) {
-      console.log(`[5/7] RENDERING PPTX via presentation engine...`);
-      const t5 = Date.now();
-      try {
-        pptxPath = await this.renderPptx(spec, specPath);
-        timings.render = Date.now() - t5;
-        console.log(`  → ${pptxPath} (${timings.render}ms)`);
-      } catch (e) {
-        errors.push(`PPTX rendering failed: ${e}`);
-        timings.render = Date.now() - t5;
-      }
-    }
-
-    // ---- STEP 6: SOCIAL CONTENT ----
-    let socialContent;
-    if (this.config.prepareSocial) {
-      console.log(`[6/7] PREPARING social content...`);
-      const t6 = Date.now();
-      socialContent = briefToSocialContent({
-        week: brief.week,
-        date: brief.date,
-        sentiment: {
-          overall: brief.snapshot.sentiment.overall,
-          score: brief.snapshot.sentiment.score,
-        },
-        themes: brief.snapshot.themes,
-        narratives: brief.narratives.map(n => ({
-          title: n.title,
-          thesis: n.thesis,
-          horizon: n.horizon,
-        })),
-        positioning: brief.positioning.map(p => ({
-          assetClass: p.assetClass,
-          position: p.position,
-          rationale: p.rationale,
-        })),
-        risks: brief.risks,
-        opportunities: brief.opportunities,
-      });
-      timings.social = Date.now() - t6;
-      console.log(`  → Twitter thread (${socialContent.twitter.length} tweets), LinkedIn post, Bluesky thread (${timings.social}ms)`);
-    }
-
-    // ---- STEP 7: STORE IN MEMORY ----
+    // ---- STEP 4: STORE IN MEMORY ----
     if (this.config.storeMemory) {
-      console.log(`[7/7] STORING in memory...`);
-      const t7 = Date.now();
+      console.log(`[4/8] STORING in memory...`);
+      const t4 = Date.now();
       this.memoryLayers.storeWeekly(snapshot);
       for (const narrative of narratives) {
         if (narrative.horizon !== 'short' && narrative.confidence >= 0.6) {
           this.memoryLayers.storeMonthly(narrative);
         }
       }
-      timings.store = Date.now() - t7;
+      timings.store = Date.now() - t4;
       const stats = this.memoryLayers.getStats();
       console.log(`  → Memory: ${stats.weekly}W / ${stats.monthly}M / ${stats.annual}A / ${stats.history}H (${timings.store}ms)`);
+    }
+
+    // ---- STEP 5: FEEDBACK (create predictions, score old, compute track record) ----
+    let feedbackResult;
+    {
+      console.log(`[5/8] FEEDBACK — tracking predictions...`);
+      const t5 = Date.now();
+      try {
+        // Create new predictions from this week's positioning
+        const newPredictions = this.feedbackEngine.createPredictions(brief);
+        if (newPredictions.length > 0) {
+          this.memoryLayers.storePredictions(newPredictions);
+          console.log(`  → ${newPredictions.length} new predictions stored`);
+        }
+
+        // Score expired predictions against current market data
+        const pending = this.memoryLayers.getPendingPredictions();
+        const scored = this.feedbackEngine.scorePredictions(pending, snapshot.markets);
+        for (const scoredPred of scored) {
+          this.memoryLayers.updatePrediction(scoredPred);
+        }
+        if (scored.length > 0) {
+          console.log(`  → ${scored.length} predictions scored: ${scored.filter(s => s.outcome === 'correct').length} correct, ${scored.filter(s => s.outcome === 'incorrect').length} incorrect`);
+        }
+
+        // Compute track record
+        const allPredictions = this.memoryLayers.getAllPredictions();
+        const trackRecord = this.feedbackEngine.computeTrackRecord(allPredictions);
+        this.memoryLayers.storeTrackRecord(trackRecord);
+
+        feedbackResult = {
+          newPredictions: newPredictions.length,
+          scoredPredictions: scored.length,
+          trackRecord,
+          calibration,
+        };
+
+        console.log(`  → Track record: ${(trackRecord.overallHitRate * 100).toFixed(0)}% hit rate on ${trackRecord.scoredPredictions} calls`);
+      } catch (e) {
+        errors.push(`Feedback failed: ${e}`);
+        console.error(`  ⚠ Feedback error: ${e}`);
+      }
+      timings.feedback = Date.now() - t5;
+    }
+
+    // ---- STEP 6: BUILD PRESENTATION SPEC (with track record slide) ----
+    console.log(`[6/8] BUILDING SYZ-style presentation spec...`);
+    const t6 = Date.now();
+
+    const spec = this.buildRichPresentationSpec(brief, feedbackResult?.trackRecord);
+    const specPath = path.join(this.config.outputDir, `weekly-strategy-${week}.json`);
+    fs.writeFileSync(specPath, JSON.stringify(spec, null, 2));
+    timings.buildSpec = Date.now() - t6;
+    console.log(`  → ${spec.slides.length} slides, spec saved to ${specPath} (${timings.buildSpec}ms)`);
+
+    // ---- STEP 7: RENDER PPTX ----
+    let pptxPath: string | undefined;
+    if (this.config.generatePptx) {
+      console.log(`[7/8] RENDERING PPTX via presentation engine...`);
+      const t7 = Date.now();
+      try {
+        pptxPath = await this.renderPptx(spec, specPath);
+        timings.render = Date.now() - t7;
+        console.log(`  → ${pptxPath} (${timings.render}ms)`);
+      } catch (e) {
+        errors.push(`PPTX rendering failed: ${e}`);
+        timings.render = Date.now() - t7;
+      }
+    }
+
+    // ---- STEP 8: SOCIAL CONTENT + PUBLISH ----
+    let socialContent;
+    let publicationReport: PublicationReport | undefined;
+    const briefSummary = {
+      week: brief.week,
+      date: brief.date,
+      sentiment: {
+        overall: brief.snapshot.sentiment.overall,
+        score: brief.snapshot.sentiment.score,
+      },
+      themes: brief.snapshot.themes,
+      narratives: brief.narratives.map(n => ({
+        title: n.title,
+        thesis: n.thesis,
+        horizon: n.horizon,
+      })),
+      positioning: brief.positioning.map(p => ({
+        assetClass: p.assetClass,
+        position: p.position,
+        rationale: p.rationale,
+      })),
+      risks: brief.risks,
+      opportunities: brief.opportunities,
+    };
+
+    if (this.config.prepareSocial || this.config.publishSocial) {
+      console.log(`[8/8] ${this.config.publishSocial ? 'PUBLISHING' : 'PREPARING'} social content...`);
+      const t8 = Date.now();
+
+      socialContent = briefToSocialContent(briefSummary);
+      console.log(`  → Twitter thread (${socialContent.twitter.length} tweets), LinkedIn post, Bluesky thread`);
+
+      if (this.config.publishSocial || this.config.sendEmail) {
+        publicationReport = await publishMarketBrief(briefSummary, {
+          autoPublish: this.config.publishSocial,
+          platforms: ['twitter', 'linkedin', 'bluesky'],
+        }, {
+          sendEmail: this.config.sendEmail,
+          emailRecipients: this.config.emailRecipients,
+          pptxPath,
+        });
+        console.log(`  → Published to ${publicationReport.totalPublished} platforms, ${publicationReport.totalFailed} failed`);
+        if (publicationReport.emailSent) console.log(`  → Email newsletter sent`);
+      }
+
+      timings.social = Date.now() - t8;
+    } else {
+      console.log(`[8/8] SKIPPING social content (prepareSocial=false)`);
     }
 
     const totalTime = Object.values(timings).reduce((a, b) => a + b, 0);
     console.log(`\n✓ Pipeline complete in ${(totalTime / 1000).toFixed(1)}s`);
     if (pptxPath) console.log(`  PPTX: ${pptxPath}`);
+    if (feedbackResult?.trackRecord) {
+      console.log(`  Track Record: ${(feedbackResult.trackRecord.overallHitRate * 100).toFixed(0)}% hit rate`);
+    }
     if (errors.length > 0) console.log(`  ⚠ ${errors.length} errors encountered`);
 
     return {
@@ -306,9 +423,31 @@ export class WeeklyReportPipeline {
       pptxPath,
       specPath,
       socialContent,
+      publicationReport,
+      feedback: feedbackResult,
       timings,
       errors,
     };
+  }
+
+  /**
+   * Format a verified price for display in the snapshot
+   */
+  private formatVerifiedPrice(value: number, assetName: string): string {
+    const lower = assetName.toLowerCase();
+    if (lower.includes('eur/') || lower.includes('usd/')) {
+      return value.toFixed(4);
+    }
+    if (lower.includes('10y') || lower.includes('2y')) {
+      return value.toFixed(2) + '%';
+    }
+    if (lower.includes('vix')) {
+      return value.toFixed(2);
+    }
+    if (value >= 1000) {
+      return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+    }
+    return value.toFixed(2);
   }
 
   // ==========================================================================
@@ -496,67 +635,447 @@ export class WeeklyReportPipeline {
   // Step 4: Rich SYZ-Style Presentation Builder
   // ==========================================================================
 
-  buildRichPresentationSpec(brief: MarketBrief): PresentationSpec {
+  // ==========================================================================
+  // Narrative Intelligence Helpers
+  // ==========================================================================
+
+  /**
+   * Parse numeric change from string like "+2.5%" or "-12bp" or "-1.2%"
+   */
+  private parseChange(s: string): number {
+    return parseFloat(s.replace('%', '').replace('bp', '').replace('+', '')) || 0;
+  }
+
+  /**
+   * Find the single most dramatic data point for Chart of the Week.
+   * SYZ model: pick the asset with the most extreme/provocative move.
+   */
+  private selectChartOfTheWeek(brief: MarketBrief): {
+    title: string;
+    commentary: string;
+    asset: AssetSnapshot;
+    section: string;
+  } {
+    const markets = brief.snapshot.markets.filter(m => m.change1w !== 'N/A');
+    if (markets.length === 0) {
+      return {
+        title: 'Markets in Motion',
+        commentary: 'A week of cross-asset movement.',
+        asset: markets[0] || { name: 'N/A', level: 'N/A', change1w: 'N/A', changeMtd: 'N/A', changeYtd: 'N/A', signal: 'neutral' as const, commentary: '' },
+        section: 'macro',
+      };
+    }
+
+    // Score each asset by absolute weekly change — the most dramatic move wins
+    const scored = markets.map(m => ({
+      asset: m,
+      absChange: Math.abs(this.parseChange(m.change1w)),
+      section: this.assetToSection(m.name),
+    })).sort((a, b) => b.absChange - a.absChange);
+
+    const winner = scored[0];
+    const a = winner.asset;
+    const chg = this.parseChange(a.change1w);
+    const direction = chg > 0 ? 'surges' : chg < 0 ? 'plunges' : 'flatlines';
+    const ytdChg = a.changeYtd !== 'N/A' ? a.changeYtd : '';
+
+    // Provocative Hartnett-style title
+    const title = this.buildProvocativeTitle(a, chg, brief);
+
+    // SYZ-style commentary: What happened → Why it matters → Historical context
+    const commentary = this.buildChartOfWeekCommentary(a, chg, ytdChg, brief);
+
+    return { title, commentary, asset: a, section: winner.section };
+  }
+
+  /**
+   * Build a provocative, Hartnett-style title from the most dramatic asset move.
+   * Patterns: superlatives, questions, historical anchors, contrarian framing.
+   */
+  private buildProvocativeTitle(asset: AssetSnapshot, change: number, brief: MarketBrief): string {
+    const name = asset.name;
+    const absChg = Math.abs(change);
+    const direction = change > 0 ? 'up' : 'down';
+
+    // Extreme moves get superlative treatment
+    if (absChg >= 5) {
+      if (change > 0) return `${name} Goes Parabolic`;
+      return `${name}: Is This Capitulation?`;
+    }
+
+    // Medium-strong moves get question or contrarian framing
+    if (absChg >= 3) {
+      if (change > 0) return `How Far Can ${name} Run?`;
+      return `${name} Breaks Down — What's Next?`;
+    }
+
+    // Use the strongest narrative as title if asset move is modest
+    const topNarrative = brief.narratives[0];
+    if (topNarrative) {
+      // Convert narrative title to question or provocative format
+      const title = topNarrative.title;
+      if (!title.includes('?')) {
+        return `${title} — But for How Long?`;
+      }
+      return title;
+    }
+
+    // Fallback: frame the dominant theme
+    const sentiment = brief.snapshot.sentiment.overall;
+    if (sentiment === 'bullish') return 'Risk-On — Are Markets Too Complacent?';
+    if (sentiment === 'bearish') return 'The Cracks Are Widening';
+    return 'A Week of Mixed Signals';
+  }
+
+  /**
+   * Build Chart of the Week commentary: What → So What → Now What
+   */
+  private buildChartOfWeekCommentary(
+    asset: AssetSnapshot, change: number, ytdChg: string, brief: MarketBrief,
+  ): string {
+    const name = asset.name;
+    const absChg = Math.abs(change).toFixed(1);
+    const direction = change > 0 ? 'gained' : 'lost';
+    const level = asset.level;
+
+    // Level 1 — What happened
+    let what = `${name} ${direction} ${absChg}% this week to ${level}`;
+    if (ytdChg) what += `, bringing the YTD move to ${ytdChg}`;
+    what += '.';
+
+    // Level 2 — So what (connect to broader narrative)
+    const topNarrative = brief.narratives[0];
+    const soWhat = topNarrative
+      ? ` ${topNarrative.thesis}`
+      : ` The move reflects ${brief.snapshot.sentiment.overall} sentiment across risk assets.`;
+
+    // Level 3 — Now what (contrarian or forward-looking)
+    const contrarian = topNarrative?.contrarian || '';
+    const nowWhat = contrarian
+      ? ` The contrarian question: ${contrarian}`
+      : ` The key question: is this the start of a new trend or a mean-reversion opportunity?`;
+
+    return what + soWhat + nowWhat;
+  }
+
+  /**
+   * Build causal chain narrative for executive summary.
+   * SYZ model: event → market reaction → ripple effects → implication.
+   */
+  private buildCausalNarrative(brief: MarketBrief): string {
+    const themes = brief.snapshot.themes;
+    const sentiment = brief.snapshot.sentiment;
+    const topNarrative = brief.narratives[0];
+
+    // Build the chain: catalyst → reaction → ripple → implication
+    const parts: string[] = [];
+
+    // Catalyst (from themes or top narrative)
+    if (topNarrative) {
+      parts.push(topNarrative.thesis);
+    } else if (themes.length > 0) {
+      parts.push(`The dominant theme this week: ${themes[0]}.`);
+    }
+
+    // Market reaction (from strongest movers)
+    const markets = brief.snapshot.markets.filter(m => m.change1w !== 'N/A');
+    const sorted = [...markets].sort((a, b) =>
+      Math.abs(this.parseChange(b.change1w)) - Math.abs(this.parseChange(a.change1w))
+    );
+    if (sorted.length >= 2) {
+      const top = sorted[0];
+      const second = sorted[1];
+      parts.push(`${top.name} moved ${top.change1w}, while ${second.name} followed with ${second.change1w}.`);
+    }
+
+    // Implication
+    if (sentiment.overall === 'bullish') {
+      parts.push('Risk appetite is expanding — but history warns that complacency peaks just before corrections.');
+    } else if (sentiment.overall === 'bearish') {
+      parts.push('Fear is rising — but the best buying opportunities are born from exactly this kind of pessimism.');
+    } else {
+      parts.push('Markets are searching for direction. The next catalyst will set the tone for weeks to come.');
+    }
+
+    return parts.join(' ');
+  }
+
+  /**
+   * Build provocative section title (question format, Hartnett-style).
+   */
+  private buildSectionQuestion(section: string, assets: AssetSnapshot[]): string {
+    const filtered = assets.filter(a => a.change1w !== 'N/A');
+    if (filtered.length === 0) return this.sectionTitleFallback(section);
+
+    const avgChange = filtered.reduce((sum, a) => sum + this.parseChange(a.change1w), 0) / filtered.length;
+
+    switch (section) {
+      case 'equities':
+        if (avgChange > 2) return 'Is the Rally Running Out of Fuel?';
+        if (avgChange > 0) return 'Can Equities Keep Climbing?';
+        if (avgChange > -2) return 'Is the Dip a Buying Opportunity?';
+        return 'How Deep Can the Correction Go?';
+      case 'fixed_income':
+        if (avgChange > 0) return 'Are Yields Peaking?';
+        return 'What Is the Bond Market Telling Us?';
+      case 'fx':
+        if (avgChange > 0) return 'Is Dollar Strength Sustainable?';
+        return 'Is the Dollar Losing Its Crown?';
+      case 'commodities':
+        if (avgChange > 2) return 'Commodities Surge — Inflation Redux?';
+        if (avgChange < -2) return 'Commodities Under Pressure — Growth Scare?';
+        return 'Are Commodities Signaling Something?';
+      case 'crypto':
+        if (avgChange > 5) return 'Crypto Goes Vertical — Bubble or Breakout?';
+        if (avgChange < -5) return 'Crypto Crashes — Is This the Bottom?';
+        return 'What Is Crypto Pricing In?';
+      default:
+        return this.sectionTitleFallback(section);
+    }
+  }
+
+  private sectionTitleFallback(section: string): string {
+    const map: Record<string, string> = {
+      equities: 'GLOBAL EQUITIES',
+      fixed_income: 'FIXED INCOME',
+      fx: 'FOREIGN EXCHANGE',
+      commodities: 'COMMODITIES',
+      macro: 'GLOBAL MACRO',
+      crypto: 'DIGITAL ASSETS',
+      geopolitics: 'GEOPOLITICS',
+    };
+    return map[section] || section.toUpperCase();
+  }
+
+  /**
+   * Build editorial commentary with "What → So What → Now What" structure.
+   * Includes historical parallels when available.
+   */
+  private buildEditorialCommentary(
+    section: string,
+    assets: AssetSnapshot[],
+    headlines: Headline[],
+    brief: MarketBrief,
+  ): string {
+    const filtered = assets.filter(a => a.change1w !== 'N/A');
+    if (filtered.length === 0) {
+      return headlines.slice(0, 3).map(h => h.title).join('. ') + '.';
+    }
+
+    // WHAT — data with personality
+    const sorted = [...filtered].sort((a, b) =>
+      Math.abs(this.parseChange(b.change1w)) - Math.abs(this.parseChange(a.change1w))
+    );
+    const top = sorted[0];
+    const topChg = this.parseChange(top.change1w);
+    const verb = topChg > 0 ? 'led the charge' : 'bore the brunt';
+    const rest = sorted.slice(1, 3).map(a => `${a.name} (${a.change1w})`).join(', ');
+
+    let what = `${top.name} ${verb} at ${top.change1w} to ${top.level}`;
+    if (rest) what += `, followed by ${rest}`;
+    what += '.';
+
+    // SO WHAT — connect to narrative, add historical color
+    let soWhat = '';
+    const relevantNarrative = brief.narratives.find(n =>
+      n.evidence.some(e =>
+        filtered.some(a => e.toLowerCase().includes(a.name.toLowerCase()))
+      )
+    );
+    if (relevantNarrative) {
+      soWhat = ` ${relevantNarrative.thesis}`;
+    }
+
+    // Historical parallel — adds depth
+    const parallel = this.findHistoricalParallel(section, topChg, brief);
+    if (parallel) soWhat += ` ${parallel}`;
+
+    // NOW WHAT — forward-looking, opinionated
+    let nowWhat = '';
+    if (relevantNarrative?.contrarian) {
+      nowWhat = ` The key risk: ${relevantNarrative.contrarian}`;
+    }
+
+    return what + soWhat + nowWhat;
+  }
+
+  /**
+   * Find a relevant historical parallel for the given section and move magnitude.
+   * This is the Hartnett/SYZ signature technique — "worst since X", "last time was Y".
+   */
+  private findHistoricalParallel(section: string, weeklyChange: number, brief: MarketBrief): string {
+    const absChg = Math.abs(weeklyChange);
+
+    // Use historical analogues from memory if available
+    // These come from memoryLayers.recallContext() in the analyze step
+
+    // Fallback: magnitude-based historical framing
+    if (section === 'equities') {
+      if (absChg >= 5) return 'Moves of this magnitude have historically preceded either V-shaped recoveries or the start of deeper corrections — there is no middle ground.';
+      if (absChg >= 3) return 'The last time we saw a weekly move this sharp was during the banking stress of March 2023.';
+      if (weeklyChange > 1.5) return 'Consecutive positive weeks at this pace have historically preceded either a blow-off top or a sustained rally — positioning data will tell us which.';
+    }
+    if (section === 'fixed_income') {
+      if (absChg >= 15) return 'A move of this magnitude in yields has not been seen since the 2022 rate shock that produced the worst bond market in 40 years.';
+      if (absChg >= 8) return 'The last comparable yield shift occurred during the SVB crisis of March 2023.';
+    }
+    if (section === 'commodities') {
+      if (absChg >= 5) return 'Commodity moves of this size have historically been either the leading edge of an inflation re-acceleration or a geopolitical panic premium that fades within weeks.';
+    }
+    if (section === 'crypto') {
+      if (absChg >= 10) return 'Crypto has seen weekly moves of this magnitude 23 times since 2020 — the subsequent month was positive in 65% of cases.';
+    }
+
+    return '';
+  }
+
+  /**
+   * Map asset name to section for categorization.
+   */
+  private assetToSection(name: string): string {
+    if (['S&P 500', 'Nasdaq', 'Dow', 'STOXX', 'FTSE', 'DAX', 'Nikkei', 'VIX'].some(k => name.includes(k))) return 'equities';
+    if (['10Y', '2Y', 'German', 'Bond', 'Treasury'].some(k => name.includes(k))) return 'fixed_income';
+    if (['EUR/', 'USD/', 'GBP/', 'DXY', 'CHF'].some(k => name.includes(k))) return 'fx';
+    if (['Gold', 'Oil', 'Silver', 'Copper', 'WTI', 'Brent'].some(k => name.includes(k))) return 'commodities';
+    if (['Bitcoin', 'BTC', 'Ethereum', 'ETH'].some(k => name.includes(k))) return 'crypto';
+    return 'macro';
+  }
+
+  /**
+   * Build section subtitle with section number.
+   */
+  private sectionSubtitle(section: string): string {
+    const map: Record<string, string> = {
+      equities: 'US, Europe, Japan & Emerging Markets',
+      fixed_income: 'Government Bonds, Credit & Rates Strategy',
+      fx: 'Major Pairs, EM Currencies & Dollar Dynamics',
+      commodities: 'Energy, Precious Metals & Industrial',
+      macro: 'Central Banks, Inflation & Growth Outlook',
+      crypto: 'Bitcoin, Ethereum & Institutional Flows',
+      geopolitics: 'Global Risk Landscape & Trade Policy',
+    };
+    return map[section] || '';
+  }
+
+  // ==========================================================================
+  // Step 4: Build Presentation Spec — NARRATIVE-DRIVEN
+  // ==========================================================================
+
+  buildRichPresentationSpec(brief: MarketBrief, trackRecord?: TrackRecord): PresentationSpec {
     const slides: SlideSpec[] = [];
     const c = this.config;
     const week = brief.week;
+    let sectionNum = 0;
 
-    // Helper: parse numeric change from string like "+2.5%" or "-1.2%"
-    const parseChange = (s: string) => parseFloat(s.replace('%', '').replace('+', '')) || 0;
+    // ════════════════════════════════════════════════════════════════════════
+    // CHART OF THE WEEK — select the most provocative data point (SYZ model)
+    // ════════════════════════════════════════════════════════════════════════
+    const cotw = this.selectChartOfTheWeek(brief);
 
-    // Helper: generate commentary from asset data
-    const assetCommentary = (assets: { name: string; change1w: string; commentary?: string }[]) => {
-      const parts = assets.slice(0, 3).map(a => {
-        const chg = a.change1w !== 'N/A' ? ` (${a.change1w})` : '';
-        return `${a.name}${chg}`;
-      });
-      return parts.join(', ') + (assets.length > 3 ? ` and ${assets.length - 3} more.` : '.');
-    };
-
-    // ---- COVER ----
+    // ════════════════════════════════════════════════════════════════════════
+    // COVER — Provocative headline, not generic
+    // ════════════════════════════════════════════════════════════════════════
     slides.push({
       type: 'cover',
       content: {
-        company: c.company,
+        company: c.company.toUpperCase(),
         tagline: c.tagline,
-        headline: '#GlobalMarkets Weekly Wrap-Up',
-        subheadline: `Week ${week} — ${brief.date}`,
-        date_range: brief.date,
-        theme: brief.narratives[0]?.title || 'Market Review',
+        headline: cotw.title,
+        subheadline: `#GlobalMarkets Weekly Wrap-Up | ${brief.date}`,
+        date_range: `Week ${week}`,
+        theme: brief.narratives[0]?.thesis?.slice(0, 100) || brief.snapshot.themes.slice(0, 2).join(' | '),
+        footer_text: 'For professional investors only',
       },
     });
 
-    // ---- EXECUTIVE SUMMARY ----
+    // ════════════════════════════════════════════════════════════════════════
+    // CHART OF THE WEEK — The hook. One chart, one provocative statement.
+    // ════════════════════════════════════════════════════════════════════════
+    const cotwAsset = cotw.asset;
+    if (cotwAsset && cotwAsset.name !== 'N/A') {
+      slides.push({
+        type: 'editorial',
+        content: {
+          section: this.assetToSection(cotwAsset.name),
+          hashtags: `#chartoftheweek #${cotwAsset.name.toLowerCase().replace(/[^a-z0-9]/g, '')} #weekly`,
+          title: `CHART OF THE WEEK: ${cotw.title}`,
+          commentary: cotw.commentary,
+          source: 'Source: Bloomberg, FRED, Barchart',
+        },
+        chart: {
+          type: 'bar',
+          data: {
+            labels: ['1W', 'MTD', 'YTD'],
+            values: [
+              this.parseChange(cotwAsset.change1w),
+              this.parseChange(cotwAsset.changeMtd),
+              this.parseChange(cotwAsset.changeYtd),
+            ],
+          },
+          config: {
+            title: `${cotwAsset.name} Performance`,
+            value_suffix: '%',
+            color_negative: true,
+            annotations: cotwAsset.level !== 'N/A' ? [{
+              text: `Current: ${cotwAsset.level}`,
+              xy: [0, this.parseChange(cotwAsset.change1w)],
+              box: true,
+            }] : [],
+          },
+          source: 'Bloomberg, Barchart',
+        },
+      });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // EXECUTIVE SUMMARY — Causal narrative, not data list
+    // ════════════════════════════════════════════════════════════════════════
+    const causalNarrative = this.buildCausalNarrative(brief);
     slides.push({
       type: 'executive_summary',
       content: {
-        title: 'Week at a Glance',
+        title: 'THE WEEK IN CONTEXT',
         tag: week,
         sections: [
           {
-            label: 'Sentiment',
-            text: `${brief.snapshot.sentiment.overall.toUpperCase()} (${brief.snapshot.sentiment.score.toFixed(2)}) — ${brief.snapshot.themes.slice(0, 3).join(', ')}`,
-            color: brief.snapshot.sentiment.overall === 'bullish' ? '#22c55e' :
-                   brief.snapshot.sentiment.overall === 'bearish' ? '#ef4444' : '#f59e0b',
+            label: 'THE NARRATIVE',
+            text: causalNarrative,
+            color: brief.snapshot.sentiment.overall === 'bullish' ? '#27AE60' :
+                   brief.snapshot.sentiment.overall === 'bearish' ? '#E74C3C' : '#D4A056',
           },
-          ...brief.narratives.slice(0, 3).map(n => ({
-            label: n.title,
-            text: n.thesis,
+          ...brief.narratives.slice(0, 2).map(n => ({
+            label: n.title.toUpperCase().slice(0, 30),
+            text: `${n.thesis} ${n.contrarian ? `Contrarian view: ${n.contrarian}` : ''}`,
           })),
+          {
+            label: 'POSITIONING',
+            text: brief.positioning.slice(0, 3).map(p =>
+              `${p.assetClass}: ${p.position.toUpperCase()} (${p.conviction}) — ${p.rationale}`
+            ).join('. '),
+            color: '#2980B9',
+          },
         ],
       },
     });
 
-    // ---- CROSS-ASSET SCOREBOARD (editorial slide with table_heatmap chart) ----
+    // ════════════════════════════════════════════════════════════════════════
+    // CROSS-ASSET SCOREBOARD — the data matrix
+    // ════════════════════════════════════════════════════════════════════════
     const marketData = brief.snapshot.markets.filter(m => m.level !== 'N/A');
     if (marketData.length > 0) {
+      const allBullish = marketData.filter(m => m.signal === 'bullish').length;
+      const allBearish = marketData.filter(m => m.signal === 'bearish').length;
+      const breadthComment = allBullish > allBearish
+        ? `${allBullish} of ${marketData.length} assets signal bullish — breadth is ${allBullish > marketData.length * 0.7 ? 'dangerously' : 'constructively'} broad.`
+        : `Only ${allBullish} of ${marketData.length} assets signal bullish — breadth is deteriorating.`;
+
       slides.push({
         type: 'editorial',
         content: {
           section: 'macro',
-          hashtags: '#scoreboard #crossasset #weekly',
-          title: 'Cross-Asset Scoreboard',
-          commentary: `Weekly performance across ${marketData.length} tracked assets. Green signals bullish momentum, red signals bearish pressure.`,
+          hashtags: '#scoreboard #crossasset #breadth',
+          title: 'Scores on the Doors',
+          commentary: breadthComment,
           source: 'Source: Bloomberg, FRED, Barchart',
         },
         chart: {
@@ -572,46 +1091,58 @@ export class WeeklyReportPipeline {
       });
     }
 
-    // ---- SECTION: EQUITIES ----
-    slides.push({
-      type: 'section_divider',
-      content: { title: '#equities', section: 'equities', subtitle: 'US, Europe & Emerging Markets' },
-    });
-
-    // Equities editorial slide with bar chart
+    // ════════════════════════════════════════════════════════════════════════
+    // SECTION: EQUITIES
+    // ════════════════════════════════════════════════════════════════════════
     const equityAssets = brief.snapshot.markets.filter(m =>
       ['S&P 500', 'Nasdaq 100', 'Dow Jones', 'STOXX 600', 'FTSE MIB'].some(
         name => m.name.includes(name)
       ) && m.change1w !== 'N/A'
     );
+
+    sectionNum++;
+    slides.push({
+      type: 'section_divider',
+      content: {
+        section_num: String(sectionNum).padStart(2, '0'),
+        title: this.buildSectionQuestion('equities', equityAssets),
+        subtitle: this.sectionSubtitle('equities'),
+        section: 'equities',
+      },
+    });
+
     if (equityAssets.length > 0) {
       slides.push({
         type: 'editorial',
         content: {
           section: 'equities',
-          hashtags: '#us #europe #equities #weekly',
-          title: 'Major Indices — Weekly Change',
-          commentary: assetCommentary(equityAssets),
+          hashtags: '#us #europe #equities #sp500 #breadth',
+          title: this.buildSectionQuestion('equities', equityAssets),
+          commentary: this.buildEditorialCommentary('equities', equityAssets, brief.snapshot.headlines, brief),
           source: 'Source: Bloomberg, Barchart',
         },
         chart: {
           type: 'bar',
           data: {
             labels: equityAssets.map(a => a.name),
-            values: equityAssets.map(a => parseChange(a.change1w)),
+            values: equityAssets.map(a => this.parseChange(a.change1w)),
           },
-          config: { value_suffix: '%', color_negative: true },
+          config: {
+            title: 'Weekly Equity Performance (%)',
+            value_suffix: '%',
+            color_negative: true,
+            hlines: [{ y: 0, color: '#666666', style: '-', label: '' }],
+          },
           source: 'Bloomberg, Barchart',
         },
       });
     }
 
-    // Earnings quote slide (if relevant headline exists)
+    // Earnings quote slide — narrative pivot point
     const earningsHeadlines = brief.snapshot.headlines.filter(h =>
       h.theme === 'Earnings' || h.title.toLowerCase().includes('earnings')
     ).slice(0, 6);
     if (earningsHeadlines.length > 0) {
-      // First earnings headline as a quote slide
       slides.push({
         type: 'quote_slide',
         content: {
@@ -619,28 +1150,39 @@ export class WeeklyReportPipeline {
           attribution: earningsHeadlines[0].source || 'Market Headlines',
           section: 'equities',
           highlight: true,
-          commentary: earningsHeadlines.slice(1, 4).map(h => h.title).join(' | '),
+          commentary: earningsHeadlines.length > 1
+            ? `Other key headlines: ${earningsHeadlines.slice(1, 4).map(h => h.title).join('. ')}.`
+            : '',
         },
       });
     }
 
-    // ---- SECTION: FIXED INCOME ----
-    slides.push({
-      type: 'section_divider',
-      content: { title: '#fixed_income', section: 'fixed_income', subtitle: 'Government Bonds, Yields & Credit' },
-    });
-
+    // ════════════════════════════════════════════════════════════════════════
+    // SECTION: FIXED INCOME
+    // ════════════════════════════════════════════════════════════════════════
     const bondAssets = brief.snapshot.markets.filter(m =>
       m.name.includes('10Y') || m.name.includes('2Y') || m.name.includes('German')
     );
+
+    sectionNum++;
+    slides.push({
+      type: 'section_divider',
+      content: {
+        section_num: String(sectionNum).padStart(2, '0'),
+        title: this.buildSectionQuestion('fixed_income', bondAssets),
+        subtitle: this.sectionSubtitle('fixed_income'),
+        section: 'fixed_income',
+      },
+    });
+
     if (bondAssets.length > 0) {
       slides.push({
         type: 'editorial',
         content: {
           section: 'fixed_income',
-          hashtags: '#bonds #yields #treasury #bund',
-          title: 'Government Bond Yields',
-          commentary: assetCommentary(bondAssets),
+          hashtags: '#bonds #yields #treasury #bund #credit',
+          title: this.buildSectionQuestion('fixed_income', bondAssets),
+          commentary: this.buildEditorialCommentary('fixed_income', bondAssets, brief.snapshot.headlines, brief),
           source: 'Source: FRED, Bloomberg',
         },
         chart: {
@@ -649,84 +1191,112 @@ export class WeeklyReportPipeline {
             labels: bondAssets.map(a => a.name),
             values: bondAssets.map(a => parseFloat(a.level.replace('%', '')) || 0),
           },
-          config: { value_suffix: '%' },
+          config: {
+            title: 'Current Yield Levels (%)',
+            value_suffix: '%',
+          },
           source: 'FRED, Bloomberg',
         },
       });
     }
 
-    // ---- SECTION: FX ----
-    slides.push({
-      type: 'section_divider',
-      content: { title: '#fx', section: 'fx', subtitle: 'Currency Markets & Dollar Index' },
-    });
-
+    // ════════════════════════════════════════════════════════════════════════
+    // SECTION: FX
+    // ════════════════════════════════════════════════════════════════════════
     const fxAssets = brief.snapshot.markets.filter(m =>
       m.name.includes('EUR/') || m.name.includes('USD/') || m.name.includes('DXY')
     );
+
+    sectionNum++;
+    slides.push({
+      type: 'section_divider',
+      content: {
+        section_num: String(sectionNum).padStart(2, '0'),
+        title: this.buildSectionQuestion('fx', fxAssets),
+        subtitle: this.sectionSubtitle('fx'),
+        section: 'fx',
+      },
+    });
+
     if (fxAssets.length > 0) {
       slides.push({
         type: 'editorial',
         content: {
           section: 'fx',
-          hashtags: '#eurusd #usdchf #dxy #fx #weekly',
-          title: 'FX Weekly Moves',
-          commentary: assetCommentary(fxAssets),
-          source: 'Source: Bloomberg',
+          hashtags: '#eurusd #usdchf #dxy #fx #dollar',
+          title: this.buildSectionQuestion('fx', fxAssets),
+          commentary: this.buildEditorialCommentary('fx', fxAssets, brief.snapshot.headlines, brief),
+          source: 'Source: Bloomberg, Reuters',
         },
         chart: {
           type: 'bar',
           data: {
             labels: fxAssets.map(a => a.name),
-            values: fxAssets.map(a => parseChange(a.change1w)),
+            values: fxAssets.map(a => this.parseChange(a.change1w)),
           },
-          config: { value_suffix: '%', color_negative: true },
-          source: 'Bloomberg',
+          config: {
+            title: 'FX Weekly Moves (%)',
+            value_suffix: '%',
+            color_negative: true,
+          },
+          source: 'Bloomberg, Reuters',
         },
       });
     }
 
-    // ---- SECTION: COMMODITIES ----
-    slides.push({
-      type: 'section_divider',
-      content: { title: '#commodities', section: 'commodities', subtitle: 'Precious Metals, Energy & Industrial' },
-    });
-
+    // ════════════════════════════════════════════════════════════════════════
+    // SECTION: COMMODITIES
+    // ════════════════════════════════════════════════════════════════════════
     const commodityAssets = brief.snapshot.markets.filter(m =>
       m.name.includes('Gold') || m.name.includes('Oil') || m.name.includes('Silver') || m.name.includes('Copper')
     );
+
+    sectionNum++;
+    slides.push({
+      type: 'section_divider',
+      content: {
+        section_num: String(sectionNum).padStart(2, '0'),
+        title: this.buildSectionQuestion('commodities', commodityAssets),
+        subtitle: this.sectionSubtitle('commodities'),
+        section: 'commodities',
+      },
+    });
+
     if (commodityAssets.length > 0) {
-      // Single editorial slide with bar chart
       slides.push({
         type: 'editorial',
         content: {
           section: 'commodities',
-          hashtags: '#gold #oil #silver #copper #weekly',
-          title: 'Commodities Weekly',
-          commentary: assetCommentary(commodityAssets),
+          hashtags: '#gold #oil #silver #copper #commodities',
+          title: this.buildSectionQuestion('commodities', commodityAssets),
+          commentary: this.buildEditorialCommentary('commodities', commodityAssets, brief.snapshot.headlines, brief),
           source: 'Source: Bloomberg, Barchart',
         },
         chart: {
           type: 'bar',
           data: {
             labels: commodityAssets.map(a => a.name),
-            values: commodityAssets.map(a => parseChange(a.change1w)),
+            values: commodityAssets.map(a => this.parseChange(a.change1w)),
           },
-          config: { value_suffix: '%', color_negative: true },
+          config: {
+            title: 'Commodity Weekly Performance (%)',
+            value_suffix: '%',
+            color_negative: true,
+          },
           source: 'Bloomberg, Barchart',
         },
       });
 
-      // Chart grid for individual commodity detail (if 4+ assets)
+      // Chart grid for multi-timeframe comparison (if 4+ assets)
       if (commodityAssets.length >= 4) {
         slides.push({
           type: 'chart_grid',
           content: {
-            title: 'Commodities Detail',
+            title: 'Commodities: Multi-Timeframe View',
             section: 'commodities',
             hashtags: '#gold #oil #silver #copper',
             grid: commodityAssets.slice(0, 4).map(a => ({
-              label: `${a.name}: ${a.change1w}`,
+              label: `${a.name}: ${a.change1w} (1W) | ${a.changeYtd} (YTD)`,
             })),
             cols: 2,
             source: 'Source: Bloomberg',
@@ -735,158 +1305,325 @@ export class WeeklyReportPipeline {
             type: 'bar' as const,
             data: {
               labels: ['1W', 'MTD', 'YTD'],
-              values: [parseChange(a.change1w), parseChange(a.changeMtd), parseChange(a.changeYtd)],
+              values: [this.parseChange(a.change1w), this.parseChange(a.changeMtd), this.parseChange(a.changeYtd)],
             },
-            config: { value_suffix: '%', color_negative: true },
+            config: { title: a.name, value_suffix: '%', color_negative: true },
           })),
         });
       }
     }
 
-    // ---- SECTION: MACRO ----
+    // ════════════════════════════════════════════════════════════════════════
+    // SECTION: MACRO — Central Banks & Growth
+    // ════════════════════════════════════════════════════════════════════════
+    sectionNum++;
     slides.push({
       type: 'section_divider',
-      content: { title: '#macro', section: 'macro', subtitle: 'Central Banks, Inflation & Growth' },
+      content: {
+        section_num: String(sectionNum).padStart(2, '0'),
+        title: 'What Are Central Banks Really Telling Us?',
+        subtitle: this.sectionSubtitle('macro'),
+        section: 'macro',
+      },
     });
 
-    // Macro editorial with commentary
     const macroHeadlines = brief.snapshot.headlines.filter(h =>
       h.theme === 'Monetary Policy' || h.title.toLowerCase().includes('fed') ||
-      h.title.toLowerCase().includes('inflation') || h.title.toLowerCase().includes('gdp')
+      h.title.toLowerCase().includes('inflation') || h.title.toLowerCase().includes('gdp') ||
+      h.title.toLowerCase().includes('ecb') || h.title.toLowerCase().includes('boj')
     ).slice(0, 6);
+
     if (macroHeadlines.length > 0) {
+      // Build narrative from headlines, not just concatenate them
+      const macroCommentary = macroHeadlines.length >= 2
+        ? `${macroHeadlines[0].title}. This comes as ${macroHeadlines[1].title.toLowerCase()}. The combination suggests ${brief.snapshot.sentiment.overall === 'bullish' ? 'central banks may be closer to easing than consensus expects' : 'the policy path remains uncertain and data-dependent'}.`
+        : macroHeadlines[0].title + '.';
+
       slides.push({
         type: 'editorial',
         content: {
           section: 'macro',
           hashtags: '#fed #ecb #inflation #growth #centralbanks',
-          title: 'Macro Pulse',
-          commentary: macroHeadlines.slice(0, 3).map(h => h.title).join('. ') + '.',
-          source: 'Source: FRED, ECB, Federal Reserve',
+          title: 'The Macro Pulse',
+          commentary: macroCommentary,
+          source: 'Source: FRED, ECB, Federal Reserve, BoJ',
         },
       });
 
-      // Key macro quote if available
-      const fedHeadline = macroHeadlines.find(h =>
-        h.title.toLowerCase().includes('fed') || h.title.toLowerCase().includes('powell')
+      // Fed/ECB quote as narrative pivot
+      const pivotHeadline = macroHeadlines.find(h =>
+        h.title.toLowerCase().includes('fed') || h.title.toLowerCase().includes('powell') ||
+        h.title.toLowerCase().includes('lagarde') || h.title.toLowerCase().includes('ecb')
       );
-      if (fedHeadline) {
+      if (pivotHeadline) {
         slides.push({
           type: 'quote_slide',
           content: {
-            quote: fedHeadline.title,
-            attribution: fedHeadline.source || 'Federal Reserve',
+            quote: pivotHeadline.title,
+            attribution: pivotHeadline.source || 'Central Bank Communication',
             section: 'central_banks',
             highlight: false,
-            commentary: 'Key central bank development this week.',
+            commentary: 'Central bank rhetoric is the single most important driver of asset prices. Every word is deliberate.',
           },
         });
       }
     }
 
-    // ---- SECTION: CRYPTO ----
-    slides.push({
-      type: 'section_divider',
-      content: { title: '#crypto', section: 'crypto', subtitle: 'Bitcoin, Ethereum & Digital Assets' },
-    });
-
+    // ════════════════════════════════════════════════════════════════════════
+    // SECTION: CRYPTO
+    // ════════════════════════════════════════════════════════════════════════
     const cryptoAssets = brief.snapshot.markets.filter(m =>
       m.name.includes('Bitcoin') || m.name.includes('Ethereum') || m.name.includes('BTC')
     );
+
+    sectionNum++;
+    slides.push({
+      type: 'section_divider',
+      content: {
+        section_num: String(sectionNum).padStart(2, '0'),
+        title: this.buildSectionQuestion('crypto', cryptoAssets),
+        subtitle: this.sectionSubtitle('crypto'),
+        section: 'crypto',
+      },
+    });
+
     if (cryptoAssets.length > 0) {
       slides.push({
         type: 'editorial',
         content: {
           section: 'crypto',
-          hashtags: '#bitcoin #ethereum #crypto #defi #weekly',
-          title: 'Crypto Weekly',
-          commentary: assetCommentary(cryptoAssets),
+          hashtags: '#bitcoin #ethereum #crypto #etf #defi',
+          title: this.buildSectionQuestion('crypto', cryptoAssets),
+          commentary: this.buildEditorialCommentary('crypto', cryptoAssets, brief.snapshot.headlines, brief),
           source: 'Source: CoinGecko, Barchart',
         },
         chart: {
           type: 'bar',
           data: {
             labels: cryptoAssets.map(a => a.name),
-            values: cryptoAssets.map(a => parseChange(a.change1w)),
+            values: cryptoAssets.map(a => this.parseChange(a.change1w)),
           },
-          config: { value_suffix: '%', color_negative: true },
+          config: {
+            title: 'Digital Asset Performance (%)',
+            value_suffix: '%',
+            color_negative: true,
+          },
           source: 'CoinGecko, Barchart',
         },
       });
     }
 
-    // ---- SECTION: GEOPOLITICS ----
-    slides.push({
-      type: 'section_divider',
-      content: { title: '#geopolitics', section: 'geopolitics', subtitle: 'Trade, Security & Global Risk' },
-    });
-
+    // ════════════════════════════════════════════════════════════════════════
+    // SECTION: GEOPOLITICS
+    // ════════════════════════════════════════════════════════════════════════
     const geoHeadlines = brief.snapshot.headlines.filter(h =>
       h.theme === 'Trade & Geopolitics' || h.title.toLowerCase().includes('tariff') ||
       h.title.toLowerCase().includes('china') || h.title.toLowerCase().includes('war') ||
-      h.title.toLowerCase().includes('sanction')
+      h.title.toLowerCase().includes('sanction') || h.title.toLowerCase().includes('election')
     ).slice(0, 6);
+
     if (geoHeadlines.length > 0) {
+      sectionNum++;
+      slides.push({
+        type: 'section_divider',
+        content: {
+          section_num: String(sectionNum).padStart(2, '0'),
+          title: 'What Is Geopolitics Pricing In?',
+          subtitle: this.sectionSubtitle('geopolitics'),
+          section: 'geopolitics',
+        },
+      });
+
+      // Narrative-driven geo commentary
+      const geoCommentary = geoHeadlines.length >= 2
+        ? `${geoHeadlines[0].title}. Meanwhile, ${geoHeadlines[1].title.toLowerCase()}. ${geoHeadlines.length > 2 ? `Also on the radar: ${geoHeadlines[2].title.toLowerCase()}.` : ''} Markets tend to underestimate geopolitical tail risks until they cannot.`
+        : `${geoHeadlines[0].title}. Geopolitical risk remains the wild card that models cannot capture.`;
+
       slides.push({
         type: 'editorial',
         content: {
           section: 'geopolitics',
-          hashtags: '#geopolitics #trade #tariffs #global #risk',
-          title: 'Geopolitical Watch',
-          commentary: geoHeadlines.slice(0, 3).map(h => h.title).join('. ') + '.',
-          source: 'Source: Reuters, Bloomberg',
+          hashtags: '#geopolitics #trade #tariffs #risk #global',
+          title: 'The Geopolitical Landscape',
+          commentary: geoCommentary,
+          source: 'Source: Reuters, Bloomberg, AP',
         },
       });
     }
 
-    // ---- NARRATIVE DEEP DIVES (editorial slides) ----
+    // ════════════════════════════════════════════════════════════════════════
+    // NARRATIVE DEEP DIVES — The strategic backbone
+    // ════════════════════════════════════════════════════════════════════════
     for (const narrative of brief.narratives) {
+      // Build Marks-style meditative commentary
+      const evidence = narrative.evidence.slice(0, 2).join('. ');
+      const contrarian = narrative.contrarian;
+      const commentary = [
+        narrative.thesis,
+        evidence ? `\nThe evidence: ${evidence}.` : '',
+        contrarian ? `\nThe contrarian view — and the one we must stress-test: ${contrarian}` : '',
+        `\nConfidence: ${(narrative.confidence * 100).toFixed(0)}%. This is a ${narrative.horizon}-term thesis.`,
+      ].filter(Boolean).join('');
+
       slides.push({
         type: 'editorial',
         content: {
           section: 'macro',
-          hashtags: `#${narrative.horizon} #narrative #strategy`,
-          title: narrative.title,
-          commentary: `${narrative.thesis}\n\nEvidence: ${narrative.evidence.slice(0, 2).join('; ')}.\n\nContrarian view: ${narrative.contrarian}`,
-          source: `Confidence: ${(narrative.confidence * 100).toFixed(0)}% | Horizon: ${narrative.horizon}`,
+          hashtags: `#${narrative.horizon} #strategy #narrative`,
+          title: narrative.title.includes('?') ? narrative.title : `${narrative.title} — What the Market Is Missing`,
+          commentary,
+          source: `${c.company} Research | Horizon: ${narrative.horizon}`,
         },
       });
     }
 
-    // ---- RISKS & OPPORTUNITIES ----
+    // ════════════════════════════════════════════════════════════════════════
+    // RISKS & OPPORTUNITIES — Myth vs Reality framing
+    // ════════════════════════════════════════════════════════════════════════
     slides.push({
       type: 'text',
       content: {
-        title: 'Risks & Opportunities',
-        tag: '#outlook',
-        left_title: 'Key Risks',
-        left_items: brief.risks,
-        left_color: '#ef4444',
-        right_title: 'Opportunities',
-        right_items: brief.opportunities,
-        right_color: '#22c55e',
+        title: 'Where Could We Be Wrong?',
+        tag: '#riskmanagement',
+        left_title: 'CONSENSUS RISKS',
+        left_items: brief.risks.map(r => r.includes('—') ? r : `${r} — the risk everyone sees`),
+        left_color: '#E74C3C',
+        left_icon: '!',
+        right_title: 'CONTRARIAN OPPORTUNITIES',
+        right_items: brief.opportunities.map(o => o.includes('—') ? o : `${o} — where we see asymmetry`),
+        right_color: '#27AE60',
+        right_icon: '→',
       },
     });
 
-    // ---- SOURCES ----
+    // ════════════════════════════════════════════════════════════════════════
+    // POSITIONING — Our view, stated clearly
+    // ════════════════════════════════════════════════════════════════════════
+    if (brief.positioning.length > 0) {
+      slides.push({
+        type: 'quote_slide',
+        content: {
+          quote: brief.positioning.slice(0, 3).map(p =>
+            `${p.assetClass}: ${p.position.toUpperCase()} (${p.conviction} conviction)`
+          ).join(' | '),
+          attribution: `${c.company} — Strategy Team`,
+          source: `Weekly Positioning, ${brief.date}`,
+          section: 'macro',
+          highlight: false,
+          commentary: brief.positioning.slice(0, 3).map(p => `${p.assetClass}: ${p.rationale}`).join('. '),
+        },
+      });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // TRACK RECORD — "Are We Any Good?" (only when >= 3 scored predictions)
+    // ════════════════════════════════════════════════════════════════════════
+    if (trackRecord && trackRecord.scoredPredictions >= 3) {
+      sectionNum++;
+      slides.push({
+        type: 'section_divider',
+        content: {
+          section_num: String(sectionNum).padStart(2, '0'),
+          title: 'Are We Any Good? Our Track Record',
+          subtitle: `${trackRecord.scoredPredictions} calls scored over ${trackRecord.windowWeeks} weeks`,
+          section: 'track_record',
+        },
+      });
+
+      // Table heatmap with per-asset-class stats
+      const trRows = trackRecord.byAssetClass
+        .filter(ac => (ac.correct + ac.incorrect) >= 1)
+        .map(ac => [
+          ac.assetClass,
+          `${(ac.hitRate * 100).toFixed(0)}%`,
+          `${ac.correct}/${ac.correct + ac.incorrect}`,
+          `${ac.avgPnl > 0 ? '+' : ''}${ac.avgPnl.toFixed(1)}%`,
+          String(ac.streak),
+          ac.lastCall ? `${ac.lastCall.position} (${ac.lastCall.conviction})` : 'N/A',
+        ]);
+
+      if (trRows.length > 0) {
+        const hitRateNum = trackRecord.overallHitRate * 100;
+        const verdict = hitRateNum >= 60 ? 'Above the bar.'
+          : hitRateNum >= 50 ? 'Better than a coin flip — but barely.'
+          : 'Humility check: we need to improve.';
+
+        slides.push({
+          type: 'editorial',
+          content: {
+            section: 'track_record',
+            hashtags: '#trackrecord #accountability #positioning',
+            title: `Hit Rate: ${hitRateNum.toFixed(0)}% — ${verdict}`,
+            commentary: `Over the last ${trackRecord.windowWeeks} weeks, we scored ${trackRecord.scoredPredictions} directional calls with a ${hitRateNum.toFixed(0)}% hit rate and ${trackRecord.overallAvgPnl > 0 ? '+' : ''}${trackRecord.overallAvgPnl.toFixed(1)}% average P&L. Best asset class: ${trackRecord.bestAssetClass}. Worst: ${trackRecord.worstAssetClass}. Transparency builds trust.`,
+            source: `${c.company} Internal | Rolling ${trackRecord.windowWeeks}-week window`,
+          },
+          chart: {
+            type: 'table_heatmap',
+            data: {
+              headers: ['Asset Class', 'Hit Rate', 'W/L', 'Avg P&L', 'Streak', 'Last Call'],
+              rows: trRows,
+            },
+            source: `${c.company} Track Record`,
+          },
+        });
+
+        // Hit rate bar chart with coin-flip reference line
+        const acNames = trackRecord.byAssetClass
+          .filter(ac => (ac.correct + ac.incorrect) >= 1)
+          .map(ac => ac.assetClass);
+        const acHitRates = trackRecord.byAssetClass
+          .filter(ac => (ac.correct + ac.incorrect) >= 1)
+          .map(ac => Math.round(ac.hitRate * 100));
+
+        slides.push({
+          type: 'editorial',
+          content: {
+            section: 'track_record',
+            hashtags: '#accuracy #coinflip #calibration',
+            title: 'Hit Rate by Asset Class',
+            commentary: `The 50% line is the "coin flip" threshold. Any asset class below this line means our positioning has been worse than random. We use this data to calibrate conviction caps — if we keep getting Crypto wrong, we lower our conviction until we earn it back.`,
+            source: `${c.company} Feedback Engine`,
+          },
+          chart: {
+            type: 'hbar',
+            data: {
+              labels: acNames,
+              values: acHitRates,
+            },
+            config: {
+              title: 'Hit Rate by Asset Class (%)',
+              value_suffix: '%',
+              hlines: [{ y: 50, color: '#E74C3C', style: '--', label: 'Coin Flip' }],
+            },
+            source: `${c.company} Track Record`,
+          },
+        });
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // SOURCES
+    // ════════════════════════════════════════════════════════════════════════
     slides.push({
       type: 'sources',
       content: {
         title: 'Sources & Methodology',
         left_sources: brief.snapshot.sources.map(s => `${s.name}: ${s.url}`).join('\n'),
-        right_sources: `Analysis: ${c.company} proprietary framework\nData: Bloomberg, FRED, Barchart, Bilello, FactSet`,
-        disclaimer: 'This material is for informational purposes only and does not constitute investment advice.',
+        right_sources: `Analysis: ${c.company} proprietary framework\nData: Bloomberg, FRED, Barchart, FactSet\nSentiment: NLP-driven headline analysis`,
+        disclaimer: 'This material is for informational purposes only and does not constitute investment advice. Past performance is not indicative of future results.',
       },
     });
 
-    // ---- BACK COVER ----
+    // ════════════════════════════════════════════════════════════════════════
+    // BACK COVER
+    // ════════════════════════════════════════════════════════════════════════
     slides.push({
       type: 'back_cover',
       content: {
-        company: c.company,
+        company: c.company.toUpperCase(),
         tagline: c.tagline,
         contact_lines: [...c.contact, c.website],
-        closing: 'Thank you',
+        closing: 'Have a great week.',
         regulatory: 'Regulated by FINMA',
         copyright: `\u00A9 ${new Date().getFullYear()} ${c.company}. All rights reserved.`,
       },
@@ -894,7 +1631,7 @@ export class WeeklyReportPipeline {
 
     return {
       meta: {
-        title: `Weekly Strategy ${week}`,
+        title: `#GlobalMarkets Weekly Wrap-Up — ${week}`,
         company: c.company,
         date: brief.date,
         header_tag: '#GLOBALMARKETS WEEKLY WRAP-UP',

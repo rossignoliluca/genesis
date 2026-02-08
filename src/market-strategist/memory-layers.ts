@@ -19,6 +19,8 @@ import type {
   WeeklySnapshot,
   NarrativeThread,
   HistoricalAnalogue,
+  Prediction,
+  TrackRecord,
 } from './types.js';
 import { HORIZON_CONFIGS as CONFIGS } from './types.js';
 
@@ -222,6 +224,123 @@ export class MemoryLayers {
       .query({ custom: (m) => m.tags.includes('market') && m.tags.includes('history') }).length;
 
     return { weekly, monthly, annual, history };
+  }
+
+  // ==========================================================================
+  // Prediction Store/Retrieve (Loop 1: Feedback)
+  // ==========================================================================
+
+  /**
+   * Store batch of predictions from a weekly brief
+   */
+  storePredictions(predictions: Prediction[]): void {
+    if (predictions.length === 0) return;
+
+    const week = predictions[0].week;
+    this.memory.remember({
+      what: `Predictions for ${week}: ${predictions.map(p => `${p.assetClass}=${p.position}(${p.conviction})`).join(', ')}`,
+      details: { predictions, week },
+      when: new Date(predictions[0].date),
+      importance: 0.8,
+      tags: ['market', 'predictions', week],
+      source: 'feedback-engine',
+    });
+  }
+
+  /**
+   * Update a scored prediction in memory
+   */
+  updatePrediction(scored: Prediction): void {
+    this.memory.remember({
+      what: `Scored prediction ${scored.assetClass}: ${scored.outcome} (${scored.pnlPercent?.toFixed(1)}%)`,
+      details: scored,
+      when: new Date(scored.scoredAt || new Date()),
+      importance: 0.85,
+      tags: ['market', 'prediction-scored', scored.week, `outcome:${scored.outcome}`],
+      source: 'feedback-engine',
+    });
+  }
+
+  /**
+   * Store a computed track record
+   */
+  storeTrackRecord(record: TrackRecord): void {
+    const fact = this.memory.learn({
+      concept: `track-record-${record.asOf}`,
+      definition: `Overall hit rate: ${(record.overallHitRate * 100).toFixed(0)}% on ${record.scoredPredictions} calls. Best: ${record.bestAssetClass}. Worst: ${record.worstAssetClass}.`,
+      properties: record,
+      category: 'market-feedback',
+      tags: ['market', 'track-record', record.asOf],
+      confidence: 0.9,
+      importance: 0.9,
+    });
+
+    this.overrideStability(fact, 365); // Keep track records for a year
+  }
+
+  /**
+   * Get all pending (unscored) predictions
+   */
+  getPendingPredictions(): Prediction[] {
+    const episodes = this.memory.episodic
+      .query({ tags: ['market', 'predictions'] });
+
+    const allPredictions: Prediction[] = [];
+    for (const ep of episodes) {
+      const preds = ep.content.details?.predictions;
+      if (Array.isArray(preds)) {
+        allPredictions.push(...preds.filter((p: Prediction) => p.outcome === 'pending'));
+      }
+    }
+
+    return allPredictions;
+  }
+
+  /**
+   * Get all predictions (for track record computation)
+   */
+  getAllPredictions(): Prediction[] {
+    const predictions: Prediction[] = [];
+
+    // From prediction batches
+    const batches = this.memory.episodic
+      .query({ tags: ['market', 'predictions'] });
+    for (const ep of batches) {
+      const preds = ep.content.details?.predictions;
+      if (Array.isArray(preds)) {
+        predictions.push(...preds);
+      }
+    }
+
+    // From scored individual predictions (these override batch versions)
+    const scored = this.memory.episodic
+      .query({ tags: ['market', 'prediction-scored'] });
+    const scoredById = new Map<string, Prediction>();
+    for (const ep of scored) {
+      const pred = ep.content.details as Prediction;
+      if (pred?.id) scoredById.set(pred.id, pred);
+    }
+
+    // Merge: scored versions override batch versions
+    return predictions.map(p => scoredById.get(p.id) || p);
+  }
+
+  /**
+   * Get the latest track record
+   */
+  getLatestTrackRecord(): TrackRecord | null {
+    const records = this.memory.semantic
+      .query({
+        custom: (m) => m.tags.includes('market') && m.tags.includes('track-record'),
+      })
+      .sort((a, b) => {
+        const dateA = a.content.properties?.asOf || '';
+        const dateB = b.content.properties?.asOf || '';
+        return dateB.localeCompare(dateA);
+      });
+
+    if (records.length === 0) return null;
+    return records[0].content.properties as TrackRecord;
   }
 
   // ==========================================================================

@@ -142,7 +142,7 @@ export interface StrategyConfig {
   sources: SourceConfig[];
   focusAssets: string[];
   narrativeCount: number;       // How many narrative threads (3-5)
-  presentationPalette: string;  // 'crossinvest_dark'
+  presentationPalette: string;  // 'swiss_institutional'
   outputDir: string;
   scrapedChartsDir: string;
   generatePresentation: boolean;
@@ -158,7 +158,7 @@ export const DEFAULT_STRATEGY_CONFIG: StrategyConfig = {
   ],
   focusAssets: ['S&P 500', 'Nasdaq 100', 'Gold', 'US 10Y', 'EUR/USD', 'VIX', 'Bitcoin', 'STOXX 600'],
   narrativeCount: 3,
-  presentationPalette: 'crossinvest_dark',
+  presentationPalette: 'swiss_institutional',
   outputDir: './output/strategy',
   scrapedChartsDir: './output/strategy/charts',
   generatePresentation: true,
@@ -193,3 +193,72 @@ export interface HistoricalAnalogue {
   properties: Record<string, any>;
   tags: string[];
 }
+
+// ============================================================================
+// Prediction Tracking (Loop 1: Feedback)
+// ============================================================================
+
+export interface Prediction {
+  id: string;
+  week: string;                 // "2026-W06"
+  date: string;                 // "2026-02-07"
+  assetClass: string;           // "US Equities"
+  position: 'long' | 'short' | 'neutral';
+  conviction: 'high' | 'medium' | 'low';
+  rationale: string;
+  entryPrice: number;
+  entryTicker: string;          // "S&P 500" or proxy used
+  timeframeWeeks: number;       // default 4
+  scoredAt?: string;
+  exitPrice?: number;
+  outcome?: 'correct' | 'incorrect' | 'neutral' | 'pending';
+  pnlPercent?: number;
+}
+
+export interface AssetClassScore {
+  assetClass: string;
+  hitRate: number;              // 0-1
+  totalCalls: number;
+  correct: number;
+  incorrect: number;
+  neutral: number;
+  avgPnl: number;
+  streak: number;               // positive = wins, negative = losses
+  lastCall?: Prediction;
+}
+
+export interface TrackRecord {
+  asOf: string;
+  windowWeeks: number;          // 26 = rolling 6 months
+  totalPredictions: number;
+  scoredPredictions: number;
+  overallHitRate: number;
+  overallAvgPnl: number;
+  byAssetClass: AssetClassScore[];
+  bestAssetClass: string;
+  worstAssetClass: string;
+}
+
+export interface CalibrationProfile {
+  asOf: string;
+  adjustments: {
+    assetClass: string;
+    hitRate: number;
+    suggestedConvictionCap: 'high' | 'medium' | 'low';
+    note: string;
+  }[];
+}
+
+/** Maps positioning asset classes to market data proxies */
+export const ASSET_CLASS_PROXIES: Record<string, string> = {
+  'US Equities': 'S&P 500',
+  'European Equities': 'STOXX 600',
+  'EM Equities': 'MSCI EM',
+  'Gold': 'Gold',
+  'USD': 'EUR/USD',
+  'Crypto': 'Bitcoin',
+  'US Treasuries': 'US 10Y',
+  'Credit': 'US 10Y',
+  'Oil': 'Oil WTI',
+  'VIX': 'VIX',
+};

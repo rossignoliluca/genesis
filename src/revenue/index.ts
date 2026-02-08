@@ -102,6 +102,17 @@ export {
   projectRevenue,
 } from './cli.js';
 
+// Service Endpoint (v19.0.0)
+export {
+  createServiceEndpoint,
+  getServiceRequests,
+  getServiceRequest,
+  updateServiceRequest,
+  type ServiceRequest,
+  type ServiceQuote,
+  type ServiceEndpointConfig,
+} from './service-endpoint.js';
+
 // ============================================================================
 // Revenue System Facade
 // ============================================================================

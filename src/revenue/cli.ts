@@ -339,6 +339,10 @@ export async function handleRevenueCommand(args: string[]): Promise<string> {
       const days = parseInt(args[1]) || 30;
       return projectRevenue(days);
 
+    case 'serve':
+    case 'server':
+      return startServiceServer(parseInt(args[1]) || 9877);
+
     case 'help':
     default:
       return `
@@ -353,12 +357,54 @@ Commands:
   services        List available service offerings
   tools           List MCP tool pricing
   project [days]  Project revenue (default: 30 days)
+  serve [port]    Start service request server (default: 9877)
   help            Show this help message
 
 Examples:
   genesis revenue status
   genesis revenue activate
   genesis revenue project 90
+  genesis revenue serve 8080
 `;
   }
+}
+
+// ============================================================================
+// Service Server Command
+// ============================================================================
+
+function startServiceServer(port: number): string {
+  // Dynamic import to avoid circular dependencies
+  import('./service-endpoint.js').then(({ createServiceEndpoint }) => {
+    createServiceEndpoint({ port });
+    console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║                 GENESIS SERVICE ENDPOINT                      ║
+╠══════════════════════════════════════════════════════════════╣
+
+  Server running on http://localhost:${port}
+
+  ─── ENDPOINTS ───
+
+  GET  /api/services/catalog        List available services
+  POST /api/services/quote          Get a quote
+  POST /api/services/request        Submit a request
+  GET  /api/services/status/:id     Check request status
+  GET  /health                      Health check
+
+  ─── EXAMPLE ───
+
+  curl http://localhost:${port}/api/services/catalog
+
+  curl -X POST http://localhost:${port}/api/services/request \\
+    -H "Content-Type: application/json" \\
+    -d '{"serviceId":"code-review-deep","clientEmail":"client@example.com","requirements":"Review my Node.js API"}'
+
+╚══════════════════════════════════════════════════════════════╝
+    `);
+  }).catch(err => {
+    console.error('Failed to start service server:', err.message);
+  });
+
+  return '\nStarting service server...';
 }

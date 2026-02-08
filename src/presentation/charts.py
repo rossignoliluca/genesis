@@ -42,6 +42,14 @@ def render_chart(chart_spec: dict, palette, output_dir: str) -> str:
         "gauge": render_gauge,
         "donut_matrix": render_donut_matrix,
         "waterfall": render_waterfall,
+        "return_quilt": render_return_quilt,
+        "scatter": render_scatter,
+        "sparkline_table": render_sparkline_table,
+        "lollipop": render_lollipop,
+        "dumbbell": render_dumbbell,
+        "area": render_area,
+        "bump": render_bump,
+        "small_multiples": render_small_multiples,
     }
 
     renderer = renderers.get(chart_type)
@@ -121,6 +129,45 @@ def render_line(data: dict, config: dict, palette, source: str, output_path: str
         if config.get("fill", False) or dark:
             baseline = config.get("baseline", min(v for s in data["series"] for v in s["values"]) if dark else 0)
             ax.fill_between(x, series["values"], baseline, alpha=fill_alpha, color=color)
+
+    # Recession / shaded regions (Bilello-style)
+    for region in data.get("shaded_regions", []):
+        r_start = region["start"]
+        r_end = region["end"]
+        r_color = region.get("color", "#CCCCCC" if not dark else "#1E2D42")
+        ax.axvspan(r_start, r_end, alpha=0.15, color=r_color, zorder=0)
+        if region.get("label"):
+            mid_x = (r_start + r_end) / 2
+            mid_y = ax.get_ylim()[0] + (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.5
+            ax.text(mid_x, mid_y, region["label"], fontsize=7, rotation=90,
+                    ha="center", va="center", color=palette.gray, alpha=0.7)
+
+    # Slope labels (Bilello-style: "Series Name +X.X%" at right of last point)
+    if config.get("slope_labels", False) and len(labels) >= 2:
+        for i, series in enumerate(data["series"]):
+            vals = series["values"]
+            if len(vals) >= 2:
+                first_val, last_val = vals[0], vals[-1]
+                if first_val != 0:
+                    pct_change = ((last_val - first_val) / abs(first_val)) * 100
+                    sign = "+" if pct_change >= 0 else ""
+                    label_text = f"{series.get('name', '')} {sign}{pct_change:.1f}%"
+                    color = series.get("color", palette.chart_primary if i == 0 else palette.chart_secondary)
+                    ax.annotate(label_text, xy=(len(labels) - 1, last_val),
+                                xytext=(8, 0), textcoords="offset points",
+                                fontsize=8, color=color, va="center", fontweight="bold")
+
+    # Advanced data-level annotations
+    for ann in data.get("annotations", []):
+        ann_x = ann.get("x", 0)
+        ann_y = ann.get("y", 0)
+        ann_text = ann.get("text", "")
+        ann_arrow = ann.get("arrow", False)
+        arrowprops = dict(arrowstyle="->", color=palette.navy, lw=1.2) if ann_arrow else None
+        ann_bbox = dict(boxstyle="round,pad=0.3", facecolor="#E3F2FD" if not dark else "#152238",
+                        edgecolor=palette.gray, alpha=0.85)
+        ax.annotate(ann_text, xy=(ann_x, ann_y), xytext=(15, 15), textcoords="offset points",
+                    fontsize=7, color=palette.body_text, arrowprops=arrowprops, bbox=ann_bbox)
 
     if "baseline" in config:
         bl_color = "#2A3A4A" if dark else "#CCCCCC"
@@ -915,6 +962,575 @@ def render_waterfall(data: dict, config: dict, palette, source: str, output_path
 
     if source:
         add_source_text(ax, source, palette)
+
+    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
+    plt.close(fig)
+    return output_path
+
+
+# ============================================================================
+# Return Quilt (JPMorgan Periodic Table of Returns)
+# ============================================================================
+
+def render_return_quilt(data: dict, config: dict, palette, source: str, output_path: str) -> str:
+    """
+    Return quilt — THE institutional chart (JPMorgan GTTM style).
+
+    data:
+      years: ["2015", "2016", ...]
+      assets: ["US Equity", "EM Equity", "Bonds", ...]
+      returns: [[5.2, -3.1, ...], ...]  (years × assets)
+    config:
+      title, figsize, color_mode ("gradient" | "categorical"), show_values (bool)
+    """
+    plt = _get_plt()
+    from matplotlib.colors import LinearSegmentedColormap
+    figsize = tuple(config.get("figsize", [14, 8]))
+    fig, ax = plt.subplots(figsize=figsize)
+
+    years = data["years"]
+    assets = data["assets"]
+    returns = np.array(data["returns"])  # shape: (n_years, n_assets)
+
+    n_years = len(years)
+    n_assets = len(assets)
+
+    color_mode = config.get("color_mode", "gradient")
+
+    # Assign colors per asset for categorical mode
+    asset_colors = {}
+    cycle = palette.series_cycle if hasattr(palette, 'series_cycle') else [
+        palette.chart_primary, palette.chart_secondary, palette.green,
+        palette.red, palette.orange, palette.gray
+    ]
+    for i, asset in enumerate(assets):
+        asset_colors[asset] = cycle[i % len(cycle)]
+
+    # Gradient colormap for performance coloring
+    all_vals = returns.flatten()
+    vmin, vmax = np.nanmin(all_vals), np.nanmax(all_vals)
+    cmap = LinearSegmentedColormap.from_list("quilt", [palette.red, "#F5F5F5", palette.green])
+
+    ax.set_xlim(-0.5, n_years - 0.5)
+    ax.set_ylim(-0.5, n_assets - 0.5)
+    ax.set_facecolor(palette.fig_bg)
+    fig.patch.set_facecolor(palette.fig_bg)
+
+    dark = _is_dark(palette)
+
+    for yi in range(n_years):
+        # Sort assets by return for this year (best at top)
+        col = returns[yi]
+        sorted_indices = np.argsort(col)[::-1]
+
+        for rank, ai in enumerate(sorted_indices):
+            val = col[ai]
+            asset_name = assets[ai]
+
+            if color_mode == "categorical":
+                cell_color = asset_colors[asset_name]
+                text_color = "#FFFFFF"
+            else:
+                norm_val = (val - vmin) / (vmax - vmin + 1e-9)
+                cell_color = cmap(norm_val)
+                # Dark text on light cells, light text on dark cells
+                text_color = "#1A1A2E" if norm_val > 0.4 else "#FFFFFF"
+
+            rect = plt.Rectangle((yi - 0.45, n_assets - 1 - rank - 0.45), 0.9, 0.9,
+                                  facecolor=cell_color, edgecolor="white", linewidth=0.5)
+            ax.add_patch(rect)
+
+            # Cell text: asset name + return
+            cell_text = f"{asset_name}\n{val:+.1f}%"
+            fw = "bold" if rank == 0 or rank == n_assets - 1 else "normal"
+            ax.text(yi, n_assets - 1 - rank, cell_text, ha="center", va="center",
+                    fontsize=7, fontweight=fw, color=text_color)
+
+    ax.set_xticks(range(n_years))
+    ax.set_xticklabels(years, fontsize=9, fontweight="bold")
+    ax.set_yticks([])
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+
+    if config.get("title"):
+        ax.set_title(config["title"], fontsize=14, fontweight="bold", pad=15)
+
+    if source:
+        add_source_text(ax, source, palette)
+
+    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
+    plt.close(fig)
+    return output_path
+
+
+# ============================================================================
+# Scatter Plot (Goldman Sachs style)
+# ============================================================================
+
+def render_scatter(data: dict, config: dict, palette, source: str, output_path: str) -> str:
+    """
+    Scatter plot with labels (Goldman Sachs Research style).
+
+    data:
+      points: [{x, y, label, size?, color?}]
+      x_label, y_label
+      quadrant_labels: {tl, tr, bl, br} (optional)
+      trend_line: bool (optional)
+    """
+    plt = _get_plt()
+    figsize = tuple(config.get("figsize", [10, 7]))
+    fig, ax = plt.subplots(figsize=figsize)
+
+    points = data.get("points", [])
+    dark = _is_dark(palette)
+
+    for pt in points:
+        size = pt.get("size", 80)
+        color = pt.get("color", palette.chart_primary)
+        ax.scatter(pt["x"], pt["y"], s=size, c=color, alpha=0.8, edgecolors="white",
+                   linewidth=0.5, zorder=5)
+        if pt.get("label"):
+            ax.annotate(pt["label"], (pt["x"], pt["y"]), xytext=(6, 6),
+                        textcoords="offset points", fontsize=7, color=palette.body_text)
+
+    if data.get("x_label"):
+        ax.set_xlabel(data["x_label"], fontsize=11, fontweight="bold")
+    if data.get("y_label"):
+        ax.set_ylabel(data["y_label"], fontsize=11, fontweight="bold")
+
+    # Quadrant lines and labels
+    ql = data.get("quadrant_labels")
+    if ql:
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        mid_x = (xlim[0] + xlim[1]) / 2
+        mid_y = (ylim[0] + ylim[1]) / 2
+        q_color = palette.light_gray if not dark else "#1E2D42"
+        ax.axhline(y=mid_y, color=q_color, linestyle="--", linewidth=0.8, alpha=0.6)
+        ax.axvline(x=mid_x, color=q_color, linestyle="--", linewidth=0.8, alpha=0.6)
+        q_fs = 8
+        q_alpha = 0.5
+        ax.text(xlim[0] + (mid_x - xlim[0]) * 0.05, ylim[1] - (ylim[1] - mid_y) * 0.05,
+                ql.get("tl", ""), fontsize=q_fs, color=palette.gray, alpha=q_alpha, va="top")
+        ax.text(xlim[1] - (xlim[1] - mid_x) * 0.05, ylim[1] - (ylim[1] - mid_y) * 0.05,
+                ql.get("tr", ""), fontsize=q_fs, color=palette.gray, alpha=q_alpha, va="top", ha="right")
+        ax.text(xlim[0] + (mid_x - xlim[0]) * 0.05, ylim[0] + (mid_y - ylim[0]) * 0.05,
+                ql.get("bl", ""), fontsize=q_fs, color=palette.gray, alpha=q_alpha, va="bottom")
+        ax.text(xlim[1] - (xlim[1] - mid_x) * 0.05, ylim[0] + (mid_y - ylim[0]) * 0.05,
+                ql.get("br", ""), fontsize=q_fs, color=palette.gray, alpha=q_alpha, va="bottom", ha="right")
+
+    # Trend line (linear regression)
+    if data.get("trend_line") and len(points) >= 2:
+        xs = np.array([p["x"] for p in points])
+        ys = np.array([p["y"] for p in points])
+        z = np.polyfit(xs, ys, 1)
+        p = np.poly1d(z)
+        x_line = np.linspace(xs.min(), xs.max(), 100)
+        ax.plot(x_line, p(x_line), color=palette.red, linewidth=1.5, linestyle="--", alpha=0.6)
+
+    if config.get("title"):
+        ax.set_title(config["title"], fontsize=14, fontweight="bold", pad=15)
+
+    if source:
+        add_source_text(ax, source, palette)
+
+    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
+    plt.close(fig)
+    return output_path
+
+
+# ============================================================================
+# Sparkline Table (Bloomberg style)
+# ============================================================================
+
+def render_sparkline_table(data: dict, config: dict, palette, source: str, output_path: str) -> str:
+    """
+    Table with inline sparklines (Bloomberg style).
+
+    data:
+      headers: ["Asset", "Price", "Chg", "Trend"]
+      rows: [{cells: ["S&P 500", "6,918", "+1.2%"], sparkline: [100, 99, 101, 103, 102]}]
+    config:
+      figsize, col_widths
+    """
+    plt = _get_plt()
+    import matplotlib.gridspec as gridspec
+
+    rows = data.get("rows", [])
+    headers = data.get("headers", [])
+    n_rows = len(rows)
+    n_cols = len(headers)
+
+    figsize = tuple(config.get("figsize", [14, max(3, n_rows * 0.6 + 1)]))
+    fig = plt.figure(figsize=figsize)
+    fig.patch.set_facecolor(palette.fig_bg)
+
+    dark = _is_dark(palette)
+
+    # Grid: one row for headers + one per data row; n_cols columns for text + 1 for sparkline
+    gs = gridspec.GridSpec(n_rows + 1, n_cols + 1, figure=fig,
+                           hspace=0.05, wspace=0.05,
+                           left=0.02, right=0.98, top=0.95, bottom=0.05)
+
+    # Header row
+    for j, h in enumerate(headers):
+        ax_h = fig.add_subplot(gs[0, j])
+        ax_h.set_xlim(0, 1)
+        ax_h.set_ylim(0, 1)
+        ax_h.axis("off")
+        ax_h.set_facecolor(palette.navy)
+        rect = plt.Rectangle((0, 0), 1, 1, facecolor=palette.navy, edgecolor="none")
+        ax_h.add_patch(rect)
+        ax_h.text(0.5, 0.5, h, ha="center", va="center", fontsize=9,
+                  fontweight="bold", color=palette.white)
+    # Sparkline header
+    ax_sh = fig.add_subplot(gs[0, n_cols])
+    ax_sh.axis("off")
+    ax_sh.set_facecolor(palette.navy)
+    rect = plt.Rectangle((0, 0), 1, 1, transform=ax_sh.transAxes,
+                          facecolor=palette.navy, edgecolor="none")
+    ax_sh.add_patch(rect)
+    ax_sh.text(0.5, 0.5, "Trend", ha="center", va="center", fontsize=9,
+               fontweight="bold", color=palette.white)
+
+    # Data rows
+    for i, row in enumerate(rows):
+        cells = row.get("cells", [])
+        sparkline_data = row.get("sparkline", [])
+        bg_color = palette.chart_bg if i % 2 == 0 else (palette.fig_bg if not dark else "#0F1B2D")
+
+        for j in range(n_cols):
+            ax_c = fig.add_subplot(gs[i + 1, j])
+            ax_c.set_xlim(0, 1)
+            ax_c.set_ylim(0, 1)
+            ax_c.axis("off")
+            rect = plt.Rectangle((0, 0), 1, 1, facecolor=bg_color, edgecolor="#EEEEEE" if not dark else "#1E2D42",
+                                  linewidth=0.3)
+            ax_c.add_patch(rect)
+
+            cell_text = cells[j] if j < len(cells) else ""
+            tc = palette.body_text
+            if cell_text.startswith("+"):
+                tc = palette.green
+            elif cell_text.startswith("-"):
+                tc = palette.red
+            fw = "bold" if j == 0 else "normal"
+            ax_c.text(0.5, 0.5, cell_text, ha="center", va="center",
+                      fontsize=8, fontweight=fw, color=tc)
+
+        # Sparkline mini-chart
+        ax_s = fig.add_subplot(gs[i + 1, n_cols])
+        ax_s.set_facecolor(bg_color)
+        if sparkline_data and len(sparkline_data) >= 2:
+            trend_up = sparkline_data[-1] >= sparkline_data[0]
+            spark_color = palette.green if trend_up else palette.red
+            ax_s.plot(sparkline_data, color=spark_color, linewidth=1.2)
+            ax_s.fill_between(range(len(sparkline_data)), sparkline_data,
+                              min(sparkline_data), alpha=0.15, color=spark_color)
+        ax_s.axis("off")
+
+    if source:
+        fig.text(0.02, 0.01, source, fontsize=7, color=palette.source_color, fontstyle="italic")
+
+    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
+    plt.close(fig)
+    return output_path
+
+
+# ============================================================================
+# Lollipop Chart
+# ============================================================================
+
+def render_lollipop(data: dict, config: dict, palette, source: str, output_path: str) -> str:
+    """
+    Lollipop chart (dot + stem) — elegant alternative to bar chart.
+
+    data:
+      categories: ["A", "B", ...]
+      values: [10, -5, ...]
+    config:
+      sort (bool), xlabel, title, figsize
+    """
+    plt = _get_plt()
+    figsize = tuple(config.get("figsize", [12, 6]))
+    fig, ax = plt.subplots(figsize=figsize)
+
+    categories = data["categories"]
+    values = np.array(data["values"], dtype=float)
+
+    if config.get("sort", False):
+        order = np.argsort(values)
+        categories = [categories[i] for i in order]
+        values = values[order]
+
+    y_pos = np.arange(len(categories))
+    colors = [palette.green if v >= 0 else palette.red for v in values]
+
+    ax.hlines(y=y_pos, xmin=0, xmax=values, color=colors, linewidth=1.5, zorder=3)
+    ax.scatter(values, y_pos, c=colors, s=64, zorder=5, edgecolors="white", linewidth=0.5)
+
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(categories, fontsize=10, fontweight="bold")
+    ax.axvline(x=0, color=palette.gray, linewidth=0.8)
+
+    if config.get("xlabel"):
+        ax.set_xlabel(config["xlabel"], fontsize=11, fontweight="bold")
+    if config.get("title"):
+        ax.set_title(config["title"], fontsize=14, fontweight="bold", pad=15)
+
+    if source:
+        add_source_text(ax, source, palette)
+
+    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
+    plt.close(fig)
+    return output_path
+
+
+# ============================================================================
+# Dumbbell Chart
+# ============================================================================
+
+def render_dumbbell(data: dict, config: dict, palette, source: str, output_path: str) -> str:
+    """
+    Dumbbell chart — shows change between two points.
+
+    data:
+      categories: ["A", "B", ...]
+      start: [10, 20, ...]
+      end: [15, 18, ...]
+      start_label: "2024"
+      end_label: "2025"
+    config:
+      xlabel, title, figsize
+    """
+    plt = _get_plt()
+    figsize = tuple(config.get("figsize", [12, 6]))
+    fig, ax = plt.subplots(figsize=figsize)
+
+    categories = data["categories"]
+    start_vals = np.array(data["start"], dtype=float)
+    end_vals = np.array(data["end"], dtype=float)
+    start_label = data.get("start_label", "Start")
+    end_label = data.get("end_label", "End")
+
+    y_pos = np.arange(len(categories))
+
+    # Connector lines
+    for i in range(len(categories)):
+        ax.hlines(y=i, xmin=min(start_vals[i], end_vals[i]),
+                  xmax=max(start_vals[i], end_vals[i]),
+                  color=palette.light_gray, linewidth=2.5, zorder=2)
+
+    # Start and end dots
+    ax.scatter(start_vals, y_pos, s=100, c=palette.gray, zorder=5, label=start_label, edgecolors="white")
+    ax.scatter(end_vals, y_pos, s=100, c=palette.chart_primary, zorder=5, label=end_label, edgecolors="white")
+
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(categories, fontsize=10, fontweight="bold")
+    ax.legend(loc="lower right", fontsize=9)
+
+    if config.get("xlabel"):
+        ax.set_xlabel(config["xlabel"], fontsize=11, fontweight="bold")
+    if config.get("title"):
+        ax.set_title(config["title"], fontsize=14, fontweight="bold", pad=15)
+
+    if source:
+        add_source_text(ax, source, palette)
+
+    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
+    plt.close(fig)
+    return output_path
+
+
+# ============================================================================
+# Area Chart
+# ============================================================================
+
+def render_area(data: dict, config: dict, palette, source: str, output_path: str) -> str:
+    """
+    Area chart (single or stacked).
+
+    data:
+      labels: ["Jan", "Feb", ...]
+      series: [{name, values}]
+    config:
+      stacked (bool, default false), ylabel, title, figsize
+    """
+    plt = _get_plt()
+    figsize = tuple(config.get("figsize", [14, 5.5]))
+    fig, ax = plt.subplots(figsize=figsize)
+
+    labels = data["labels"]
+    series_list = data["series"]
+    x = range(len(labels))
+
+    cycle = palette.series_cycle if hasattr(palette, 'series_cycle') else [
+        palette.chart_primary, palette.chart_secondary, palette.green
+    ]
+
+    if config.get("stacked", False) and len(series_list) > 1:
+        stack_data = [s["values"] for s in series_list]
+        stack_labels = [s["name"] for s in series_list]
+        stack_colors = [s.get("color", cycle[i % len(cycle)]) for i, s in enumerate(series_list)]
+        ax.stackplot(x, *stack_data, labels=stack_labels, colors=stack_colors, alpha=0.7)
+        ax.legend(loc="upper left", fontsize=9)
+    else:
+        for i, s in enumerate(series_list):
+            color = s.get("color", cycle[i % len(cycle)])
+            ax.plot(x, s["values"], color=color, linewidth=2, label=s["name"], zorder=3)
+            ax.fill_between(x, s["values"], alpha=0.3, color=color)
+
+        if len(series_list) > 1:
+            ax.legend(loc="upper left", fontsize=9)
+
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(labels, fontsize=9)
+
+    if config.get("ylabel"):
+        ax.set_ylabel(config["ylabel"], fontsize=11, fontweight="bold")
+    if config.get("title"):
+        ax.set_title(config["title"], fontsize=14, fontweight="bold", pad=15)
+
+    if source:
+        add_source_text(ax, source, palette)
+
+    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
+    plt.close(fig)
+    return output_path
+
+
+# ============================================================================
+# Bump Chart (ranking over time)
+# ============================================================================
+
+def render_bump(data: dict, config: dict, palette, source: str, output_path: str) -> str:
+    """
+    Bump chart — ranking over time.
+
+    data:
+      periods: ["2020", "2021", ...]
+      series: [{name, ranks: [1, 3, 2, ...]}]
+    config:
+      title, figsize
+    """
+    plt = _get_plt()
+    figsize = tuple(config.get("figsize", [14, 6]))
+    fig, ax = plt.subplots(figsize=figsize)
+
+    periods = data["periods"]
+    series_list = data["series"]
+    x = range(len(periods))
+
+    cycle = palette.series_cycle if hasattr(palette, 'series_cycle') else [
+        palette.chart_primary, palette.chart_secondary, palette.green, palette.red
+    ]
+
+    n_series = len(series_list)
+    for i, s in enumerate(series_list):
+        color = s.get("color", cycle[i % len(cycle)])
+        ranks = s["ranks"]
+        lw = max(1.5, 3.5 - i * 0.3)
+        ax.plot(x, ranks, color=color, linewidth=lw, marker="o", markersize=8,
+                zorder=5 + n_series - i, label=s["name"])
+
+        # Labels at left and right
+        ax.text(-0.3, ranks[0], s["name"], ha="right", va="center",
+                fontsize=8, color=color, fontweight="bold")
+        ax.text(len(periods) - 1 + 0.3, ranks[-1], s["name"], ha="left", va="center",
+                fontsize=8, color=color, fontweight="bold")
+
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(periods, fontsize=10, fontweight="bold")
+    ax.invert_yaxis()  # Rank 1 = top
+    ax.set_ylabel("Rank", fontsize=11, fontweight="bold")
+    max_rank = max(r for s in series_list for r in s["ranks"])
+    ax.set_yticks(range(1, max_rank + 1))
+
+    if config.get("title"):
+        ax.set_title(config["title"], fontsize=14, fontweight="bold", pad=15)
+
+    if source:
+        add_source_text(ax, source, palette)
+
+    fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
+    plt.close(fig)
+    return output_path
+
+
+# ============================================================================
+# Small Multiples (Tufte's most powerful pattern)
+# ============================================================================
+
+def render_small_multiples(data: dict, config: dict, palette, source: str, output_path: str) -> str:
+    """
+    Small multiples — grid of mini charts with shared axes.
+
+    data:
+      panels: [{title, labels, values}]
+    config:
+      chart_type: "line" | "bar" (default "line")
+      title, figsize, ncols
+    """
+    plt = _get_plt()
+
+    panels = data["panels"]
+    n = len(panels)
+    ncols = config.get("ncols", min(4, n))
+    nrows = (n + ncols - 1) // ncols
+
+    figsize = tuple(config.get("figsize", [3.5 * ncols, 2.5 * nrows]))
+    fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
+    fig.patch.set_facecolor(palette.fig_bg)
+
+    chart_type = config.get("chart_type", "line")
+
+    # Shared y limits across all panels
+    all_vals = [v for p in panels for v in p.get("values", [])]
+    if all_vals:
+        shared_min = min(all_vals)
+        shared_max = max(all_vals)
+        margin = (shared_max - shared_min) * 0.1 or 1
+        ylim = (shared_min - margin, shared_max + margin)
+    else:
+        ylim = None
+
+    for idx in range(nrows * ncols):
+        row, col = divmod(idx, ncols)
+        ax = axes[row][col]
+
+        if idx >= n:
+            ax.axis("off")
+            continue
+
+        panel = panels[idx]
+        labels = panel.get("labels", [])
+        values = panel.get("values", [])
+        x = range(len(labels))
+
+        if chart_type == "bar":
+            colors = [palette.green if v >= 0 else palette.red for v in values]
+            ax.bar(x, values, color=colors, width=0.6, edgecolor="white", linewidth=0.3)
+        else:
+            ax.plot(x, values, color=palette.chart_primary, linewidth=1.5)
+            ax.fill_between(x, values, alpha=0.15, color=palette.chart_primary)
+
+        ax.set_title(panel.get("title", ""), fontsize=9, fontweight="bold", pad=4)
+        if ylim:
+            ax.set_ylim(ylim)
+        ax.tick_params(labelsize=6)
+        if len(labels) > 0:
+            step = max(1, len(labels) // 4)
+            ax.set_xticks(list(x)[::step])
+            ax.set_xticklabels([labels[i] for i in range(0, len(labels), step)], fontsize=6)
+
+    if config.get("title"):
+        fig.suptitle(config["title"], fontsize=14, fontweight="bold", y=1.02)
+
+    fig.tight_layout()
+
+    if source:
+        fig.text(0.02, 0.01, source, fontsize=7, color=palette.source_color, fontstyle="italic")
 
     fig.savefig(output_path, dpi=250, bbox_inches="tight", facecolor=palette.fig_bg)
     plt.close(fig)

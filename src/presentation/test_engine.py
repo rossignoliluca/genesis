@@ -20,7 +20,12 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from design import ColorPalette, get_palette, setup_matplotlib, rgb, PALETTES
-from charts import render_chart, render_line, render_bar, render_hbar, render_table_heatmap, render_gauge, render_donut_matrix
+from charts import (
+    render_chart, render_line, render_bar, render_hbar, render_table_heatmap,
+    render_gauge, render_donut_matrix, render_waterfall, render_return_quilt,
+    render_scatter, render_sparkline_table, render_lollipop, render_dumbbell,
+    render_area, render_bump, render_small_multiples,
+)
 
 
 class TestDesign(unittest.TestCase):
@@ -28,7 +33,7 @@ class TestDesign(unittest.TestCase):
 
     def test_default_palette_exists(self):
         palette = get_palette()
-        self.assertEqual(palette.navy, "#0C2340")
+        self.assertEqual(palette.navy, "#24618e")  # crossinvest_navy_gold default
         self.assertEqual(palette.gold, "#B8860B")
 
     def test_named_palette(self):
@@ -37,7 +42,7 @@ class TestDesign(unittest.TestCase):
 
     def test_unknown_palette_returns_default(self):
         palette = get_palette("nonexistent")
-        self.assertEqual(palette.navy, "#0C2340")
+        self.assertEqual(palette.navy, "#24618e")  # falls back to crossinvest_navy_gold
 
     def test_rgb_conversion(self):
         color = rgb("#FF0000")
@@ -184,6 +189,302 @@ class TestCharts(unittest.TestCase):
         chart_spec = {"type": "unknown_type", "data": {}}
         with self.assertRaises(ValueError):
             render_chart(chart_spec, self.palette, self.output_dir)
+
+
+class TestNewPalettes(unittest.TestCase):
+    """Test colorblind-safe palettes (v16.5)."""
+
+    def test_okabe_ito_palette(self):
+        palette = get_palette("okabe_ito")
+        self.assertEqual(palette.chart_primary, "#0072B2")
+        self.assertEqual(len(palette.series_cycle), 8)
+        # Verify it produces a valid chart
+        setup_matplotlib(palette)
+        output_dir = tempfile.mkdtemp(prefix="genesis_test_okabe_")
+        data = {
+            "labels": ["A", "B", "C"],
+            "series": [{"name": "Test", "values": [1, 2, 3]}],
+        }
+        path = render_line(data, {}, palette, "Source: Test",
+                          os.path.join(output_dir, "test_okabe.png"))
+        self.assertTrue(os.path.exists(path))
+
+    def test_blue_orange_diverging_palette(self):
+        palette = get_palette("blue_orange_diverging")
+        self.assertEqual(palette.chart_primary, "#2166AC")
+        self.assertEqual(palette.red, "#B2182B")
+        setup_matplotlib(palette)
+        output_dir = tempfile.mkdtemp(prefix="genesis_test_div_")
+        data = {
+            "labels": ["A", "B", "C"],
+            "series": [{"name": "Test", "values": [1, 2, 3]}],
+        }
+        path = render_line(data, {}, palette, "",
+                          os.path.join(output_dir, "test_diverging.png"))
+        self.assertTrue(os.path.exists(path))
+
+
+class TestLineEnhancements(unittest.TestCase):
+    """Test line chart recession shading and slope labels (v16.5)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.palette = get_palette()
+        cls.output_dir = tempfile.mkdtemp(prefix="genesis_test_line_enh_")
+        setup_matplotlib(cls.palette)
+
+    def test_recession_shading(self):
+        data = {
+            "labels": ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6"],
+            "series": [{"name": "GDP", "values": [100, 98, 95, 93, 96, 100]}],
+            "shaded_regions": [
+                {"start": 1, "end": 3, "label": "Recession", "color": "#CCCCCC"},
+            ],
+        }
+        config = {"ylabel": "Index"}
+        path = render_line(data, config, self.palette, "Source: Test",
+                          os.path.join(self.output_dir, "test_recession.png"))
+        self.assertTrue(os.path.exists(path))
+        self.assertGreater(os.path.getsize(path), 1000)
+
+    def test_slope_labels(self):
+        data = {
+            "labels": ["Jan", "Feb", "Mar", "Apr", "May"],
+            "series": [
+                {"name": "Fund A", "values": [100, 105, 103, 108, 112]},
+                {"name": "Fund B", "values": [100, 99, 101, 98, 97]},
+            ],
+        }
+        config = {"slope_labels": True}
+        path = render_line(data, config, self.palette, "",
+                          os.path.join(self.output_dir, "test_slope.png"))
+        self.assertTrue(os.path.exists(path))
+
+
+class TestNewChartTypes(unittest.TestCase):
+    """Test all 8 new chart renderers (v16.5)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.palette = get_palette()
+        cls.output_dir = tempfile.mkdtemp(prefix="genesis_test_new_charts_")
+        setup_matplotlib(cls.palette)
+
+    def test_return_quilt(self):
+        data = {
+            "years": ["2020", "2021", "2022", "2023"],
+            "assets": ["US Equity", "EM Equity", "Bonds", "Gold"],
+            "returns": [
+                [18.4, 18.3, 7.5, 25.1],
+                [28.7, -2.5, -1.5, -3.6],
+                [-18.1, -20.1, -13.0, -0.3],
+                [26.3, 9.8, 5.5, 13.1],
+            ],
+        }
+        config = {"title": "Periodic Table of Returns", "color_mode": "gradient"}
+        path = render_return_quilt(data, config, self.palette, "Source: Test",
+                                    os.path.join(self.output_dir, "test_quilt.png"))
+        self.assertTrue(os.path.exists(path))
+        self.assertGreater(os.path.getsize(path), 1000)
+
+    def test_scatter(self):
+        data = {
+            "points": [
+                {"x": 5, "y": 10, "label": "AAPL"},
+                {"x": 8, "y": 6, "label": "MSFT"},
+                {"x": 3, "y": 12, "label": "GOOG"},
+                {"x": 7, "y": 4, "label": "AMZN"},
+            ],
+            "x_label": "Risk (%)",
+            "y_label": "Return (%)",
+            "trend_line": True,
+        }
+        config = {"title": "Risk vs Return"}
+        path = render_scatter(data, config, self.palette, "Source: Test",
+                             os.path.join(self.output_dir, "test_scatter.png"))
+        self.assertTrue(os.path.exists(path))
+
+    def test_sparkline_table(self):
+        data = {
+            "headers": ["Asset", "Price", "Chg"],
+            "rows": [
+                {"cells": ["S&P 500", "6,918", "+1.2%"], "sparkline": [100, 99, 101, 103, 102]},
+                {"cells": ["Gold", "$4,600", "-5.0%"], "sparkline": [105, 103, 100, 98, 96]},
+                {"cells": ["Bitcoin", "$75K", "+3.2%"], "sparkline": [70, 72, 71, 74, 75]},
+            ],
+        }
+        config = {}
+        path = render_sparkline_table(data, config, self.palette, "Source: Test",
+                                       os.path.join(self.output_dir, "test_sparkline.png"))
+        self.assertTrue(os.path.exists(path))
+
+    def test_lollipop(self):
+        data = {
+            "categories": ["Tech", "Healthcare", "Energy", "Finance", "Utilities"],
+            "values": [12.5, 8.3, -5.2, 3.1, -1.8],
+        }
+        config = {"sort": True, "xlabel": "Return (%)"}
+        path = render_lollipop(data, config, self.palette, "Source: Test",
+                              os.path.join(self.output_dir, "test_lollipop.png"))
+        self.assertTrue(os.path.exists(path))
+
+    def test_dumbbell(self):
+        data = {
+            "categories": ["US", "Europe", "Japan", "EM"],
+            "start": [2.5, 1.8, 0.5, 4.2],
+            "end": [3.1, 1.2, 0.8, 3.5],
+            "start_label": "2024",
+            "end_label": "2025",
+        }
+        config = {"xlabel": "GDP Growth (%)", "title": "GDP Growth Change"}
+        path = render_dumbbell(data, config, self.palette, "Source: Test",
+                              os.path.join(self.output_dir, "test_dumbbell.png"))
+        self.assertTrue(os.path.exists(path))
+
+    def test_area(self):
+        data = {
+            "labels": ["Q1", "Q2", "Q3", "Q4"],
+            "series": [
+                {"name": "Revenue", "values": [100, 120, 115, 130]},
+                {"name": "Costs", "values": [80, 90, 85, 95]},
+            ],
+        }
+        config = {"stacked": True, "ylabel": "$M"}
+        path = render_area(data, config, self.palette, "Source: Test",
+                          os.path.join(self.output_dir, "test_area.png"))
+        self.assertTrue(os.path.exists(path))
+
+    def test_bump(self):
+        data = {
+            "periods": ["2020", "2021", "2022", "2023"],
+            "series": [
+                {"name": "US Equity", "ranks": [1, 1, 4, 1]},
+                {"name": "EM Equity", "ranks": [2, 4, 3, 3]},
+                {"name": "Bonds", "ranks": [3, 3, 2, 4]},
+                {"name": "Gold", "ranks": [4, 2, 1, 2]},
+            ],
+        }
+        config = {"title": "Asset Class Rankings"}
+        path = render_bump(data, config, self.palette, "Source: Test",
+                          os.path.join(self.output_dir, "test_bump.png"))
+        self.assertTrue(os.path.exists(path))
+
+    def test_small_multiples(self):
+        data = {
+            "panels": [
+                {"title": "US", "labels": ["Q1", "Q2", "Q3", "Q4"], "values": [2.1, 2.3, 1.8, 2.5]},
+                {"title": "Europe", "labels": ["Q1", "Q2", "Q3", "Q4"], "values": [0.8, 1.1, 0.9, 1.2]},
+                {"title": "Japan", "labels": ["Q1", "Q2", "Q3", "Q4"], "values": [0.5, 0.3, 0.7, 0.4]},
+                {"title": "EM", "labels": ["Q1", "Q2", "Q3", "Q4"], "values": [4.2, 3.8, 4.5, 4.1]},
+            ],
+        }
+        config = {"chart_type": "line", "title": "GDP Growth by Region"}
+        path = render_small_multiples(data, config, self.palette, "Source: Test",
+                                       os.path.join(self.output_dir, "test_small_mult.png"))
+        self.assertTrue(os.path.exists(path))
+
+
+class TestEndToEndMixedCharts(unittest.TestCase):
+    """End-to-end test: PPTX with mix of old and new chart types."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.output_dir = tempfile.mkdtemp(prefix="genesis_test_e2e_")
+
+    def test_mixed_chart_presentation(self):
+        from engine import generate
+
+        spec = {
+            "meta": {"title": "Mixed Chart Test", "palette": "okabe_ito"},
+            "slides": [
+                {"type": "cover", "content": {"headline": "V16.5 Mixed Charts"}},
+                {
+                    "type": "chart",
+                    "content": {"title": "Line with Shading"},
+                    "chart": {
+                        "type": "line",
+                        "data": {
+                            "labels": ["Q1", "Q2", "Q3", "Q4"],
+                            "series": [{"name": "GDP", "values": [100, 98, 96, 101]}],
+                            "shaded_regions": [{"start": 1, "end": 2, "label": "Recession"}],
+                        },
+                        "config": {"slope_labels": True},
+                        "source": "Test",
+                        "filename": "e2e_line.png",
+                    },
+                },
+                {
+                    "type": "chart",
+                    "content": {"title": "Return Quilt"},
+                    "chart": {
+                        "type": "return_quilt",
+                        "data": {
+                            "years": ["2022", "2023"],
+                            "assets": ["Equity", "Bonds", "Gold"],
+                            "returns": [[-18.1, -13.0, -0.3], [26.3, 5.5, 13.1]],
+                        },
+                        "source": "Test",
+                        "filename": "e2e_quilt.png",
+                    },
+                },
+                {
+                    "type": "chart",
+                    "content": {"title": "Scatter Plot"},
+                    "chart": {
+                        "type": "scatter",
+                        "data": {
+                            "points": [
+                                {"x": 5, "y": 10, "label": "A"},
+                                {"x": 8, "y": 6, "label": "B"},
+                            ],
+                            "x_label": "Risk",
+                            "y_label": "Return",
+                        },
+                        "source": "Test",
+                        "filename": "e2e_scatter.png",
+                    },
+                },
+                {
+                    "type": "chart",
+                    "content": {"title": "Lollipop"},
+                    "chart": {
+                        "type": "lollipop",
+                        "data": {
+                            "categories": ["A", "B", "C"],
+                            "values": [10, -5, 8],
+                        },
+                        "source": "Test",
+                        "filename": "e2e_lollipop.png",
+                    },
+                },
+                {
+                    "type": "chart",
+                    "content": {"title": "Bump Chart"},
+                    "chart": {
+                        "type": "bump",
+                        "data": {
+                            "periods": ["2022", "2023"],
+                            "series": [
+                                {"name": "X", "ranks": [1, 2]},
+                                {"name": "Y", "ranks": [2, 1]},
+                            ],
+                        },
+                        "source": "Test",
+                        "filename": "e2e_bump.png",
+                    },
+                },
+                {"type": "back_cover", "content": {"company": "TEST"}},
+            ],
+            "output_path": os.path.join(self.output_dir, "test_e2e_mixed.pptx"),
+            "chart_dir": os.path.join(self.output_dir, "e2e_charts"),
+        }
+
+        result = generate(spec)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["slides"], 7)
+        self.assertEqual(result["charts"], 5)
+        self.assertTrue(os.path.exists(result["path"]))
+        self.assertGreater(os.path.getsize(result["path"]), 10000)
 
 
 class TestEngine(unittest.TestCase):

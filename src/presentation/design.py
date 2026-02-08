@@ -243,6 +243,68 @@ PALETTES: Dict[str, ColorPalette] = {
         ],
     ),
 
+    # ============================================================
+    # Colorblind-Safe Palettes (Okabe-Ito, ColorBrewer)
+    # ============================================================
+
+    # Okabe-Ito universal colorblind-safe palette (8 categorical colors)
+    # Reference: Okabe & Ito (2008), universally distinguishable for all
+    # forms of color vision deficiency. Ideal for: bar, line, scatter, return_quilt.
+    "okabe_ito": ColorPalette(
+        navy="#000000",
+        gold="#E69F00",
+        white="#FFFFFF",
+        chart_primary="#0072B2",
+        chart_secondary="#56B4E9",
+        green="#009E73",
+        red="#D55E00",
+        orange="#E69F00",
+        body_text="#1A1A2E",
+        gray="#666666",
+        source_color="#999999",
+        light_gray="#E0E0E0",
+        chart_bg="#FFFFFF",
+        fig_bg="#FFFFFF",
+        slide_bg="#FFFFFF",
+        title_color="#1A1A2E",
+        card_bg="#F5F5F5",
+        card_border="#E0E0E0",
+        extra_colors=["#F0E442", "#CC79A7", "#000000", "#56B4E9"],
+        series_cycle=[
+            "#E69F00", "#56B4E9", "#009E73", "#F0E442",
+            "#0072B2", "#D55E00", "#CC79A7", "#000000"
+        ],
+    ),
+
+    # Blue-Orange diverging palette (ColorBrewer RdBu inspired)
+    # Blue (#2166AC) → White (#F7F7F7) → Red (#B2182B)
+    # Ideal for: heatmap, table_heatmap, return_quilt, gauge
+    "blue_orange_diverging": ColorPalette(
+        navy="#2166AC",
+        gold="#F4A582",
+        white="#FFFFFF",
+        chart_primary="#2166AC",
+        chart_secondary="#4393C3",
+        green="#4DAF4A",
+        red="#B2182B",
+        orange="#E66101",
+        body_text="#1A1A2E",
+        gray="#666666",
+        source_color="#999999",
+        light_gray="#E0E0E0",
+        chart_bg="#FFFFFF",
+        fig_bg="#FFFFFF",
+        slide_bg="#FFFFFF",
+        title_color="#1A1A2E",
+        card_bg="#F7F7F7",
+        card_border="#D1D1D1",
+        extra_colors=["#92C5DE", "#D6604D", "#F4A582", "#FDDBC7"],
+        series_cycle=[
+            "#2166AC", "#4393C3", "#92C5DE", "#F7F7F7",
+            "#FDDBC7", "#F4A582", "#D6604D", "#B2182B"
+        ],
+    ),
+
     # Morgan Stanley — 5-shade blue system
     "morgan_stanley": ColorPalette(
         navy="#00263A",

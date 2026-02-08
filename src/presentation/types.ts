@@ -111,7 +111,115 @@ export type ChartType =
   | 'stacked_bar'
   | 'table_heatmap'
   | 'gauge'
-  | 'donut_matrix';
+  | 'donut_matrix'
+  | 'waterfall'
+  | 'return_quilt'
+  | 'scatter'
+  | 'sparkline_table'
+  | 'lollipop'
+  | 'dumbbell'
+  | 'area'
+  | 'bump'
+  | 'small_multiples';
+
+// --- New chart data interfaces (v16.5) ---
+
+export interface ShadedRegion {
+  start: number;
+  end: number;
+  label?: string;
+  color?: string;
+}
+
+export interface LineDataAnnotation {
+  x: number;
+  y: number;
+  text: string;
+  arrow?: boolean;
+}
+
+export interface ReturnQuiltData {
+  years: string[];
+  assets: string[];
+  returns: number[][];
+}
+
+export interface ScatterPoint {
+  x: number;
+  y: number;
+  label?: string;
+  size?: number;
+  color?: string;
+}
+
+export interface ScatterData {
+  points: ScatterPoint[];
+  x_label?: string;
+  y_label?: string;
+  quadrant_labels?: { tl?: string; tr?: string; bl?: string; br?: string };
+  trend_line?: boolean;
+}
+
+export interface SparklineRow {
+  cells: string[];
+  sparkline: number[];
+}
+
+export interface SparklineTableData {
+  headers: string[];
+  rows: SparklineRow[];
+}
+
+export interface LollipopData {
+  categories: string[];
+  values: number[];
+}
+
+export interface DumbbellData {
+  categories: string[];
+  start: number[];
+  end: number[];
+  start_label?: string;
+  end_label?: string;
+}
+
+export interface AreaSeries {
+  name: string;
+  values: number[];
+  color?: string;
+}
+
+export interface AreaData {
+  labels: string[];
+  series: AreaSeries[];
+}
+
+export interface BumpSeries {
+  name: string;
+  ranks: number[];
+  color?: string;
+}
+
+export interface BumpData {
+  periods: string[];
+  series: BumpSeries[];
+}
+
+export interface SmallMultiplesPanel {
+  title: string;
+  labels: string[];
+  values: number[];
+}
+
+export interface SmallMultiplesData {
+  panels: SmallMultiplesPanel[];
+}
+
+export interface WaterfallData {
+  labels: string[];
+  values: number[];
+  is_total?: boolean[];
+}
 
 export interface ChartSpec {
   type: ChartType;
@@ -188,7 +296,19 @@ export interface BackCoverContent {
   copyright?: string;
 }
 
-export type SlideType = 'cover' | 'executive_summary' | 'chart' | 'text' | 'sources' | 'back_cover';
+export type SlideType =
+  | 'cover'
+  | 'executive_summary'
+  | 'text'
+  | 'chart'
+  | 'sources'
+  | 'back_cover'
+  | 'section_divider'
+  | 'kpi_dashboard'
+  | 'news'
+  | 'image'
+  | 'dual_chart'
+  | 'callout';
 
 export interface SlideSpec {
   type: SlideType;

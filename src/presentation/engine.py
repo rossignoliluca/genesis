@@ -96,7 +96,44 @@ def _normalize_chart_spec(chart_spec: dict):
             if "border" not in zone:
                 zone["border"] = zone.get("color", "#666666")
 
-    # 4. Normalize donut_matrix: convert allocations to donut+matrix format
+    # 4. Normalize return_quilt: validate dimensions
+    if chart_type == "return_quilt":
+        years = data.get("years", [])
+        assets = data.get("assets", [])
+        returns = data.get("returns", [])
+        if returns and years and assets:
+            # Ensure returns matrix matches years × assets
+            if len(returns) != len(years):
+                data["returns"] = returns[:len(years)]
+            for i, row in enumerate(data["returns"]):
+                if len(row) != len(assets):
+                    data["returns"][i] = (row + [0] * len(assets))[:len(assets)]
+
+    # 5. Normalize scatter: default quadrant_labels
+    if chart_type == "scatter":
+        if "quadrant_labels" not in data:
+            data["quadrant_labels"] = None  # explicit None = no quadrants
+
+    # 6. Normalize sparkline_table: validate sparkline data exists
+    if chart_type == "sparkline_table":
+        for row in data.get("rows", []):
+            if "sparkline" not in row:
+                row["sparkline"] = []
+
+    # 7. Normalize area: default stacked=false
+    if chart_type == "area":
+        if "stacked" not in config:
+            config["stacked"] = False
+
+    # 8. Normalize small_multiples: calculate optimal grid layout
+    if chart_type == "small_multiples":
+        panels = data.get("panels", [])
+        n = len(panels)
+        if n > 0 and "ncols" not in config:
+            import math
+            config["ncols"] = min(4, n)
+
+    # 9. Normalize donut_matrix: convert allocations to donut+matrix format
     if chart_type == "donut_matrix":
         allocs = data.get("allocations", [])
         if allocs and "donut" not in data:

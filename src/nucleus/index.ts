@@ -5,6 +5,10 @@
  * learns from outcomes, and self-improves through curiosity.
  */
 
+import { createPublisher } from '../bus/index.js';
+const publisher = createPublisher('nucleus');
+publisher.publish('system.booted', { source: 'nucleus', precision: 1.0 } as any);
+
 export type {
   InputClassification,
   ModulePhase,

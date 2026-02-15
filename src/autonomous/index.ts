@@ -510,17 +510,6 @@ export class AutonomousSystem extends EventEmitter {
     task.started = new Date().toISOString();
     this.runningTasks.set(task.id, task);
     if (this.runningTasks.size > 500) {
-      // Delete oldest entries
-      const keys = Array.from(this.runningTasks.keys());
-      for (let i = 0; i < 100; i++) this.runningTasks.delete(keys[i]);
-    }
-    if (this.runningTasks.size > 500) {
-      // Delete oldest entries
-      const keys = Array.from(this.runningTasks.keys());
-      for (let i = 0; i < 100; i++) this.runningTasks.delete(keys[i]);
-    }
-    if (this.runningTasks.size > 500) {
-      // Delete oldest entries
       const keys = Array.from(this.runningTasks.keys());
       for (let i = 0; i < 100; i++) this.runningTasks.delete(keys[i]);
     }

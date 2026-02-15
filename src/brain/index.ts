@@ -335,7 +335,8 @@ export class Brain {
           taskStatus: 'pending' as const,
         }),
       });
-    } catch {
+    } catch (err) {
+      console.error('[brain] monitor module initialization failed:', err);
       // Module may not be configured
     }
 
@@ -344,35 +345,40 @@ export class Brain {
       this.subagentExecutor = getSubagentExecutor();
       // v7.18: Connect dispatcher for multi-turn tool execution
       this.subagentExecutor.setDispatcher(this.dispatcher);
-    } catch {
+    } catch (err) {
+      console.error('[brain] subagent executor initialization failed:', err);
       // Module may not be configured
     }
 
     try {
       // Kernel - multi-agent orchestration
       this.kernel = getKernel();
-    } catch {
+    } catch (err) {
+      console.error('[brain] kernel initialization failed:', err);
       // Module may not be configured
     }
 
     try {
       // State Store - persistence
       this.stateStore = getStateStore();
-    } catch {
+    } catch (err) {
+      console.error('[brain] State Store initialization failed:', err);
       // Module may not be configured
     }
 
     try {
       // World Model - predictive modeling
       this.worldModel = getWorldModelSystem();
-    } catch {
+    } catch (err) {
+      console.error('[brain] worldModel initialization failed:', err);
       // Module may not be configured
     }
 
     try {
       // Darwin-Gödel Engine - self-modification
       this.darwinGodel = getDarwinGodelEngine();
-    } catch {
+    } catch (err) {
+      console.error('[brain] Darwin-Gödel engine initialization failed:', err);
       // Module may not be configured
     }
 
@@ -387,7 +393,8 @@ export class Brain {
       this.metacognition.setStrategyExecutor(
         createStrategyExecutor(this.thinking)
       );
-    } catch {
+    } catch (err) {
+      console.error('[brain] Metacognition initialization failed:', err);
       // Metacognition initialization is non-fatal
     }
 
@@ -445,7 +452,8 @@ export class Brain {
           }).catch(() => { /* non-fatal */ });
         }
       });
-    } catch {
+    } catch (err) {
+      console.error('[brain] FEK initialization failed:', err);
       // FEK initialization is non-fatal
     }
 
@@ -482,7 +490,8 @@ export class Brain {
         getStats: () => this.workspace.getStats?.() || { itemCount: 0 },
       });
       this.unifiedQuery.registerSource(workspaceAdapter);
-    } catch {
+    } catch (err) {
+      console.error('[brain] Memory system initialization failed:', err);
       // Memory system may not be fully initialized yet
     }
   }
@@ -1386,7 +1395,8 @@ export class Brain {
         },
       });
       await this.stateStore.save();
-    } catch {
+    } catch (err) {
+      console.error('[brain] Persistence failure:', err);
       // Persistence failures are non-fatal - log but don't throw
     }
   }
@@ -1466,7 +1476,8 @@ export class Brain {
         const anticipated = await this.workspace.anticipate(anticipationContext);
         this.metrics.anticipationHits += anticipated.length;
         this.emit({ type: 'memory_anticipate', timestamp: new Date(), data: { items: anticipated.length } });
-      } catch {
+      } catch (err) {
+        console.error('[brain] anticipation failed:', err);
         // Anticipation failed, continue without it
       }
     }
@@ -1510,7 +1521,8 @@ export class Brain {
           usedIds
         );
       }
-    } catch {
+    } catch (err) {
+      console.error('[brain] memory anticipation recording failed:', err);
       // Non-critical, don't fail the step
     }
 
@@ -1668,7 +1680,8 @@ export class Brain {
             }
           }
         }
-      } catch {
+      } catch (err) {
+        console.error('[brain] memory consolidation failed:', err);
         // Non-critical
       }
     }
@@ -2368,7 +2381,8 @@ export class Brain {
           },
         });
         await this.stateStore.save();
-      } catch {
+      } catch (err) {
+        console.error('[brain] Persistence failure:', err);
         // Persistence failure is non-fatal
       }
     }

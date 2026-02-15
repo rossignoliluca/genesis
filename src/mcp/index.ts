@@ -824,7 +824,8 @@ class MCPConnectionManager {
         lastError?.message || 'Unknown error',
         { labels: { server, tool, errorType, latencyMs: String(latencyMs), retries: String(maxRetries) } }
       );
-    } catch {
+    } catch (err) {
+      console.error('[mcp] alerting failed:', err);
       // Don't fail main operation if alerting fails
     }
 

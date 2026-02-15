@@ -269,6 +269,45 @@ export class FixGenerator {
           sections.push(this.numberLines(lines.slice(from, to), from + 1));
         }
       }
+    } else if (proposal.title.includes('empty catch') || proposal.title.includes('logging')) {
+      // Show regions around empty catch blocks
+      for (let i = 0; i < lines.length; i++) {
+        if (/\bcatch\b/.test(lines[i])) {
+          const blockLines = lines.slice(i, Math.min(i + 5, lines.length));
+          const blockStr = blockLines.join('\n');
+          if (/console\.|throw |\.emit\(|\.publish\(/.test(blockStr)) continue;
+          const braceStart = blockStr.indexOf('{');
+          const braceEnd = blockStr.indexOf('}', braceStart);
+          if (braceStart >= 0 && braceEnd >= 0) {
+            const inner = blockStr.slice(braceStart + 1, braceEnd).trim();
+            if (inner === '' || /^(\/\/[^\n]*|\/\*[^*]*\*\/)$/.test(inner)) {
+              const from = Math.max(0, i - 5);
+              const to = Math.min(lines.length, i + 6);
+              sections.push(`\n// === EMPTY CATCH AT LINE ${i + 1} ===`);
+              sections.push(this.numberLines(lines.slice(from, to), from + 1));
+            }
+          }
+        }
+      }
+    } else if (proposal.title.includes('duplicate')) {
+      // Show the duplicate region
+      for (let i = 0; i < lines.length - 6; i++) {
+        const block = lines.slice(i, i + 3).join('\n').trim();
+        if (block.length < 20) continue;
+        const next = lines.slice(i + 3, i + 6).join('\n').trim();
+        if (next === block) {
+          // Found duplicate — show the full range including all repeats
+          let end = i + 6;
+          while (end + 3 <= lines.length && lines.slice(end, end + 3).join('\n').trim() === block) {
+            end += 3;
+          }
+          const from = Math.max(0, i - 2);
+          const to = Math.min(lines.length, end + 2);
+          sections.push(`\n// === DUPLICATE BLOCK AT LINE ${i + 1} (repeated to line ${end}) ===`);
+          sections.push(this.numberLines(lines.slice(from, to), from + 1));
+          i = end; // skip past
+        }
+      }
     }
 
     // Always show last 15 lines (file end, singletons, exports)
@@ -505,6 +544,41 @@ RULES:
 - Pick ONE collection to cap (the most dangerous one — largest growth rate)
 - If you see a class field like \`private readonly maxHistory = 100\`, use that constant
 - Do NOT add a new class field for the limit — just use a literal number`;
+    }
+
+    if (proposal.title.includes('empty catch') || proposal.title.includes('logging')) {
+      return `YOUR FIX — Add error logging to empty catch blocks:
+
+BEFORE:
+  } catch {
+    /* non-fatal */
+  }
+
+AFTER:
+  } catch (err) {
+    console.error('[${proposal.targetModule}] operation failed:', err);
+  }
+
+RULES:
+- Add (err) parameter to the catch clause if missing
+- Add a single console.error line with '[${proposal.targetModule}]' prefix
+- Keep any existing comments — just ADD the console.error
+- Do NOT rethrow — these catches are intentionally swallowing errors
+- Do NOT add any other logic — just logging
+- Fix ONE catch block per response (the most important one — in a try/catch around business logic, not cleanup)
+- Keep the search string small — just the catch line and its body`;
+    }
+
+    if (proposal.title.includes('duplicate')) {
+      return `YOUR FIX — Remove duplicate code blocks:
+
+The code shown has the SAME block repeated multiple times in a row. This is a copy-paste error.
+
+RULES:
+- The search string must include ALL copies of the repeated block
+- The content must include only ONE copy
+- Do NOT modify the code inside the block — just delete the duplicates
+- Keep surrounding code (lines before/after the duplicate range) EXACTLY as they are`;
     }
 
     return `Fix the issue described. Keep changes minimal. Use "as any" for any type uncertainty.`;

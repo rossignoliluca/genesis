@@ -380,37 +380,6 @@ export class Kernel {
       const plan = await this.planTask(task, sensorData);
       this.taskPlans.set(task.id, plan);
       if (this.taskPlans.size > 500) {
-        // Delete oldest entries
-        const keys = Array.from(this.taskPlans.keys());
-        for (let i = 0; i < 100; i++) this.taskPlans.delete(keys[i]);
-      }
-      if (this.taskPlans.size > 500) {
-        // Delete oldest entries
-        const keys = Array.from(this.taskPlans.keys());
-        for (let i = 0; i < 100; i++) this.taskPlans.delete(keys[i]);
-      }
-      if (this.taskPlans.size > 500) {
-        // Delete oldest entries
-        const keys = Array.from(this.taskPlans.keys());
-        for (let i = 0; i < 100; i++) this.taskPlans.delete(keys[i]);
-      }
-      if (this.taskPlans.size > 500) {
-        // Delete oldest entries
-        const keys = Array.from(this.taskPlans.keys());
-        for (let i = 0; i < 100; i++) this.taskPlans.delete(keys[i]);
-      }
-      if (this.taskPlans.size > 500) {
-        // Delete oldest entries
-        const keys = Array.from(this.taskPlans.keys());
-        for (let i = 0; i < 100; i++) this.taskPlans.delete(keys[i]);
-      }
-      if (this.taskPlans.size > 500) {
-        // Delete oldest entries
-        const keys = Array.from(this.taskPlans.keys());
-        for (let i = 0; i < 100; i++) this.taskPlans.delete(keys[i]);
-      }
-      if (this.taskPlans.size > 500) {
-        // Delete oldest entries
         const keys = Array.from(this.taskPlans.keys());
         for (let i = 0; i < 100; i++) this.taskPlans.delete(keys[i]);
       }

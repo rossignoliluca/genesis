@@ -297,7 +297,9 @@ export class SelfImprovementLoop {
             errors.push(`${mod.targetFile}: search string not found`);
             continue;
           }
-          writeFileSync(filePath, newContent, 'utf-8');
+          // Post-apply deduplication: check if the replacement created duplicate blocks
+          const deduped = this.deduplicateConsecutiveBlocks(newContent);
+          writeFileSync(filePath, deduped, 'utf-8');
         } else if (mod.type === 'append') {
           const content = existsSync(filePath) ? readFileSync(filePath, 'utf-8') : '';
           writeFileSync(filePath, content + '\n' + mod.content, 'utf-8');
@@ -319,6 +321,62 @@ export class SelfImprovementLoop {
         spawnSync('git', ['checkout', '--', filePath], { cwd: this.rootPath });
       }
     }
+  }
+
+  // ==========================================================================
+  // Post-Apply Deduplication
+  // ==========================================================================
+
+  /**
+   * Remove consecutive duplicate code blocks that the LLM sometimes generates.
+   * E.g., a cap block repeated 3x instead of 1x.
+   */
+  private deduplicateConsecutiveBlocks(content: string): string {
+    const lines = content.split('\n');
+    const result: string[] = [];
+    let i = 0;
+
+    while (i < lines.length) {
+      // Try block sizes 3, 4, 5 (most common duplicate sizes)
+      let deduplicated = false;
+
+      for (const blockSize of [3, 4, 5]) {
+        if (i + blockSize * 2 > lines.length) continue;
+
+        const block = lines.slice(i, i + blockSize).join('\n').trim();
+        if (block.length < 30) continue; // skip trivial blocks
+
+        // Count consecutive repeats
+        let repeats = 1;
+        let j = i + blockSize;
+        while (j + blockSize <= lines.length) {
+          const next = lines.slice(j, j + blockSize).join('\n').trim();
+          if (next === block) {
+            repeats++;
+            j += blockSize;
+          } else {
+            break;
+          }
+        }
+
+        if (repeats >= 2) {
+          // Keep only the first occurrence
+          for (let k = i; k < i + blockSize; k++) {
+            result.push(lines[k]);
+          }
+          i = j; // skip past all duplicates
+          deduplicated = true;
+          break;
+        }
+      }
+
+      if (!deduplicated) {
+        result.push(lines[i]);
+        i++;
+      }
+    }
+
+    return result.join('\n');
   }
 
   // ==========================================================================

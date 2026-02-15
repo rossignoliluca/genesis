@@ -44,6 +44,8 @@ export class ImprovementProposer {
     proposals.push(...this.detectTodoFixme());
     proposals.push(...this.detectUnhandledAsync());
     proposals.push(...this.detectUnboundedCollections());
+    proposals.push(...this.detectEmptyCatchBlocks());
+    proposals.push(...this.detectDuplicateBlocks());
 
     return proposals
       .sort((a, b) => b.priority - a.priority)
@@ -525,6 +527,154 @@ export class ImprovementProposer {
             targetModule: entry.name,
             evidence: `Unbounded: ${evidence}`,
             suggestedAction: `Add size checks after push/set — e.g., if (this.arr.length > MAX) this.arr.shift()`,
+            estimatedEffort: 'small',
+          });
+        }
+      } catch {
+        // skip
+      }
+    }
+
+    return proposals;
+  }
+
+  // ==========================================================================
+  // Empty Catch Block Detector
+  // ==========================================================================
+
+  /**
+   * Detect catch blocks that silently swallow errors (empty or comment-only).
+   * These hide bugs and make debugging impossible.
+   */
+  private detectEmptyCatchBlocks(): ImprovementProposal[] {
+    const proposals: ImprovementProposal[] = [];
+    const manifest = this.manifest.generate();
+
+    for (const entry of manifest) {
+      if (!entry.hasIndex) continue;
+
+      try {
+        const indexPath = join(this.rootPath, 'src', entry.name, 'index.ts');
+        const content = readFileSync(indexPath, 'utf-8');
+        const lines = content.split('\n');
+
+        const emptyBlocks: number[] = [];
+        for (let i = 0; i < lines.length; i++) {
+          // Match "catch" followed by empty/comment-only block
+          if (!/\bcatch\b/.test(lines[i])) continue;
+
+          // Skip inline catches — single-line "} catch { /* ... */ }" are deliberate
+          if (/catch\s*(\([^)]*\))?\s*\{[^}]*\}\s*$/.test(lines[i])) continue;
+          // Skip .catch(() => ...) — these are promise catches
+          if (/\.catch\s*\(/.test(lines[i])) continue;
+
+          // Look at next 3 lines to see if the block is empty or has only comments
+          const blockLines = lines.slice(i, Math.min(i + 5, lines.length));
+          const blockStr = blockLines.join('\n');
+
+          // Skip if block has actual code (console., throw, emit, return with value, publish, warn)
+          if (/console\.|throw |\.emit\(|\.publish\(|return [^;]/.test(blockStr)) continue;
+
+          // Check if block is just { } or { /* comment */ } or { // comment }
+          const braceStart = blockStr.indexOf('{');
+          const braceEnd = blockStr.indexOf('}', braceStart);
+          if (braceStart >= 0 && braceEnd >= 0) {
+            const inner = blockStr.slice(braceStart + 1, braceEnd).trim();
+            // Empty or only comments
+            if (inner === '' || /^(\/\/[^\n]*|\/\*[^*]*\*\/)$/.test(inner)) {
+              emptyBlocks.push(i + 1);
+            }
+          }
+        }
+
+        if (emptyBlocks.length >= 2) {
+          const evidence = emptyBlocks
+            .slice(0, 5)
+            .map(l => `L${l}`)
+            .join(', ');
+
+          proposals.push({
+            id: `proposal-catch-${entry.name}-${Date.now()}`,
+            category: 'reliability',
+            priority: 0.55,
+            title: `Add logging to empty catch in ${entry.name}`,
+            description: `${emptyBlocks.length} catch block(s) silently swallow errors`,
+            targetModule: entry.name,
+            evidence: `Empty catch at: ${evidence}`,
+            suggestedAction: `Add console.error('[${entry.name}] ...:', err) to catch blocks`,
+            estimatedEffort: 'small',
+          });
+        }
+      } catch {
+        // skip
+      }
+    }
+
+    return proposals;
+  }
+
+  // ==========================================================================
+  // Duplicate Code Block Detector
+  // ==========================================================================
+
+  /**
+   * Detect consecutive duplicate code blocks (copy-paste from LLM fixes).
+   * Pattern: 3+ identical lines repeated 2+ times in a row.
+   */
+  private detectDuplicateBlocks(): ImprovementProposal[] {
+    const proposals: ImprovementProposal[] = [];
+    const manifest = this.manifest.generate();
+
+    for (const entry of manifest) {
+      if (!entry.hasIndex) continue;
+
+      try {
+        const indexPath = join(this.rootPath, 'src', entry.name, 'index.ts');
+        const content = readFileSync(indexPath, 'utf-8');
+        const lines = content.split('\n');
+
+        const duplicates: Array<{ line: number; blockSize: number; count: number }> = [];
+
+        for (let i = 0; i < lines.length - 6; i++) {
+          // Take a 3-line block and look for repeats
+          const block = lines.slice(i, i + 3).join('\n').trim();
+          if (block.length < 20) continue; // skip tiny blocks
+
+          let repeatCount = 1;
+          let j = i + 3;
+          while (j + 3 <= lines.length) {
+            const next = lines.slice(j, j + 3).join('\n').trim();
+            if (next === block) {
+              repeatCount++;
+              j += 3;
+            } else {
+              break;
+            }
+          }
+
+          if (repeatCount >= 2) {
+            // Avoid re-detecting the same duplicate range
+            if (!duplicates.some(d => Math.abs(d.line - (i + 1)) < 10)) {
+              duplicates.push({ line: i + 1, blockSize: 3, count: repeatCount });
+            }
+            i = j - 1; // skip past the duplicates
+          }
+        }
+
+        if (duplicates.length > 0) {
+          const evidence = duplicates
+            .map(d => `L${d.line}: ${d.count}x repeat of ${d.blockSize}-line block`)
+            .join(' | ');
+
+          proposals.push({
+            id: `proposal-duplicate-${entry.name}-${Date.now()}`,
+            category: 'reliability',
+            priority: 0.7,
+            title: `Remove duplicate blocks in ${entry.name}`,
+            description: `${duplicates.length} duplicate code block(s) found — likely copy-paste error`,
+            targetModule: entry.name,
+            evidence,
+            suggestedAction: `Delete the repeated blocks — keep only the first occurrence`,
             estimatedEffort: 'small',
           });
         }

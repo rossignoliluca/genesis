@@ -778,7 +778,8 @@ export class LLMBridge {
               inputTokens = parsed.usage.prompt_tokens || inputTokens;
               outputTokens = parsed.usage.completion_tokens || outputTokens;
             }
-          } catch {
+          } catch (err) {
+            console.error('[llm] JSON parse failed:', err);
             // Ignore parse errors for partial JSON
           }
         }
@@ -788,7 +789,8 @@ export class LLMBridge {
       // Properly clean up the stream to prevent connection leaks
       try {
         await response.body?.cancel();
-      } catch {
+      } catch (err) {
+        console.error('[llm] stream cleanup failed:', err);
         // Ignore cancel errors - stream may already be closed
       }
     }
@@ -913,7 +915,8 @@ export class LLMBridge {
             } else if (parsed.type === 'message_delta') {
               outputTokens = parsed.usage?.output_tokens || outputTokens;
             }
-          } catch {
+          } catch (err) {
+            console.error('[llm] Parse error:', err);
             // Ignore parse errors
           }
         }
@@ -923,7 +926,8 @@ export class LLMBridge {
       // Properly clean up the stream to prevent connection leaks
       try {
         await response.body?.cancel();
-      } catch {
+      } catch (err) {
+        console.error('[llm] Stream cancel failed:', err);
         // Ignore cancel errors - stream may already be closed
       }
     }
@@ -1010,7 +1014,8 @@ export class LLMBridge {
               inputTokens = parsed.prompt_eval_count || inputTokens;
               outputTokens = parsed.eval_count || outputTokens;
             }
-          } catch {
+          } catch (err) {
+            console.error('[llm] JSON parse failed:', err);
             // Ignore parse errors
           }
         }

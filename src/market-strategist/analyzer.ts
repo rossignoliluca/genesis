@@ -57,8 +57,7 @@ export class MarketAnalyzer {
         max_tokens: 1024,
       });
 
-      const secondaryContent = secondaryResult.data?.choices?.[0]?.message?.content || '[]';
-      const secondaryParsed = this.parseJSON(secondaryContent);
+      const secondaryParsed = this.parseMCPResult(secondaryResult);
 
       if (Array.isArray(secondaryParsed) && secondaryParsed.length > 0) {
         let agreements = 0;
@@ -147,8 +146,7 @@ Factor this regime assessment into your narrative synthesis.`;
         max_tokens: 4096,
       });
 
-      const content = result.data?.choices?.[0]?.message?.content || '[]';
-      const parsed = this.parseJSON(content);
+      const parsed = this.parseMCPResult(result);
 
       if (!Array.isArray(parsed)) return this.fallbackNarratives(snapshot);
 
@@ -249,7 +247,8 @@ Be specific with data references, not generic.`,
         max_tokens: 300,
       });
 
-      return result.data?.choices?.[0]?.message?.content || consensus;
+      const content = this.extractMCPContent(result);
+      return (typeof content === 'string' ? content : JSON.stringify(content)) || consensus;
     } catch {
       return `Contrarian to consensus: ${consensus}`;
     }
@@ -328,8 +327,7 @@ Narratives: ${narratives.map(n => `${n.title}: ${n.thesis}`).join('\n')}`,
         max_tokens: 2048,
       });
 
-      const content = result.data?.choices?.[0]?.message?.content || '[]';
-      const parsed = this.parseJSON(content);
+      const parsed = this.parseMCPResult(result);
       if (Array.isArray(parsed)) {
         // Programmatic enforcement: if LLM ignores calibration caps, force downgrade
         return this.enforceCalibrationCaps(parsed, calibration);
@@ -464,6 +462,32 @@ Narratives: ${narratives.map(n => `${n.title}: ${n.thesis}`).join('\n')}`,
     ];
   }
 
+  /**
+   * Extract content from MCP OpenAI response.
+   * The MCP client auto-parses: result.data may be the parsed object directly,
+   * a raw string, or (legacy) the full OpenAI response with choices[].
+   */
+  private extractMCPContent(result: any): any {
+    const data = result?.data;
+
+    // Case 1: MCP client already parsed the JSON → data is array/object
+    if (data !== null && data !== undefined && typeof data === 'object') {
+      // Check for legacy full OpenAI response structure
+      if (data.choices?.[0]?.message?.content) {
+        return data.choices[0].message.content;
+      }
+      // Already parsed (array or object) → return as-is
+      return data;
+    }
+
+    // Case 2: data is a string → return it for further parsing
+    if (typeof data === 'string') {
+      return data;
+    }
+
+    return null;
+  }
+
   private parseJSON(text: string): any {
     // Try to extract JSON from text that may have markdown formatting
     try {
@@ -480,5 +504,22 @@ Narratives: ${narratives.map(n => `${n.title}: ${n.thesis}`).join('\n')}`,
       }
       return null;
     }
+  }
+
+  /**
+   * Extract and parse MCP result into a usable value.
+   * Handles: direct parsed JSON, string content, legacy OpenAI format.
+   */
+  private parseMCPResult(result: any, fallback: string = '[]'): any {
+    const content = this.extractMCPContent(result);
+    if (content === null) return this.parseJSON(fallback);
+
+    // Already an array/object → return directly
+    if (typeof content === 'object') return content;
+
+    // String → parse it
+    if (typeof content === 'string') return this.parseJSON(content);
+
+    return this.parseJSON(fallback);
   }
 }

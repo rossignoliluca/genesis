@@ -1931,11 +1931,15 @@ Use "N/A" for missing data. Be precise with numbers — only use numbers you act
         max_tokens: 2048,
       });
 
-      const content = result.data?.choices?.[0]?.message?.content || '';
-      const match = content.match(/\[[\s\S]*\]/);
-      if (match) {
-        const parsed = JSON.parse(match[0]);
-        if (Array.isArray(parsed)) {
+      const mcpData = this.extractMCPContent(result);
+      let parsed: any = null;
+      if (Array.isArray(mcpData)) {
+        parsed = mcpData;
+      } else if (typeof mcpData === 'string') {
+        const match = mcpData.match(/\[[\s\S]*\]/);
+        if (match) parsed = JSON.parse(match[0]);
+      }
+      if (Array.isArray(parsed)) {
           const parsedMap = new Map(parsed.map((p: any) => [p.name, p]));
           return this.config.focusAssets.map(asset => {
             const data = parsedMap.get(asset);
@@ -1952,7 +1956,6 @@ Use "N/A" for missing data. Be precise with numbers — only use numbers you act
             }
             return { name: asset, level: 'N/A', change1w: 'N/A', changeMtd: 'N/A', changeYtd: 'N/A', signal: 'neutral' as const, commentary: '' };
           });
-        }
       }
     } catch {
       // Fall through to defaults
@@ -2058,6 +2061,17 @@ Use "N/A" for missing data. Be precise with numbers — only use numbers you act
     if (lower.includes('geopolit') || lower.includes('war') || lower.includes('nato') || lower.includes('defense')) return 'Geopolitics';
     if (category === 'italian_geo') return 'Italian Geopolitics';
     return 'general';
+  }
+
+  /** Extract content from MCP result (auto-parsed or legacy format) */
+  private extractMCPContent(result: any): any {
+    const data = result?.data;
+    if (data !== null && data !== undefined && typeof data === 'object') {
+      if (data.choices?.[0]?.message?.content) return data.choices[0].message.content;
+      return data;
+    }
+    if (typeof data === 'string') return data;
+    return null;
   }
 
   private getISOWeek(date: Date): string {

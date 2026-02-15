@@ -301,8 +301,7 @@ If data is not available for an asset, use "N/A" for missing fields.`,
           max_tokens: 2048,
         });
 
-        const content = result.data?.choices?.[0]?.message?.content || '';
-        const parsed = this.parseJSON(content);
+        const parsed = this.parseMCPResult(result);
 
         if (Array.isArray(parsed) && parsed.length > 0) {
           // Merge parsed data with focus assets (ensure all assets are represented)
@@ -356,6 +355,26 @@ If data is not available for an asset, use "N/A" for missing fields.`,
     }
   }
 
+  /** Extract content from MCP result (auto-parsed or legacy format) */
+  private extractMCPContent(result: any): any {
+    const data = result?.data;
+    if (data !== null && data !== undefined && typeof data === 'object') {
+      if (data.choices?.[0]?.message?.content) return data.choices[0].message.content;
+      return data;
+    }
+    if (typeof data === 'string') return data;
+    return null;
+  }
+
+  /** Parse MCP result into usable value */
+  private parseMCPResult(result: any, fallback: string = '[]'): any {
+    const content = this.extractMCPContent(result);
+    if (content === null) return this.parseJSON(fallback);
+    if (typeof content === 'object') return content;
+    if (typeof content === 'string') return this.parseJSON(content);
+    return this.parseJSON(fallback);
+  }
+
   private extractThemes(headlines: Headline[]): string[] {
     // Group headlines by theme and return unique themes
     const themes = new Set<string>();
@@ -394,8 +413,10 @@ If data is not available for an asset, use "N/A" for missing fields.`,
         max_tokens: 500,
       });
 
-      const content = result.data?.choices?.[0]?.message?.content || '';
-      const parsed = JSON.parse(content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim());
+      const data = this.extractMCPContent(result);
+      const parsed = typeof data === 'object' ? data
+        : typeof data === 'string' ? JSON.parse(data.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
+        : { overall: 'neutral', score: 0, indicators: {} };
 
       return {
         overall: parsed.overall || 'neutral',

@@ -8,6 +8,17 @@
  * - Apply and verify
  */
 
+import { createPublisher } from '../bus/index.js';
+
+const publisher = createPublisher('healing');
+
+// Emit initialization event
+publisher.publish('brain.healing.started', {
+  source: 'healing',
+  precision: 1.0,
+  timestamp: Date.now()
+} as any);
+
 export * from './detector.js';
 export * from './fixer.js';
 

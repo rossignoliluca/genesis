@@ -15,6 +15,15 @@
  * - Autopoiesis: Agents maintain identity via signatures
  */
 
+import { createPublisher } from '../bus/index.js';
+
+const publisher = createPublisher('a2a');
+publisher.publish('a2a:initialized', {
+  source: 'a2a',
+  precision: 1.0,
+  timestamp: Date.now()
+} as any);
+
 // Protocol types and constants
 export {
   A2A_PROTOCOL_VERSION,

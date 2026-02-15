@@ -11,6 +11,9 @@
  */
 
 import { EventEmitter } from 'events';
+import { createPublisher } from '../bus/index.js';
+
+const publisher = createPublisher('metacognition');
 
 // ============================================================================
 // Types

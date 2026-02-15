@@ -17,6 +17,9 @@
 
 import { getMCPClient } from '../mcp/index.js';
 import type { MCPServerName } from '../types.js';
+import { createPublisher } from '../bus/index.js';
+
+const publisher = createPublisher('memory-production');
 
 // ============================================================================
 // Types

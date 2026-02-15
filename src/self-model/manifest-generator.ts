@@ -129,8 +129,16 @@ export class ManifestGenerator {
     // Detect dependencies from imports
     const dependencies = this.findDependencies(tsFiles);
 
-    // Match bus topics
-    const busTopics = BUS_PREFIX_MAP[name] || [];
+    // Match bus topics from static map OR detect from code
+    let busTopics = BUS_PREFIX_MAP[name] || [];
+
+    // Dynamic detection: if no static mapping, check if any file uses createPublisher/createSubscriber
+    if (busTopics.length === 0) {
+      const hasBusWiring = this.detectBusWiring(tsFiles);
+      if (hasBusWiring) {
+        busTopics = [`${name}.`]; // Infer topic prefix from module name
+      }
+    }
 
     return {
       name,
@@ -209,6 +217,23 @@ export class ManifestGenerator {
     }
 
     return { description, exports };
+  }
+
+  /**
+   * Check if any file in the module uses createPublisher or createSubscriber
+   */
+  private detectBusWiring(tsFiles: string[]): boolean {
+    for (const file of tsFiles) {
+      try {
+        const content = readFileSync(file, 'utf-8');
+        if (content.includes('createPublisher') || content.includes('createSubscriber')) {
+          return true;
+        }
+      } catch {
+        // skip
+      }
+    }
+    return false;
   }
 
   private findDependencies(tsFiles: string[]): string[] {

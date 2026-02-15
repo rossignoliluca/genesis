@@ -13,6 +13,14 @@
  */
 
 import { EventEmitter } from 'events';
+import { createPublisher } from '../bus/index.js';
+
+const publisher = createPublisher('causal');
+publisher.publish('system.booted', {
+  source: 'causal',
+  precision: 1.0,
+  module: 'causal'
+} as any);
 
 // ============================================================================
 // Types

@@ -95,6 +95,17 @@
  */
 
 import { LLMBridge, getLLMBridge } from '../llm/index.js';
+import { createPublisher } from '../bus/index.js';
+
+const publisher = createPublisher('thinking');
+
+// Emit thinking system initialization
+publisher.publish('system.booted', {
+  source: 'thinking',
+  precision: 1.0,
+  component: 'advanced-reasoning',
+  version: '7.12'
+} as any);
 
 // ============================================================================
 // v7.7: Tree-of-Thought Types (must be declared first)

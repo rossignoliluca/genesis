@@ -11,6 +11,7 @@
  */
 
 import { EventEmitter } from 'events';
+import { createPublisher } from '../bus/index.js';
 import { getEconomicSystem, EconomicSystem, TreasuryBalance } from '../economy';
 import { getDeploymentSystem, DeploymentSystem, WebsiteConfig, DeploymentResult } from '../deployment';
 import { getProductionMemory, ProductionMemory, MemoryEntry, SearchResult } from '../memory-production';

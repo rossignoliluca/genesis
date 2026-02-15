@@ -43,6 +43,16 @@ export * from './semantic.js';
 // Re-export GraphRAG
 export * from './graphrag.js';
 
+import { createPublisher } from '../bus/index.js';
+
+const publisher = createPublisher('grounding');
+publisher.publish('system.booted', {
+  source: 'grounding',
+  precision: 1.0,
+  module: 'grounding',
+  epistemic_domains: 6
+} as any);
+
 import {
   EpistemicStack,
   EpistemicClaim,

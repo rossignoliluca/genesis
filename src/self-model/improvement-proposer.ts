@@ -11,6 +11,7 @@ import type { RuntimeObservatory } from './runtime-observatory.js';
 import type { CapabilityAssessor } from './capability-assessor.js';
 import { existsSync, statSync } from 'fs';
 import { join } from 'path';
+import type { ModuleManifestEntry } from './types.js';
 
 // Infrastructure modules that don't need bus topics — they ARE the infrastructure
 const INFRA_MODULES = new Set([
@@ -46,39 +47,32 @@ export class ImprovementProposer {
 
   private detectUnwiredModules(): ImprovementProposal[] {
     const assessments = this.assessor.assessAll();
-    // Exclude infrastructure modules that don't need bus topics
-    const unwired = Array.from(assessments.values()).filter(
-      a => a.integrationQuality === 'disconnected' && !INFRA_MODULES.has(a.moduleName),
-    );
+    const manifest = this.manifest.generate();
+    const manifestMap = new Map<string, ModuleManifestEntry>(manifest.map(m => [m.name, m]));
+
+    // Exclude infrastructure modules + modules without index.ts (fix-generator targets index.ts)
+    const unwired = Array.from(assessments.values()).filter(a => {
+      if (INFRA_MODULES.has(a.moduleName)) return false;
+      if (a.integrationQuality !== 'disconnected') return false;
+      const entry = manifestMap.get(a.moduleName);
+      if (!entry || !entry.hasIndex) return false;
+      return true;
+    });
 
     if (unwired.length === 0) return [];
 
-    if (unwired.length <= 3) {
-      return unwired.map(a => ({
-        id: `proposal-wiring-${a.moduleName}-${Date.now()}`,
-        category: 'wiring' as const,
-        priority: 0.5,
-        title: `Wire ${a.moduleName} to bus`,
-        description: `Module has no bus topics defined, integration quality: disconnected`,
-        targetModule: a.moduleName,
-        evidence: `No bus event prefixes mapped for ${a.moduleName}`,
-        suggestedAction: `Add event publishing to ${a.moduleName} — define bus topics and emit events for key state changes`,
-        estimatedEffort: 'medium' as const,
-      }));
-    }
-
-    const names = unwired.map(a => a.moduleName).join(', ');
-    return [{
-      id: `proposal-wiring-bulk-${Date.now()}`,
-      category: 'wiring',
+    // Generate individual proposals — one per module so the loop can fix them one by one
+    return unwired.map(a => ({
+      id: `proposal-wiring-${a.moduleName}-${Date.now()}`,
+      category: 'wiring' as const,
       priority: 0.5,
-      title: `Wire ${unwired.length} disconnected modules to bus`,
-      description: `${unwired.length} modules have no bus integration`,
-      targetModule: unwired[0].moduleName,
-      evidence: `Disconnected: ${names}`,
-      suggestedAction: `Review each module and add appropriate event publishing`,
-      estimatedEffort: 'medium',
-    }];
+      title: `Wire ${a.moduleName} to bus`,
+      description: `Module has no bus topics defined, integration quality: disconnected`,
+      targetModule: a.moduleName,
+      evidence: `No bus event prefixes mapped for ${a.moduleName}`,
+      suggestedAction: `Add event publishing to ${a.moduleName} — import createPublisher from '../bus/index.js' and emit an init event`,
+      estimatedEffort: 'medium' as const,
+    }));
   }
 
   private detectBrokenModules(): ImprovementProposal[] {

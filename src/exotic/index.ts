@@ -97,9 +97,19 @@ export {
 // Unified Interface
 // ============================================================================
 
+import { createPublisher } from '../bus/index.js';
 import { ThermodynamicComputer, type ThermodynamicConfig } from './thermodynamic.js';
 import { HyperdimensionalMemory, type HDCConfig } from './hyperdimensional.js';
 import { ReservoirComputer, type ReservoirConfig } from './reservoir.js';
+
+const publisher = createPublisher('exotic');
+
+// Emit init event
+publisher.publish('system.booted', {
+  source: 'exotic',
+  precision: 1.0,
+  module: 'exotic-computing'
+} as any);
 
 export interface ExoticComputingConfig {
   thermodynamic?: Partial<ThermodynamicConfig>;

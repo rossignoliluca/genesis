@@ -13,6 +13,11 @@
  * 6. METAPHORICAL - Poetic language
  */
 
+import { createPublisher } from '../bus/index.js';
+
+const publisher = createPublisher('epistemic');
+publisher.publish('system.booted', { source: 'epistemic', precision: 1.0 } as any);
+
 // ============================================================================
 // Types
 // ============================================================================

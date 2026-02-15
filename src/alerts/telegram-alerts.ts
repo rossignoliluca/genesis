@@ -1,0 +1,262 @@
+/**
+ * Telegram Alert System
+ *
+ * Sends market alerts and notifications via Telegram using MCP.
+ * Integrates with the market strategist and alert system.
+ *
+ * Features:
+ * - Market brief formatting with emoji
+ * - Singleton pattern for configuration
+ * - Integration with existing alerting system
+ *
+ * Environment Variables:
+ * - TELEGRAM_ALERT_ENABLED: Enable/disable Telegram alerts (default: false)
+ * - TELEGRAM_CHAT_ID: Default chat ID for alerts
+ * - TELEGRAM_BOT_TOKEN: Bot token (required by MCP server)
+ * - TELEGRAM_API_ID: API ID (required by MCP server)
+ * - TELEGRAM_API_HASH: API hash (required by MCP server)
+ */
+
+import { getMCPClient } from '../mcp/index.js';
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+export interface TelegramAlertConfig {
+  enabled: boolean;
+  chatId: string;
+}
+
+export interface MarketBrief {
+  headline: string;
+  regime: string;
+  keyDrivers: string[];
+  sentiment?: string;
+  technicals?: string;
+  timestamp?: string;
+}
+
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
+let configInstance: TelegramAlertConfig | null = null;
+
+/**
+ * Get Telegram alert configuration from environment variables.
+ * Singleton pattern to avoid re-parsing env vars.
+ */
+export function getAlertConfig(): TelegramAlertConfig {
+  if (!configInstance) {
+    configInstance = {
+      enabled: process.env.TELEGRAM_ALERT_ENABLED === 'true',
+      chatId: process.env.TELEGRAM_CHAT_ID || '',
+    };
+  }
+  return configInstance;
+}
+
+/**
+ * Reset configuration (useful for testing).
+ */
+export function resetAlertConfig(): void {
+  configInstance = null;
+}
+
+// ============================================================================
+// EMOJI MAPPING
+// ============================================================================
+
+const REGIME_EMOJI: Record<string, string> = {
+  'bull': '🐂',
+  'bear': '🐻',
+  'neutral': '😐',
+  'volatile': '⚡',
+  'recovery': '📈',
+  'correction': '📉',
+  'crisis': '🚨',
+  'euphoria': '🚀',
+  'fear': '😱',
+  'greed': '🤑',
+};
+
+const SENTIMENT_EMOJI: Record<string, string> = {
+  'positive': '✅',
+  'negative': '❌',
+  'neutral': '➖',
+  'bullish': '🟢',
+  'bearish': '🔴',
+  'cautious': '🟡',
+};
+
+// ============================================================================
+// CORE FUNCTIONS
+// ============================================================================
+
+/**
+ * Send a Telegram alert via MCP.
+ *
+ * @param chatId - Telegram chat ID (can be user ID or channel ID)
+ * @param message - Message text (supports Markdown)
+ * @returns true if sent successfully, false otherwise
+ */
+export async function sendTelegramAlert(chatId: string, message: string): Promise<boolean> {
+  const config = getAlertConfig();
+
+  // Check if alerts are enabled
+  if (!config.enabled) {
+    console.log('[Telegram] Alerts disabled, skipping message');
+    return false;
+  }
+
+  // Validate chat ID
+  if (!chatId) {
+    console.error('[Telegram] No chat ID provided');
+    return false;
+  }
+
+  try {
+    // Use MCP client to call Telegram server
+    // Note: Using 'as any' to avoid type union issues per convention
+    const mcpClient = getMCPClient();
+    const result = await mcpClient.call(
+      'telegram' as any,
+      'send_message',
+      {
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'Markdown',
+      }
+    );
+
+    if (result.success) {
+      console.log(`[Telegram] Alert sent to ${chatId}`);
+      return true;
+    } else {
+      console.error(`[Telegram] Failed to send alert: ${result.error}`);
+      return false;
+    }
+  } catch (error) {
+    console.error('[Telegram] Error sending alert:', error);
+    return false;
+  }
+}
+
+/**
+ * Format a market brief into a Telegram-friendly message with emoji.
+ *
+ * @param brief - Market brief object
+ * @returns Formatted Markdown message
+ */
+export function formatMarketAlert(brief: MarketBrief): string {
+  const regimeEmoji = REGIME_EMOJI[brief.regime.toLowerCase()] || '📊';
+  const sentimentEmoji = brief.sentiment
+    ? SENTIMENT_EMOJI[brief.sentiment.toLowerCase()] || ''
+    : '';
+
+  const timestamp = brief.timestamp || new Date().toISOString().split('T')[0];
+
+  let message = `${regimeEmoji} *Market Brief* - ${timestamp}\n\n`;
+  message += `*${brief.headline}*\n\n`;
+  message += `*Regime:* ${brief.regime}\n`;
+
+  if (brief.sentiment) {
+    message += `*Sentiment:* ${sentimentEmoji} ${brief.sentiment}\n`;
+  }
+
+  if (brief.keyDrivers && brief.keyDrivers.length > 0) {
+    message += `\n*Key Drivers:*\n`;
+    brief.keyDrivers.forEach((driver, i) => {
+      message += `${i + 1}. ${driver}\n`;
+    });
+  }
+
+  if (brief.technicals) {
+    message += `\n*Technicals:* ${brief.technicals}\n`;
+  }
+
+  message += `\n_Generated by Genesis Market Strategist_`;
+
+  return message;
+}
+
+/**
+ * Send a market brief alert to the configured chat.
+ * Convenience function that combines formatting and sending.
+ *
+ * @param brief - Market brief object
+ * @returns true if sent successfully, false otherwise
+ */
+export async function sendMarketBrief(brief: MarketBrief): Promise<boolean> {
+  const config = getAlertConfig();
+
+  if (!config.chatId) {
+    console.error('[Telegram] No default chat ID configured (set TELEGRAM_CHAT_ID)');
+    return false;
+  }
+
+  const message = formatMarketAlert(brief);
+  return sendTelegramAlert(config.chatId, message);
+}
+
+/**
+ * Send a simple text alert to the configured chat.
+ *
+ * @param text - Alert text
+ * @returns true if sent successfully, false otherwise
+ */
+export async function sendSimpleAlert(text: string): Promise<boolean> {
+  const config = getAlertConfig();
+
+  if (!config.chatId) {
+    console.error('[Telegram] No default chat ID configured (set TELEGRAM_CHAT_ID)');
+    return false;
+  }
+
+  return sendTelegramAlert(config.chatId, text);
+}
+
+// ============================================================================
+// INTEGRATION WITH EXISTING ALERT SYSTEM
+// ============================================================================
+
+/**
+ * Initialize Telegram as an alert channel in the observability alerter.
+ * This allows Telegram to receive all system alerts, not just market briefs.
+ *
+ * Note: This is optional integration. Telegram alerts can work standalone.
+ */
+export function initializeTelegramAlerting(): void {
+  const config = getAlertConfig();
+
+  if (!config.enabled || !config.chatId) {
+    console.log('[Telegram] Alert integration skipped (not configured)');
+    return;
+  }
+
+  try {
+    // Import alerter dynamically to avoid circular dependencies
+    import('../observability/alerting.js').then(({ getAlerter }) => {
+      const alerter = getAlerter();
+
+      // Add Telegram as a custom webhook channel
+      // We use webhook pattern to piggyback on existing alerter infrastructure
+      alerter.addChannel({
+        type: 'webhook',
+        enabled: true,
+        minSeverity: 'warning',
+        config: {
+          url: `telegram://${config.chatId}`, // Custom protocol
+          method: 'POST',
+        },
+      });
+
+      console.log('[Telegram] Integrated with observability alerter');
+    }).catch((err) => {
+      console.error('[Telegram] Failed to integrate with alerter:', err);
+    });
+  } catch (error) {
+    console.error('[Telegram] Error initializing alerting:', error);
+  }
+}

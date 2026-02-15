@@ -186,6 +186,15 @@
       "enabled": true,
       "category": "finance"
     },
+    "bloomberg": {
+      "transport": "stdio",
+      "command": "node",
+      "args": ["src/mcp-servers/bloomberg/index.js"],
+      "requiredEnv": ["BLOOMBERG_API_KEY"],
+      "description": "Bloomberg Terminal API — market data, news, analytics (custom stub)",
+      "disabled": true,
+      "category": "finance"
+    },
 
     "notion": {
       "transport": "stdio",
@@ -240,6 +249,20 @@
       "args": ["-y", "@anthropic/mcp-server-slack"],
       "requiredEnv": ["SLACK_MCP_XOXP_TOKEN"],
       "description": "Team notifications & alerts",
+      "enabled": true,
+      "category": "communication"
+    },
+    "telegram": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@nicepkg/mcp-telegram"],
+      "requiredEnv": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_API_ID", "TELEGRAM_API_HASH"],
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "${TELEGRAM_BOT_TOKEN}",
+        "TELEGRAM_API_ID": "${TELEGRAM_API_ID}",
+        "TELEGRAM_API_HASH": "${TELEGRAM_API_HASH}"
+      },
+      "description": "Telegram bot for market alerts and notifications",
       "enabled": true,
       "category": "communication"
     },

@@ -61,6 +61,9 @@ export { RuntimeObservatory, getRuntimeObservatory } from './runtime-observatory
 export { CapabilityAssessor } from './capability-assessor.js';
 export { ImprovementProposer } from './improvement-proposer.js';
 export { SelfBriefingGenerator } from './self-briefing.js';
+export { FixGenerator } from './fix-generator.js';
+export { SelfImprovementLoop } from './self-improvement-loop.js';
+export type { CycleResult, FixAttempt } from './self-improvement-loop.js';
 
 const __dirname = resolve(__filename, '..');
 
@@ -187,6 +190,20 @@ export class HolisticSelfModel {
    */
   getManifest(): ModuleManifestEntry[] {
     return this.manifest.generate();
+  }
+
+  /**
+   * Run one self-improvement cycle.
+   * Detects problems → generates fixes → verifies → applies → learns.
+   */
+  async runImprovementCycle(): Promise<import('./self-improvement-loop.js').CycleResult> {
+    const { FixGenerator } = await import('./fix-generator.js');
+    const { SelfImprovementLoop } = await import('./self-improvement-loop.js');
+
+    const generator = new FixGenerator(this.config.rootPath);
+    const loop = new SelfImprovementLoop(this, generator, this.config.rootPath);
+
+    return loop.runCycle();
   }
 
   /**

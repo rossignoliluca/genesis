@@ -552,7 +552,7 @@ toolRegistry.set('antifragile', {
 
 toolRegistry.set('self_model', {
   name: 'self_model',
-  description: 'Genesis holistic self-model: get briefing, check health, refresh, propose improvements. Actions: briefing, health, refresh, propose, manifest',
+  description: 'Genesis holistic self-model: briefing, health, refresh, propose, manifest, improve (self-improvement cycle)',
   execute: async (params: Record<string, unknown>) => {
     const { getHolisticSelfModel } = await import('../self-model/index.js');
     const model = getHolisticSelfModel();
@@ -571,14 +571,29 @@ toolRegistry.set('self_model', {
         return model.proposeImprovements();
       case 'manifest':
         return model.getManifest();
+      case 'improve': {
+        const result = await model.runImprovementCycle();
+        const lines = [
+          `Self-Improvement Cycle Complete (${result.duration}ms)`,
+          `  Proposals: ${result.proposals}`,
+          `  Attempted: ${result.attempted}`,
+          `  Applied: ${result.applied}`,
+          `  Failed: ${result.failed}`,
+          `  Skipped: ${result.skipped}`,
+        ];
+        for (const d of result.details) {
+          lines.push(`  [${d.status}] ${d.proposal.title}${d.error ? ' — ' + d.error : ''}`);
+        }
+        return { ...result, summary: lines.join('\n') };
+      }
       default:
-        return { error: `Unknown action: ${action}. Use: briefing, health, refresh, propose, manifest` };
+        return { error: `Unknown action: ${action}. Use: briefing, health, refresh, propose, manifest, improve` };
     }
   },
   validate: (params: Record<string, unknown>) => {
-    const valid = ['briefing', 'health', 'refresh', 'propose', 'manifest', undefined];
+    const valid = ['briefing', 'health', 'refresh', 'propose', 'manifest', 'improve', undefined];
     if (!valid.includes(params.action as string | undefined)) {
-      return { valid: false, reason: 'action must be: briefing, health, refresh, propose, or manifest' };
+      return { valid: false, reason: 'action must be: briefing, health, refresh, propose, manifest, or improve' };
     }
     return { valid: true };
   },

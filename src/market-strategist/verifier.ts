@@ -1,14 +1,17 @@
 /**
- * Genesis v19.1 - Data Verifier
+ * Genesis v19.1 - Data Verifier (Multi-Provider Waterfall)
  *
- * Real financial API verification replacing regex-on-brave-search.
- * 3 free API sources:
+ * 7 provider sources, all fired in parallel:
  *   - Yahoo Finance (equities, FX, commodities, VIX)
- *   - CoinGecko (crypto)
- *   - FRED (bond yields)
+ *   - CoinGecko (crypto — key optional)
+ *   - FRED (indices, bonds, FX, commodities, VIX — key required)
+ *   - FMP — Financial Modeling Prep (equities — paid tier for indices)
+ *   - Frankfurter (FX — ECB rates, zero auth)
+ *   - CoinPaprika (crypto — zero auth)
+ *   - ExchangeRate-API (FX — zero auth)
  *
- * Batch fetching: 3 HTTP requests total.
- * Real confidence scoring based on source count, freshness, agreement.
+ * Each asset has 2-5 providers. All fire in parallel via Promise.allSettled.
+ * Confidence scoring rewards multi-source agreement.
  */
 
 import { config as dotenvConfig } from 'dotenv';
@@ -25,7 +28,7 @@ import type { AssetSnapshot, Headline } from './types.js';
 // Types
 // ============================================================================
 
-export type Provider = 'yahoo' | 'coingecko' | 'fred';
+export type Provider = 'yahoo' | 'coingecko' | 'fred' | 'fmp' | 'frankfurter' | 'coinpaprika' | 'exchangerate';
 
 export interface ProviderMapping {
   provider: Provider;
@@ -83,54 +86,101 @@ interface FREDObservation {
 }
 
 // ============================================================================
-// Asset-to-Provider Map
+// FMP Symbol Map (Yahoo → FMP equivalents)
+// ============================================================================
+
+const FMP_SYMBOL_MAP: Record<string, string> = {
+  '%5EGSPC': '^GSPC',
+  '%5ENDX': '^NDX',
+  '%5EDJI': '^DJI',
+  '%5ESTOXX': '^STOXX',
+  'FTSEMIB.MI': 'FTSEMIB.MI',
+  '%5ETNX': '^TNX',
+  '%5EIRX': '^IRX',
+  '%5ETYX': '^TYX',
+  'EURUSD%3DX': 'EURUSD',
+  'USDCHF%3DX': 'USDCHF',
+  'GC%3DF': 'GCUSD',
+  'CL%3DF': 'CLUSD',
+  'BTC-USD': 'BTCUSD',
+  '%5EVIX': '^VIX',
+};
+
+// ============================================================================
+// Asset-to-Provider Map (multi-provider waterfall)
 // ============================================================================
 
 const ASSET_PROVIDER_MAP: AssetProviderConfig[] = [
   { name: 'S&P 500', providers: [
     { provider: 'yahoo', identifier: '%5EGSPC', range: [2000, 15000] },
+    { provider: 'fred', identifier: 'SP500', range: [2000, 15000] },
+    { provider: 'fmp', identifier: '^GSPC', range: [2000, 15000] },
   ], tolerancePercent: 0.5 },
   { name: 'Nasdaq 100', providers: [
     { provider: 'yahoo', identifier: '%5ENDX', range: [5000, 50000] },
-  ], tolerancePercent: 0.5 },
+    { provider: 'fred', identifier: 'NASDAQCOM', range: [5000, 50000] }, // Composite proxy (~NDX)
+    { provider: 'fmp', identifier: '^NDX', range: [5000, 50000] },
+  ], tolerancePercent: 1.5 }, // wider tolerance: NASDAQCOM ≠ NDX
   { name: 'Dow Jones', providers: [
     { provider: 'yahoo', identifier: '%5EDJI', range: [15000, 80000] },
+    { provider: 'fred', identifier: 'DJIA', range: [15000, 80000] },
+    { provider: 'fmp', identifier: '^DJI', range: [15000, 80000] },
   ], tolerancePercent: 0.5 },
   { name: 'STOXX 600', providers: [
     { provider: 'yahoo', identifier: '%5ESTOXX', range: [200, 1000] },
+    { provider: 'fmp', identifier: '^STOXX', range: [200, 1000] },
   ], tolerancePercent: 0.5 },
   { name: 'FTSE MIB', providers: [
     { provider: 'yahoo', identifier: 'FTSEMIB.MI', range: [10000, 60000] },
+    { provider: 'fmp', identifier: 'FTSEMIB.MI', range: [10000, 60000] },
   ], tolerancePercent: 0.5 },
   { name: 'US 10Y', providers: [
     { provider: 'fred', identifier: 'DGS10', range: [0, 15] },
     { provider: 'yahoo', identifier: '%5ETNX', range: [0, 15] },
-  ], tolerancePercent: 3 }, // 3% relative for yields (≈3bp on 1%)
+    { provider: 'fmp', identifier: '^TNX', range: [0, 15] },
+  ], tolerancePercent: 3 },
   { name: 'US 2Y', providers: [
     { provider: 'fred', identifier: 'DGS2', range: [0, 15] },
     { provider: 'yahoo', identifier: '%5EIRX', range: [0, 15] },
+    { provider: 'fmp', identifier: '^IRX', range: [0, 15] },
   ], tolerancePercent: 3 },
   { name: 'German 10Y', providers: [
     { provider: 'yahoo', identifier: '%5ETYX', range: [0, 15] },
+    { provider: 'fmp', identifier: '^TYX', range: [0, 15] },
   ], tolerancePercent: 3 },
   { name: 'EUR/USD', providers: [
     { provider: 'yahoo', identifier: 'EURUSD%3DX', range: [0.5, 2.0] },
+    { provider: 'fred', identifier: 'DEXUSEU', range: [0.5, 2.0] },
+    { provider: 'frankfurter', identifier: 'EUR', range: [0.5, 2.0] },
+    { provider: 'exchangerate', identifier: 'EUR', range: [0.5, 2.0] },
+    { provider: 'fmp', identifier: 'EURUSD', range: [0.5, 2.0] },
   ], tolerancePercent: 0.2 },
   { name: 'USD/CHF', providers: [
     { provider: 'yahoo', identifier: 'USDCHF%3DX', range: [0.5, 2.0] },
+    { provider: 'fred', identifier: 'DEXSZUS', range: [0.5, 2.0] },
+    { provider: 'frankfurter', identifier: 'CHF', range: [0.5, 2.0] },
+    { provider: 'exchangerate', identifier: 'CHF', range: [0.5, 2.0] },
+    { provider: 'fmp', identifier: 'USDCHF', range: [0.5, 2.0] },
   ], tolerancePercent: 0.2 },
   { name: 'Gold', providers: [
     { provider: 'yahoo', identifier: 'GC%3DF', range: [1000, 5000] },
+    { provider: 'fmp', identifier: 'GCUSD', range: [1000, 5000] },
   ], tolerancePercent: 1 },
   { name: 'Oil WTI', providers: [
     { provider: 'yahoo', identifier: 'CL%3DF', range: [20, 200] },
+    { provider: 'fred', identifier: 'DCOILWTICO', range: [20, 200] },
+    { provider: 'fmp', identifier: 'CLUSD', range: [20, 200] },
   ], tolerancePercent: 1 },
   { name: 'Bitcoin', providers: [
     { provider: 'coingecko', identifier: 'bitcoin', range: [10000, 500000] },
+    { provider: 'coinpaprika', identifier: 'btc-bitcoin', range: [10000, 500000] },
+    { provider: 'fmp', identifier: 'BTCUSD', range: [10000, 500000] },
     { provider: 'yahoo', identifier: 'BTC-USD', range: [10000, 500000] },
   ], tolerancePercent: 2 },
   { name: 'VIX', providers: [
     { provider: 'yahoo', identifier: '%5EVIX', range: [5, 80] },
+    { provider: 'fred', identifier: 'VIXCLS', range: [5, 80] },
+    { provider: 'fmp', identifier: '^VIX', range: [5, 80] },
   ], tolerancePercent: 2 },
 ];
 
@@ -280,6 +330,10 @@ export class DataVerifier {
     const yahooSymbols = new Set<string>();
     const coingeckoIds = new Set<string>();
     const fredSeries = new Set<string>();
+    const fmpSymbols = new Set<string>();
+    const frankfurterCurrencies = new Set<string>();
+    const coinpaprikaIds = new Set<string>();
+    const exchangerateCurrencies = new Set<string>();
 
     for (const asset of ASSET_PROVIDER_MAP) {
       if (requestedAssets && !requestedAssets.has(asset.name)) continue;
@@ -288,32 +342,46 @@ export class DataVerifier {
           case 'yahoo': yahooSymbols.add(p.identifier); break;
           case 'coingecko': coingeckoIds.add(p.identifier); break;
           case 'fred': fredSeries.add(p.identifier); break;
+          case 'fmp': fmpSymbols.add(p.identifier); break;
+          case 'frankfurter': frankfurterCurrencies.add(p.identifier); break;
+          case 'coinpaprika': coinpaprikaIds.add(p.identifier); break;
+          case 'exchangerate': exchangerateCurrencies.add(p.identifier); break;
         }
       }
     }
 
-    // Fire all 3 in parallel
-    const [yahooResult, coingeckoResult, ...fredResults] = await Promise.allSettled([
+    // Fire all 7 providers in parallel
+    const [
+      yahooResult, coingeckoResult, fmpResult, frankfurterResult,
+      coinpaprikaResult, exchangerateResult, ...fredResults
+    ] = await Promise.allSettled([
       this.fetchYahoo([...yahooSymbols]),
       this.fetchCoinGecko([...coingeckoIds]),
+      this.fetchFMP([...fmpSymbols]),
+      this.fetchFrankfurter([...frankfurterCurrencies]),
+      this.fetchCoinPaprika([...coinpaprikaIds]),
+      this.fetchExchangeRate([...exchangerateCurrencies]),
       ...([...fredSeries].map(id => this.fetchFRED(id))),
     ]);
 
-    // Merge Yahoo results
-    if (yahooResult.status === 'fulfilled') {
-      for (const [key, val] of yahooResult.value) {
-        results.set(`yahoo:${key}`, val);
+    // Merge all results by provider prefix
+    const mapResults = [
+      { result: yahooResult, prefix: 'yahoo' },
+      { result: coingeckoResult, prefix: 'coingecko' },
+      { result: fmpResult, prefix: 'fmp' },
+      { result: frankfurterResult, prefix: 'frankfurter' },
+      { result: coinpaprikaResult, prefix: 'coinpaprika' },
+      { result: exchangerateResult, prefix: 'exchangerate' },
+    ];
+    for (const { result, prefix } of mapResults) {
+      if (result.status === 'fulfilled') {
+        for (const [key, val] of result.value) {
+          results.set(`${prefix}:${key}`, val);
+        }
       }
     }
 
-    // Merge CoinGecko results
-    if (coingeckoResult.status === 'fulfilled') {
-      for (const [key, val] of coingeckoResult.value) {
-        results.set(`coingecko:${key}`, val);
-      }
-    }
-
-    // Merge FRED results
+    // Merge FRED results (1 result per series)
     const fredIds = [...fredSeries];
     for (let i = 0; i < fredResults.length; i++) {
       const result = fredResults[i];
@@ -543,6 +611,201 @@ export class DataVerifier {
     return null;
   }
 
+  /**
+   * Financial Modeling Prep — batch quote endpoint.
+   * 250 calls/day free tier, 1 request for all symbols.
+   * Requires FMP_API_KEY env var.
+   */
+  private async fetchFMP(symbols: string[]): Promise<Map<string, { value: number; timestamp: Date }>> {
+    const results = new Map<string, { value: number; timestamp: Date }>();
+    if (symbols.length === 0) return results;
+
+    const apiKey = process.env.FMP_API_KEY;
+    if (!apiKey) {
+      console.warn('[Verifier] FMP_API_KEY not set, skipping FMP provider');
+      return results;
+    }
+
+    try {
+      const csv = symbols.join(',');
+      const url = `https://financialmodelingprep.com/stable/quote?symbol=${encodeURIComponent(csv)}&apikey=${apiKey}`;
+
+      const response = await fetch(url, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!response.ok) {
+        console.warn(`[Verifier] FMP API returned ${response.status}`);
+        return results;
+      }
+
+      const data = await response.json() as Array<{
+        symbol: string;
+        price: number;
+        timestamp?: number;
+      }>;
+
+      if (!Array.isArray(data)) return results;
+
+      for (const quote of data) {
+        if (quote.symbol && quote.price != null) {
+          results.set(quote.symbol, {
+            value: quote.price,
+            timestamp: quote.timestamp ? new Date(quote.timestamp * 1000) : new Date(),
+          });
+        }
+      }
+
+      console.log(`[Verifier] FMP returned ${results.size}/${symbols.length} quotes`);
+    } catch (error) {
+      console.warn(`[Verifier] FMP fetch failed: ${error}`);
+    }
+
+    return results;
+  }
+
+  /**
+   * Frankfurter API — ECB reference rates, zero auth, zero rate limit.
+   * Returns USD-based rates. EUR/USD = 1/rate(EUR), USD/CHF = rate(CHF).
+   */
+  private async fetchFrankfurter(currencies: string[]): Promise<Map<string, { value: number; timestamp: Date }>> {
+    const results = new Map<string, { value: number; timestamp: Date }>();
+    if (currencies.length === 0) return results;
+
+    try {
+      const csv = currencies.join(',');
+      const url = `https://api.frankfurter.dev/v1/latest?base=USD&symbols=${csv}`;
+
+      const response = await fetch(url, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) {
+        console.warn(`[Verifier] Frankfurter API returned ${response.status}`);
+        return results;
+      }
+
+      const data = await response.json() as {
+        date: string;
+        rates: Record<string, number>;
+      };
+
+      if (!data.rates) return results;
+      const dataDate = new Date(data.date);
+
+      for (const currency of currencies) {
+        const rate = data.rates[currency];
+        if (rate == null) continue;
+
+        if (currency === 'EUR') {
+          // USD→EUR rate, invert for EUR/USD
+          results.set('EUR', { value: 1 / rate, timestamp: dataDate });
+        } else {
+          // USD→CHF etc. is already the right direction
+          results.set(currency, { value: rate, timestamp: dataDate });
+        }
+      }
+
+      console.log(`[Verifier] Frankfurter returned ${results.size}/${currencies.length} rates`);
+    } catch (error) {
+      console.warn(`[Verifier] Frankfurter fetch failed: ${error}`);
+    }
+
+    return results;
+  }
+
+  /**
+   * CoinPaprika — zero auth, zero rate limit, real-time crypto.
+   * 1 request per coin ID.
+   */
+  private async fetchCoinPaprika(ids: string[]): Promise<Map<string, { value: number; timestamp: Date }>> {
+    const results = new Map<string, { value: number; timestamp: Date }>();
+    if (ids.length === 0) return results;
+
+    const fetches = ids.map(async (id) => {
+      try {
+        const url = `https://api.coinpaprika.com/v1/tickers/${id}`;
+        const response = await fetch(url, {
+          headers: { 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!response.ok) return;
+        const data = await response.json() as {
+          quotes?: { USD?: { price?: number } };
+          last_updated?: string;
+        };
+        const price = data.quotes?.USD?.price;
+        if (price != null) {
+          results.set(id, {
+            value: price,
+            timestamp: data.last_updated ? new Date(data.last_updated) : new Date(),
+          });
+        }
+      } catch {
+        // Silent failure per coin
+      }
+    });
+
+    await Promise.allSettled(fetches);
+    if (results.size > 0) {
+      console.log(`[Verifier] CoinPaprika returned ${results.size}/${ids.length} prices`);
+    }
+    return results;
+  }
+
+  /**
+   * ExchangeRate-API — zero auth, ~1500 req/month free.
+   * Returns USD-based rates. EUR/USD = 1/rate(EUR), CHF passthrough.
+   */
+  private async fetchExchangeRate(currencies: string[]): Promise<Map<string, { value: number; timestamp: Date }>> {
+    const results = new Map<string, { value: number; timestamp: Date }>();
+    if (currencies.length === 0) return results;
+
+    try {
+      const url = 'https://api.exchangerate-api.com/v4/latest/USD';
+      const response = await fetch(url, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) {
+        console.warn(`[Verifier] ExchangeRate-API returned ${response.status}`);
+        return results;
+      }
+
+      const data = await response.json() as {
+        date?: string;
+        rates: Record<string, number>;
+      };
+
+      if (!data.rates) return results;
+      const dataDate = data.date ? new Date(data.date) : new Date();
+
+      for (const currency of currencies) {
+        const rate = data.rates[currency];
+        if (rate == null) continue;
+
+        if (currency === 'EUR') {
+          // USD→EUR rate, invert for EUR/USD
+          results.set('EUR', { value: 1 / rate, timestamp: dataDate });
+        } else {
+          // USD→CHF etc. passthrough
+          results.set(currency, { value: rate, timestamp: dataDate });
+        }
+      }
+
+      if (results.size > 0) {
+        console.log(`[Verifier] ExchangeRate-API returned ${results.size}/${currencies.length} rates`);
+      }
+    } catch (error) {
+      console.warn(`[Verifier] ExchangeRate-API fetch failed: ${error}`);
+    }
+
+    return results;
+  }
+
   // ==========================================================================
   // Confidence & Freshness
   // ==========================================================================
@@ -620,6 +883,14 @@ export class DataVerifier {
         return `https://www.coingecko.com/en/coins/${mapping.identifier}`;
       case 'fred':
         return `https://fred.stlouisfed.org/series/${mapping.identifier}`;
+      case 'fmp':
+        return `https://financialmodelingprep.com/quote/${mapping.identifier}`;
+      case 'frankfurter':
+        return `https://api.frankfurter.dev/v1/latest?base=USD&symbols=${mapping.identifier}`;
+      case 'coinpaprika':
+        return `https://coinpaprika.com/coin/${mapping.identifier}`;
+      case 'exchangerate':
+        return `https://api.exchangerate-api.com/v4/latest/USD`;
     }
   }
 

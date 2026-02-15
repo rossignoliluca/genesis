@@ -181,35 +181,54 @@ export class FixGenerator {
     moduleCode: string,
     busEvents: string,
   ): string {
-    return `You need to fix this issue in the Genesis codebase.
+    return `Fix this issue in the Genesis TypeScript codebase.
 
 ISSUE: ${proposal.title}
 EVIDENCE: ${proposal.evidence}
-TARGET MODULE: src/${proposal.targetModule}/
-SUGGESTED ACTION: ${proposal.suggestedAction}
+TARGET: src/${proposal.targetModule}/
+ACTION: ${proposal.suggestedAction}
 
-CURRENT CODE:
+TARGET MODULE CODE:
 ${moduleCode}
 
-AVAILABLE BUS EVENT TOPICS:
+AVAILABLE BUS TOPICS (from GenesisEventMap):
 ${busEvents}
 
-RULES:
-- Modify ONE file only
-- Use createPublisher() for bus event publishing
-- Import from '../bus/index.js' (always use .js extension in imports)
-- Keep changes minimal (< 30 lines of new code)
-- For "replace" type: provide the EXACT search string that exists in the file
-- For "append" type: provide code to add at the end of the file
+CORRECT PATTERN FOR BUS PUBLISHING:
+\`\`\`typescript
+import { createPublisher } from '../bus/index.js';
 
-Respond with ONLY valid JSON (no markdown, no explanation):
-{
-  "targetFile": "module-name/file.ts",
-  "type": "replace",
-  "search": "exact string to find in file",
-  "content": "replacement code",
-  "reason": "one line explanation"
-}`;
+const publisher = createPublisher('module-name');
+
+// publisher.publish(topic, payload) — topic MUST be a string from GenesisEventMap
+publisher.publish('topic.event.name', {
+  source: 'module-name',
+  precision: 1.0,
+  // ... event-specific fields
+} as any);
+\`\`\`
+
+REAL EXAMPLE — how revenue/bus-wiring.ts publishes:
+\`\`\`typescript
+import { createPublisher } from '../bus/index.js';
+const publisher = createPublisher('revenue');
+publisher.publish('revenue.stream.activated', { source: 'revenue', precision: 1.0, streamId: id } as any);
+\`\`\`
+
+CRITICAL RULES:
+1. Modify ONE file only (the index.ts of the target module)
+2. createPublisher() returns an OBJECT with a .publish() method — it is NOT callable directly
+3. All imports must use '.js' extension: from '../bus/index.js'
+4. The "search" field must be a VERBATIM copy-paste from the code shown above — match whitespace exactly
+5. Use "type": "replace" to replace an existing export block with the same exports + added import/publisher
+6. Keep added code to < 15 lines
+7. Cast payloads with "as any" to avoid type errors
+8. Pick the SIMPLEST relevant bus topic for the module (e.g., just emit on module init)
+
+OUTPUT FORMAT — respond with ONLY this JSON, no markdown, no explanation:
+{"targetFile":"${proposal.targetModule}/index.ts","type":"replace","search":"exact verbatim string from code","content":"replacement with bus publishing added","reason":"one line"}
+
+IMPORTANT: targetFile is relative to src/ — write "${proposal.targetModule}/index.ts", NOT "src/${proposal.targetModule}/index.ts"`;
   }
 
   private parseResponse(content: string, proposal: ImprovementProposal): ModificationPlan | null {
@@ -226,10 +245,16 @@ Respond with ONLY valid JSON (no markdown, no explanation):
         return null;
       }
 
+      // Safety net: strip leading "src/" if LLM included it
+      let targetFile: string = parsed.targetFile;
+      if (targetFile.startsWith('src/')) {
+        targetFile = targetFile.slice(4);
+      }
+
       const modification: Modification = {
         id: `fix-${proposal.targetModule}-${Date.now()}`,
         description: parsed.reason || proposal.title,
-        targetFile: parsed.targetFile,
+        targetFile,
         type: parsed.type,
         content: parsed.content,
         search: parsed.search,
@@ -254,11 +279,15 @@ Respond with ONLY valid JSON (no markdown, no explanation):
 // System Prompt
 // ============================================================================
 
-const SYSTEM_PROMPT = `You are Genesis, an autonomous AI system performing self-modification.
-You are analyzing your own source code to fix an issue detected by your self-model.
+const SYSTEM_PROMPT = `You are Genesis, an autonomous AI system modifying your own source code.
+Your self-model detected an issue. You must generate a precise code fix.
 
-You must output ONLY valid JSON — no explanations, no markdown formatting.
-The JSON describes a single code modification to fix the detected issue.
+ABSOLUTE REQUIREMENTS:
+- Output ONLY valid JSON. No markdown. No explanation. No \`\`\` fences.
+- The "search" field must be an EXACT substring from the code shown (copy-paste, preserve whitespace)
+- The "content" field replaces the search string entirely
+- createPublisher('name') returns { publish(topic, payload) } — call publisher.publish(), NEVER publisher()
+- All event payloads must be cast with "as any"
+- All imports use .js extension
 
-Be precise with search strings — they must match exactly what's in the file.
-Keep changes minimal and focused. One file, one modification.`;
+If you cannot produce a valid fix, output: {"targetFile":"","type":"replace","search":"","content":"","reason":"cannot fix"}`;

@@ -16,6 +16,7 @@
 
 import { getEventBus } from '../bus/index.js';
 import { getMemorySystem } from '../memory/index.js';
+import { recallModuleLessons, recordModuleLesson } from '../memory/module-hooks.js';
 import { getDecisionEngine } from './decision-engine.js';
 import { getStrategyOrchestrator } from './strategy-orchestrator.js';
 import { getPhiMonitor } from '../consciousness/phi-monitor.js';
@@ -213,6 +214,9 @@ export class GoalSystem {
   // ===========================================================================
 
   createGoal(proposal: GoalProposal): Goal {
+    // Recall past goal outcomes to inform planning
+    const pastOutcomes = recallModuleLessons('goal-system', 5);
+
     const id = `goal-${++this.idCounter}-${Date.now().toString(36)}`;
     const now = new Date();
 
@@ -361,6 +365,9 @@ export class GoalSystem {
     goal.status = 'abandoned';
     goal.context.abandonReason = reason;
 
+    // Record failure for future planning
+    recordModuleLesson('goal-system', `Goal abandoned: "${goal.title}" (domain=${goal.domain}, progress=${(goal.metrics.progress * 100).toFixed(0)}%, reason=${reason})`);
+
     this.emitEvent('goal.abandoned', {
       goalId,
       title: goal.title,
@@ -477,6 +484,9 @@ export class GoalSystem {
 
     // Store in memory
     this.storeGoalCompletion(goal);
+
+    // Persist goal outcome as a module lesson
+    recordModuleLesson('goal-system', `Goal completed: "${goal.title}" (domain=${goal.domain}, time=${goal.metrics.timeSpent}ms)`);
 
     this.emitEvent('goal.completed', {
       goalId,

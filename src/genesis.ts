@@ -146,6 +146,7 @@ import {
 
 // Integration — cross-module wiring
 import { bootstrapIntegration, wireAllModules, type WiringResult, getCognitiveBridge, type CognitiveBridge } from './integration/index.js';
+import { initLearningSignalMapper } from './memory/learning-signal-mapper.js';
 
 // Central Awareness — global consciousness over all modules
 import { getCentralAwareness, type CentralAwareness, type DecisionGate } from './consciousness/central-awareness.js';
@@ -2175,6 +2176,9 @@ export class Genesis {
     });
 
     console.log(`[Genesis] Central Awareness active: ${this.wiringResult.modulesWired} modules wired`);
+
+    // v34.0: Learning signal mapper — captures bus learning events into memory
+    initLearningSignalMapper();
 
     // v23.0: REST API Server — production HTTP endpoints
     if (this.config.apiServer) {

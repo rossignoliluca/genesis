@@ -16,6 +16,7 @@
 
 import { getEventBus } from '../bus/index.js';
 import { getMemorySystem } from '../memory/index.js';
+import { recallModuleLessons, recordModuleLesson } from '../memory/module-hooks.js';
 import { getDecisionEngine, type DecisionContext } from './decision-engine.js';
 import { getPhiMonitor } from '../consciousness/phi-monitor.js';
 
@@ -829,10 +830,20 @@ export class SelfReflectionEngine {
       };
     }
 
+    // Recall past bias detections to watch for recurring patterns
+    const knownBiases = recallModuleLessons('self-reflection', 5);
+
     const metrics = this.calculateMetrics(decisions);
     const biases = this.detectBiases(decisions);
     const patterns = this.detectFailurePatterns(decisions);
     const insights = this.generateInsights(metrics, biases, patterns);
+
+    // Persist newly detected biases to semantic memory
+    for (const bias of biases) {
+      if (bias.confidence > 0.6) {
+        recordModuleLesson('self-reflection', `Bias detected: ${bias.bias} (confidence=${bias.confidence.toFixed(2)}) in domains: ${bias.affectedDomains.join(', ')}`);
+      }
+    }
     const proposals = this.generateProposals(metrics, insights);
 
     // Store insights and proposals

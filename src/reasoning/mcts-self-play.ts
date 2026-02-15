@@ -22,6 +22,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { recordModuleLesson } from '../memory/module-hooks.js';
 
 // ============================================================================
 // Types
@@ -277,6 +278,14 @@ export class MCTSSelfPlay {
     const confidence = bestNode && bestNode.visits > 0
       ? bestNode.totalReward / bestNode.visits
       : 0;
+
+    // Record winning path parameters for future searches
+    if (confidence > 0.6 && bestPath.length > 0) {
+      const bestLeaf = this.tree.get(bestPath[bestPath.length - 1]);
+      if (bestLeaf) {
+        recordModuleLesson('mcts', `Best path: depth=${bestLeaf.depth}, visits=${bestLeaf.visits}, score=${confidence.toFixed(2)}, iterations=${iterations}`);
+      }
+    }
 
     return {
       bestPath: bestPath.map(id => this.tree.get(id)?.state || ''),

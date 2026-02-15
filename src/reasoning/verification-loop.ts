@@ -7,6 +7,7 @@
  */
 
 import { getMCPClient } from '../mcp/index.js';
+import { recallModuleLessons, recordModuleLesson } from '../memory/module-hooks.js';
 
 // Core Types
 
@@ -394,6 +395,9 @@ export class VerificationLoop {
     const maxIterations = context.maxIterations ?? 3;
     const strategies = Array.isArray(context.strategy) ? context.strategy : [context.strategy];
 
+    // Recall past verification lessons to inform this run
+    const pastLessons = recallModuleLessons('verification', 5);
+
     let currentOutput = output;
     let iteration = 0;
 
@@ -435,7 +439,12 @@ export class VerificationLoop {
         }
       }
 
-      // Failed to verify
+      // Failed to verify — record critical issues for future learning
+      const criticalIssues = allIssues.filter(i => i.severity === 'critical');
+      if (criticalIssues.length > 0) {
+        recordModuleLesson('verification', `Critical issues found: ${criticalIssues.map(i => i.description).join('; ')}`);
+      }
+
       return {
         verified: false,
         confidence: avgConfidence,

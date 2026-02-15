@@ -13,6 +13,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { recallModuleLessons, recordModuleLesson } from '../memory/module-hooks.js';
 
 // ============================================================================
 // Types
@@ -256,6 +257,15 @@ export class TRTEngine {
   ): Promise<TRTResult> {
     this.accumulator.reset();
 
+    // Seed accumulator with past lessons
+    const pastLessons = recallModuleLessons('trt', 5);
+    for (const lesson of pastLessons) {
+      this.accumulator.addFromVerification(
+        { id: 'seed', content: '', round: 0, score: 0, verificationResult: { confidence: 0, issues: [] } },
+        [lesson],
+      );
+    }
+
     const allCandidates: TRTCandidate[] = [];
     const improvementHistory: number[] = [];
     let bestScore = 0;
@@ -310,6 +320,15 @@ export class TRTEngine {
 
     // Sort all candidates by score
     allCandidates.sort((a, b) => b.score - a.score);
+
+    // Persist best insight if high-confidence result
+    const best = allCandidates[0];
+    if (best && best.score > 0.7) {
+      const topInsight = this.accumulator.getAllInsights()[0];
+      if (topInsight) {
+        recordModuleLesson('trt', `High-score (${best.score.toFixed(2)}): ${topInsight}`);
+      }
+    }
 
     return {
       bestCandidate: allCandidates[0],

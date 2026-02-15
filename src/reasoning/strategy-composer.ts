@@ -11,6 +11,8 @@
  *   ToT (breadth) → GoT (synthesis) → PRM (verification)
  */
 
+import { recallModuleLessons, recordModuleLesson } from '../memory/module-hooks.js';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -277,6 +279,9 @@ export class StrategyComposer {
     budget: number = 8192,
     problemSignature?: string,
   ): CompositionPlan {
+    // 0. Recall past composition lessons from long-term memory
+    const pastLessons = recallModuleLessons('strategy-composer', 3);
+
     // 1. Check learned patterns first
     if (problemSignature) {
       const learned = this.getLearnedPattern(problemSignature, complexity);
@@ -364,6 +369,12 @@ export class StrategyComposer {
     // Keep only last 500 entries
     if (this.compositionHistory.length > 500) {
       this.compositionHistory = this.compositionHistory.slice(-500);
+    }
+
+    // Persist high-correctness compositions to semantic memory
+    if (outcome.correctness > 0.8) {
+      const phases = plan.phases.map(p => p.strategy).join('→');
+      recordModuleLesson('strategy-composer', `Pattern "${plan.pattern}" (${phases}) scored ${outcome.correctness.toFixed(2)} on "${problemSignature}"`);
     }
   }
 

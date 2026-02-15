@@ -37,5 +37,19 @@ temp/
 .env.keys
 .genesis/
 
+# Generated output
+output/
+
+# Prototype rewrite
+src-new/
+
+# Ad-hoc test/demo scripts (root level)
+test-*.ts
+test-apis.ts
+
+# Planning docs (keep local, not in repo)
+CUTTING_EDGE_PLAN.md
+REBUILD_PLAN.md
+
 # Separate repos
 mcp-video-agent/

@@ -53,6 +53,7 @@ export interface ServiceDescriptor {
 export class DIContainer {
   private providers: Map<string, Provider> = new Map();
   private shutdownOrder: string[] = [];
+  private resolving_: Map<string, Promise<any>> = new Map();
 
   /**
    * Register a service provider.
@@ -90,35 +91,50 @@ export class DIContainer {
       return provider.instance as T;
     }
 
+    // Deduplicate concurrent singleton resolutions
+    if (provider.options.lifecycle === 'singleton' && this.resolving_.has(token)) {
+      return this.resolving_.get(token) as Promise<T>;
+    }
+
     // Circular dependency detection
     if (provider.resolving) {
       throw new Error(`[DI] Circular dependency detected for '${token}'`);
     }
 
-    provider.resolving = true;
-
-    try {
-      // Resolve dependencies first
-      for (const dep of provider.options.dependencies || []) {
-        if (!this.providers.has(dep)) {
-          throw new Error(`[DI] Missing dependency '${dep}' required by '${token}'`);
+    const doResolve = async (): Promise<T> => {
+      provider.resolving = true;
+      try {
+        // Resolve dependencies first
+        for (const dep of provider.options.dependencies || []) {
+          if (!this.providers.has(dep)) {
+            throw new Error(`[DI] Missing dependency '${dep}' required by '${token}'`);
+          }
+          await this.resolve(dep);
         }
-        await this.resolve(dep);
+
+        // Create instance
+        const instance = await provider.factory(this);
+
+        if (provider.options.lifecycle === 'singleton') {
+          provider.instance = instance;
+          provider.resolved = true;
+          this.shutdownOrder.push(token);
+        }
+
+        return instance as T;
+      } finally {
+        provider.resolving = false;
+        this.resolving_.delete(token);
       }
+    };
 
-      // Create instance
-      const instance = await provider.factory(this);
-
-      if (provider.options.lifecycle === 'singleton') {
-        provider.instance = instance;
-        provider.resolved = true;
-        this.shutdownOrder.push(token);
-      }
-
-      return instance as T;
-    } finally {
-      provider.resolving = false;
+    if (provider.options.lifecycle === 'singleton') {
+      const promise = doResolve();
+      this.resolving_.set(token, promise);
+      return promise;
     }
+
+    return doResolve();
   }
 
   /**
@@ -393,12 +409,12 @@ function registerCoreServices(di: DIContainer): void {
   }, { tags: ['cognition'] });
 
   di.register('metacognitive', async () => {
-    const { getMetacognitiveController } = await import('./metacognitive-controller.js');
+    const { getMetacognitiveController } = await import('../reasoning/metacognitive-controller.js');
     return getMetacognitiveController();
   }, { tags: ['cognition'], dependencies: ['thinking'] });
 
   di.register('mctsEngine', async () => {
-    const { getMCTSPRMEngine } = await import('./mcts-prm.js');
+    const { getMCTSPRMEngine } = await import('../reasoning/mcts-prm.js');
     return getMCTSPRMEngine();
   }, { tags: ['cognition'] });
 
@@ -452,4 +468,16 @@ function registerCoreServices(di: DIContainer): void {
     const { getDashboard } = await import('../observability/dashboard.js');
     return getDashboard();
   }, { tags: ['observability'], dependencies: ['eventBus'] });
+
+  // Layer 10: Config
+  di.register('config', async () => {
+    const { getConfig } = await import('../config/index.js');
+    return getConfig();
+  }, { tags: ['infrastructure'] });
+
+  // Layer 11: Newsletter
+  di.register('newsletter', async () => {
+    const { getNewsletterConnector } = await import('../content/connectors/newsletter.js');
+    return getNewsletterConnector();
+  }, { tags: ['content'] });
 }

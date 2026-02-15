@@ -40,6 +40,14 @@ export class FeedbackEngine {
       const entryPrice = parseFloat(market.level.replace(/,/g, '').replace('%', ''));
       if (isNaN(entryPrice)) continue;
 
+      // Compute confidence interval based on conviction
+      const ciMap: Record<string, [number, number]> = {
+        high: [0.65, 0.90],
+        medium: [0.45, 0.70],
+        low: [0.25, 0.50],
+      };
+      const ci = ciMap[pos.conviction] || [0.35, 0.65];
+
       predictions.push({
         id: randomUUID(),
         week: brief.week,
@@ -52,6 +60,7 @@ export class FeedbackEngine {
         entryTicker: proxyName,
         timeframeWeeks: 4,
         outcome: 'pending',
+        confidenceInterval: ci,
       });
     }
 
@@ -199,6 +208,18 @@ export class FeedbackEngine {
     // Base rate alpha (Item 8)
     const baseRateAlpha = this.computeBaseRateAlpha(overallHitRate, scored);
 
+    // Per-conviction accuracy
+    const byConviction: Record<string, { total: number; correct: number; hitRate: number }> = {};
+    for (const level of ['high', 'medium', 'low']) {
+      const preds = scored.filter(p => p.conviction === level && (p.outcome === 'correct' || p.outcome === 'incorrect'));
+      const correct = preds.filter(p => p.outcome === 'correct').length;
+      byConviction[level] = {
+        total: preds.length,
+        correct,
+        hitRate: preds.length > 0 ? correct / preds.length : 0,
+      };
+    }
+
     return {
       asOf: now.toISOString().slice(0, 10),
       windowWeeks,
@@ -212,6 +233,7 @@ export class FeedbackEngine {
       brierScore: Math.round(brierScore * 1000) / 1000,
       calibrationGrade,
       baseRateAlpha: Math.round(baseRateAlpha * 1000) / 1000,
+      byConviction,
     };
   }
 
@@ -224,7 +246,12 @@ export class FeedbackEngine {
     const directional = scored.filter(p => p.outcome === 'correct' || p.outcome === 'incorrect');
     if (directional.length === 0) return 0.25; // default to coin-flip
 
-    const convictionToProb: Record<string, number> = { high: 0.75, medium: 0.55, low: 0.35 };
+    // Calibrated mapping: probabilities should reflect observed hit rates per conviction level.
+    // These are starting points; the system adjusts via calibration feedback.
+    // high=80% (we should be right 4/5 times when highly convicted)
+    // medium=60% (we should be right 3/5 times)
+    // low=40% (barely above coin-flip, acknowledging uncertainty)
+    const convictionToProb: Record<string, number> = { high: 0.80, medium: 0.60, low: 0.40 };
     let sumSquaredError = 0;
 
     for (const p of directional) {
@@ -268,6 +295,7 @@ export class FeedbackEngine {
 
     const avgBaseRate = totalWeight > 0 ? weightedBaseRate / totalWeight : 0.50;
     return hitRate - avgBaseRate;
+  }
 
   /**
    * Generate calibration profile from track record.
@@ -280,8 +308,8 @@ export class FeedbackEngine {
 
     for (const ac of trackRecord.byAssetClass) {
       const directional = ac.correct + ac.incorrect;
-      if (directional < 2) {
-        // Not enough data to calibrate
+      if (directional < 5) {
+        // Not enough data for reliable calibration (need >= 5 calls)
         continue;
       }
 

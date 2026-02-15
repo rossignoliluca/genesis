@@ -103,8 +103,9 @@ function buildDocument(params: {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
   <title>${escapeHtml(title)} — ${escapeHtml(companyName)}</title>
-  ${includeChartJs ? '<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>' : ''}
+  ${includeChartJs ? '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>' : ''}
   <style>
     :root {
       --bg: ${bg};

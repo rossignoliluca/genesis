@@ -121,6 +121,8 @@ export class MCTSPRMEngine {
     const startTime = Date.now();
     this.nodes.clear();
     this.nodeCounter = 0;
+    // Safety: cap max nodes to prevent memory exhaustion
+    const MAX_NODES = 5000;
 
     // Step 0: Estimate difficulty → calibrate compute budget
     const difficulty = await this.estimateDifficulty(problem);
@@ -146,6 +148,8 @@ export class MCTSPRMEngine {
       // 2. EXPANSION: generate child thoughts via LLM
       if (!selected.isTerminal && selected.depth < this.config.maxDepth) {
         const childIds = await this.expand(selectedId, problem);
+        // Safety cap: prevent memory exhaustion
+        if (this.nodes.size > MAX_NODES) break;
 
         // 3. SIMULATION: score each new child with PRM
         for (const childId of childIds) {
@@ -208,38 +212,45 @@ export class MCTSPRMEngine {
    * UCB1(node) = value/visits + c * sqrt(ln(parent.visits) / visits)
    */
   private select(nodeId: string): string {
-    const node = this.nodes.get(nodeId)!;
+    let currentId = nodeId;
 
-    // If leaf or unexplored, select it
-    if (node.childIds.length === 0 || node.visits === 0) {
-      return nodeId;
-    }
+    // Iterative selection instead of recursive (prevents stack overflow)
+    for (let depth = 0; depth < this.config.maxDepth * 2; depth++) {
+      const node = this.nodes.get(currentId)!;
 
-    // Find child with highest UCB1 score
-    let bestScore = -Infinity;
-    let bestChildId = node.childIds[0];
-
-    for (const childId of node.childIds) {
-      const child = this.nodes.get(childId)!;
-
-      if (child.visits === 0) {
-        // Unexplored nodes have infinite priority
-        return childId;
+      // If leaf or unexplored, select it
+      if (node.childIds.length === 0 || node.visits === 0) {
+        return currentId;
       }
 
-      const exploitation = child.value / child.visits;
-      const exploration = this.config.explorationConstant *
-        Math.sqrt(Math.log(node.visits) / child.visits);
-      const ucb1 = exploitation + exploration;
+      // Find child with highest UCB1 score
+      let bestScore = -Infinity;
+      let bestChildId = node.childIds[0];
 
-      if (ucb1 > bestScore) {
-        bestScore = ucb1;
-        bestChildId = childId;
+      for (const childId of node.childIds) {
+        const child = this.nodes.get(childId)!;
+
+        if (child.visits === 0) {
+          // Unexplored nodes have infinite priority
+          return childId;
+        }
+
+        const exploitation = child.value / child.visits;
+        // Guard: parent.visits must be > 0 for log (already checked above)
+        const exploration = this.config.explorationConstant *
+          Math.sqrt(Math.log(Math.max(1, node.visits)) / child.visits);
+        const ucb1 = exploitation + exploration;
+
+        if (ucb1 > bestScore) {
+          bestScore = ucb1;
+          bestChildId = childId;
+        }
       }
+
+      currentId = bestChildId;
     }
 
-    // Recurse into best child
-    return this.select(bestChildId);
+    return currentId;
   }
 
   /**
@@ -563,7 +574,8 @@ score: [1-10]
       });
 
       return result.data?.choices?.[0]?.message?.content || '';
-    } catch {
+    } catch (e) {
+      console.warn('[MCTS] Default LLM call failed:', (e as Error)?.message);
       return '';
     }
   }

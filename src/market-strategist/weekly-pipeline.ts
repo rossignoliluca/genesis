@@ -249,6 +249,43 @@ export class WeeklyReportPipeline {
     // ---- STEP 2b: ENRICH from finance module (Item 3) ----
     await this.enrichFromFinanceModule(snapshot);
 
+    // ---- CRISIS DETECTION ----
+    const extremeMoves = snapshot.markets.filter(m => {
+      if (m.change1w === 'N/A') return false;
+      const chg = parseFloat(m.change1w.replace('%', '').replace('+', ''));
+      return !isNaN(chg) && Math.abs(chg) >= 5;
+    });
+    const isCrisisMode = extremeMoves.length >= 2;
+    if (isCrisisMode) {
+      console.log(`  [CRISIS MODE] ${extremeMoves.length} assets with >=5% weekly moves: ${extremeMoves.map(m => `${m.name} ${m.change1w}`).join(', ')}`);
+      // In crisis mode: boost data collection priority, add risk warnings
+      snapshot.themes.unshift('CRISIS: Extreme Market Volatility');
+      snapshot.headlines.unshift({
+        title: `CRISIS ALERT: ${extremeMoves.length} assets moved more than 5% this week`,
+        source: 'Genesis Risk Monitor',
+        url: '',
+        impact: 'high' as const,
+        theme: 'Crisis',
+      });
+    }
+
+    // ---- DATA QUALITY GATE ----
+    const validMarkets = snapshot.markets.filter(m => m.level !== 'N/A');
+    const validHeadlines = snapshot.headlines.length;
+    if (validMarkets.length < 3 && validHeadlines < 5) {
+      const msg = `Insufficient data: ${validMarkets.length} valid prices, ${validHeadlines} headlines. Minimum: 3 prices OR 5 headlines.`;
+      console.error(`  [DATA GATE] ${msg}`);
+      return {
+        success: false,
+        week,
+        date,
+        collected: { headlines: snapshot.headlines.length, sources: snapshot.sources.length, themes: snapshot.themes },
+        brief: { week, date, snapshot, narratives: [], positioning: [], risks: [], opportunities: [] } as any,
+        timings,
+        errors: [msg],
+      };
+    }
+
     // ---- STEP 3: ANALYZE (with calibration and regime context) ----
     console.log(`[3/8] ANALYZING and synthesizing narratives...`);
     const t3 = Date.now();
@@ -536,7 +573,7 @@ export class WeeklyReportPipeline {
             });
           }
         } catch (e) {
-          // Continue on failure
+          console.warn('[Pipeline] Firecrawl scrape failed:', (e as Error)?.message);
         }
       }
     }
@@ -561,7 +598,7 @@ export class WeeklyReportPipeline {
           accessedAt: now,
         });
       } catch (e) {
-        // Continue
+        console.warn('[Pipeline] Exa research failed:', (e as Error)?.message);
       }
     }
 
@@ -1807,7 +1844,17 @@ export class WeeklyReportPipeline {
   // ==========================================================================
 
   private async buildAssetSnapshots(headlines: Headline[]): Promise<AssetSnapshot[]> {
-    // Try to extract prices from headlines/scraped content using LLM
+    // Step 1: Try structured API extraction first (more reliable than LLM)
+    const apiSnapshots = await this.fetchFromAPIs();
+    if (apiSnapshots.length >= this.config.focusAssets.length * 0.5) {
+      // Fill in any missing assets with N/A
+      const apiMap = new Map(apiSnapshots.map(a => [a.name, a]));
+      return this.config.focusAssets.map(asset =>
+        apiMap.get(asset) || { name: asset, level: 'N/A', change1w: 'N/A', changeMtd: 'N/A', changeYtd: 'N/A', signal: 'neutral' as const, commentary: '' }
+      );
+    }
+
+    // Step 2: Fall back to LLM extraction (less reliable)
     try {
       const headlineText = headlines.slice(0, 30).map(h => h.title).join('\n');
 
@@ -1863,6 +1910,40 @@ Use "N/A" for missing data. Be precise with numbers — only use numbers you act
       signal: 'neutral' as const,
       commentary: '',
     }));
+  }
+
+  /**
+   * Fetch asset data from structured APIs (Yahoo Finance via DataVerifier).
+   * More reliable than LLM extraction from headlines.
+   */
+  private async fetchFromAPIs(): Promise<AssetSnapshot[]> {
+    const snapshots: AssetSnapshot[] = [];
+    try {
+      for (const asset of this.config.focusAssets.slice(0, 14)) {
+        try {
+          const report = await this.verifier.verifyAssets([
+            { name: asset, level: 'N/A', change1w: 'N/A', changeMtd: 'N/A', changeYtd: 'N/A', signal: 'neutral' as const, commentary: '' },
+          ]);
+          const dp = report.dataPoints[0];
+          if (dp?.verifiedPrice !== undefined) {
+            snapshots.push({
+              name: asset,
+              level: this.formatVerifiedPrice(dp.verifiedPrice, asset),
+              change1w: 'N/A',
+              changeMtd: 'N/A',
+              changeYtd: 'N/A',
+              signal: 'neutral' as const,
+              commentary: '',
+            });
+          }
+        } catch {
+          // Individual asset fetch failures are OK
+        }
+      }
+    } catch {
+      // API fetch failed entirely, will fall back to LLM
+    }
+    return snapshots;
   }
 
   private extractThemes(headlines: Headline[]): string[] {

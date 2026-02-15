@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
   "name": "io.github.rossignoliluca/genesis",
   "description": "Autonomous AI system with bio-inspired cognitive architecture, market intelligence, multi-agent orchestration, and recursive self-improvement. Exposes memory, reasoning, and market strategy tools via MCP.",
-  "version": "18.0.0",
+  "version": "33.0.0",
   "status": "active",
   "repository": {
     "url": "https://github.com/rossignoliluca/genesis",
@@ -14,7 +14,7 @@
     {
       "registryType": "npm",
       "identifier": "genesis-ai-cli",
-      "version": "18.0.0",
+      "version": "33.0.0",
       "transport": "stdio",
       "packageArguments": ["run", "mcp-server"],
       "environmentVariables": [

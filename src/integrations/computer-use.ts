@@ -11,6 +11,37 @@
 import { getMCPClient } from '../mcp/index.js';
 import type { IMCPClient } from '../mcp/index.js';
 
+// URL safety: block internal/private network access
+const BLOCKED_URL_PATTERNS = [
+  /^https?:\/\/localhost/i,
+  /^https?:\/\/127\./,
+  /^https?:\/\/10\./,
+  /^https?:\/\/172\.(1[6-9]|2\d|3[01])\./,
+  /^https?:\/\/192\.168\./,
+  /^https?:\/\/0\./,
+  /^https?:\/\/\[::1\]/,
+  /^file:/i,
+  /^data:/i,
+  /^javascript:/i,
+];
+
+function validateUrl(url: string): void {
+  for (const pattern of BLOCKED_URL_PATTERNS) {
+    if (pattern.test(url)) {
+      throw new Error(`[ComputerUse] Blocked URL (SSRF protection): ${url}`);
+    }
+  }
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new Error(`[ComputerUse] Only HTTP/HTTPS URLs allowed: ${url}`);
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('ComputerUse')) throw e;
+    throw new Error(`[ComputerUse] Invalid URL: ${url}`);
+  }
+}
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -57,12 +88,13 @@ export class ComputerUseController {
   async captureAndAnalyze(url?: string): Promise<ScreenshotAnalysis> {
     // Navigate if URL provided
     if (url) {
+      validateUrl(url);
       await this.mcp.call('playwright', 'browser_navigate', { url });
       // Wait for page to load
       await this.mcp.call('playwright', 'browser_wait_for', {
         state: 'networkidle',
         timeout: 10000,
-      }).catch(() => { /* timeout ok */ });
+      }).catch((e: Error) => { console.debug('[ComputerUse] Page load timeout:', e?.message); });
     }
 
     // Take screenshot
@@ -87,6 +119,7 @@ export class ComputerUseController {
       try {
         switch (action.type) {
           case 'navigate':
+            validateUrl(action.target!);
             await this.mcp.call('playwright', 'browser_navigate', { url: action.target });
             results.push(`Navigated to ${action.target}`);
             break;
@@ -158,7 +191,11 @@ Be precise with numbers. Include trend directions, axis labels, legends, and any
       const content = result.data?.choices?.[0]?.message?.content || '[]';
       const match = content.match(/\[[\s\S]*\]/);
       if (match) {
-        return JSON.parse(match[0]);
+        try {
+          return JSON.parse(match[0]);
+        } catch {
+          // LLM returned malformed JSON
+        }
       }
     } catch (error) {
       console.error('[ComputerUse] Chart extraction failed:', error);
@@ -207,7 +244,11 @@ Be precise with numbers. Include trend directions, axis labels, legends, and any
       const content = result.data?.choices?.[0]?.message?.content || '{}';
       const match = content.match(/\{[\s\S]*\}/);
       if (match) {
-        return JSON.parse(match[0]);
+        try {
+          return JSON.parse(match[0]);
+        } catch {
+          // LLM returned malformed JSON
+        }
       }
     } catch (error) {
       console.error('[ComputerUse] Screenshot analysis failed:', error);

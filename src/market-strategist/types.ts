@@ -213,6 +213,8 @@ export interface Prediction {
   exitPrice?: number;
   outcome?: 'correct' | 'incorrect' | 'neutral' | 'pending';
   pnlPercent?: number;
+  /** Confidence interval: [low, high] probability range */
+  confidenceInterval?: [number, number];
 }
 
 export interface AssetClassScore {
@@ -240,6 +242,7 @@ export interface TrackRecord {
   brierScore?: number;          // 0 = perfect, 1 = worst (lower is better)
   calibrationGrade?: 'A' | 'B' | 'C' | 'D' | 'F';
   baseRateAlpha?: number;       // Hit rate minus base rate (positive = adding value)
+  byConviction?: Record<string, { total: number; correct: number; hitRate: number }>;
 }
 
 export interface CalibrationProfile {

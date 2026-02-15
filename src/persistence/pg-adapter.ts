@@ -120,6 +120,10 @@ export class PgAdapter implements PersistenceAdapter {
     let paramIdx = 2;
 
     for (const [key, value] of Object.entries(filter)) {
+      // Prevent SQL injection: only allow alphanumeric + underscore in JSONB keys
+      if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
+        throw new Error(`[PgAdapter] Invalid filter key: ${key}`);
+      }
       conditions.push(`data->>'${key}' = $${paramIdx}`);
       params.push(String(value));
       paramIdx++;
@@ -192,7 +196,7 @@ export class JsonFileAdapter implements PersistenceAdapter {
           this.store_.set(collection, map);
         }
       }
-    } catch { /* fresh start */ }
+    } catch (e) { console.warn('[PgAdapter] Fresh start — could not load state:', e instanceof Error ? e.message : e); }
   }
 
   async store(collection: string, id: string, data: Record<string, any>): Promise<void> {

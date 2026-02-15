@@ -154,12 +154,11 @@ export class DataVerifier {
     const warnings: string[] = [];
     const corrections: string[] = [];
 
-    // Batch fetch all prices from all providers in parallel
-    const allPrices = await this.fetchAllPrices();
+    // Only fetch prices for the assets we're verifying (not all in ASSET_PROVIDER_MAP)
+    const assetNames = new Set(assets.map(a => a.name));
+    const allPrices = await this.fetchAllPrices(assetNames);
 
     for (const asset of assets) {
-      if (asset.level === 'N/A') continue;
-
       const config = ASSET_PROVIDER_MAP.find(a => a.name === asset.name);
       if (!config) {
         // No provider mapping — mark as unverified
@@ -274,15 +273,16 @@ export class DataVerifier {
   // Batch Fetch — 3 parallel HTTP requests
   // ==========================================================================
 
-  private async fetchAllPrices(): Promise<Map<string, { value: number; timestamp: Date }>> {
+  private async fetchAllPrices(requestedAssets?: Set<string>): Promise<Map<string, { value: number; timestamp: Date }>> {
     const results = new Map<string, { value: number; timestamp: Date }>();
 
-    // Collect unique identifiers per provider
+    // Collect unique identifiers per provider — only for requested assets
     const yahooSymbols = new Set<string>();
     const coingeckoIds = new Set<string>();
     const fredSeries = new Set<string>();
 
     for (const asset of ASSET_PROVIDER_MAP) {
+      if (requestedAssets && !requestedAssets.has(asset.name)) continue;
       for (const p of asset.providers) {
         switch (p.provider) {
           case 'yahoo': yahooSymbols.add(p.identifier); break;
@@ -335,60 +335,63 @@ export class DataVerifier {
 
     const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-    // Fetch each symbol via v8/finance/chart in parallel
-    const fetches = symbols.map(async (symbol) => {
+    // Fetch symbols via v8/finance/chart in batches of 2 with 2.5s delays to avoid 429
+    const BATCH_SIZE = 2;
+    const BATCH_DELAY_MS = 2500;
+    for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
+      if (i > 0) await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
+      const batch = symbols.slice(i, i + BATCH_SIZE);
+      await Promise.allSettled(batch.map(symbol => this.fetchYahooSingle(symbol, BROWSER_UA, results)));
+    }
+    return results;
+  }
+
+  private async fetchYahooSingle(
+    symbol: string,
+    ua: string,
+    results: Map<string, { value: number; timestamp: Date }>,
+  ): Promise<void> {
+    const decodedSymbol = decodeURIComponent(symbol);
+
+    // Try up to 2 attempts with backoff for 429s
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        // Decode URL-encoded symbols for the API path (e.g. %5EGSPC → ^GSPC)
-        const decodedSymbol = decodeURIComponent(symbol);
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(decodedSymbol)}?interval=1d&range=1d`;
+        if (attempt > 0) await new Promise(r => setTimeout(r, 3000));
+
+        const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(decodedSymbol)}?interval=1d&range=1d`;
 
         const response = await fetch(url, {
-          headers: {
-            'User-Agent': BROWSER_UA,
-            'Accept': 'application/json',
-          },
+          headers: { 'User-Agent': ua, 'Accept': 'application/json' },
           signal: AbortSignal.timeout(10000),
         });
 
+        if (response.status === 429 && attempt === 0) {
+          continue; // Retry after backoff
+        }
+
         if (!response.ok) {
-          // Try AlphaVantage as fallback for this symbol
           const avResult = await this.fetchAlphaVantage(decodedSymbol);
-          if (avResult) {
-            results.set(symbol, avResult);
-          } else {
-            console.warn(`[Verifier] Yahoo v8 returned ${response.status} for ${decodedSymbol}`);
-          }
+          if (avResult) results.set(symbol, avResult);
+          else console.warn(`[Verifier] Yahoo v8 returned ${response.status} for ${decodedSymbol}`);
           return;
         }
 
         const data = await response.json() as {
-          chart?: {
-            result?: Array<{
-              meta?: {
-                regularMarketPrice?: number;
-                regularMarketTime?: number;
-                symbol?: string;
-              };
-            }>;
-          };
+          chart?: { result?: Array<{ meta?: { regularMarketPrice?: number; regularMarketTime?: number } }> };
         };
 
         const meta = data.chart?.result?.[0]?.meta;
         if (meta?.regularMarketPrice != null) {
           results.set(symbol, {
             value: meta.regularMarketPrice,
-            timestamp: meta.regularMarketTime
-              ? new Date(meta.regularMarketTime * 1000)
-              : new Date(),
+            timestamp: meta.regularMarketTime ? new Date(meta.regularMarketTime * 1000) : new Date(),
           });
         }
+        return; // Success
       } catch (error) {
-        console.warn(`[Verifier] Yahoo v8 fetch failed for ${symbol}: ${error}`);
+        if (attempt === 1) console.warn(`[Verifier] Yahoo v8 fetch failed for ${symbol}: ${error}`);
       }
-    });
-
-    await Promise.allSettled(fetches);
-    return results;
+    }
   }
 
   /**

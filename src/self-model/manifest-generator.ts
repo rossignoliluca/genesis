@@ -217,13 +217,15 @@ export class ManifestGenerator {
     for (const file of tsFiles) {
       try {
         const content = readFileSync(file, 'utf-8');
-        const lines = content.split('\n').slice(0, 30); // Only read first 30 lines
+        const lines = content.split('\n').slice(0, 40); // First 40 lines (imports)
 
         for (const line of lines) {
-          // Match: from '../module-name'
-          const importMatch = line.match(/from\s+['"]\.\.\/([^'"\/]+)['"]/);
+          // Match: from '../module-name' or from '../module-name/subpath.js'
+          const importMatch = line.match(/from\s+['"]\.\.\/([^'"\/]+)/);
           if (importMatch) {
-            deps.add(importMatch[1]);
+            // Strip .js/.ts extension for root-level file imports (e.g., '../types.js' → 'types')
+            const depName = importMatch[1].replace(/\.[jt]sx?$/, '');
+            deps.add(depName);
           }
         }
       } catch {

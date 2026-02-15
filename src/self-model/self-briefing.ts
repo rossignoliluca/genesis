@@ -54,6 +54,7 @@ const LAYER_MAP: Record<string, string> = {
   di: 'L6 Infra', streaming: 'L6 Infra', concurrency: 'L6 Infra',
   pipeline: 'L6 Infra', deployment: 'L6 Infra', sync: 'L6 Infra',
   cli: 'L6 Infra', persistence: 'L6 Infra', ui: 'L6 Infra', execution: 'L6 Infra',
+  config: 'L6 Infra', utils: 'L6 Infra',
   // L7 Cognitive
   semiotics: 'L7 Cognitive', morphogenetic: 'L7 Cognitive', swarm: 'L7 Cognitive',
   symbiotic: 'L7 Cognitive', 'second-order': 'L7 Cognitive', exotic: 'L7 Cognitive',
@@ -120,7 +121,7 @@ export class SelfBriefingGenerator {
 
     const sessionEntry = this.observatory.getSessionEntry();
     const markdown = this.buildMarkdown(
-      entries.length, layers, working, degraded, broken, untested, dormant,
+      entries, layers, working, degraded, broken, untested, dormant,
       recentErrors, proposals, snapshot, sessionEntry,
     );
 
@@ -150,7 +151,7 @@ export class SelfBriefingGenerator {
   }
 
   private buildMarkdown(
-    moduleCount: number,
+    entries: ModuleManifestEntry[],
     layers: ArchitectureLayer[],
     working: string[],
     degraded: Array<{ name: string; detail: string }>,
@@ -166,8 +167,11 @@ export class SelfBriefingGenerator {
 
     // Header
     const version = this.getVersion();
+    const moduleCount = entries.length;
+    const totalKB = Math.round(entries.reduce((s, e) => s + e.totalSize, 0) / 1024);
+    const totalFiles = entries.reduce((s, e) => s + e.fileCount, 0);
     lines.push(`# Genesis Self-Briefing (${new Date().toISOString()})`);
-    lines.push(`v${version} | ${moduleCount} modules | Uptime: ${this.formatUptime()}`);
+    lines.push(`v${version} | ${moduleCount} modules | ${totalFiles} files | ${totalKB}KB | Uptime: ${this.formatUptime()}`);
     lines.push('');
 
     // Architecture
@@ -176,6 +180,33 @@ export class SelfBriefingGenerator {
       lines.push(`${layer.name}: ${layer.modules.join(', ')}`);
     }
     lines.push('');
+
+    // Top modules by size (gives context about codebase weight)
+    const topModules = [...entries].sort((a, b) => b.totalSize - a.totalSize).slice(0, 8);
+    lines.push('## Top Modules (by size)');
+    for (const m of topModules) {
+      const kb = Math.round(m.totalSize / 1024);
+      const desc = m.description ? ' — ' + m.description.substring(0, 60) : '';
+      const bus = m.busTopics.length > 0 ? ' [BUS]' : '';
+      lines.push(`  ${m.name} (${m.fileCount} files, ${kb}KB)${bus}${desc}`);
+    }
+    lines.push('');
+
+    // Dependency hubs (most depended-on modules)
+    const depCounts = new Map<string, number>();
+    for (const entry of entries) {
+      for (const dep of entry.dependencies) {
+        depCounts.set(dep, (depCounts.get(dep) || 0) + 1);
+      }
+    }
+    const topHubs = Array.from(depCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6);
+    if (topHubs.length > 0) {
+      lines.push('## Dependency Hubs');
+      lines.push(topHubs.map(([name, count]) => `${name}(${count})`).join(', '));
+      lines.push('');
+    }
 
     // Health Dashboard
     lines.push('## Health Dashboard');
@@ -226,8 +257,10 @@ export class SelfBriefingGenerator {
     }
 
     // Session Stats
+    const busConnected = entries.filter(e => e.busTopics.length > 0).length;
+    const withDeps = entries.filter(e => e.dependencies.length > 0).length;
     lines.push('## Session Stats');
-    lines.push(`Events: ${snapshot.totalEvents} | Errors: ${sessionEntry.errorsDetected} | Active modules: ${snapshot.modulesActive}`);
+    lines.push(`Events: ${snapshot.totalEvents} | Errors: ${sessionEntry.errorsDetected} | Active: ${snapshot.modulesActive} | Bus-wired: ${busConnected}/${moduleCount} | Cross-deps: ${withDeps}/${moduleCount}`);
 
     return lines.join('\n');
   }

@@ -12,6 +12,16 @@ import type { CapabilityAssessor } from './capability-assessor.js';
 import { existsSync, statSync } from 'fs';
 import { join } from 'path';
 
+// Infrastructure modules that don't need bus topics — they ARE the infrastructure
+const INFRA_MODULES = new Set([
+  'bus', 'di', 'config', 'utils', 'hooks', 'lifecycle', 'persistence',
+  'streaming', 'concurrency', 'pipeline', 'sync', 'api', 'ui',
+  'deployment', 'dashboard', 'observability', 'integration', 'integrations',
+  'execution', 'tools', 'subagents', 'agents', 'mcp', 'mcp-server',
+  'mcp-servers', 'mcp-finance', 'llm', 'embeddings', 'services',
+  'self-model', 'presentation', 'governance',
+]);
+
 export class ImprovementProposer {
   constructor(
     private manifest: ManifestGenerator,
@@ -36,8 +46,9 @@ export class ImprovementProposer {
 
   private detectUnwiredModules(): ImprovementProposal[] {
     const assessments = this.assessor.assessAll();
+    // Exclude infrastructure modules that don't need bus topics
     const unwired = Array.from(assessments.values()).filter(
-      a => a.integrationQuality === 'disconnected',
+      a => a.integrationQuality === 'disconnected' && !INFRA_MODULES.has(a.moduleName),
     );
 
     if (unwired.length === 0) return [];
@@ -128,12 +139,12 @@ export class ImprovementProposer {
       return [{
         id: `proposal-capability-self-model-${Date.now()}`,
         category: 'capability',
-        priority: 0.3,
-        title: 'Generate initial holistic self-model',
-        description: 'No self-model file exists',
+        priority: 0.2,
+        title: 'Persist self-model state to disk',
+        description: 'No persisted self-model found — cross-session memory not yet active',
         targetModule: 'self-model',
         evidence: 'No .genesis/holistic-self-model.json found',
-        suggestedAction: 'Run self-model generation to create baseline',
+        suggestedAction: 'Boot self-model with bus running to accumulate health data, then persist',
         estimatedEffort: 'trivial',
       }];
     }

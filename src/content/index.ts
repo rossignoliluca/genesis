@@ -198,6 +198,32 @@ export {
 
 // =============================================================================
 // Module Initialization
+
+/**
+ * Content Module Lifecycle
+ */
+export class ContentModule {
+  private scheduler?: ContentScheduler;
+  private analytics?: AnalyticsAggregator;
+  private orchestrator?: ContentOrchestrator;
+
+  start(): void {
+    this.scheduler = getContentScheduler();
+    this.analytics = getAnalyticsAggregator();
+    this.orchestrator = getContentOrchestrator();
+  }
+
+  shutdown(): void {
+    (this.scheduler as any)?.shutdown?.();
+    (this.analytics as any)?.shutdown?.();
+    (this.orchestrator as any)?.shutdown?.();
+    this.scheduler = undefined;
+    this.analytics = undefined;
+    this.orchestrator = undefined;
+  }
+}
+
+export const contentModule = new ContentModule();
 // =============================================================================
 
 export interface ContentModuleConfig {

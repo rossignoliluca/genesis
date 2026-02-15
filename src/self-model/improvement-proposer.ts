@@ -9,7 +9,7 @@ import type { ImprovementProposal } from './types.js';
 import type { ManifestGenerator } from './manifest-generator.js';
 import type { RuntimeObservatory } from './runtime-observatory.js';
 import type { CapabilityAssessor } from './capability-assessor.js';
-import { existsSync, statSync } from 'fs';
+import { existsSync, statSync, readFileSync } from 'fs';
 import { join } from 'path';
 import type { ModuleManifestEntry } from './types.js';
 
@@ -39,6 +39,8 @@ export class ImprovementProposer {
     proposals.push(...this.detectDegradedModules());
     proposals.push(...this.detectStaleSelfModel());
     proposals.push(...this.detectDormantModules());
+    proposals.push(...this.detectMissingShutdown());
+    proposals.push(...this.detectUnprotectedTimers());
 
     return proposals
       .sort((a, b) => b.priority - a.priority)
@@ -203,5 +205,93 @@ export class ImprovementProposer {
       suggestedAction: `Review lifecycle initialization sequence`,
       estimatedEffort: 'medium',
     }];
+  }
+
+  // ==========================================================================
+  // Structural Code Analysis Detectors
+  // ==========================================================================
+
+  /**
+   * Detect modules that have start() but no stop()/shutdown()/cleanup().
+   * These leak timers/listeners on restart.
+   */
+  private detectMissingShutdown(): ImprovementProposal[] {
+    const proposals: ImprovementProposal[] = [];
+    const manifest = this.manifest.generate();
+
+    for (const entry of manifest) {
+      if (INFRA_MODULES.has(entry.name) || !entry.hasIndex) continue;
+
+      try {
+        const indexPath = join(this.rootPath, 'src', entry.name, 'index.ts');
+        const content = readFileSync(indexPath, 'utf-8');
+
+        const hasStart = /\bstart\s*\(/.test(content);
+        const hasStop = /\b(stop|shutdown|cleanup|destroy|dispose|close)\s*\(/.test(content);
+
+        if (hasStart && !hasStop) {
+          proposals.push({
+            id: `proposal-lifecycle-${entry.name}-${Date.now()}`,
+            category: 'reliability',
+            priority: 0.6,
+            title: `Add shutdown to ${entry.name}`,
+            description: `Module has start() but no stop/shutdown — resources leak on restart`,
+            targetModule: entry.name,
+            evidence: `start() found but no stop()/shutdown()/cleanup()/destroy() method`,
+            suggestedAction: `Add a shutdown() or stop() method that cleans up timers, listeners, and state`,
+            estimatedEffort: 'small',
+          });
+        }
+      } catch {
+        // skip unreadable
+      }
+    }
+
+    return proposals;
+  }
+
+  /**
+   * Detect setInterval callbacks without try/catch protection.
+   * An unhandled throw inside setInterval kills the timer silently.
+   */
+  private detectUnprotectedTimers(): ImprovementProposal[] {
+    const proposals: ImprovementProposal[] = [];
+    const manifest = this.manifest.generate();
+
+    for (const entry of manifest) {
+      if (INFRA_MODULES.has(entry.name) || !entry.hasIndex) continue;
+
+      try {
+        const indexPath = join(this.rootPath, 'src', entry.name, 'index.ts');
+        const content = readFileSync(indexPath, 'utf-8');
+        const lines = content.split('\n');
+
+        // Find setInterval calls and check if the callback has try/catch
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes('setInterval')) {
+            // Look at surrounding 10 lines for try/catch
+            const context = lines.slice(i, Math.min(i + 10, lines.length)).join('\n');
+            if (!context.includes('try')) {
+              proposals.push({
+                id: `proposal-safety-${entry.name}-timer-${Date.now()}`,
+                category: 'reliability',
+                priority: 0.55,
+                title: `Protect timer in ${entry.name}`,
+                description: `setInterval callback at line ${i + 1} has no try/catch — unhandled error kills the timer silently`,
+                targetModule: entry.name,
+                evidence: `Unprotected setInterval at line ${i + 1}: ${lines[i].trim().substring(0, 80)}`,
+                suggestedAction: `Wrap the setInterval callback body in try/catch to prevent silent timer death`,
+                estimatedEffort: 'small',
+              });
+              break; // One proposal per module
+            }
+          }
+        }
+      } catch {
+        // skip
+      }
+    }
+
+    return proposals;
   }
 }

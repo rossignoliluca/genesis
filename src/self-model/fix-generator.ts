@@ -181,6 +181,9 @@ export class FixGenerator {
     moduleCode: string,
     busEvents: string,
   ): string {
+    // Category-specific context
+    const categoryContext = this.getCategoryContext(proposal, busEvents);
+
     return `Fix this issue in the Genesis TypeScript codebase.
 
 ISSUE: ${proposal.title}
@@ -191,44 +194,91 @@ ACTION: ${proposal.suggestedAction}
 TARGET MODULE CODE:
 ${moduleCode}
 
-AVAILABLE BUS TOPICS (from GenesisEventMap):
+${categoryContext}
+
+CRITICAL RULES:
+1. Modify ONE file only (the index.ts of the target module)
+2. All imports must use '.js' extension
+3. The "search" field must be a VERBATIM copy-paste from the code shown above — match whitespace exactly
+4. Use "type": "replace" to replace existing code with fixed version
+5. Keep added code to < 20 lines
+6. Preserve ALL existing exports and functionality — only ADD the fix
+7. Cast any event payloads with "as any"
+
+OUTPUT FORMAT — respond with ONLY this JSON, no markdown, no explanation:
+{"targetFile":"${proposal.targetModule}/index.ts","type":"replace","search":"exact verbatim string from code","content":"replacement with fix added","reason":"one line"}
+
+IMPORTANT: targetFile is relative to src/ — write "${proposal.targetModule}/index.ts", NOT "src/${proposal.targetModule}/index.ts"`;
+  }
+
+  private getCategoryContext(proposal: ImprovementProposal, busEvents: string): string {
+    switch (proposal.category) {
+      case 'wiring':
+        return `AVAILABLE BUS TOPICS (from GenesisEventMap):
 ${busEvents}
 
 CORRECT PATTERN FOR BUS PUBLISHING:
 \`\`\`typescript
 import { createPublisher } from '../bus/index.js';
-
 const publisher = createPublisher('module-name');
-
-// publisher.publish(topic, payload) — topic MUST be a string from GenesisEventMap
 publisher.publish('topic.event.name', {
   source: 'module-name',
   precision: 1.0,
-  // ... event-specific fields
 } as any);
 \`\`\`
 
-REAL EXAMPLE — how revenue/bus-wiring.ts publishes:
+NOTES:
+- createPublisher() returns an OBJECT with a .publish() method — NOT callable directly
+- Pick the SIMPLEST relevant bus topic (e.g., just emit on module init)`;
+
+      case 'reliability':
+        if (proposal.title.includes('shutdown') || proposal.title.includes('stop')) {
+          return `FIX PATTERN — Add shutdown/stop method:
 \`\`\`typescript
-import { createPublisher } from '../bus/index.js';
-const publisher = createPublisher('revenue');
-publisher.publish('revenue.stream.activated', { source: 'revenue', precision: 1.0, streamId: id } as any);
+// If class has start(), add a matching stop()/shutdown():
+shutdown(): void {
+  // Cast subsystems to any for optional shutdown — they may not have it typed
+  (this.subsystem as any)?.shutdown?.();
+  // Clear any intervals/timeouts owned by this class
+  if (this.timer) { clearInterval(this.timer); this.timer = null; }
+}
 \`\`\`
 
-CRITICAL RULES:
-1. Modify ONE file only (the index.ts of the target module)
-2. createPublisher() returns an OBJECT with a .publish() method — it is NOT callable directly
-3. All imports must use '.js' extension: from '../bus/index.js'
-4. The "search" field must be a VERBATIM copy-paste from the code shown above — match whitespace exactly
-5. Use "type": "replace" to replace an existing export block with the same exports + added import/publisher
-6. Keep added code to < 15 lines
-7. Cast payloads with "as any" to avoid type errors
-8. Pick the SIMPLEST relevant bus topic for the module (e.g., just emit on module init)
+CRITICAL TYPE SAFETY:
+- When calling shutdown/stop on subsystems that may not have it typed, use "(this.x as any)?.shutdown?.()"
+- This avoids TS error "Property 'shutdown' does not exist on type"
+- For own class timers, use clearInterval/clearTimeout directly`;
+        }
 
-OUTPUT FORMAT — respond with ONLY this JSON, no markdown, no explanation:
-{"targetFile":"${proposal.targetModule}/index.ts","type":"replace","search":"exact verbatim string from code","content":"replacement with bus publishing added","reason":"one line"}
+        if (proposal.title.includes('timer') || proposal.title.includes('Timer')) {
+          return `FIX PATTERN — Protect setInterval callback:
+\`\`\`typescript
+// BEFORE (unsafe):
+this.timer = setInterval(() => {
+  this.doSomething(); // throws → timer dies silently
+}, 5000);
 
-IMPORTANT: targetFile is relative to src/ — write "${proposal.targetModule}/index.ts", NOT "src/${proposal.targetModule}/index.ts"`;
+// AFTER (safe):
+this.timer = setInterval(() => {
+  try {
+    this.doSomething();
+  } catch (err) {
+    console.error('[ModuleName] Timer error:', err);
+  }
+}, 5000);
+\`\`\`
+
+NOTES:
+- Wrap ONLY the callback body, keep the setInterval structure
+- Log the error with module name prefix for debugging
+- Do NOT rethrow — let the timer survive`;
+        }
+
+        return `Fix the reliability issue described above. Keep changes minimal.`;
+
+      default:
+        return `Fix the issue described above. Keep changes minimal and focused.`;
+    }
   }
 
   private parseResponse(content: string, proposal: ImprovementProposal): ModificationPlan | null {

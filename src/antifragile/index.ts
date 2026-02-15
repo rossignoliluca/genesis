@@ -29,6 +29,13 @@ export class AntifragileSystem {
     this.avoidance.start();
   }
 
+  /** Shutdown all subsystems */
+  shutdown(): void {
+    (this.pipeline as any)?.shutdown?.();
+    (this.avoidance as any)?.shutdown?.();
+    (this.chaos as any)?.shutdown?.();
+  }
+
   /** Check if an action is safe before executing it */
   checkAction(domain: string, description: string, context?: Record<string, unknown>): ActionCheckResult {
     return this.avoidance.checkAction(domain, description, context);

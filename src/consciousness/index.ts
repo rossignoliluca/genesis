@@ -187,7 +187,13 @@ export class ConsciousnessSystem {
 
     // Start snapshot timer
     this.snapshotTimer = setInterval(
-      () => this.takeSnapshot(),
+      () => {
+        try {
+          this.takeSnapshot();
+        } catch (err) {
+          console.error('[ConsciousnessSystem] Timer error:', err);
+        }
+      },
       this.config.monitor.snapshotIntervalMs
     );
 

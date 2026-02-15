@@ -56,6 +56,10 @@ const MAX_FIXES_PER_CYCLE = 3;
 const MIN_PRIORITY = 0.5;
 const TSC_TIMEOUT = 60_000; // 60s
 
+// Known pre-existing error files — excluded from verification
+// (populated dynamically at cycle start via baseline tsc)
+let KNOWN_ERROR_FILES = new Set<string>();
+
 // ============================================================================
 // Self-Improvement Loop
 // ============================================================================
@@ -76,6 +80,9 @@ export class SelfImprovementLoop {
   async runCycle(): Promise<CycleResult> {
     const startTime = Date.now();
     const details: FixAttempt[] = [];
+
+    // STEP 0: Baseline — capture pre-existing tsc errors so we only flag NEW ones
+    KNOWN_ERROR_FILES = this.getBaselineErrors();
 
     // STEP 1: Get proposals from self-model
     const allProposals = this.selfModel.proposeImprovements();
@@ -197,15 +204,15 @@ export class SelfImprovementLoop {
     }
 
     // STEP 7: Verify production build
-    const buildOk = this.verifyBuild();
-    if (!buildOk) {
+    const buildResult = this.verifyBuildDetailed();
+    if (!buildResult.ok) {
       // STEP 8: Rollback
       this.rollback(snapshots);
       return {
         proposal,
         status: 'rollback',
         plan,
-        error: 'Production build failed after apply — rolled back',
+        error: `Build failed (new errors in: ${buildResult.newErrorFiles.join(', ')}) — rolled back`,
       };
     }
 
@@ -306,40 +313,34 @@ export class SelfImprovementLoop {
   // Build Verification
   // ==========================================================================
 
-  private verifyBuild(): boolean {
+  /**
+   * Run tsc before any changes to capture pre-existing error files.
+   */
+  private getBaselineErrors(): Set<string> {
     const result = spawnSync('npx', ['tsc', '--noEmit'], {
       cwd: this.rootPath,
       timeout: TSC_TIMEOUT,
       encoding: 'utf-8',
     });
 
-    // Check for NEW errors in our modified files
-    // Pre-existing errors in other files are OK
-    // For now, just check exit code — tsc returns 0 only if clean
-    // Since we have pre-existing errors, we need a smarter check:
-    return this.checkNoNewErrors(result.stdout || '', result.stderr || '');
+    const output = (result.stdout || '') + (result.stderr || '');
+    const files = new Set<string>();
+    const errorRegex = /^(src\/[^(]+)\(/gm;
+    let match;
+    while ((match = errorRegex.exec(output)) !== null) {
+      files.add(match[1]);
+    }
+    return files;
   }
 
-  /**
-   * Check that tsc output has no NEW errors compared to baseline.
-   * We know there are 4 pre-existing errors in:
-   * - src/content/strategy-wiring.ts
-   * - src/reasoning/mcts-prm.ts
-   * - src/reasoning/strategy-executor.ts
-   * If any new files appear in errors, the fix introduced problems.
-   */
-  private checkNoNewErrors(stdout: string, stderr: string): boolean {
-    const output = stdout + stderr;
+  private verifyBuildDetailed(): { ok: boolean; newErrorFiles: string[] } {
+    const result = spawnSync('npx', ['tsc', '--noEmit'], {
+      cwd: this.rootPath,
+      timeout: TSC_TIMEOUT,
+      encoding: 'utf-8',
+    });
 
-    // Known pre-existing error files
-    const KNOWN_ERROR_FILES = new Set([
-      'src/content/strategy-wiring.ts',
-      'src/reasoning/mcts-prm.ts',
-      'src/reasoning/strategy-executor.ts',
-      'src/market-strategist/feedback.ts',
-    ]);
-
-    // Extract error file paths from tsc output
+    const output = (result.stdout || '') + (result.stderr || '');
     const errorFiles = new Set<string>();
     const errorRegex = /^(src\/[^(]+)\(/gm;
     let match;
@@ -347,15 +348,10 @@ export class SelfImprovementLoop {
       errorFiles.add(match[1]);
     }
 
-    // Check if any NEW files have errors
-    for (const file of errorFiles) {
-      if (!KNOWN_ERROR_FILES.has(file)) {
-        return false; // New error introduced
-      }
-    }
-
-    return true;
+    const newErrorFiles = Array.from(errorFiles).filter(f => !KNOWN_ERROR_FILES.has(f));
+    return { ok: newErrorFiles.length === 0, newErrorFiles };
   }
+
 
   // ==========================================================================
   // Runtime Actions

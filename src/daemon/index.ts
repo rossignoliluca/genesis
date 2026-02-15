@@ -766,6 +766,7 @@ export class Daemon {
 
     // Check allostasis state periodically
     this.allostasisCheckTimer = setInterval(async () => {
+      try {
       if (!this.deps.allostasis || this.state !== 'running') return;
 
       const alloState = this.deps.allostasis.getState();
@@ -799,6 +800,9 @@ export class Daemon {
       // High error rate - signal nociception if available
       if (alloState.errorRate > 0.1 && this.deps.nociception) {
         this.deps.nociception.stimulus('cognitive', alloState.errorRate, 'High error rate detected');
+      }
+      } catch (err) {
+        console.error('[daemon] Allostasis check timer error:', err);
       }
     }, 30000); // Check every 30 seconds
 

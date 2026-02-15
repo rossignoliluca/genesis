@@ -758,6 +758,63 @@ export class GenesisMCPServer extends EventEmitter {
         };
       },
     });
+
+    // v35.0: genesis.nucleus.chat — full cognitive stack chat
+    this.registerTool({
+      name: 'genesis.nucleus.chat',
+      description: 'Chat with Genesis through the full cognitive stack: Nucleus classification → module selection → neuromodulation → consciousness → memory → response. Unlike genesis.chat (which only calls LLMBridge), this routes through Genesis.process() for the complete bio-inspired pipeline.',
+      inputSchema: z.object({
+        message: z.string().describe('The message to send to Genesis'),
+        context: z.string().optional().describe('Optional additional context'),
+      }),
+      requiredScopes: ['chat'],
+      baseCost: 0.05,
+      supportsStreaming: false,
+      maxExecutionTime: 120000,
+      annotations: { readOnlyHint: true, longRunningHint: true },
+      handler: async (rawInput: unknown) => {
+        const args = rawInput as { message: string; context?: string };
+        const startTime = Date.now();
+        try {
+          // Get booted Genesis instance (set by start.ts) or lazy-boot
+          let genesis = (globalThis as any).__genesisInstance;
+          if (!genesis) {
+            const { getGenesis } = await import('../genesis.js');
+            genesis = getGenesis();
+            await genesis.boot();
+            (globalThis as any).__genesisInstance = genesis;
+          }
+
+          const input = args.context
+            ? `${args.message}\n\n[Context: ${args.context}]`
+            : args.message;
+
+          const result = await genesis.process(input);
+          const duration = Date.now() - startTime;
+
+          return {
+            success: true,
+            data: {
+              response: result.response,
+              classification: result.audit ? 'routed-via-nucleus' : 'unknown',
+              confidence: result.confidence,
+              audit: result.audit,
+              fekState: result.fekState,
+              cost: result.cost,
+              durationMs: duration,
+              pipeline: 'Genesis.process() → Nucleus → full cognitive stack',
+            },
+            metadata: { duration },
+          };
+        } catch (err) {
+          return {
+            success: false,
+            error: `Nucleus chat failed: ${(err as Error)?.message}`,
+            metadata: { duration: Date.now() - startTime },
+          };
+        }
+      },
+    });
   }
 
   // ============================================================================

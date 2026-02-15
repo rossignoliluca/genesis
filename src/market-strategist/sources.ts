@@ -29,7 +29,9 @@ export type SourceCategory =
   | 'geopolitics'
   | 'earnings'
   | 'sentiment'
-  | 'italian_geo';
+  | 'italian_geo'
+  | 'prediction_markets'
+  | 'flows';
 
 // ============================================================================
 // Full Source Registry
@@ -260,6 +262,118 @@ export const EXTENDED_SOURCES: ExtendedSource[] = [
     searchQueries: ['site:editorialedomino.it geopolitica'],
     language: 'it',
     priority: 3,
+  },
+
+  // --- PREDICTION MARKETS ---
+  {
+    name: 'polymarket_events',
+    type: 'research',
+    method: 'firecrawl',
+    enabled: true,
+    category: 'prediction_markets',
+    scrapeUrls: [
+      'https://polymarket.com/markets?_c=economics',
+      'https://polymarket.com/markets?_c=politics',
+    ],
+    searchQueries: [
+      'polymarket prediction market fed rate cut probability',
+      'polymarket geopolitical event probabilities',
+    ],
+    priority: 1,
+  },
+  {
+    name: 'kalshi_events',
+    type: 'research',
+    method: 'brave_search',
+    enabled: true,
+    category: 'prediction_markets',
+    searchQueries: [
+      'site:kalshi.com economic indicators CPI',
+      'kalshi fed rate decision probability',
+    ],
+    priority: 2,
+  },
+
+  // --- FUND FLOWS ---
+  {
+    name: 'etf_flows_weekly',
+    type: 'data+charts',
+    method: 'firecrawl',
+    enabled: true,
+    category: 'flows',
+    scrapeUrls: [
+      'https://www.etf.com/sections/weekly-etf-flows',
+      'https://www.etf.com/sections/features-and-news',
+    ],
+    searchQueries: [
+      'ETF fund flows weekly equity bond',
+      'ETF inflows outflows this week largest',
+    ],
+    priority: 1,
+  },
+  {
+    name: 'ici_fund_flows',
+    type: 'research',
+    method: 'brave_search',
+    enabled: true,
+    category: 'flows',
+    searchQueries: [
+      'ICI mutual fund flows weekly estimate',
+      'site:ici.org fund flows',
+    ],
+    priority: 2,
+  },
+
+  // --- ENHANCED SENTIMENT ---
+  {
+    name: 'aaii_sentiment',
+    type: 'research',
+    method: 'brave_search',
+    enabled: true,
+    category: 'sentiment',
+    searchQueries: [
+      'AAII investor sentiment survey this week',
+      'AAII bull bear ratio latest',
+    ],
+    priority: 1,
+  },
+  {
+    name: 'cnn_fear_greed',
+    type: 'data+charts',
+    method: 'firecrawl',
+    enabled: true,
+    category: 'sentiment',
+    scrapeUrls: [
+      'https://edition.cnn.com/markets/fear-and-greed',
+    ],
+    searchQueries: [
+      'CNN Fear Greed index current reading',
+    ],
+    priority: 1,
+  },
+  {
+    name: 'cboe_put_call',
+    type: 'data+charts',
+    method: 'brave_search',
+    enabled: true,
+    category: 'sentiment',
+    searchQueries: [
+      'CBOE put call ratio today',
+      'put call ratio equity options',
+    ],
+    priority: 2,
+  },
+  {
+    name: 'vix_term_structure',
+    type: 'data+charts',
+    method: 'brave_search',
+    enabled: true,
+    category: 'sentiment',
+    searchQueries: [
+      'VIX futures term structure contango backwardation',
+      'VIX term structure today',
+    ],
+    priority: 2,
   },
 
   // --- INSTITUTIONAL RESEARCH ---

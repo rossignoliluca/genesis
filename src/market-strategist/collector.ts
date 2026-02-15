@@ -63,8 +63,8 @@ export class MarketCollector {
     // Extract themes from headlines
     const themes = this.extractThemes(collectedHeadlines);
 
-    // Build sentiment gauge
-    const sentiment = this.buildSentiment(collectedHeadlines, markets);
+    // Build sentiment gauge (LLM-based with keyword fallback)
+    const sentiment = await this.classifySentimentLLM(collectedHeadlines);
 
     // Track sources
     const sources: SourceRef[] = [];
@@ -367,7 +367,48 @@ If data is not available for an asset, use "N/A" for missing fields.`,
     return Array.from(themes).slice(0, 5);
   }
 
-  private buildSentiment(headlines: Headline[], markets: AssetSnapshot[]): SentimentGauge {
+  /**
+   * LLM-based sentiment classification (Item 6)
+   * Uses OpenAI to analyze headlines and return structured sentiment data.
+   * Falls back to keyword-based approach on failure.
+   */
+  private async classifySentimentLLM(headlines: Headline[]): Promise<SentimentGauge> {
+    if (headlines.length === 0) return { overall: 'neutral', score: 0, indicators: {} };
+
+    try {
+      const headlineText = headlines.slice(0, 30).map(h => `- ${h.title} [${h.source}]`).join('\n');
+
+      const result = await this.mcp.call('openai', 'openai_chat', {
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a market sentiment analyst. Analyze these headlines and return a JSON object with: {"overall": "bullish"|"bearish"|"neutral", "score": -1.0 to 1.0, "indicators": {"headline_sentiment": -1 to 1, "risk_appetite": -1 to 1, "momentum": -1 to 1}, "rationale": "brief explanation"}',
+          },
+          {
+            role: 'user',
+            content: `Classify the overall market sentiment from these headlines:\n${headlineText}`,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 500,
+      });
+
+      const content = result.data?.choices?.[0]?.message?.content || '';
+      const parsed = JSON.parse(content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim());
+
+      return {
+        overall: parsed.overall || 'neutral',
+        score: typeof parsed.score === 'number' ? Math.max(-1, Math.min(1, parsed.score)) : 0,
+        indicators: parsed.indicators || {},
+      };
+    } catch (error) {
+      console.warn('[MarketCollector] LLM sentiment failed, falling back to keyword:', error);
+      return this.buildSentiment(headlines);
+    }
+  }
+
+  private buildSentiment(headlines: Headline[]): SentimentGauge {
     // Simple heuristic: count bullish vs bearish keywords in headlines
     let bullish = 0;
     let bearish = 0;

@@ -339,6 +339,46 @@ export async function publishMarketBrief(
     emailSent = emailResult.success;
   }
 
+  // ---- NEWSLETTER via Beehiiv/Buttondown (v33, Item 24) ----
+  if (options?.sendNewsletter) {
+    try {
+      const { getNewsletterConnector, buildNewsletterEmail } = await import('./connectors/newsletter.js');
+      const connector = getNewsletterConnector();
+      if (connector) {
+        const emailHtml = buildNewsletterEmail({
+          week: brief.week,
+          date: brief.date || new Date().toISOString().slice(0, 10),
+          sentiment: brief.sentiment,
+          themes: brief.themes,
+          narratives: (brief as any).narratives || [],
+          positioning: (brief as any).positioning || [],
+          risks: (brief as any).risks || [],
+          opportunities: (brief as any).opportunities || [],
+        });
+        const nlResult = await connector.sendNewsletter({
+          subject: `Weekly Market Strategy — ${brief.week}`,
+          htmlContent: emailHtml,
+          tags: ['weekly-strategy'],
+        });
+        results.push({
+          platform: nlResult.platform,
+          success: nlResult.success,
+          postId: nlResult.emailId,
+          url: nlResult.url,
+          error: nlResult.error,
+          publishedAt: now,
+        });
+      }
+    } catch (error) {
+      results.push({
+        platform: 'newsletter',
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        publishedAt: now,
+      });
+    }
+  }
+
   // Track in analytics
   analytics.trackContent(contentId, {
     title: `Market Strategy ${brief.week}`,

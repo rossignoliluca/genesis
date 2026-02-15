@@ -21,6 +21,8 @@ import type {
   HistoricalAnalogue,
   Prediction,
   TrackRecord,
+  NamedTheme,
+  ThemeLifecycle,
 } from './types.js';
 import { HORIZON_CONFIGS as CONFIGS } from './types.js';
 
@@ -341,6 +343,98 @@ export class MemoryLayers {
 
     if (records.length === 0) return null;
     return records[0].content.properties as TrackRecord;
+  }
+
+  // ==========================================================================
+  // Named Theme Persistence (Item 16)
+  // ==========================================================================
+
+  /**
+   * Store or update a named theme
+   */
+  storeNamedTheme(theme: NamedTheme): SemanticMemory {
+    const fact = this.memory.learn({
+      concept: `named-theme-${theme.id}`,
+      definition: theme.name,
+      properties: {
+        lifecycle: theme.lifecycle,
+        firstSeen: theme.firstSeen,
+        lastSeen: theme.lastSeen,
+        weekCount: theme.weekCount,
+        confidence: theme.confidence,
+        relatedNarratives: theme.relatedNarratives,
+      },
+      category: 'market-theme',
+      tags: ['market', 'named-theme', `lifecycle:${theme.lifecycle}`, ...theme.tags],
+      confidence: theme.confidence,
+      importance: 0.8,
+    });
+
+    this.overrideStability(fact, 180); // themes persist for ~6 months
+    return fact;
+  }
+
+  /**
+   * Get active themes (not fading/faded)
+   */
+  getActiveThemes(): NamedTheme[] {
+    const themes = this.memory.semantic
+      .query({
+        custom: (m) => m.tags.includes('market') && m.tags.includes('named-theme')
+          && !m.tags.includes('lifecycle:fading'),
+      });
+
+    return themes.map(m => ({
+      id: m.id,
+      name: m.content.definition || '',
+      lifecycle: (m.content.properties?.lifecycle || 'emerging') as ThemeLifecycle,
+      firstSeen: m.content.properties?.firstSeen || '',
+      lastSeen: m.content.properties?.lastSeen || '',
+      weekCount: m.content.properties?.weekCount || 1,
+      confidence: m.content.properties?.confidence || 0.5,
+      relatedNarratives: m.content.properties?.relatedNarratives || [],
+      tags: m.tags.filter(t => !t.startsWith('lifecycle:') && t !== 'market' && t !== 'named-theme'),
+    }));
+  }
+
+  /**
+   * Update theme lifecycles based on current week's narratives
+   */
+  updateThemeLifecycles(currentNarratives: NarrativeThread[]): void {
+    const activeThemes = this.getActiveThemes();
+    const currentTitles = new Set(currentNarratives.map(n => n.title.toLowerCase()));
+    const now = new Date().toISOString().slice(0, 10);
+
+    for (const theme of activeThemes) {
+      const stillActive = currentTitles.has(theme.name.toLowerCase()) ||
+        currentNarratives.some(n => n.title.toLowerCase().includes(theme.name.toLowerCase().split(' ')[0]));
+
+      if (stillActive) {
+        // Strengthen
+        const nextLifecycle: Record<ThemeLifecycle, ThemeLifecycle> = {
+          emerging: 'strengthening',
+          strengthening: 'mature',
+          mature: 'mature',
+          weakening: 'strengthening', // revival
+          fading: 'emerging',         // comeback
+        };
+        theme.lifecycle = theme.weekCount >= 4 ? nextLifecycle[theme.lifecycle] : theme.lifecycle;
+        theme.weekCount++;
+        theme.lastSeen = now;
+      } else {
+        // Weaken
+        const weakeningMap: Record<ThemeLifecycle, ThemeLifecycle> = {
+          emerging: 'fading',
+          strengthening: 'weakening',
+          mature: 'weakening',
+          weakening: 'fading',
+          fading: 'fading',
+        };
+        theme.lifecycle = weakeningMap[theme.lifecycle];
+      }
+
+      this.storeNamedTheme(theme);
+    }
   }
 
   // ==========================================================================

@@ -237,6 +237,9 @@ export interface TrackRecord {
   byAssetClass: AssetClassScore[];
   bestAssetClass: string;
   worstAssetClass: string;
+  brierScore?: number;          // 0 = perfect, 1 = worst (lower is better)
+  calibrationGrade?: 'A' | 'B' | 'C' | 'D' | 'F';
+  baseRateAlpha?: number;       // Hit rate minus base rate (positive = adding value)
 }
 
 export interface CalibrationProfile {
@@ -247,6 +250,24 @@ export interface CalibrationProfile {
     suggestedConvictionCap: 'high' | 'medium' | 'low';
     note: string;
   }[];
+}
+
+// ============================================================================
+// Named Theme Persistence (Item 16)
+// ============================================================================
+
+export type ThemeLifecycle = 'emerging' | 'strengthening' | 'mature' | 'weakening' | 'fading';
+
+export interface NamedTheme {
+  id: string;
+  name: string;                  // "The Magnificent Seven Unwind"
+  lifecycle: ThemeLifecycle;
+  firstSeen: string;             // ISO date
+  lastSeen: string;
+  weekCount: number;             // how many weeks this theme has appeared
+  confidence: number;            // 0-1
+  relatedNarratives: string[];   // narrative IDs
+  tags: string[];
 }
 
 /** Maps positioning asset classes to market data proxies */

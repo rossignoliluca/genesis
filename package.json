@@ -1,5 +1,6 @@
 {
   "name": "genesis-ai-cli",
+  "mcpName": "io.github.rossignoliluca/genesis",
   "version": "18.0.0",
   "description": "Fully Autonomous AI System with RSI (Recursive Self-Improvement) - Self-funding, Self-deploying, Production Memory, A2A Protocol & Governance",
   "main": "dist/src/index.js",

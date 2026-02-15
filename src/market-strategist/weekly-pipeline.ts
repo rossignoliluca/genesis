@@ -246,9 +246,18 @@ export class WeeklyReportPipeline {
       }
     }
 
-    // ---- STEP 3: ANALYZE (with calibration from previous cycle) ----
+    // ---- STEP 2b: ENRICH from finance module (Item 3) ----
+    await this.enrichFromFinanceModule(snapshot);
+
+    // ---- STEP 3: ANALYZE (with calibration and regime context) ----
     console.log(`[3/8] ANALYZING and synthesizing narratives...`);
     const t3 = Date.now();
+
+    // Get regime context from finance module (Item 3)
+    const regimeContext = await this.getRegimeContext();
+    if (regimeContext) {
+      console.log(`  → Regime: ${regimeContext.regime} (confidence: ${regimeContext.confidence.toFixed(2)})`);
+    }
 
     // Get calibration from previous track record
     const latestTrackRecord = this.memoryLayers.getLatestTrackRecord();
@@ -263,6 +272,7 @@ export class WeeklyReportPipeline {
       snapshot,
       context.recentWeeks,
       context.historicalAnalogues,
+      regimeContext,
     );
     const brief = await this.analyzer.buildBrief(snapshot, narratives, this.memoryLayers, calibration);
     timings.analyze = Date.now() - t3;
@@ -348,6 +358,25 @@ export class WeeklyReportPipeline {
       } catch (e) {
         errors.push(`PPTX rendering failed: ${e}`);
         timings.render = Date.now() - t7;
+      }
+    }
+
+    // ---- STEP 7b: RENDER HTML COMPANION (v33, Item 23) ----
+    let htmlPath: string | undefined;
+    if (this.config.generatePptx) {
+      try {
+        const { generateHTMLReport } = await import('../presentation/html-generator.js');
+        const htmlOutputPath = (pptxPath || specPath).replace(/\.(pptx|json)$/, '.html');
+        const result = generateHTMLReport(spec, {
+          outputPath: htmlOutputPath,
+          companyName: 'Rossignoli & Partners',
+        });
+        if (result.success) {
+          htmlPath = result.path;
+          console.log(`  → HTML companion: ${htmlPath} (${result.sections} sections)`);
+        }
+      } catch (e) {
+        errors.push(`HTML rendering failed: ${e}`);
       }
     }
 
@@ -906,10 +935,33 @@ export class WeeklyReportPipeline {
   private findHistoricalParallel(section: string, weeklyChange: number, brief: MarketBrief): string {
     const absChg = Math.abs(weeklyChange);
 
-    // Use historical analogues from memory if available
-    // These come from memoryLayers.recallContext() in the analyze step
+    // Query historical analogues from memory system (Item 1)
+    const analogues = this.memoryLayers.getHistoricalAnalogues(section);
+    if (analogues.length > 0) {
+      const sectionTagMap: Record<string, string[]> = {
+        equities: ['crisis', 'correction', 'equity-bear', 'equity-bull', 'dot-com', 'gfc', 'covid'],
+        fixed_income: ['rate-shock', 'bond-crisis', 'yield-spike', 'yield-curve'],
+        commodities: ['gold-macro-regime', 'oil-shock', 'commodity-super-cycle'],
+        crypto: ['crypto-winter', 'bitcoin-halving'],
+        fx: ['currency-crisis', 'dollar-regime'],
+      };
 
-    // Fallback: magnitude-based historical framing
+      const relevantTags = sectionTagMap[section] || [];
+      const matched = analogues.filter(a =>
+        a.tags.some(tag => relevantTags.includes(tag))
+      );
+
+      if (matched.length > 0) {
+        const analogue = matched[0];
+        const lesson = analogue.content.properties?.lesson;
+        const trigger = analogue.content.properties?.trigger;
+        if (lesson && trigger) return `${trigger} ${lesson}`;
+        if (lesson) return lesson;
+        if (analogue.content.definition) return analogue.content.definition;
+      }
+    }
+
+    // Fallback: magnitude-based historical framing (when no analogues in memory)
     if (section === 'equities') {
       if (absChg >= 5) return 'Moves of this magnitude have historically preceded either V-shaped recoveries or the start of deeper corrections — there is no middle ground.';
       if (absChg >= 3) return 'The last time we saw a weekly move this sharp was during the banking stress of March 2023.';
@@ -927,6 +979,72 @@ export class WeeklyReportPipeline {
     }
 
     return '';
+  }
+
+  // ==========================================================================
+  // Finance Module Integration (Item 3 — ported from strategist.ts)
+  // ==========================================================================
+
+  /**
+   * Enrich asset snapshots with data from the finance module
+   */
+  private async enrichFromFinanceModule(snapshot: WeeklySnapshot): Promise<void> {
+    try {
+      const { createFinanceModule } = await import('../finance/index.js');
+      const { getEventBus } = await import('../bus/index.js');
+
+      const bus = getEventBus();
+      const financeModule = createFinanceModule(bus);
+
+      for (const asset of snapshot.markets) {
+        const symbol = asset.ticker || asset.name;
+        const marketSnapshot = financeModule.marketData.getSnapshot(symbol);
+
+        if (marketSnapshot) {
+          if (asset.level === 'N/A') {
+            asset.level = marketSnapshot.price.toFixed(2);
+          }
+          if (asset.change1w === 'N/A') {
+            asset.change1w = `${marketSnapshot.changePercent24h >= 0 ? '+' : ''}${marketSnapshot.changePercent24h.toFixed(1)}%`;
+          }
+        }
+
+        const detection = financeModule.regimeDetector.detectRegime(symbol);
+        if (detection.confidence > 0.5) {
+          const regimeToSignal: Record<string, 'bullish' | 'bearish' | 'neutral'> = {
+            bull: 'bullish', bear: 'bearish', neutral: 'neutral', crisis: 'bearish',
+          };
+          asset.signal = regimeToSignal[detection.regime] || 'neutral';
+        }
+      }
+    } catch {
+      // Finance module not available — keep existing snapshot data
+    }
+  }
+
+  /**
+   * Get regime context from finance module for narrative synthesis
+   */
+  private async getRegimeContext(): Promise<{ regime: string; confidence: number; trendStrength: number } | undefined> {
+    try {
+      const { createFinanceModule } = await import('../finance/index.js');
+      const { getEventBus } = await import('../bus/index.js');
+
+      const bus = getEventBus();
+      const financeModule = createFinanceModule(bus);
+
+      const detection = financeModule.regimeDetector.detectRegime('SPY');
+      if (detection.confidence > 0.3) {
+        return {
+          regime: detection.regime,
+          confidence: detection.confidence,
+          trendStrength: detection.trendStrength,
+        };
+      }
+    } catch {
+      // Finance module not available
+    }
+    return undefined;
   }
 
   /**

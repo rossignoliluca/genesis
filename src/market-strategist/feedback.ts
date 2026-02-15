@@ -188,6 +188,17 @@ export class FeedbackEngine {
       .filter(ac => (ac.correct + ac.incorrect) >= 1)
       .sort((a, b) => b.hitRate - a.hitRate);
 
+    // Brier Score (Item 8)
+    const brierScore = this.computeBrierScore(scored);
+    const calibrationGrade = brierScore <= 0.15 ? 'A' as const
+      : brierScore <= 0.25 ? 'B' as const
+      : brierScore <= 0.35 ? 'C' as const
+      : brierScore <= 0.45 ? 'D' as const
+      : 'F' as const;
+
+    // Base rate alpha (Item 8)
+    const baseRateAlpha = this.computeBaseRateAlpha(overallHitRate, scored);
+
     return {
       asOf: now.toISOString().slice(0, 10),
       windowWeeks,
@@ -198,8 +209,65 @@ export class FeedbackEngine {
       byAssetClass,
       bestAssetClass: ranked[0]?.assetClass || 'N/A',
       worstAssetClass: ranked[ranked.length - 1]?.assetClass || 'N/A',
+      brierScore: Math.round(brierScore * 1000) / 1000,
+      calibrationGrade,
+      baseRateAlpha: Math.round(baseRateAlpha * 1000) / 1000,
     };
   }
+
+  /**
+   * Compute Brier Score: mean squared error of probabilistic predictions.
+   * Maps conviction to probability: high=0.75, medium=0.55, low=0.35
+   * Perfect = 0, worst = 1, coin-flip = 0.25
+   */
+  private computeBrierScore(scored: Prediction[]): number {
+    const directional = scored.filter(p => p.outcome === 'correct' || p.outcome === 'incorrect');
+    if (directional.length === 0) return 0.25; // default to coin-flip
+
+    const convictionToProb: Record<string, number> = { high: 0.75, medium: 0.55, low: 0.35 };
+    let sumSquaredError = 0;
+
+    for (const p of directional) {
+      const prob = convictionToProb[p.conviction] || 0.5;
+      const actual = p.outcome === 'correct' ? 1 : 0;
+      sumSquaredError += (prob - actual) ** 2;
+    }
+
+    return sumSquaredError / directional.length;
+  }
+
+  /**
+   * Compute alpha over naive base rate.
+   * S&P is up ~56% of weeks, so a coin-flip model gets 56%.
+   * Positive alpha = adding value beyond random.
+   */
+  private computeBaseRateAlpha(hitRate: number, scored: Prediction[]): number {
+    // Weighted base rate: different asset classes have different base rates
+    const baseRates: Record<string, number> = {
+      'US Equities': 0.56,       // S&P up ~56% of weeks
+      'European Equities': 0.54,
+      'Gold': 0.55,
+      'US Treasuries': 0.50,     // yields are roughly 50/50
+      'Credit': 0.52,
+      'USD': 0.50,
+      'Crypto': 0.53,
+      'EM Equities': 0.52,
+      'Oil': 0.51,
+    };
+
+    if (scored.length === 0) return 0;
+
+    // Compute weighted base rate for actual prediction mix
+    let totalWeight = 0;
+    let weightedBaseRate = 0;
+    for (const p of scored) {
+      const br = baseRates[p.assetClass] || 0.50;
+      totalWeight++;
+      weightedBaseRate += br;
+    }
+
+    const avgBaseRate = totalWeight > 0 ? weightedBaseRate / totalWeight : 0.50;
+    return hitRate - avgBaseRate;
 
   /**
    * Generate calibration profile from track record.

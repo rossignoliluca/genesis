@@ -33,6 +33,67 @@ export class MarketAnalyzer {
   }
 
   /**
+   * Multi-model narrative ensemble (Item 15): run same data through 2 LLMs,
+   * use agreement/disagreement as conviction signal.
+   */
+  async synthesizeNarrativeEnsemble(
+    snapshot: WeeklySnapshot,
+    previousBriefs: Memory[],
+    historicalAnalogues: SemanticMemory[],
+    regimeContext?: { regime: string; confidence: number; trendStrength: number },
+  ): Promise<{ narratives: NarrativeThread[]; ensembleAgreement: number }> {
+    const primary = await this.synthesizeNarrative(snapshot, previousBriefs, historicalAnalogues, regimeContext);
+
+    let ensembleAgreement = 1.0;
+    try {
+      const userPrompt = this.buildNarrativePrompt(snapshot, previousBriefs, historicalAnalogues);
+      const secondaryResult = await this.mcp.call('openai', 'openai_chat', {
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: `You are an independent market analyst. Given market data, provide your narrative assessment. Return EXACTLY a JSON array: [{"title": "...", "horizon": "short"|"medium"|"long", "direction": "bullish"|"bearish"|"neutral"}]` },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.5,
+        max_tokens: 1024,
+      });
+
+      const secondaryContent = secondaryResult.data?.choices?.[0]?.message?.content || '[]';
+      const secondaryParsed = this.parseJSON(secondaryContent);
+
+      if (Array.isArray(secondaryParsed) && secondaryParsed.length > 0) {
+        let agreements = 0;
+        let comparisons = 0;
+
+        for (const pNarr of primary) {
+          const pDirection = pNarr.confidence > 0.6 ? 'bullish' : pNarr.confidence < 0.4 ? 'bearish' : 'neutral';
+          for (const sNarr of secondaryParsed) {
+            if (sNarr.horizon === pNarr.horizon) {
+              comparisons++;
+              if (sNarr.direction === pDirection) agreements++;
+              break;
+            }
+          }
+        }
+
+        ensembleAgreement = comparisons > 0 ? agreements / comparisons : 0.5;
+
+        for (const narr of primary) {
+          if (ensembleAgreement < 0.4) {
+            narr.confidence = Math.max(0.2, narr.confidence * 0.7);
+          } else if (ensembleAgreement > 0.7) {
+            narr.confidence = Math.min(0.95, narr.confidence * 1.15);
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('[MarketAnalyzer] Ensemble secondary model failed, using primary only:', error);
+      ensembleAgreement = -1;
+    }
+
+    return { narratives: primary, ensembleAgreement };
+  }
+
+  /**
    * Analyze collected data and extract narratives
    */
   async synthesizeNarrative(
@@ -72,7 +133,7 @@ Factor this regime assessment into your narrative synthesis.`;
 
     try {
       const result = await this.mcp.call('openai', 'openai_chat', {
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
@@ -242,7 +303,7 @@ Be specific with data references, not generic.`,
 
     try {
       const result = await this.mcp.call('openai', 'openai_chat', {
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o',
         messages: [
           {
             role: 'system',

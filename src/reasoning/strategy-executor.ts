@@ -74,6 +74,9 @@ export async function executeReasoningStrategy(
     case 'super_correct':
       return executeSuperCorrect(thinking, problem);
 
+    case 'mcts_prm':
+      return executeMCTSPRMStrategy(problem);
+
     case 'ultimate':
       return executeUltimate(thinking, problem, context);
 
@@ -264,6 +267,37 @@ async function executeUltimate(
       confidence: 0.1,
       tokens: 0,
       strategyUsed: 'ultimate',
+    };
+  }
+}
+
+// ============================================================================
+// MCTS + PRM Strategy (v33)
+// ============================================================================
+
+async function executeMCTSPRMStrategy(
+  problem: string
+): Promise<StrategyExecutionResult> {
+  try {
+    const { executeMCTSPRM } = await import('./mcts-prm.js');
+    const result = await executeMCTSPRM(problem);
+
+    return {
+      response: result.solution,
+      confidence: result.confidence,
+      tokens: result.mctsStats.computeBudgetUsed,
+      strategyUsed: 'mcts_prm' as ReasoningStrategy,
+      details: {
+        nodesExpanded: result.treeStats.nodesExpanded,
+        thinkingSteps: result.solutionPath.length,
+      },
+    };
+  } catch (error) {
+    return {
+      response: `Error in MCTS+PRM: ${error instanceof Error ? error.message : 'unknown'}`,
+      confidence: 0.1,
+      tokens: 0,
+      strategyUsed: 'mcts_prm' as ReasoningStrategy,
     };
   }
 }

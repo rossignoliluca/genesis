@@ -1807,10 +1807,12 @@ export class WeeklyReportPipeline {
 
   private renderPptx(spec: PresentationSpec, specPath: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      // __dirname resolves to dist/src/market-strategist/ at runtime.
-      // Python engine lives at src/presentation/engine.py (source, not compiled).
-      // Go up to project root (3 levels: market-strategist → src → dist → root) then into src/
-      const enginePath = path.resolve(__dirname, '..', '..', '..', 'src', 'presentation', 'engine.py');
+      // __dirname varies: dist/src/market-strategist/ (compiled) or src/market-strategist/ (tsx)
+      // Detect by checking if we're inside dist/
+      const inDist = __dirname.includes(path.sep + 'dist' + path.sep);
+      const levelsUp = inDist ? 3 : 2; // dist/src/market-strategist → 3, src/market-strategist → 2
+      const root = path.resolve(__dirname, ...Array(levelsUp).fill('..'));
+      const enginePath = path.join(root, 'src', 'presentation', 'engine.py');
       const proc = spawn('python3', [enginePath], {
         stdio: ['pipe', 'pipe', 'pipe'],
       });

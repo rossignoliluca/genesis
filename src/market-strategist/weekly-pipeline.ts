@@ -84,6 +84,12 @@ export interface PipelineConfig {
   sendEmail: boolean;
   /** Email recipients (overrides NEWSLETTER_RECIPIENTS env) */
   emailRecipients?: string[];
+  /** Render mode for PPTX (default: 'pptx') */
+  renderMode?: 'pptx' | 'html-screenshot' | 'all';
+  /** Generate animated MP4 video (default false) */
+  generateVideo?: boolean;
+  /** Generate podcast-style audio (default false) */
+  generateAudio?: boolean;
 }
 
 export const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
@@ -107,6 +113,9 @@ export const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
   includeItalianGeo: true,
   publishSocial: false,
   sendEmail: false,
+  renderMode: 'pptx',
+  generateVideo: false,
+  generateAudio: false,
 };
 
 export interface PipelineResult {
@@ -138,6 +147,10 @@ export interface PipelineResult {
     linkedin: string;
     bluesky: string[];
   };
+  /** Video file path (when generateVideo=true) */
+  videoPath?: string;
+  /** Audio podcast path (when generateAudio=true) */
+  audioPath?: string;
   /** Publication report (when publishSocial=true) */
   publicationReport?: PublicationReport;
   /** Feedback results */
@@ -472,6 +485,48 @@ export class WeeklyReportPipeline {
       }
     }
 
+    // ---- STEP 7c: VIDEO RENDER (v34, Remotion) ----
+    let videoPath: string | undefined;
+    if (this.config.generateVideo) {
+      try {
+        console.log(`  [7c/8] RENDERING VIDEO via Remotion...`);
+        const t7c = Date.now();
+        const { VideoComposer } = await import('../presentation/video/index.js');
+        const composer = new VideoComposer(spec);
+        const mp4Path = (pptxPath || specPath).replace(/\.(pptx|json)$/, '.mp4');
+        const videoResult = await composer.render(mp4Path);
+        if (videoResult.success) {
+          videoPath = videoResult.path;
+          console.log(`  → Video: ${videoPath} (${videoResult.frames} frames, ${Date.now() - t7c}ms)`);
+        } else {
+          errors.push(`Video rendering failed: ${videoResult.error}`);
+        }
+      } catch (e) {
+        errors.push(`Video rendering failed: ${e}`);
+      }
+    }
+
+    // ---- STEP 7d: AUDIO PODCAST (v34, NotebookLM-style) ----
+    let audioPath: string | undefined;
+    if (this.config.generateAudio) {
+      try {
+        console.log(`  [7d/8] GENERATING AUDIO PODCAST...`);
+        const t7d = Date.now();
+        const { PodcastGenerator } = await import('../presentation/audio/podcast-generator.js');
+        const podcast = new PodcastGenerator();
+        const mp3Path = (pptxPath || specPath).replace(/\.(pptx|json)$/, '.mp3');
+        const audioResult = await podcast.generate(spec, brief, mp3Path);
+        if (audioResult.success) {
+          audioPath = audioResult.path;
+          console.log(`  → Podcast: ${audioPath} (${audioResult.durationSeconds}s, ${Date.now() - t7d}ms)`);
+        } else {
+          errors.push(`Audio generation failed: ${audioResult.error}`);
+        }
+      } catch (e) {
+        errors.push(`Audio generation failed: ${e}`);
+      }
+    }
+
     // ---- STEP 8: SOCIAL CONTENT + PUBLISH ----
     let socialContent;
     let publicationReport: PublicationReport | undefined;
@@ -543,6 +598,8 @@ export class WeeklyReportPipeline {
       brief,
       pptxPath,
       specPath,
+      videoPath,
+      audioPath,
       socialContent,
       publicationReport,
       feedback: feedbackResult,

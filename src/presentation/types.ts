@@ -384,6 +384,7 @@ export interface PresentationMeta {
   slide_height?: number;
   mode?: 'editorial' | 'standard';
   logo_path?: string;
+  render_mode?: 'pptx' | 'html-screenshot' | 'html' | 'all';
 }
 
 export interface PresentationSpec {
@@ -405,6 +406,10 @@ export interface PresentationResult {
   charts: number;
   error?: string;
   duration: number;
+  screenshot_paths?: string[];
+  video_path?: string;
+  audio_path?: string;
+  html_path?: string;
 }
 
 // ============================================================================

@@ -246,8 +246,7 @@ def generate(spec: dict) -> dict:
     if palette_name == "rossignoli_editorial":
         meta.setdefault("mode", "editorial")
 
-    # Setup matplotlib
-    setup_matplotlib(palette)
+    # Note: Charts now use Plotly (not matplotlib). setup_matplotlib is a no-op.
 
     # Create presentation
     prs = Presentation()

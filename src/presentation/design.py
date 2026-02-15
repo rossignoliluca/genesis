@@ -526,92 +526,68 @@ DEFAULT_LAYOUT = SlideLayout()
 # ============================================================================
 
 def setup_matplotlib(palette: Optional[ColorPalette] = None):
-    """Configure matplotlib rcParams for institutional-grade charts.
+    """Legacy matplotlib setup — now a no-op since we use Plotly.
 
-    Applies settings derived from JPMorgan GTTM, Goldman Sachs Research,
-    McKinsey consulting standards, and Edward Tufte's data-ink principles:
-    - Horizontal gridlines only (y-axis)
-    - No top/right spines
-    - Light gray grids at 0.4pt
-    - Arial/Helvetica font stack
-    - High DPI for print quality
+    Kept for backward compatibility with engine.py and any code
+    that calls setup_matplotlib() before rendering.
     """
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import matplotlib as mpl
+    pass
 
+
+def get_plotly_template(palette: Optional[ColorPalette] = None) -> dict:
+    """Get a Plotly layout template dict for institutional-grade charts.
+
+    Encodes the same design rules as the old matplotlib setup:
+    - Horizontal gridlines only (y-axis)
+    - No top/right borders
+    - Arial/Helvetica font
+    - Source at bottom-left, 7pt gray italic
+    - High contrast for dark mode
+    """
     if palette is None:
         palette = get_palette()
 
     dark = palette.fig_bg not in ("#FFFFFF", "#FAFBFC")
 
-    # Grid styling: institutional = subtle horizontal lines only
     grid_color = "#1E2D42" if dark else palette.light_gray
     grid_alpha = 0.5 if dark else 0.7
     edge_color = palette.gray if dark else "#CCCCCC"
 
-    # Build the color cycle from palette series_cycle
-    cycle = getattr(palette, 'series_cycle', None) or [
-        palette.chart_primary, palette.chart_secondary,
-        palette.green, palette.red, palette.orange,
-    ] + palette.extra_colors
-
-    plt.rcParams.update({
-        # Typography — institutional standard
-        "font.family": "sans-serif",
-        "font.sans-serif": ["Arial", "Helvetica Neue", "Helvetica", "Liberation Sans"],
-        "font.size": 10,
-
-        # Axes — Tufte/McKinsey: remove top+right, minimal chrome
-        "axes.facecolor": palette.chart_bg,
-        "axes.edgecolor": edge_color,
-        "axes.linewidth": 0.6,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "axes.titlesize": 13,
-        "axes.titleweight": "bold",
-        "axes.labelsize": 9,
-        "axes.labelcolor": palette.body_text,
-
-        # Grid — horizontal only, thin, light (JPM/GS standard)
-        "axes.grid": True,
-        "axes.grid.axis": "y",
-        "grid.color": grid_color,
-        "grid.linewidth": 0.4,
-        "grid.alpha": grid_alpha,
-
-        # Ticks — small, outward, institutional gray
-        "xtick.color": palette.gray,
-        "ytick.color": palette.gray,
-        "xtick.labelsize": 8,
-        "ytick.labelsize": 8,
-        "xtick.direction": "out",
-        "ytick.major.size": 0,
-
-        # Lines — 1.8pt default (JPM/GS standard for time series)
-        "lines.linewidth": 1.8,
-        "lines.antialiased": True,
-
-        # Legend — no frame, small (direct labels preferred)
-        "legend.frameon": False,
-        "legend.fontsize": 8,
-
-        # Text
-        "text.color": palette.body_text,
-
-        # Figure
-        "figure.facecolor": palette.fig_bg,
-        "figure.figsize": (13.33, 5.5),
-        "figure.dpi": 250,
-
-        # Save — print quality
-        "savefig.dpi": 250,
-        "savefig.bbox": "tight",
-        "savefig.pad_inches": 0.15,
-
-        # Color cycle from palette
-        "axes.prop_cycle": mpl.cycler(color=cycle),
-    })
-
-    return plt
+    return {
+        "font": {
+            "family": "Arial, Helvetica Neue, Helvetica, sans-serif",
+            "size": 10,
+            "color": palette.body_text,
+        },
+        "paper_bgcolor": palette.fig_bg,
+        "plot_bgcolor": palette.chart_bg,
+        "margin": {"l": 60, "r": 30, "t": 60, "b": 80},
+        "xaxis": {
+            "showgrid": False,
+            "showline": True,
+            "linecolor": edge_color,
+            "linewidth": 0.6,
+            "mirror": False,
+            "tickfont": {"size": 8, "color": palette.gray},
+            "ticks": "outside",
+            "ticklen": 3,
+        },
+        "yaxis": {
+            "showgrid": True,
+            "gridcolor": grid_color,
+            "gridwidth": 0.4,
+            "griddash": "solid",
+            "showline": False,
+            "zeroline": False,
+            "mirror": False,
+            "tickfont": {"size": 8, "color": palette.gray},
+            "ticks": "",
+        },
+        "legend": {
+            "bgcolor": "rgba(255,255,255,0.85)" if not dark else "rgba(15,27,45,0.85)",
+            "bordercolor": palette.card_border,
+            "borderwidth": 0.5,
+            "font": {"size": 8},
+        },
+        "colorway": palette.series_cycle,
+    }

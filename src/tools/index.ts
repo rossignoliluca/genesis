@@ -545,3 +545,41 @@ toolRegistry.set('antifragile', {
     return { valid: true };
   },
 });
+
+// ============================================================================
+// v33.0: Holistic Self-Model Tool
+// ============================================================================
+
+toolRegistry.set('self_model', {
+  name: 'self_model',
+  description: 'Genesis holistic self-model: get briefing, check health, refresh, propose improvements. Actions: briefing, health, refresh, propose, manifest',
+  execute: async (params: Record<string, unknown>) => {
+    const { getHolisticSelfModel } = await import('../self-model/index.js');
+    const model = getHolisticSelfModel();
+    const action = (params.action as string) || 'briefing';
+
+    switch (action) {
+      case 'briefing':
+        return model.getBriefing();
+      case 'health':
+        return params.module
+          ? model.getHealth(params.module as string)
+          : model.getAllHealth();
+      case 'refresh':
+        return model.refresh();
+      case 'propose':
+        return model.proposeImprovements();
+      case 'manifest':
+        return model.getManifest();
+      default:
+        return { error: `Unknown action: ${action}. Use: briefing, health, refresh, propose, manifest` };
+    }
+  },
+  validate: (params: Record<string, unknown>) => {
+    const valid = ['briefing', 'health', 'refresh', 'propose', 'manifest', undefined];
+    if (!valid.includes(params.action as string | undefined)) {
+      return { valid: false, reason: 'action must be: briefing, health, refresh, propose, or manifest' };
+    }
+    return { valid: true };
+  },
+});

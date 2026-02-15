@@ -535,6 +535,9 @@ export class Genesis {
   // v33.0: Parallel Execution Engine — work-stealing scheduler
   private parallelEngine: ParallelExecutionEngine | null = null;
 
+  // v33.0: Holistic Self-Model — persistent self-awareness
+  private holisticSelfModel: any = null;
+
   // v26.0: WebSocket Real-Time API
   private websocket: GenesisWebSocket | null = null;
 
@@ -2270,6 +2273,16 @@ export class Genesis {
     this.fiber?.registerModule('parallel-engine');
     console.log('[Genesis] Parallel Engine active: work-stealing, adaptive batching, circuit breakers');
 
+    // v33.0: Holistic Self-Model — boots after bus, tracks all module health
+    try {
+      const { getHolisticSelfModel } = await import('./self-model/index.js');
+      this.holisticSelfModel = getHolisticSelfModel({ rootPath: process.cwd() });
+      await this.holisticSelfModel.boot();
+      console.log('[Genesis] Holistic Self-Model booted — tracking module health');
+    } catch (err) {
+      console.warn('[Genesis] Self-Model boot failed (non-fatal):', err);
+    }
+
     this.levels.L4 = true;
   }
 
@@ -3325,6 +3338,12 @@ export class Genesis {
     // v13.8: Fire session-end hook before shutdown
     if (this.hooks?.hasHooks()) {
       await this.hooks.execute('session-end', { event: 'session-end' }).catch(e => console.debug('[Hooks] session-end failed:', e?.message || e));
+    }
+
+    // v33.0: Shutdown self-model (persists health data)
+    if (this.holisticSelfModel) {
+      try { await this.holisticSelfModel.shutdown(); } catch { /* non-fatal */ }
+      this.holisticSelfModel = null;
     }
 
     // L4: Executive shutdown

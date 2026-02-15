@@ -1051,6 +1051,11 @@ export function wireAllModules(modules: ModuleRegistry): WiringResult {
   subscribersCreated += frontierCount;
   console.debug(`[ModuleWiring] Frontier feedback loops created: ${frontierCount}`);
 
+  // v33.0: Self-Model feedback loops
+  const selfModelCount = wireSelfModelFeedback(bus);
+  subscribersCreated += selfModelCount;
+  console.debug(`[ModuleWiring] Self-model feedback loops created: ${selfModelCount}`);
+
   // Apply neuromodulation effects
   if (modules.neuromodulation) {
     applyNeuromodulationEffects(modules, modules.neuromodulation);
@@ -1172,6 +1177,38 @@ function wireFrontierFeedbackLoops(bus: GenesisEventBus): number {
       signalType: 'calm',
       magnitude: 0.15,
       cause: `Tool deprecated: ${event.toolName} (${event.reason})`,
+    });
+  });
+  count++;
+
+  return count;
+}
+
+/**
+ * v33.0: Self-Model health degradation → neuromodulation
+ */
+function wireSelfModelFeedback(bus: GenesisEventBus): number {
+  let count = 0;
+  const sub = createSubscriber('self-model-feedback');
+
+  // Broken module detected → cortisol (stress response)
+  sub.on('kernel.panic', (event) => {
+    bus.publish('neuromod.threat', {
+      source: 'self-model-feedback', precision: 0.8,
+      signalType: 'threat',
+      magnitude: event.severity === 'fatal' ? 0.8 : 0.4,
+      cause: `System panic: ${event.reason}`,
+    });
+  });
+  count++;
+
+  // Self-improvement applied → dopamine (reward)
+  sub.on('self.improvement.applied', (event) => {
+    bus.publish('neuromod.reward', {
+      source: 'self-model-feedback', precision: 0.7,
+      signalType: 'reward',
+      magnitude: 0.5,
+      cause: `Self-improvement applied: ${event.description}`,
     });
   });
   count++;

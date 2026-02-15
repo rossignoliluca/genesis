@@ -402,35 +402,39 @@ export class MemorySystem {
    * Called lazily when semanticRecall is first used or when memories change.
    */
   private async reindexVectors(): Promise<void> {
-    if (!this.vectorDb) return;
+    try {
+      if (!this.vectorDb) return;
 
-    const docs: Array<{ id: string; text: string; source?: string }> = [];
+      const docs: Array<{ id: string; text: string; source?: string }> = [];
 
-    // Index episodic memories
-    for (const mem of this.episodic.getAll()) {
-      const ep = mem as EpisodicMemory;
-      const text = `${ep.content?.what || ''} ${ep.content?.details ? JSON.stringify(ep.content.details) : ''}`.trim();
-      if (text) docs.push({ id: mem.id, text, source: 'episodic' });
+      // Index episodic memories
+      for (const mem of this.episodic.getAll()) {
+        const ep = mem as EpisodicMemory;
+        const text = `${ep.content?.what || ''} ${ep.content?.details ? JSON.stringify(ep.content.details) : ''}`.trim();
+        if (text) docs.push({ id: mem.id, text, source: 'episodic' });
+      }
+
+      // Index semantic memories
+      for (const mem of this.semantic.getAll()) {
+        const sem = mem as SemanticMemory;
+        const text = `${sem.content?.concept || ''}: ${sem.content?.definition || ''}`.trim();
+        if (text) docs.push({ id: mem.id, text, source: 'semantic' });
+      }
+
+      // Index procedural memories
+      for (const mem of this.procedural.getAll()) {
+        const proc = mem as ProceduralMemory;
+        const text = `${proc.content?.name || ''}: ${proc.content?.description || ''}`.trim();
+        if (text) docs.push({ id: mem.id, text, source: 'procedural' });
+      }
+
+      if (docs.length > 0) {
+        await this.vectorDb.addBatch(docs);
+      }
+      this.vectorIndexDirty = false;
+    } catch (err) {
+      console.error('[memory] reindexVectors failed:', err);
     }
-
-    // Index semantic memories
-    for (const mem of this.semantic.getAll()) {
-      const sem = mem as SemanticMemory;
-      const text = `${sem.content?.concept || ''}: ${sem.content?.definition || ''}`.trim();
-      if (text) docs.push({ id: mem.id, text, source: 'semantic' });
-    }
-
-    // Index procedural memories
-    for (const mem of this.procedural.getAll()) {
-      const proc = mem as ProceduralMemory;
-      const text = `${proc.content?.name || ''}: ${proc.content?.description || ''}`.trim();
-      if (text) docs.push({ id: mem.id, text, source: 'procedural' });
-    }
-
-    if (docs.length > 0) {
-      await this.vectorDb.addBatch(docs);
-    }
-    this.vectorIndexDirty = false;
   }
 
   /**

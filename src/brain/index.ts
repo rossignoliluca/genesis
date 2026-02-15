@@ -937,43 +937,51 @@ export class Brain {
    * Start the brain (initializes consciousness monitoring)
    */
   async start(): Promise<void> {
-    if (this.running) return;
+    try {
+      if (this.running) return;
 
-    this.running = true;
+      this.running = true;
 
-    // v7.2: Build system prompt with available tools
-    await this.initializeSystemPrompt();
+      // v7.2: Build system prompt with available tools
+      await this.initializeSystemPrompt();
 
-    // v13.1: Boot self-knowledge (index own source code)
-    this.selfKnowledge.boot().catch(() => {/* non-fatal */});
+      // v13.1: Boot self-knowledge (index own source code)
+      this.selfKnowledge.boot().catch(() => {/* non-fatal */});
 
-    // Start consciousness monitoring
-    if (this.config.consciousness.enabled) {
-      this.phiMonitor.start();
-      this.globalWorkspace.start();
+      // Start consciousness monitoring
+      if (this.config.consciousness.enabled) {
+        this.phiMonitor.start();
+        this.globalWorkspace.start();
+      }
+
+      // Start memory curation
+      if (this.config.memory.enabled) {
+        this.workspace.startAutoCuration();
+      }
+
+      this.emit({ type: 'cycle_start', timestamp: new Date(), data: { status: 'brain_started' } });
+    } catch (err) {
+      console.error('[brain] start failed:', err);
     }
-
-    // Start memory curation
-    if (this.config.memory.enabled) {
-      this.workspace.startAutoCuration();
-    }
-
-    this.emit({ type: 'cycle_start', timestamp: new Date(), data: { status: 'brain_started' } });
   }
 
   /**
    * v7.2: Build system prompt with all available tools
    */
   private async initializeSystemPrompt(): Promise<void> {
-    if (this.systemPrompt) return; // Already built
+    try {
+      if (this.systemPrompt) return; // Already built
 
-    const tools = this.dispatcher.listToolsWithSchemas();
+      const tools = this.dispatcher.listToolsWithSchemas();
 
-    // Convert to format expected by buildSystemPrompt
-    const mcpTools: Record<string, Array<{ name: string; description?: string }>> = tools.mcp;
-    const localTools = tools.local;
+      // Convert to format expected by buildSystemPrompt
+      const mcpTools: Record<string, Array<{ name: string; description?: string }>> = tools.mcp;
+      const localTools = tools.local;
 
-    this.systemPrompt = await buildSystemPrompt(mcpTools, localTools, true);
+      this.systemPrompt = await buildSystemPrompt(mcpTools, localTools, true);
+    } catch (err) {
+      console.error('[brain] initializeSystemPrompt failed:', err);
+    }
   }
 
   /**
@@ -1552,48 +1560,57 @@ export class Brain {
    * LLM module: generate response
    */
   private async stepLLM(state: BrainState): Promise<Command> {
-    this.emit({ type: 'llm_request', timestamp: new Date(), data: { query: state.query } });
+    try {
+      this.emit({ type: 'llm_request', timestamp: new Date(), data: { query: state.query } });
 
-    // Build prompt with context
-    const contextStr = state.context.formatted || '';
-    const prompt = contextStr
-      ? `Context:\n${contextStr}\n\nUser: ${state.query}`
-      : state.query;
+      // Build prompt with context
+      const contextStr = state.context.formatted || '';
+      const prompt = contextStr
+        ? `Context:\n${contextStr}\n\nUser: ${state.query}`
+        : state.query;
 
-    // v7.18: Cost optimization - use tiered models
-    const hasToolResults = state.toolResults && state.toolResults.length > 0;
-    const tier = this.determineModelTier(state.query, hasToolResults);
+      // v7.18: Cost optimization - use tiered models
+      const hasToolResults = state.toolResults && state.toolResults.length > 0;
+      const tier = this.determineModelTier(state.query, hasToolResults);
 
-    // Call LLM with appropriate model tier
-    const response = await this.llm.chatWithTier(prompt, tier, this.systemPrompt || undefined);
+      // Call LLM with appropriate model tier
+      const response = await this.llm.chatWithTier(prompt, tier, this.systemPrompt || undefined);
 
-    this.emit({ type: 'llm_response', timestamp: new Date(), data: { length: response.content.length } });
+      this.emit({ type: 'llm_response', timestamp: new Date(), data: { length: response.content.length } });
 
-    // Parse tool calls if any
-    const toolCalls = this.parseToolCalls(response.content);
+      // Parse tool calls if any
+      const toolCalls = this.parseToolCalls(response.content);
 
-    // Decide next step
-    if (toolCalls.length > 0 && this.config.tools.enabled) {
+      // Decide next step
+      if (toolCalls.length > 0 && this.config.tools.enabled) {
+        return {
+          goto: 'tools',
+          update: { response: response.content, toolCalls },
+          reason: 'tool_calls_detected',
+        };
+      }
+
+      if (this.config.grounding.verifyAllResponses && this.config.grounding.enabled) {
+        return {
+          goto: 'grounding',
+          update: { response: response.content },
+          reason: 'verify_response',
+        };
+      }
+
       return {
-        goto: 'tools',
-        update: { response: response.content, toolCalls },
-        reason: 'tool_calls_detected',
-      };
-    }
-
-    if (this.config.grounding.verifyAllResponses && this.config.grounding.enabled) {
-      return {
-        goto: 'grounding',
+        goto: 'done',
         update: { response: response.content },
-        reason: 'verify_response',
+        reason: 'response_complete',
+      };
+    } catch (err) {
+      console.error('[brain] stepLLM failed:', err);
+      return {
+        goto: 'healing',
+        update: { error: err instanceof Error ? err : new Error(String(err)) },
+        reason: 'llm_error',
       };
     }
-
-    return {
-      goto: 'done',
-      update: { response: response.content },
-      reason: 'response_complete',
-    };
   }
 
   /**
@@ -1719,6 +1736,11 @@ export class Brain {
           if (r.success) {
             const cacheKey = this.getToolCacheKey({ name: r.name, arguments: {} });
             this.toolCache.set(cacheKey, { result, timestamp: Date.now() });
+            if (this.toolCache.size > 200) {
+              // Delete oldest entries
+              const keys = Array.from(this.toolCache.keys());
+              for (let i = 0; i < 50; i++) this.toolCache.delete(keys[i]);
+            }
             this.metrics.toolSuccesses++;
           } else {
             this.metrics.toolFailures++;

@@ -513,6 +513,9 @@ export class SymbioticPartnership extends EventEmitter {
     };
 
     this.assistanceHistory.push(assistance);
+    if (this.assistanceHistory.length > 200) {
+      this.assistanceHistory = this.assistanceHistory.slice(-100);
+    }
     this.emit('assistance:provided', assistance);
 
     return assistance;

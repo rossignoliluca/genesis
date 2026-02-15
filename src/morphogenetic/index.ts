@@ -237,6 +237,11 @@ export class MorphogeneticAgent extends EventEmitter {
       });
     }
 
+    // Cap errors array to prevent unbounded growth
+    if (this.errors.length > 200) {
+      this.errors = this.errors.slice(-100);
+    }
+
     this.metrics.totalErrors = this.errors.length;
     this.emit('errors:detected', this.errors);
     return this.errors;
@@ -363,54 +368,66 @@ export class MorphogeneticAgent extends EventEmitter {
    * Regenerate a capability
    */
   private async regenerate(capabilityId: string, targetLevel: number): Promise<void> {
-    // Simulate regeneration time
-    await this.delay(100);
+    try {
+      // Simulate regeneration time
+      await this.delay(100);
 
-    const existing = this.morphology.capabilities.get(capabilityId);
-    if (existing) {
-      existing.level = Math.min(1, existing.level + this.config.regenerationRate);
-    } else {
-      this.morphology.capabilities.set(capabilityId, {
-        id: capabilityId,
-        name: capabilityId,
-        level: this.config.regenerationRate,
-        required: targetLevel,
-        dependencies: []
-      });
+      const existing = this.morphology.capabilities.get(capabilityId);
+      if (existing) {
+        existing.level = Math.min(1, existing.level + this.config.regenerationRate);
+      } else {
+        this.morphology.capabilities.set(capabilityId, {
+          id: capabilityId,
+          name: capabilityId,
+          level: this.config.regenerationRate,
+          required: targetLevel,
+          dependencies: []
+        });
+      }
+
+      this.metrics.regenerations++;
+      this.updateHealth();
+    } catch (err) {
+      console.error('[morphogenetic] regenerate failed:', err);
     }
-
-    this.metrics.regenerations++;
-    this.updateHealth();
   }
 
   /**
    * Strengthen a capability or health
    */
   private async strengthen(target: string, amount: number): Promise<void> {
-    await this.delay(50);
+    try {
+      await this.delay(50);
 
-    if (target === 'health') {
-      this.morphology.health = Math.min(1, this.morphology.health + amount * 0.5);
-    } else {
-      const capability = this.morphology.capabilities.get(target);
-      if (capability) {
-        capability.level = Math.min(1, capability.level + amount * 0.5);
+      if (target === 'health') {
+        this.morphology.health = Math.min(1, this.morphology.health + amount * 0.5);
+      } else {
+        const capability = this.morphology.capabilities.get(target);
+        if (capability) {
+          capability.level = Math.min(1, capability.level + amount * 0.5);
+        }
       }
-    }
 
-    this.updateHealth();
+      this.updateHealth();
+    } catch (err) {
+      console.error('[morphogenetic] strengthen failed:', err);
+    }
   }
 
   /**
    * Connect to another capability/agent
    */
   private async connect(target: string): Promise<void> {
-    await this.delay(30);
+    try {
+      await this.delay(30);
 
-    const connections = this.morphology.connections.get(this.id) || [];
-    if (!connections.includes(target)) {
-      connections.push(target);
-      this.morphology.connections.set(this.id, connections);
+      const connections = this.morphology.connections.get(this.id) || [];
+      if (!connections.includes(target)) {
+        connections.push(target);
+        this.morphology.connections.set(this.id, connections);
+      }
+    } catch (err) {
+      console.error('[morphogenetic] connect failed:', err);
     }
   }
 
@@ -418,11 +435,15 @@ export class MorphogeneticAgent extends EventEmitter {
    * Prune an excess capability
    */
   private async prune(target: string): Promise<void> {
-    await this.delay(20);
+    try {
+      await this.delay(20);
 
-    const capability = this.morphology.capabilities.get(target);
-    if (capability && capability.level > capability.required * 1.5) {
-      capability.level = capability.required;
+      const capability = this.morphology.capabilities.get(target);
+      if (capability && capability.level > capability.required * 1.5) {
+        capability.level = capability.required;
+      }
+    } catch (err) {
+      console.error('[morphogenetic] prune failed:', err);
     }
   }
 
@@ -536,6 +557,11 @@ export class NeuralCellularAutomata extends EventEmitter {
           alive: true,
           age: 0
         });
+        if (this.grid.size > 10000) {
+          // Delete oldest entries
+          const keys = Array.from(this.grid.keys());
+          for (let i = 0; i < 1000; i++) this.grid.delete(keys[i]);
+        }
       }
     }
   }
@@ -658,21 +684,26 @@ export class NeuralCellularAutomata extends EventEmitter {
    * Run until pattern converges or max generations
    */
   async runUntilConverged(maxGenerations: number = 100): Promise<number> {
-    let prevError = this.patternError();
+    try {
+      let prevError = this.patternError();
 
-    for (let i = 0; i < maxGenerations; i++) {
-      this.step();
+      for (let i = 0; i < maxGenerations; i++) {
+        this.step();
 
-      const error = this.patternError();
-      if (Math.abs(error - prevError) < 0.001 && error < 0.1) {
-        return i;  // Converged
+        const error = this.patternError();
+        if (Math.abs(error - prevError) < 0.001 && error < 0.1) {
+          return i;  // Converged
+        }
+        prevError = error;
+
+        await new Promise(r => setTimeout(r, 10));
       }
-      prevError = error;
 
-      await new Promise(r => setTimeout(r, 10));
+      return maxGenerations;
+    } catch (err) {
+      console.error('[morphogenetic] runUntilConverged failed:', err);
+      return maxGenerations;
     }
-
-    return maxGenerations;
   }
 
   /**
@@ -766,6 +797,11 @@ export class AgentColony extends EventEmitter {
    */
   shareKnowledge(key: string, value: unknown): void {
     this.sharedKnowledge.set(key, value);
+    if (this.sharedKnowledge.size > 500) {
+      // Delete oldest entries
+      const keys = Array.from(this.sharedKnowledge.keys());
+      for (let i = 0; i < 100; i++) this.sharedKnowledge.delete(keys[i]);
+    }
     this.emit('knowledge:shared', { key, value });
   }
 
@@ -773,39 +809,44 @@ export class AgentColony extends EventEmitter {
    * Collective repair - agents work together
    */
   async solveCollectively(problem: string): Promise<{ success: boolean; solution: unknown }> {
-    if (this.agents.size < this.config.minQuorum) {
-      return { success: false, solution: 'Not enough agents for quorum' };
-    }
-
-    // Each agent proposes repairs
-    const proposals: Map<string, RepairAction[]> = new Map();
-
-    for (const [id, agent] of this.agents) {
-      const repairs = agent.selfCorrect();
-      proposals.set(id, repairs);
-    }
-
-    // Find consensus on repair strategy
-    const consensusActions = this.findConsensus(proposals);
-
-    if (consensusActions.length === 0) {
-      return { success: false, solution: 'No consensus reached' };
-    }
-
-    // Execute agreed-upon repairs
-    const results: boolean[] = [];
-    for (const agent of this.agents.values()) {
-      for (const action of consensusActions) {
-        const success = await agent.executeRepair(action);
-        results.push(success);
+    try {
+      if (this.agents.size < this.config.minQuorum) {
+        return { success: false, solution: 'Not enough agents for quorum' };
       }
-    }
 
-    const successRate = results.filter(r => r).length / results.length;
-    return {
-      success: successRate >= this.config.consensusThreshold,
-      solution: { consensusActions, successRate }
-    };
+      // Each agent proposes repairs
+      const proposals: Map<string, RepairAction[]> = new Map();
+
+      for (const [id, agent] of this.agents) {
+        const repairs = agent.selfCorrect();
+        proposals.set(id, repairs);
+      }
+
+      // Find consensus on repair strategy
+      const consensusActions = this.findConsensus(proposals);
+
+      if (consensusActions.length === 0) {
+        return { success: false, solution: 'No consensus reached' };
+      }
+
+      // Execute agreed-upon repairs
+      const results: boolean[] = [];
+      for (const agent of this.agents.values()) {
+        for (const action of consensusActions) {
+          const success = await agent.executeRepair(action);
+          results.push(success);
+        }
+      }
+
+      const successRate = results.filter(r => r).length / results.length;
+      return {
+        success: successRate >= this.config.consensusThreshold,
+        solution: { consensusActions, successRate }
+      };
+    } catch (err) {
+      console.error('[morphogenetic] solveCollectively failed:', err);
+      return { success: false, solution: 'Error during collective repair' };
+    }
   }
 
   /**

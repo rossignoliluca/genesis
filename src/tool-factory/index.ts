@@ -86,12 +86,16 @@ export class ToolFactory {
    * Called when a tool fails — could trigger replacement creation
    */
   async onToolFailure(toolName: string, error: string): Promise<void> {
-    const tool = this.library.get(toolName);
-    if (tool) {
-      tool.failureCount++;
-      tool.usageCount++;
-      tool.lastUsed = new Date();
-      await this.library.store(tool);
+    try {
+      const tool = this.library.get(toolName);
+      if (tool) {
+        tool.failureCount++;
+        tool.usageCount++;
+        tool.lastUsed = new Date();
+        await this.library.store(tool);
+      }
+    } catch (err) {
+      console.error('[tool-factory] onToolFailure failed:', err);
     }
   }
 

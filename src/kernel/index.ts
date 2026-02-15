@@ -184,28 +184,32 @@ export class Kernel {
   // ============================================================================
 
   async start(): Promise<void> {
-    this.log('Starting kernel...');
+    try {
+      this.log('Starting kernel...');
 
-    // Wake all agents
-    for (const agent of this.agents.values()) {
-      agent.wake();
+      // Wake all agents
+      for (const agent of this.agents.values()) {
+        agent.wake();
+      }
+
+      // Subscribe to kernel messages
+      this.bus.subscribe(
+        'kernel',
+        async (message) => await this.handleMessage(message)
+      );
+
+      // Start health monitoring
+      this.startHealthMonitoring();
+
+      // Check initial invariants
+      await this.checkInvariants();
+
+      this.log('Kernel started');
+      this.log(`State: ${this.state}`);
+      this.log(`Agents: ${this.agents.size}`);
+    } catch (err) {
+      console.error('[kernel] start failed:', err);
     }
-
-    // Subscribe to kernel messages
-    this.bus.subscribe(
-      'kernel',
-      async (message) => await this.handleMessage(message)
-    );
-
-    // Start health monitoring
-    this.startHealthMonitoring();
-
-    // Check initial invariants
-    await this.checkInvariants();
-
-    this.log('Kernel started');
-    this.log(`State: ${this.state}`);
-    this.log(`Agents: ${this.agents.size}`);
   }
 
   async stop(): Promise<void> {
@@ -312,30 +316,42 @@ export class Kernel {
   // ============================================================================
 
   async submit(task: Omit<Task, 'id' | 'createdAt' | 'status'>): Promise<string> {
-    const fullTask: Task = {
-      ...task,
-      id: randomUUID(),
-      createdAt: new Date(),
-      status: 'pending',
-    };
+    try {
+      const fullTask: Task = {
+        ...task,
+        id: randomUUID(),
+        createdAt: new Date(),
+        status: 'pending',
+      };
 
-    this.taskQueue.push(fullTask);
-    this.log(`Task submitted: ${fullTask.id} (${fullTask.type}: ${fullTask.goal})`);
+      this.taskQueue.push(fullTask);
+      if (this.taskQueue.length > 200) {
+        this.taskQueue = this.taskQueue.slice(-100);
+      }
+      this.log(`Task submitted: ${fullTask.id} (${fullTask.type}: ${fullTask.goal})`);
 
-    // Process queue if idle
-    if (this.state === 'idle') {
-      await this.processTaskQueue();
+      // Process queue if idle
+      if (this.state === 'idle') {
+        await this.processTaskQueue();
+      }
+
+      return fullTask.id;
+    } catch (err) {
+      console.error('[kernel] submit failed:', err);
+      return randomUUID(); // Return a UUID even on error for caller consistency
     }
-
-    return fullTask.id;
   }
 
   private async processTaskQueue(): Promise<void> {
-    while (this.taskQueue.length > 0 && this.state !== 'dormant') {
-      const task = this.dequeueTask();
-      if (!task) break;
+    try {
+      while (this.taskQueue.length > 0 && this.state !== 'dormant') {
+        const task = this.dequeueTask();
+        if (!task) break;
 
-      await this.executeTask(task);
+        await this.executeTask(task);
+      }
+    } catch (err) {
+      console.error('[kernel] processTaskQueue failed:', err);
     }
   }
 
@@ -363,6 +379,41 @@ export class Kernel {
       this.transition('thinking');
       const plan = await this.planTask(task, sensorData);
       this.taskPlans.set(task.id, plan);
+      if (this.taskPlans.size > 500) {
+        // Delete oldest entries
+        const keys = Array.from(this.taskPlans.keys());
+        for (let i = 0; i < 100; i++) this.taskPlans.delete(keys[i]);
+      }
+      if (this.taskPlans.size > 500) {
+        // Delete oldest entries
+        const keys = Array.from(this.taskPlans.keys());
+        for (let i = 0; i < 100; i++) this.taskPlans.delete(keys[i]);
+      }
+      if (this.taskPlans.size > 500) {
+        // Delete oldest entries
+        const keys = Array.from(this.taskPlans.keys());
+        for (let i = 0; i < 100; i++) this.taskPlans.delete(keys[i]);
+      }
+      if (this.taskPlans.size > 500) {
+        // Delete oldest entries
+        const keys = Array.from(this.taskPlans.keys());
+        for (let i = 0; i < 100; i++) this.taskPlans.delete(keys[i]);
+      }
+      if (this.taskPlans.size > 500) {
+        // Delete oldest entries
+        const keys = Array.from(this.taskPlans.keys());
+        for (let i = 0; i < 100; i++) this.taskPlans.delete(keys[i]);
+      }
+      if (this.taskPlans.size > 500) {
+        // Delete oldest entries
+        const keys = Array.from(this.taskPlans.keys());
+        for (let i = 0; i < 100; i++) this.taskPlans.delete(keys[i]);
+      }
+      if (this.taskPlans.size > 500) {
+        // Delete oldest entries
+        const keys = Array.from(this.taskPlans.keys());
+        for (let i = 0; i < 100; i++) this.taskPlans.delete(keys[i]);
+      }
 
       // Phase 3: Deciding (ethical check)
       this.transition('deciding');
@@ -411,6 +462,9 @@ export class Kernel {
     } finally {
       this.activeTasks.delete(task.id);
       this.taskHistory.push(task);
+      if (this.taskHistory.length > 200) {
+        this.taskHistory = this.taskHistory.slice(-100);
+      }
       this.transition('idle');
     }
   }
@@ -705,31 +759,35 @@ export class Kernel {
   }
 
   private async recoverFromError(): Promise<void> {
-    this.log('Attempting error recovery...');
+    try {
+      this.log('Attempting error recovery...');
 
-    // Check all agent health
-    const healthResults = await this.checkAllAgentHealth();
-    const unhealthyAgents = healthResults.filter((r) => !r.healthy);
+      // Check all agent health
+      const healthResults = await this.checkAllAgentHealth();
+      const unhealthyAgents = healthResults.filter((r) => !r.healthy);
 
-    if (unhealthyAgents.length > 0) {
-      this.log(`Unhealthy agents: ${unhealthyAgents.map((a) => a.id).join(', ')}`);
+      if (unhealthyAgents.length > 0) {
+        this.log(`Unhealthy agents: ${unhealthyAgents.map((a) => a.id).join(', ')}`);
 
-      // Restart unhealthy agents (INV-004: at least one must be responsive)
-      for (const agent of unhealthyAgents) {
-        const type = agent.id.split('-')[0] as AgentType;
-        const existingAgent = this.agents.get(type);
-        if (existingAgent) {
-          existingAgent.sleep();
-          existingAgent.wake();
-          this.log(`Restarted agent: ${type}`);
+        // Restart unhealthy agents (INV-004: at least one must be responsive)
+        for (const agent of unhealthyAgents) {
+          const type = agent.id.split('-')[0] as AgentType;
+          const existingAgent = this.agents.get(type);
+          if (existingAgent) {
+            existingAgent.sleep();
+            existingAgent.wake();
+            this.log(`Restarted agent: ${type}`);
+          }
         }
       }
+
+      // Check invariants
+      await this.checkInvariants();
+
+      this.transition('idle');
+    } catch (err) {
+      console.error('[kernel] recoverFromError failed:', err);
     }
-
-    // Check invariants
-    await this.checkInvariants();
-
-    this.transition('idle');
   }
 
   // ============================================================================
@@ -750,21 +808,30 @@ export class Kernel {
   }
 
   private async performHealthCheck(): Promise<void> {
-    const results = await this.checkAllAgentHealth();
+    try {
+      const results = await this.checkAllAgentHealth();
 
-    // Update health map
-    for (const result of results) {
-      this.agentHealth.set(result.id, {
-        healthy: result.healthy,
-        lastCheck: new Date(),
-      });
+      // Update health map
+      for (const result of results) {
+        this.agentHealth.set(result.id, {
+          healthy: result.healthy,
+          lastCheck: new Date(),
+        });
+      }
+      if (this.agentHealth.size > 1000) {
+        // Delete oldest entries
+        const keys = Array.from(this.agentHealth.keys());
+        for (let i = 0; i < 200; i++) this.agentHealth.delete(keys[i]);
+      }
+
+      // Check invariants
+      await this.checkInvariants();
+
+      // Check energy
+      this.checkEnergy();
+    } catch (err) {
+      console.error('[kernel] performHealthCheck failed:', err);
     }
-
-    // Check invariants
-    await this.checkInvariants();
-
-    // Check energy
-    this.checkEnergy();
   }
 
   private async checkAllAgentHealth(): Promise<{ id: AgentId; healthy: boolean }[]> {
@@ -897,57 +964,69 @@ export class Kernel {
   // ============================================================================
 
   private async handleMessage(message: Message): Promise<void> {
-    switch (message.type) {
-      case 'COMMAND':
-        await this.handleCommand(message);
-        break;
-      case 'QUERY':
-        await this.handleQuery(message);
-        break;
-      case 'ALERT':
-        await this.handleAlert(message);
-        break;
+    try {
+      switch (message.type) {
+        case 'COMMAND':
+          await this.handleCommand(message);
+          break;
+        case 'QUERY':
+          await this.handleQuery(message);
+          break;
+        case 'ALERT':
+          await this.handleAlert(message);
+          break;
+      }
+    } catch (err) {
+      console.error('[kernel] handleMessage failed:', err);
     }
   }
 
   private async handleCommand(message: Message): Promise<void> {
-    const { command, params } = message.payload;
+    try {
+      const { command, params } = message.payload;
 
-    switch (command) {
-      case 'submit_task':
-        const taskId = await this.submit(params);
-        await this.bus.send('kernel', message.from, 'RESPONSE', { taskId });
-        break;
+      switch (command) {
+        case 'submit_task':
+          const taskId = await this.submit(params);
+          await this.bus.send('kernel', message.from, 'RESPONSE', { taskId });
+          break;
 
-      case 'get_status':
-        await this.bus.send('kernel', message.from, 'RESPONSE', this.getStatus());
-        break;
+        case 'get_status':
+          await this.bus.send('kernel', message.from, 'RESPONSE', this.getStatus());
+          break;
 
-      case 'set_energy':
-        this.setEnergy(params.energy);
-        await this.bus.send('kernel', message.from, 'RESPONSE', { energy: this.config.energy });
-        break;
+        case 'set_energy':
+          this.setEnergy(params.energy);
+          await this.bus.send('kernel', message.from, 'RESPONSE', { energy: this.config.energy });
+          break;
 
-      case 'stop':
-        await this.stop();
-        await this.bus.send('kernel', message.from, 'RESPONSE', { stopped: true });
-        break;
+        case 'stop':
+          await this.stop();
+          await this.bus.send('kernel', message.from, 'RESPONSE', { stopped: true });
+          break;
+      }
+    } catch (err) {
+      console.error('[kernel] handleCommand failed:', err);
     }
   }
 
   private async handleQuery(message: Message): Promise<void> {
-    const { query } = message.payload;
+    try {
+      const { query } = message.payload;
 
-    if (query === 'status') {
-      await this.bus.send('kernel', message.from, 'RESPONSE', this.getStatus());
-    } else if (query === 'metrics') {
-      await this.bus.send('kernel', message.from, 'RESPONSE', this.getMetrics());
-    } else if (query === 'tasks') {
-      await this.bus.send('kernel', message.from, 'RESPONSE', {
-        queue: this.taskQueue.length,
-        active: this.activeTasks.size,
-        history: this.taskHistory.length,
-      });
+      if (query === 'status') {
+        await this.bus.send('kernel', message.from, 'RESPONSE', this.getStatus());
+      } else if (query === 'metrics') {
+        await this.bus.send('kernel', message.from, 'RESPONSE', this.getMetrics());
+      } else if (query === 'tasks') {
+        await this.bus.send('kernel', message.from, 'RESPONSE', {
+          queue: this.taskQueue.length,
+          active: this.activeTasks.size,
+          history: this.taskHistory.length,
+        });
+      }
+    } catch (err) {
+      console.error('[kernel] handleQuery failed:', err);
     }
   }
 
@@ -1024,40 +1103,50 @@ export class Kernel {
     pattern?: CoordinationPattern;
     timeout?: number;
   }): Promise<unknown> {
-    const agents = options.agents || await this.coordinator.route(options.query);
+    try {
+      const agents = options.agents || await this.coordinator.route(options.query);
 
-    this.log(`Coordinated task: ${options.query}`);
-    this.log(`Pattern: ${options.pattern || 'parallel'}, Agents: ${agents.join(', ')}`);
+      this.log(`Coordinated task: ${options.query}`);
+      this.log(`Pattern: ${options.pattern || 'parallel'}, Agents: ${agents.join(', ')}`);
 
-    const task = await this.coordinator.coordinate({
-      query: options.query,
-      agents,
-      pattern: options.pattern || 'parallel',
-      timeout: options.timeout || this.config.maxTaskTimeout,
-    });
+      const task = await this.coordinator.coordinate({
+        query: options.query,
+        agents,
+        pattern: options.pattern || 'parallel',
+        timeout: options.timeout || this.config.maxTaskTimeout,
+      });
 
-    if (task.status === 'completed') {
-      this.metrics.tasksCompleted++;
-    } else {
-      this.metrics.tasksFailed++;
+      if (task.status === 'completed') {
+        this.metrics.tasksCompleted++;
+      } else {
+        this.metrics.tasksFailed++;
+      }
+
+      return task.finalResult;
+    } catch (err) {
+      console.error('[kernel] coordinatedTask failed:', err);
+      return null;
     }
-
-    return task.finalResult;
   }
 
   /**
    * Run a predefined workflow
    */
   async runWorkflow(workflowId: string, input: unknown): Promise<unknown> {
-    this.log(`Running workflow: ${workflowId}`);
+    try {
+      this.log(`Running workflow: ${workflowId}`);
 
-    const context = await this.coordinator.executeWorkflow(workflowId, input);
+      const context = await this.coordinator.executeWorkflow(workflowId, input);
 
-    if (context.errors.length > 0) {
-      this.log(`Workflow errors: ${context.errors.join(', ')}`);
+      if (context.errors.length > 0) {
+        this.log(`Workflow errors: ${context.errors.join(', ')}`);
+      }
+
+      return context.results.get(context.workflowId) || context.results;
+    } catch (err) {
+      console.error('[kernel] runWorkflow failed:', err);
+      return {};
     }
-
-    return context.results.get(context.workflowId) || context.results;
   }
 
   /**

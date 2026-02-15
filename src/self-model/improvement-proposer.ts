@@ -41,6 +41,9 @@ export class ImprovementProposer {
     proposals.push(...this.detectDormantModules());
     proposals.push(...this.detectMissingShutdown());
     proposals.push(...this.detectUnprotectedTimers());
+    proposals.push(...this.detectTodoFixme());
+    proposals.push(...this.detectUnhandledAsync());
+    proposals.push(...this.detectUnboundedCollections());
 
     return proposals
       .sort((a, b) => b.priority - a.priority)
@@ -290,6 +293,238 @@ export class ImprovementProposer {
             targetModule: entry.name,
             evidence: `Unprotected setInterval at line(s): ${unprotectedLines.join(', ')}`,
             suggestedAction: `Wrap each setInterval callback body in try/catch to prevent silent timer death`,
+            estimatedEffort: 'small',
+          });
+        }
+      } catch {
+        // skip
+      }
+    }
+
+    return proposals;
+  }
+
+  // ==========================================================================
+  // TODO/FIXME/HACK Detector
+  // ==========================================================================
+
+  /**
+   * Detect TODO, FIXME, HACK, XXX comments — these are self-documented tech debt.
+   * Only flag HIGH-SIGNAL ones (not trivial notes).
+   */
+  private detectTodoFixme(): ImprovementProposal[] {
+    const proposals: ImprovementProposal[] = [];
+    const manifest = this.manifest.generate();
+
+    for (const entry of manifest) {
+      if (INFRA_MODULES.has(entry.name) || !entry.hasIndex) continue;
+
+      try {
+        const indexPath = join(this.rootPath, 'src', entry.name, 'index.ts');
+        const content = readFileSync(indexPath, 'utf-8');
+        const lines = content.split('\n');
+
+        const flags: Array<{ line: number; text: string; tag: string }> = [];
+        for (let i = 0; i < lines.length; i++) {
+          const match = lines[i].match(/\/\/\s*(TODO|FIXME|HACK|XXX)\b[:\s]*(.*)/i);
+          if (match) {
+            const tag = match[1].toUpperCase();
+            const text = match[2].trim();
+            // Skip trivial/generic TODOs
+            if (text.length < 5) continue;
+            flags.push({ line: i + 1, text, tag });
+          }
+        }
+
+        if (flags.length > 0) {
+          const priority = flags.some(f => f.tag === 'FIXME' || f.tag === 'HACK') ? 0.55 : 0.5;
+          // Only report if at least one is actionable (FIXME/HACK or TODO with real description)
+          const evidence = flags
+            .slice(0, 5) // max 5 in evidence
+            .map(f => `L${f.line} ${f.tag}: ${f.text.substring(0, 80)}`)
+            .join(' | ');
+
+          proposals.push({
+            id: `proposal-todo-${entry.name}-${Date.now()}`,
+            category: 'reliability',
+            priority,
+            title: `Resolve ${flags.length} TODO/FIXME in ${entry.name}`,
+            description: `${flags.length} flagged comment(s) indicating known tech debt or incomplete work`,
+            targetModule: entry.name,
+            evidence,
+            suggestedAction: `Address the flagged items — implement missing functionality, fix known issues, or remove stale TODO if already done`,
+            estimatedEffort: flags.length > 3 ? 'medium' : 'small',
+          });
+        }
+      } catch {
+        // skip
+      }
+    }
+
+    return proposals;
+  }
+
+  // ==========================================================================
+  // Unhandled Async Detector
+  // ==========================================================================
+
+  /**
+   * Detect async methods that call external/risky operations without try/catch.
+   * Pattern: async method body calls await X() but has no try in the method.
+   */
+  private detectUnhandledAsync(): ImprovementProposal[] {
+    const proposals: ImprovementProposal[] = [];
+    const manifest = this.manifest.generate();
+
+    for (const entry of manifest) {
+      if (INFRA_MODULES.has(entry.name) || !entry.hasIndex) continue;
+
+      try {
+        const indexPath = join(this.rootPath, 'src', entry.name, 'index.ts');
+        const content = readFileSync(indexPath, 'utf-8');
+        const lines = content.split('\n');
+
+        // Find async methods
+        const unhandled: Array<{ line: number; name: string }> = [];
+        for (let i = 0; i < lines.length; i++) {
+          const asyncMatch = lines[i].match(/async\s+([\w]+)\s*\(/);
+          if (!asyncMatch) continue;
+
+          const methodName = asyncMatch[1];
+          // Skip test/private helpers
+          if (methodName.startsWith('test') || methodName === 'main') continue;
+
+          // Look in the method body (next 30 lines or until next method)
+          let hasAwait = false;
+          let hasTry = false;
+          let depth = 0;
+          let started = false;
+          let methodLength = 0;
+
+          for (let j = i; j < Math.min(i + 80, lines.length); j++) {
+            const line = lines[j];
+            for (const ch of line) {
+              if (ch === '{') { depth++; started = true; }
+              if (ch === '}') depth--;
+            }
+
+            if (started) methodLength++;
+            if (started && depth === 0) break; // method ended
+
+            if (line.includes('await ')) hasAwait = true;
+            if (line.includes('try')) hasTry = true;
+          }
+
+          // Skip methods > 40 lines — too long for LLM search/replace
+          if (methodLength > 40) continue;
+
+          if (hasAwait && !hasTry) {
+            unhandled.push({ line: i + 1, name: methodName });
+          }
+        }
+
+        if (unhandled.length > 0) {
+          const evidence = unhandled
+            .slice(0, 4)
+            .map(u => `L${u.line} async ${u.name}()`)
+            .join(', ');
+
+          proposals.push({
+            id: `proposal-async-${entry.name}-${Date.now()}`,
+            category: 'reliability',
+            priority: 0.5,
+            title: `Add error handling in ${entry.name}`,
+            description: `${unhandled.length} async method(s) with await but no try/catch — errors crash silently`,
+            targetModule: entry.name,
+            evidence: `Unprotected async methods: ${evidence}`,
+            suggestedAction: `Wrap the await calls in try/catch with appropriate error logging`,
+            estimatedEffort: 'small',
+          });
+        }
+      } catch {
+        // skip
+      }
+    }
+
+    return proposals;
+  }
+
+  // ==========================================================================
+  // Unbounded Collection Detector
+  // ==========================================================================
+
+  /**
+   * Detect arrays/maps that grow without bound (push/set without max size check).
+   * These cause memory leaks over time.
+   */
+  private detectUnboundedCollections(): ImprovementProposal[] {
+    const proposals: ImprovementProposal[] = [];
+    const manifest = this.manifest.generate();
+
+    for (const entry of manifest) {
+      if (INFRA_MODULES.has(entry.name) || !entry.hasIndex) continue;
+
+      try {
+        const indexPath = join(this.rootPath, 'src', entry.name, 'index.ts');
+        const content = readFileSync(indexPath, 'utf-8');
+        const lines = content.split('\n');
+
+        // Find instance field arrays that get pushed to
+        const unbounded: Array<{ line: number; field: string }> = [];
+
+        for (let i = 0; i < lines.length; i++) {
+          // Match: this.something.push( or this.something.set(
+          const pushMatch = lines[i].match(/this\.([\w]+)\.push\s*\(/);
+          const setMatch = lines[i].match(/this\.([\w]+)\.set\s*\(/);
+          const match = pushMatch || setMatch;
+          if (!match) continue;
+
+          const field = match[1];
+
+          // Skip callback/listener/handler/subscription registrations — these are not logs
+          if (/callback|listener|handler|subscriber|watcher|observer|subscription/i.test(field)) continue;
+          // Skip task tracking sets (runningTasks, activeTasks) — managed externally
+          if (/running|active/i.test(field) && /task/i.test(field)) continue;
+          // Skip sensor/effector/agent registrations
+          if (/sensors|effectors|agents|cooldowns/i.test(field)) continue;
+
+          // Check if there's a size cap in the surrounding 15 lines
+          const context = lines.slice(Math.max(0, i - 5), Math.min(lines.length, i + 10)).join('\n');
+          const hasCap = (context.includes('.length') || context.includes('.size')) && (
+            context.includes('.shift()') ||
+            context.includes('.splice(') ||
+            context.includes('.slice(') ||
+            context.includes('.delete(') ||
+            context.includes('.clear()') ||
+            />\s*\d+/.test(context) // some numeric comparison
+          );
+
+          // Also skip if `maxHistory` or `MAX_` or `limit` or a size cap is nearby
+          const hasLimit = /max|limit|cap|MAX_|\.size\s*>/i.test(context);
+
+          if (!hasCap && !hasLimit) {
+            // Avoid duplicates for same field
+            if (!unbounded.some(u => u.field === field)) {
+              unbounded.push({ line: i + 1, field });
+            }
+          }
+        }
+
+        if (unbounded.length > 0) {
+          const evidence = unbounded
+            .slice(0, 4)
+            .map(u => `L${u.line} this.${u.field}`)
+            .join(', ');
+
+          proposals.push({
+            id: `proposal-unbounded-${entry.name}-${Date.now()}`,
+            category: 'reliability',
+            priority: 0.5,
+            title: `Cap unbounded collection in ${entry.name}`,
+            description: `${unbounded.length} collection(s) grow without size limit — potential memory leak`,
+            targetModule: entry.name,
+            evidence: `Unbounded: ${evidence}`,
+            suggestedAction: `Add size checks after push/set — e.g., if (this.arr.length > MAX) this.arr.shift()`,
             estimatedEffort: 'small',
           });
         }

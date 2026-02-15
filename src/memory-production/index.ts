@@ -167,13 +167,18 @@ export class VectorMemory {
   }
 
   async connect(): Promise<boolean> {
-    if (!process.env.PINECONE_API_KEY) {
-      console.warn('[VectorMemory] No PINECONE_API_KEY configured');
+    try {
+      if (!process.env.PINECONE_API_KEY) {
+        console.warn('[VectorMemory] No PINECONE_API_KEY configured');
+        return false;
+      }
+      this.connected = true;
+      await this.ensureIndex();
+      return true;
+    } catch (err) {
+      console.error('[memory-production] VectorMemory connect failed:', err);
       return false;
     }
-    this.connected = true;
-    await this.ensureIndex();
-    return true;
   }
 
   private async ensureIndex(): Promise<void> {
@@ -350,13 +355,18 @@ export class KnowledgeGraph {
   }
 
   async connect(): Promise<boolean> {
-    if (!process.env.NEO4J_PASSWORD) {
-      console.warn('[KnowledgeGraph] No NEO4J_PASSWORD configured');
+    try {
+      if (!process.env.NEO4J_PASSWORD) {
+        console.warn('[KnowledgeGraph] No NEO4J_PASSWORD configured');
+        return false;
+      }
+      this.connected = true;
+      await this.initializeSchema();
+      return true;
+    } catch (err) {
+      console.error('[memory-production] KnowledgeGraph connect failed:', err);
       return false;
     }
-    this.connected = true;
-    await this.initializeSchema();
-    return true;
   }
 
   private async initializeSchema(): Promise<void> {
@@ -614,13 +624,18 @@ export class StructuredMemory {
   }
 
   async connect(): Promise<boolean> {
-    if (!this.connectionString) {
-      console.warn('[StructuredMemory] No POSTGRES_CONNECTION_STRING configured');
+    try {
+      if (!this.connectionString) {
+        console.warn('[StructuredMemory] No POSTGRES_CONNECTION_STRING configured');
+        return false;
+      }
+      this.connected = true;
+      await this.initializeSchema();
+      return true;
+    } catch (err) {
+      console.error('[memory-production] connect failed:', err);
       return false;
     }
-    this.connected = true;
-    await this.initializeSchema();
-    return true;
   }
 
   private async initializeSchema(): Promise<void> {
@@ -811,14 +826,18 @@ export class StructuredMemory {
   }
 
   async recordSkillUsage(skillName: string, success: boolean): Promise<void> {
-    const sql = `
-      UPDATE skills SET
-        use_count = use_count + 1,
-        success_rate = (success_rate * use_count + $2) / (use_count + 1)
-      WHERE name = $1
-    `;
+    try {
+      const sql = `
+        UPDATE skills SET
+          use_count = use_count + 1,
+          success_rate = (success_rate * use_count + $2) / (use_count + 1)
+        WHERE name = $1
+      `;
 
-    await this.query(sql, [skillName, success ? 1 : 0]);
+      await this.query(sql, [skillName, success ? 1 : 0]);
+    } catch (err) {
+      console.error('[memory-production] recordSkillUsage failed:', err);
+    }
   }
 }
 
@@ -853,20 +872,25 @@ export class ProductionMemory {
     graph: boolean;
     structured: boolean;
   }> {
-    if (this.initialized) {
-      return { vectors: true, graph: true, structured: true };
+    try {
+      if (this.initialized) {
+        return { vectors: true, graph: true, structured: true };
+      }
+
+      const [vectors, graph, structured] = await Promise.all([
+        this.vectors.connect(),
+        this.graph.connect(),
+        this.structured.connect(),
+      ]);
+
+      this.initialized = true;
+
+      console.log('[ProductionMemory] Initialized:', { vectors, graph, structured });
+      return { vectors, graph, structured };
+    } catch (err) {
+      console.error('[memory-production] initialize failed:', err);
+      return { vectors: false, graph: false, structured: false };
     }
-
-    const [vectors, graph, structured] = await Promise.all([
-      this.vectors.connect(),
-      this.graph.connect(),
-      this.structured.connect(),
-    ]);
-
-    this.initialized = true;
-
-    console.log('[ProductionMemory] Initialized:', { vectors, graph, structured });
-    return { vectors, graph, structured };
   }
 
   async store(entry: {
@@ -1017,20 +1041,24 @@ export class ProductionMemory {
   }
 
   async logInteraction(sessionId: string, role: 'user' | 'assistant' | 'system', content: string): Promise<void> {
-    await this.structured.logEpisode({
-      sessionId,
-      role,
-      content,
-    });
-
-    // Store important interactions in long-term memory
-    if (content.length > 200 || role === 'assistant') {
-      await this.store({
+    try {
+      await this.structured.logEpisode({
+        sessionId,
+        role,
         content,
-        type: 'episodic',
-        source: `session:${sessionId}`,
-        importance: role === 'assistant' ? 0.6 : 0.4,
       });
+
+      // Store important interactions in long-term memory
+      if (content.length > 200 || role === 'assistant') {
+        await this.store({
+          content,
+          type: 'episodic',
+          source: `session:${sessionId}`,
+          importance: role === 'assistant' ? 0.6 : 0.4,
+        });
+      }
+    } catch (err) {
+      console.error('[memory-production] logInteraction failed:', err);
     }
   }
 

@@ -265,13 +265,18 @@ export class AutonomousSystem extends EventEmitter {
     priceUSD: number;
     description?: string;
   }): Promise<{ success: boolean; url?: string; productId?: string }> {
-    if (!this.economy) {
+    try {
+      if (!this.economy) {
+        return { success: false };
+      }
+
+      const result = await this.economy.createRevenueStream(config.name, config.priceUSD, config.type);
+      this.lastActivity = new Date().toISOString();
+      return { success: !!result, url: result?.url };
+    } catch (err) {
+      console.error('[autonomous] createRevenueStream failed:', err);
       return { success: false };
     }
-
-    const result = await this.economy.createRevenueStream(config.name, config.priceUSD, config.type);
-    this.lastActivity = new Date().toISOString();
-    return { success: !!result, url: result?.url };
   }
 
   // ==========================================================================
@@ -282,41 +287,46 @@ export class AutonomousSystem extends EventEmitter {
    * Deploy a website or application (governed)
    */
   async deploy(config: WebsiteConfig): Promise<DeploymentResult> {
-    if (!this.deployment || !this.governance) {
-      return { success: false, error: 'Deployment or governance not initialized' };
-    }
-
-    // Check governance for deployment
-    const permission = await this.governance.governance.checkPermission({
-      actor: 'autonomous-system',
-      action: 'deploy',
-      resource: config.name,
-      metadata: { template: config.template, features: config.features },
-    });
-
-    if (!permission.allowed) {
-      if (permission.requiresApproval) {
-        return { success: false, error: `Approval required: ${permission.approvalRequest?.id}` };
+    try {
+      if (!this.deployment || !this.governance) {
+        return { success: false, error: 'Deployment or governance not initialized' };
       }
-      return { success: false, error: `Deployment denied: ${permission.deniedBy}` };
-    }
 
-    // Execute deployment
-    const result = await this.deployment.deployFullStack(config);
-    this.lastActivity = new Date().toISOString();
-
-    // Store in memory
-    if (result.success && this.memory) {
-      await this.memory.store({
-        content: `Deployed ${config.template} website: ${config.name} at ${result.url}`,
-        type: 'episodic',
-        source: 'deployment-system',
-        importance: 0.8,
-        tags: ['deployment', config.template, config.name],
+      // Check governance for deployment
+      const permission = await this.governance.governance.checkPermission({
+        actor: 'autonomous-system',
+        action: 'deploy',
+        resource: config.name,
+        metadata: { template: config.template, features: config.features },
       });
-    }
 
-    return result;
+      if (!permission.allowed) {
+        if (permission.requiresApproval) {
+          return { success: false, error: `Approval required: ${permission.approvalRequest?.id}` };
+        }
+        return { success: false, error: `Deployment denied: ${permission.deniedBy}` };
+      }
+
+      // Execute deployment
+      const result = await this.deployment.deployFullStack(config);
+      this.lastActivity = new Date().toISOString();
+
+      // Store in memory
+      if (result.success && this.memory) {
+        await this.memory.store({
+          content: `Deployed ${config.template} website: ${config.name} at ${result.url}`,
+          type: 'episodic',
+          source: 'deployment-system',
+          importance: 0.8,
+          tags: ['deployment', config.template, config.name],
+        });
+      }
+
+      return result;
+    } catch (err) {
+      console.error('[autonomous] deploy failed:', err);
+      return { success: false, error: `Deployment failed: ${err}` };
+    }
   }
 
   /**
@@ -328,31 +338,36 @@ export class AutonomousSystem extends EventEmitter {
     handler: string;
     pricePerRequest: number;
   }): Promise<DeploymentResult & { stripeProductId?: string }> {
-    if (!this.deployment || !this.economy) {
-      return { success: false, error: 'Deployment or economy not initialized' };
+    try {
+      if (!this.deployment || !this.economy) {
+        return { success: false, error: 'Deployment or economy not initialized' };
+      }
+
+      // Deploy the API
+      const deployResult = await this.deployment.deployPaidAPI({
+        name: config.name,
+        description: config.description,
+        handler: config.handler,
+        pricing: { perRequest: config.pricePerRequest },
+      });
+
+      if (!deployResult.success) {
+        return deployResult;
+      }
+
+      // Create Stripe product for billing (usage-based via subscription)
+      const revenueStream = await this.economy.createRevenueStream(
+        config.name,
+        config.pricePerRequest,
+        'subscription'
+      );
+
+      this.lastActivity = new Date().toISOString();
+      return { ...deployResult, stripeProductId: revenueStream?.url };
+    } catch (err) {
+      console.error('[autonomous] deployPaidAPI failed:', err);
+      return { success: false, error: `Deploy failed: ${err}` };
     }
-
-    // Deploy the API
-    const deployResult = await this.deployment.deployPaidAPI({
-      name: config.name,
-      description: config.description,
-      handler: config.handler,
-      pricing: { perRequest: config.pricePerRequest },
-    });
-
-    if (!deployResult.success) {
-      return deployResult;
-    }
-
-    // Create Stripe product for billing (usage-based via subscription)
-    const revenueStream = await this.economy.createRevenueStream(
-      config.name,
-      config.pricePerRequest,
-      'subscription'
-    );
-
-    this.lastActivity = new Date().toISOString();
-    return { ...deployResult, stripeProductId: revenueStream?.url };
   }
 
   // ==========================================================================
@@ -472,6 +487,9 @@ export class AutonomousSystem extends EventEmitter {
     };
 
     this.taskQueue.push(fullTask);
+    if (this.taskQueue.length > 200) {
+      this.taskQueue = this.taskQueue.slice(-100);
+    }
     return id;
   }
 
@@ -491,6 +509,21 @@ export class AutonomousSystem extends EventEmitter {
     task.status = 'running';
     task.started = new Date().toISOString();
     this.runningTasks.set(task.id, task);
+    if (this.runningTasks.size > 500) {
+      // Delete oldest entries
+      const keys = Array.from(this.runningTasks.keys());
+      for (let i = 0; i < 100; i++) this.runningTasks.delete(keys[i]);
+    }
+    if (this.runningTasks.size > 500) {
+      // Delete oldest entries
+      const keys = Array.from(this.runningTasks.keys());
+      for (let i = 0; i < 100; i++) this.runningTasks.delete(keys[i]);
+    }
+    if (this.runningTasks.size > 500) {
+      // Delete oldest entries
+      const keys = Array.from(this.runningTasks.keys());
+      for (let i = 0; i < 100; i++) this.runningTasks.delete(keys[i]);
+    }
 
     try {
       // Execute based on task type
@@ -749,20 +782,24 @@ export class AutonomousSystem extends EventEmitter {
    * Run the autonomous loop
    */
   async runLoop(intervalMs: number = 5000, maxIterations?: number): Promise<void> {
-    console.log('[AutonomousSystem] Starting autonomous loop...');
+    try {
+      console.log('[AutonomousSystem] Starting autonomous loop...');
 
-    let iterations = 0;
-    while (!maxIterations || iterations < maxIterations) {
-      const task = await this.processNextTask();
-      if (task) {
-        console.log(`[AutonomousSystem] Completed task: ${task.id} (${task.type})`);
+      let iterations = 0;
+      while (!maxIterations || iterations < maxIterations) {
+        const task = await this.processNextTask();
+        if (task) {
+          console.log(`[AutonomousSystem] Completed task: ${task.id} (${task.type})`);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, intervalMs));
+        iterations++;
       }
 
-      await new Promise(resolve => setTimeout(resolve, intervalMs));
-      iterations++;
+      console.log('[AutonomousSystem] Autonomous loop ended');
+    } catch (err) {
+      console.error('[autonomous] runLoop failed:', err);
     }
-
-    console.log('[AutonomousSystem] Autonomous loop ended');
   }
 }
 

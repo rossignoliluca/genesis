@@ -52,13 +52,18 @@ export interface FixAttempt {
 // Constants
 // ============================================================================
 
-const MAX_FIXES_PER_CYCLE = 3;
+const MAX_FIXES_PER_CYCLE = 5;
 const MIN_PRIORITY = 0.5;
 const TSC_TIMEOUT = 60_000; // 60s
 
 // Known pre-existing error files — excluded from verification
 // (populated dynamically at cycle start via baseline tsc)
 let KNOWN_ERROR_FILES = new Set<string>();
+
+// Track modules that repeatedly fail — skip after 2 consecutive failures
+// Key: "module:category", Value: consecutive failure count
+const FAILURE_TRACKER = new Map<string, number>();
+const MAX_CONSECUTIVE_FAILURES = 2;
 
 // ============================================================================
 // Self-Improvement Loop
@@ -87,9 +92,13 @@ export class SelfImprovementLoop {
     // STEP 1: Get proposals from self-model
     const allProposals = this.selfModel.proposeImprovements();
 
-    // STEP 2: Filter — only MED/HIGH priority, max 3
+    // STEP 2: Filter — only MED/HIGH priority, skip repeatedly failing modules
     const viable = allProposals
       .filter(p => p.priority >= MIN_PRIORITY)
+      .filter(p => {
+        const key = `${p.targetModule}:${p.category}`;
+        return (FAILURE_TRACKER.get(key) || 0) < MAX_CONSECUTIVE_FAILURES;
+      })
       .slice(0, MAX_FIXES_PER_CYCLE);
 
     let applied = 0;
@@ -109,9 +118,11 @@ export class SelfImprovementLoop {
       const attempt = await this.attemptFix(proposal);
       details.push(attempt);
 
+      const failKey = `${proposal.targetModule}:${proposal.category}`;
       switch (attempt.status) {
         case 'applied':
           applied++;
+          FAILURE_TRACKER.delete(failKey); // Reset on success
           // Publish success event
           this.publisher.publish('self.improvement.applied', {
             improvementType: proposal.category,
@@ -126,6 +137,7 @@ export class SelfImprovementLoop {
           break;
         default:
           failed++;
+          FAILURE_TRACKER.set(failKey, (FAILURE_TRACKER.get(failKey) || 0) + 1);
           break;
       }
     }

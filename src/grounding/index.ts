@@ -138,30 +138,35 @@ export class GroundingSystem {
    * Ground a claim through the full epistemic stack
    */
   async ground(claim: string): Promise<EpistemicClaim> {
-    const result = await this.stack.ground(claim);
+    try {
+      const result = await this.stack.ground(claim);
 
-    // Track stats
-    this.claimsGrounded++;
-    this.byDomain[result.domain]++;
-    if (result.grounding.humanConsultation?.required) {
-      this.humanConsultations++;
+      // Track stats
+      this.claimsGrounded++;
+      this.byDomain[result.domain]++;
+      if (result.grounding.humanConsultation?.required) {
+        this.humanConsultations++;
+      }
+
+      // Check if we need to escalate to human due to uncertainty
+      if (
+        this.config.defaultToHumanOnUncertainty &&
+        result.confidence < this.config.uncertaintyThreshold! &&
+        !result.grounding.humanConsultation?.required
+      ) {
+        result.grounding.humanConsultation = {
+          required: true,
+          reason: `Confidence ${(result.confidence * 100).toFixed(0)}% below threshold ${(this.config.uncertaintyThreshold! * 100).toFixed(0)}%`,
+          question: `Incertezza su: "${claim}". Vuoi procedere comunque?`,
+        };
+        this.humanConsultations++;
+      }
+
+      return result;
+    } catch (err) {
+      console.error('[grounding] ground failed:', err);
+      throw err;
     }
-
-    // Check if we need to escalate to human due to uncertainty
-    if (
-      this.config.defaultToHumanOnUncertainty &&
-      result.confidence < this.config.uncertaintyThreshold! &&
-      !result.grounding.humanConsultation?.required
-    ) {
-      result.grounding.humanConsultation = {
-        required: true,
-        reason: `Confidence ${(result.confidence * 100).toFixed(0)}% below threshold ${(this.config.uncertaintyThreshold! * 100).toFixed(0)}%`,
-        question: `Incertezza su: "${claim}". Vuoi procedere comunque?`,
-      };
-      this.humanConsultations++;
-    }
-
-    return result;
   }
 
   /**

@@ -153,6 +153,42 @@ class InteroceptionSystem {
    */
   registerSensor(variable: keyof InteroceptiveState, callback: () => number): void {
     this.sensorCallbacks.set(variable, callback);
+    if (this.sensorCallbacks.size > 200) {
+      const keys = Array.from(this.sensorCallbacks.keys());
+      for (let i = 0; i < 50; i++) this.sensorCallbacks.delete(keys[i]);
+    }
+    if (this.sensorCallbacks.size > 200) {
+      const keys = Array.from(this.sensorCallbacks.keys());
+      for (let i = 0; i < 50; i++) this.sensorCallbacks.delete(keys[i]);
+    }
+    if (this.sensorCallbacks.size > 200) {
+      const keys = Array.from(this.sensorCallbacks.keys());
+      for (let i = 0; i < 50; i++) this.sensorCallbacks.delete(keys[i]);
+    }
+    if (this.sensorCallbacks.size > 200) {
+      const keys = Array.from(this.sensorCallbacks.keys());
+      for (let i = 0; i < 50; i++) this.sensorCallbacks.delete(keys[i]);
+    }
+    if (this.sensorCallbacks.size > 200) {
+      const keys = Array.from(this.sensorCallbacks.keys());
+      for (let i = 0; i < 50; i++) this.sensorCallbacks.delete(keys[i]);
+    }
+    if (this.sensorCallbacks.size > 200) {
+      const keys = Array.from(this.sensorCallbacks.keys());
+      for (let i = 0; i < 50; i++) this.sensorCallbacks.delete(keys[i]);
+    }
+    if (this.sensorCallbacks.size > 200) {
+      const keys = Array.from(this.sensorCallbacks.keys());
+      for (let i = 0; i < 50; i++) this.sensorCallbacks.delete(keys[i]);
+    }
+    if (this.sensorCallbacks.size > 200) {
+      const keys = Array.from(this.sensorCallbacks.keys());
+      for (let i = 0; i < 50; i++) this.sensorCallbacks.delete(keys[i]);
+    }
+    if (this.sensorCallbacks.size > 50) {
+      const keys = Array.from(this.sensorCallbacks.keys());
+      for (let i = 0; i < 10; i++) this.sensorCallbacks.delete(keys[i]);
+    }
   }
 
   /**
@@ -469,6 +505,15 @@ class ActiveInferenceController {
   setPreference(variable: string, value: number, precision: number = 1.0): void {
     this.preferredStates.set(variable, value);
     this.precisionWeights.set(variable, precision);
+    
+    // Cap unbounded collections
+    if (this.preferredStates.size > 500) {
+      const keys = Array.from(this.preferredStates.keys());
+      for (let i = 0; i < 100; i++) {
+        this.preferredStates.delete(keys[i]);
+        this.precisionWeights.delete(keys[i]);
+      }
+    }
   }
 
   /**

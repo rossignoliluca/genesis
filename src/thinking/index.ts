@@ -1862,30 +1862,41 @@ export class ThinkingEngine {
     context?: string,
     alignmentContext?: string
   ): Promise<ThinkingStep> {
-    const startTime = Date.now();
+    try {
+      const startTime = Date.now();
 
-    const prompt = `${THINKING_PROMPT}
+      const prompt = `${THINKING_PROMPT}
 
 ${alignmentContext ? `Alignment reasoning:\n${alignmentContext}\n\n` : ''}
 ${context ? `Context:\n${context}\n\n` : ''}
 Question: ${query}`;
 
-    const response = await this.llm.chat(prompt);
+      const response = await this.llm.chat(prompt);
 
-    // Extract thinking block
-    const thinkingMatch = response.content.match(/<thinking>([\s\S]*?)<\/thinking>/);
-    const thinking = thinkingMatch ? thinkingMatch[1].trim() : response.content;
+      // Extract thinking block
+      const thinkingMatch = response.content.match(/<thinking>([\s\S]*?)<\/thinking>/);
+      const thinking = thinkingMatch ? thinkingMatch[1].trim() : response.content;
 
-    // Estimate confidence from thinking depth
-    const confidence = this.estimateThinkingConfidence(thinking);
+      // Estimate confidence from thinking depth
+      const confidence = this.estimateThinkingConfidence(thinking);
 
-    return {
-      type: 'think',
-      content: thinking,
-      confidence,
-      duration: Date.now() - startTime,
-      tokenCount: Math.ceil(thinking.length / 4),
-    };
+      return {
+        type: 'think',
+        content: thinking,
+        confidence,
+        duration: Date.now() - startTime,
+        tokenCount: Math.ceil(thinking.length / 4),
+      };
+    } catch (err) {
+      console.error('[thinking] extendedThink failed:', err);
+      return {
+        type: 'think',
+        content: '',
+        confidence: 0,
+        duration: 0,
+        tokenCount: 0,
+      };
+    }
   }
 
   // ==========================================================================
@@ -1898,23 +1909,34 @@ Question: ${query}`;
   private async deliberate(query: string): Promise<ThinkingStep> {
     const startTime = Date.now();
 
-    const prompt = DELIBERATIVE_ALIGNMENT_PROMPT
-      .replace('{principles}', this.config.principles.map((p, i) => `${i + 1}. ${p}`).join('\n'))
-      .replace('{query}', query);
+    try {
+      const prompt = DELIBERATIVE_ALIGNMENT_PROMPT
+        .replace('{principles}', this.config.principles.map((p, i) => `${i + 1}. ${p}`).join('\n'))
+        .replace('{query}', query);
 
-    const response = await this.llm.chat(prompt);
+      const response = await this.llm.chat(prompt);
 
-    // Extract alignment reasoning
-    const alignmentMatch = response.content.match(/<alignment>([\s\S]*?)<\/alignment>/);
-    const alignment = alignmentMatch ? alignmentMatch[1].trim() : '';
+      // Extract alignment reasoning
+      const alignmentMatch = response.content.match(/<alignment>([\s\S]*?)<\/alignment>/);
+      const alignment = alignmentMatch ? alignmentMatch[1].trim() : '';
 
-    return {
-      type: 'align',
-      content: alignment,
-      confidence: 0.9,  // Alignment is typically high confidence
-      duration: Date.now() - startTime,
-      tokenCount: Math.ceil(alignment.length / 4),
-    };
+      return {
+        type: 'align',
+        content: alignment,
+        confidence: 0.9,  // Alignment is typically high confidence
+        duration: Date.now() - startTime,
+        tokenCount: Math.ceil(alignment.length / 4),
+      };
+    } catch (err) {
+      console.error('[thinking] deliberate failed:', err);
+      return {
+        type: 'align',
+        content: '',
+        confidence: 0.0,
+        duration: Date.now() - startTime,
+        tokenCount: 0,
+      };
+    }
   }
 
   // ==========================================================================
@@ -1996,42 +2018,50 @@ Question: ${query}`;
     thinkingContext?: string,
     systemPrompt?: string
   ): Promise<{ best: string; confidence: number }> {
-    // v10.3: Parallel Best-of-N generation (3-5x speedup)
-    const generatePromises = Array.from({ length: this.config.nSamples }, () =>
-      this.generate(
-        query,
-        context,
-        thinkingContext,
-        systemPrompt,
-        this.config.samplingTemperature
-      )
-    );
+    try {
+      // v10.3: Parallel Best-of-N generation (3-5x speedup)
+      const generatePromises = Array.from({ length: this.config.nSamples }, () =>
+        this.generate(
+          query,
+          context,
+          thinkingContext,
+          systemPrompt,
+          this.config.samplingTemperature
+        )
+      );
 
-    const results = await Promise.all(generatePromises);
-    const samples = results.map(result => ({
-      response: result.response,
-      score: result.confidence,
-    }));
+      const results = await Promise.all(generatePromises);
+      const samples = results.map(result => ({
+        response: result.response,
+        score: result.confidence,
+      }));
 
-    // Self-consistency: Check agreement among samples
-    const consensusScore = this.calculateConsensus(samples.map(s => s.response));
+      // Self-consistency: Check agreement among samples
+      const consensusScore = this.calculateConsensus(samples.map(s => s.response));
 
-    // Select best (highest score + bonus for consensus)
-    let bestIndex = 0;
-    let bestScore = 0;
+      // Select best (highest score + bonus for consensus)
+      let bestIndex = 0;
+      let bestScore = 0;
 
-    for (let i = 0; i < samples.length; i++) {
-      const score = samples[i].score + (consensusScore * 0.2);
-      if (score > bestScore) {
-        bestScore = score;
-        bestIndex = i;
+      for (let i = 0; i < samples.length; i++) {
+        const score = samples[i].score + (consensusScore * 0.2);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIndex = i;
+        }
       }
-    }
 
-    return {
-      best: samples[bestIndex].response,
-      confidence: Math.min(1, bestScore),
-    };
+      return {
+        best: samples[bestIndex].response,
+        confidence: Math.min(1, bestScore),
+      };
+    } catch (err) {
+      console.error('[thinking] bestOfN failed:', err);
+      return {
+        best: 'Failed to generate response due to error.',
+        confidence: 0,
+      };
+    }
   }
 
   /**
@@ -2135,25 +2165,30 @@ Question: ${query}`;
     systemPrompt?: string,
     _temperature?: number
   ): Promise<{ response: string; confidence: number }> {
-    let prompt = query;
+    try {
+      let prompt = query;
 
-    if (context) {
-      prompt = `Context:\n${context}\n\n${prompt}`;
+      if (context) {
+        prompt = `Context:\n${context}\n\n${prompt}`;
+      }
+
+      if (thinkingContext) {
+        prompt = `[Internal reasoning completed]\n\n${prompt}`;
+      }
+
+      const result = await this.llm.chat(prompt, systemPrompt);
+
+      // Estimate confidence from response characteristics
+      const confidence = this.estimateResponseConfidence(result.content);
+
+      return {
+        response: result.content,
+        confidence,
+      };
+    } catch (err) {
+      console.error('[thinking] generate failed:', err);
+      return { response: 'Failed to generate response', confidence: 0 };
     }
-
-    if (thinkingContext) {
-      prompt = `[Internal reasoning completed]\n\n${prompt}`;
-    }
-
-    const result = await this.llm.chat(prompt, systemPrompt);
-
-    // Estimate confidence from response characteristics
-    const confidence = this.estimateResponseConfidence(result.content);
-
-    return {
-      response: result.content,
-      confidence,
-    };
   }
 
   // ==========================================================================
@@ -2625,13 +2660,18 @@ Question: ${query}`;
     nodes: ThoughtNode[],
     method: StateEvalMethod
   ): Promise<ThoughtNode[]> {
-    for (const node of nodes) {
-      const result = await this.evaluateState(problem, node, method);
-      node.value = result.value;
-      node.isTerminal = result.isTerminal;
-      node.isValid = result.isValid;
+    try {
+      for (const node of nodes) {
+        const result = await this.evaluateState(problem, node, method);
+        node.value = result.value;
+        node.isTerminal = result.isTerminal;
+        node.isValid = result.isValid;
+      }
+      return nodes;
+    } catch (err) {
+      console.error('[thinking] evaluateStates failed:', err);
+      return nodes;
     }
-    return nodes;
   }
 
   /**
@@ -2641,30 +2681,35 @@ Question: ${query}`;
     problem: string,
     node: ThoughtNode
   ): Promise<{ value: number; isTerminal: boolean; isValid: boolean }> {
-    const path = this.buildPathDescription(node);
-    const prompt = TOT_STATE_EVALUATOR_PROMPT
-      .replace('{problem}', problem)
-      .replace('{state}', node.state)
-      .replace('{path}', path);
+    try {
+      const path = this.buildPathDescription(node);
+      const prompt = TOT_STATE_EVALUATOR_PROMPT
+        .replace('{problem}', problem)
+        .replace('{state}', node.state)
+        .replace('{path}', path);
 
-    const result = await this.llm.chat(prompt);
+      const result = await this.llm.chat(prompt);
 
-    // Parse evaluation
-    const evalMatch = result.content.match(/<eval>([\s\S]*?)<\/eval>/);
-    if (evalMatch) {
-      const content = evalMatch[1];
-      const scoreMatch = content.match(/score:\s*(\d+)/i);
-      const terminalMatch = content.match(/is_terminal:\s*(true|false)/i);
-      const validMatch = content.match(/is_valid:\s*(true|false)/i);
+      // Parse evaluation
+      const evalMatch = result.content.match(/<eval>([\s\S]*?)<\/eval>/);
+      if (evalMatch) {
+        const content = evalMatch[1];
+        const scoreMatch = content.match(/score:\s*(\d+)/i);
+        const terminalMatch = content.match(/is_terminal:\s*(true|false)/i);
+        const validMatch = content.match(/is_valid:\s*(true|false)/i);
 
-      return {
-        value: scoreMatch ? parseInt(scoreMatch[1]) / 10 : 0.5,
-        isTerminal: terminalMatch ? terminalMatch[1].toLowerCase() === 'true' : false,
-        isValid: validMatch ? validMatch[1].toLowerCase() === 'true' : true,
-      };
+        return {
+          value: scoreMatch ? parseInt(scoreMatch[1]) / 10 : 0.5,
+          isTerminal: terminalMatch ? terminalMatch[1].toLowerCase() === 'true' : false,
+          isValid: validMatch ? validMatch[1].toLowerCase() === 'true' : true,
+        };
+      }
+
+      return { value: 0.5, isTerminal: false, isValid: true };
+    } catch (err) {
+      console.error('[thinking] evaluateWithValue failed:', err);
+      return { value: 0.5, isTerminal: false, isValid: true };
     }
-
-    return { value: 0.5, isTerminal: false, isValid: true };
   }
 
   /**
@@ -2674,34 +2719,39 @@ Question: ${query}`;
     problem: string,
     nodes: ThoughtNode[]
   ): Promise<{ value: number; isTerminal: boolean; isValid: boolean }> {
-    if (nodes.length === 1) {
-      return this.evaluateWithValue(problem, nodes[0]);
-    }
-
-    const statesStr = nodes.map((n, i) =>
-      `State ${i + 1}:\n${n.state}`
-    ).join('\n\n');
-
-    const prompt = TOT_VOTE_PROMPT
-      .replace('{problem}', problem)
-      .replace('{states}', statesStr);
-
-    const result = await this.llm.chat(prompt);
-
-    // Parse vote
-    const voteMatch = result.content.match(/<vote>([\s\S]*?)<\/vote>/);
-    if (voteMatch) {
-      const content = voteMatch[1];
-      const bestMatch = content.match(/best:\s*(\d+)/i);
-      const bestIndex = bestMatch ? parseInt(bestMatch[1]) - 1 : 0;
-
-      // The voted node gets higher value
-      for (let i = 0; i < nodes.length; i++) {
-        nodes[i].value = i === bestIndex ? 0.9 : 0.5;
+    try {
+      if (nodes.length === 1) {
+        return this.evaluateWithValue(problem, nodes[0]);
       }
-    }
 
-    return { value: nodes[0].value, isTerminal: false, isValid: true };
+      const statesStr = nodes.map((n, i) =>
+        `State ${i + 1}:\n${n.state}`
+      ).join('\n\n');
+
+      const prompt = TOT_VOTE_PROMPT
+        .replace('{problem}', problem)
+        .replace('{states}', statesStr);
+
+      const result = await this.llm.chat(prompt);
+
+      // Parse vote
+      const voteMatch = result.content.match(/<vote>([\s\S]*?)<\/vote>/);
+      if (voteMatch) {
+        const content = voteMatch[1];
+        const bestMatch = content.match(/best:\s*(\d+)/i);
+        const bestIndex = bestMatch ? parseInt(bestMatch[1]) - 1 : 0;
+
+        // The voted node gets higher value
+        for (let i = 0; i < nodes.length; i++) {
+          nodes[i].value = i === bestIndex ? 0.9 : 0.5;
+        }
+      }
+
+      return { value: nodes[0].value, isTerminal: false, isValid: true };
+    } catch (err) {
+      console.error('[thinking] evaluateWithVote failed:', err);
+      return { value: 0.5, isTerminal: false, isValid: true };
+    }
   }
 
   // ==========================================================================
@@ -2715,35 +2765,40 @@ Question: ${query}`;
     problem: string,
     node: ThoughtNode
   ): Promise<{ value: number; isTerminal: boolean; isValid: boolean }> {
-    const path = this.buildPathDescription(node);
+    try {
+      const path = this.buildPathDescription(node);
 
-    const prompt = PRM_STEP_VERIFICATION_PROMPT
-      .replace('{problem}', problem)
-      .replace('{previous}', path)
-      .replace('{step}', node.thought);
+      const prompt = PRM_STEP_VERIFICATION_PROMPT
+        .replace('{problem}', problem)
+        .replace('{previous}', path)
+        .replace('{step}', node.thought);
 
-    const result = await this.llm.chat(prompt);
+      const result = await this.llm.chat(prompt);
 
-    // Parse verification
-    const verifyMatch = result.content.match(/<verification>([\s\S]*?)<\/verification>/);
-    if (verifyMatch) {
-      const content = verifyMatch[1];
-      const scoreMatch = content.match(/score:\s*([\d.]+)/i);
-      const validMatch = content.match(/valid:\s*(true|false)/i);
+      // Parse verification
+      const verifyMatch = result.content.match(/<verification>([\s\S]*?)<\/verification>/);
+      if (verifyMatch) {
+        const content = verifyMatch[1];
+        const scoreMatch = content.match(/score:\s*([\d.]+)/i);
+        const validMatch = content.match(/valid:\s*(true|false)/i);
 
-      const score = scoreMatch ? parseFloat(scoreMatch[1]) : 0.5;
-      const valid = validMatch ? validMatch[1].toLowerCase() === 'true' : true;
+        const score = scoreMatch ? parseFloat(scoreMatch[1]) : 0.5;
+        const valid = validMatch ? validMatch[1].toLowerCase() === 'true' : true;
 
-      node.metadata.prmScore = score;
+        node.metadata.prmScore = score;
 
-      return {
-        value: score,
-        isTerminal: score > 0.95,  // High confidence = potentially terminal
-        isValid: valid && score >= this.config.prmConfig.minStepScore,
-      };
+        return {
+          value: score,
+          isTerminal: score > 0.95,  // High confidence = potentially terminal
+          isValid: valid && score >= this.config.prmConfig.minStepScore,
+        };
+      }
+
+      return { value: 0.5, isTerminal: false, isValid: true };
+    } catch (err) {
+      console.error('[thinking] evaluateWithPRM failed:', err);
+      return { value: 0.5, isTerminal: false, isValid: true };
     }
-
-    return { value: 0.5, isTerminal: false, isValid: true };
   }
 
   /**
@@ -2869,32 +2924,45 @@ Question: ${query}`;
     stepIndex: number,
     goldenAnswer: string
   ): Promise<StepScore> {
-    const config = this.config.mathShepherdConfig;
-    const stepsSoFar = steps.slice(0, stepIndex + 1);
-    const stepContent = steps[stepIndex];
+    try {
+      const config = this.config.mathShepherdConfig;
+      const stepsSoFar = steps.slice(0, stepIndex + 1);
+      const stepContent = steps[stepIndex];
 
-    // Complete N paths from this step
-    const completions = await this.completeFromStep(
-      problem,
-      stepsSoFar,
-      goldenAnswer,
-      config.numCompletions
-    );
+      // Complete N paths from this step
+      const completions = await this.completeFromStep(
+        problem,
+        stepsSoFar,
+        goldenAnswer,
+        config.numCompletions
+      );
 
-    // Calculate scores
-    const correctCount = completions.filter(c => c.isCorrect).length;
-    const hardScore = correctCount > 0 ? 1 : 0;
-    const softScore = completions.length > 0 ? correctCount / completions.length : 0;
+      // Calculate scores
+      const correctCount = completions.filter(c => c.isCorrect).length;
+      const hardScore = correctCount > 0 ? 1 : 0;
+      const softScore = completions.length > 0 ? correctCount / completions.length : 0;
 
-    return {
-      stepIndex,
-      content: stepContent,
-      hardScore,
-      softScore,
-      numCompletions: completions.length,
-      completions,
-      hasPotential: hardScore === 1,
-    };
+      return {
+        stepIndex,
+        content: stepContent,
+        hardScore,
+        softScore,
+        numCompletions: completions.length,
+        completions,
+        hasPotential: hardScore === 1,
+      };
+    } catch (err) {
+      console.error('[thinking] scoreStepWithMathShepherd failed:', err);
+      return {
+        stepIndex,
+        content: steps[stepIndex] || '',
+        hardScore: 0,
+        softScore: 0,
+        numCompletions: 0,
+        completions: [],
+        hasPotential: false,
+      };
+    }
   }
 
   /**
@@ -3042,22 +3110,36 @@ Question: ${query}`;
     goldenAnswer: string,
     sourceModel: string = 'unknown'
   ): Promise<ProcessAnnotation> {
-    const annotated = await this.annotateSolutionWithMathShepherd(
-      problem,
-      solution,
-      goldenAnswer
-    );
+    try {
+      const annotated = await this.annotateSolutionWithMathShepherd(
+        problem,
+        solution,
+        goldenAnswer
+      );
 
-    return {
-      problem,
-      goldenAnswer,
-      steps: annotated.steps,
-      hardLabels: annotated.stepScores.map(s => s.hardScore),
-      softLabels: annotated.stepScores.map(s => s.softScore),
-      numCompletions: this.config.mathShepherdConfig.numCompletions,
-      sourceModel,
-      timestamp: new Date(),
-    };
+      return {
+        problem,
+        goldenAnswer,
+        steps: annotated.steps,
+        hardLabels: annotated.stepScores.map(s => s.hardScore),
+        softLabels: annotated.stepScores.map(s => s.softScore),
+        numCompletions: this.config.mathShepherdConfig.numCompletions,
+        sourceModel,
+        timestamp: new Date(),
+      };
+    } catch (err) {
+      console.error('[thinking] generateProcessAnnotations failed:', err);
+      return {
+        problem,
+        goldenAnswer,
+        steps: [],
+        hardLabels: [],
+        softLabels: [],
+        numCompletions: this.config.mathShepherdConfig.numCompletions,
+        sourceModel,
+        timestamp: new Date(),
+      };
+    }
   }
 
   /**
@@ -3220,38 +3302,43 @@ Question: ${query}`;
     currentStep: string,
     goldenAnswer?: string
   ): Promise<{ errorProb: number; confidence: number; reasoning: string }> {
-    const config = this.config.crmConfig;
+    try {
+      const config = this.config.crmConfig;
 
-    if (config.estimationMethod === 'completion') {
-      // Completion-based estimation (like Math-Shepherd)
-      return this.estimateErrorProbViaCompletion(
-        problem,
-        precedingSteps,
-        currentStep,
-        goldenAnswer,
-        config.numCompletions
-      );
+      if (config.estimationMethod === 'completion') {
+        // Completion-based estimation (like Math-Shepherd)
+        return this.estimateErrorProbViaCompletion(
+          problem,
+          precedingSteps,
+          currentStep,
+          goldenAnswer,
+          config.numCompletions
+        );
+      }
+
+      // LLM-based direct estimation
+      const precedingContext = precedingSteps.length > 0
+        ? precedingSteps.map((s, i) => `Step ${i + 1}: ${s}`).join('\n')
+        : '(This is the first step)';
+
+      const prompt = CRM_ESTIMATE_ERROR_PROB_PROMPT
+        .replace('{problem}', problem)
+        .replace('{preceding_steps}', precedingContext)
+        .replace('{current_step}', currentStep)
+        .replace('{step_number}', String(precedingSteps.length + 1));
+
+      const result = await this.llm.chat(prompt);
+      const parsed = this.parseErrorProbResponse(result.content);
+
+      return {
+        errorProb: Math.max(0, Math.min(1, parsed.errorProb)),
+        confidence: parsed.confidence,
+        reasoning: parsed.reasoning,
+      };
+    } catch (err) {
+      console.error('[thinking] estimateConditionalErrorProb failed:', err);
+      return { errorProb: 0.5, confidence: 0.0, reasoning: 'Error estimation failed' };
     }
-
-    // LLM-based direct estimation
-    const precedingContext = precedingSteps.length > 0
-      ? precedingSteps.map((s, i) => `Step ${i + 1}: ${s}`).join('\n')
-      : '(This is the first step)';
-
-    const prompt = CRM_ESTIMATE_ERROR_PROB_PROMPT
-      .replace('{problem}', problem)
-      .replace('{preceding_steps}', precedingContext)
-      .replace('{current_step}', currentStep)
-      .replace('{step_number}', String(precedingSteps.length + 1));
-
-    const result = await this.llm.chat(prompt);
-    const parsed = this.parseErrorProbResponse(result.content);
-
-    return {
-      errorProb: Math.max(0, Math.min(1, parsed.errorProb)),
-      confidence: parsed.confidence,
-      reasoning: parsed.reasoning,
-    };
   }
 
   /**
@@ -3613,15 +3700,20 @@ Next step:`;
     trajectory2: CRMTrajectoryResult;
     margin: number;
   }> {
-    const [traj1, traj2] = await Promise.all([
-      this.scoreTrajectoryWithCRM(problem, solution1, goldenAnswer),
-      this.scoreTrajectoryWithCRM(problem, solution2, goldenAnswer),
-    ]);
+    try {
+      const [traj1, traj2] = await Promise.all([
+        this.scoreTrajectoryWithCRM(problem, solution1, goldenAnswer),
+        this.scoreTrajectoryWithCRM(problem, solution2, goldenAnswer),
+      ]);
 
-    const winner = traj1.trajectoryScore >= traj2.trajectoryScore ? 1 : 2;
-    const margin = Math.abs(traj1.trajectoryScore - traj2.trajectoryScore);
+      const winner = traj1.trajectoryScore >= traj2.trajectoryScore ? 1 : 2;
+      const margin = Math.abs(traj1.trajectoryScore - traj2.trajectoryScore);
 
-    return { winner, trajectory1: traj1, trajectory2: traj2, margin };
+      return { winner, trajectory1: traj1, trajectory2: traj2, margin };
+    } catch (err) {
+      console.error('[thinking] compareTrajectories failed:', err);
+      throw err;
+    }
   }
 
   /**
@@ -3642,33 +3734,43 @@ Next step:`;
       correctCount: number;
     };
   }> {
-    // Score all solutions
-    const results = await Promise.all(
-      solutions.map(s => this.scoreTrajectoryWithCRM(problem, s, goldenAnswer))
-    );
+    try {
+      // Score all solutions
+      const results = await Promise.all(
+        solutions.map(s => this.scoreTrajectoryWithCRM(problem, s, goldenAnswer))
+      );
 
-    // Find best by trajectory score (survival probability)
-    let selectedIndex = 0;
-    let maxScore = -Infinity;
+      // Find best by trajectory score (survival probability)
+      let selectedIndex = 0;
+      let maxScore = -Infinity;
 
-    for (let i = 0; i < results.length; i++) {
-      if (results[i].trajectoryScore > maxScore) {
-        maxScore = results[i].trajectoryScore;
-        selectedIndex = i;
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].trajectoryScore > maxScore) {
+          maxScore = results[i].trajectoryScore;
+          selectedIndex = i;
+        }
       }
+
+      // Compute stats
+      const avgSurvival = results.reduce((s, r) => s + r.finalSurvivalProb, 0) / results.length;
+      const maxSurvival = Math.max(...results.map(r => r.finalSurvivalProb));
+      const correctCount = results.filter(r => r.hasCorrectAnswer).length;
+
+      return {
+        selectedIndex,
+        selected: results[selectedIndex],
+        allResults: results,
+        stats: { avgSurvival, maxSurvival, correctCount },
+      };
+    } catch (err) {
+      console.error('[thinking] selectBestOfNWithCRM failed:', err);
+      return {
+        selectedIndex: 0,
+        selected: {} as CRMTrajectoryResult,
+        allResults: [],
+        stats: { avgSurvival: 0, maxSurvival: 0, correctCount: 0 },
+      };
     }
-
-    // Compute stats
-    const avgSurvival = results.reduce((s, r) => s + r.finalSurvivalProb, 0) / results.length;
-    const maxSurvival = Math.max(...results.map(r => r.finalSurvivalProb));
-    const correctCount = results.filter(r => r.hasCorrectAnswer).length;
-
-    return {
-      selectedIndex,
-      selected: results[selectedIndex],
-      allResults: results,
-      stats: { avgSurvival, maxSurvival, correctCount },
-    };
   }
 
   // ==========================================================================
@@ -3683,18 +3785,27 @@ Next step:`;
     problem: string,
     node: ThoughtNode
   ): Promise<{ value: number; isTerminal: boolean; isValid: boolean }> {
-    const entropy = await this.computeCoTEntropy(problem);
-    node.metadata.entropy = entropy;
+    try {
+      const entropy = await this.computeCoTEntropy(problem);
+      node.metadata.entropy = entropy;
 
-    // High entropy = uncertain = lower value
-    const value = 1 - entropy;
-    const valid = entropy < this.config.entropyConfig.rejectThreshold;
+      // High entropy = uncertain = lower value
+      const value = 1 - entropy;
+      const valid = entropy < this.config.entropyConfig.rejectThreshold;
 
-    return {
-      value,
-      isTerminal: value > 0.9,
-      isValid: valid,
-    };
+      return {
+        value,
+        isTerminal: value > 0.9,
+        isValid: valid,
+      };
+    } catch (err) {
+      console.error('[thinking] evaluateWithEntropy failed:', err);
+      return {
+        value: 0.5,
+        isTerminal: false,
+        isValid: false,
+      };
+    }
   }
 
   /**
@@ -3702,42 +3813,47 @@ Next step:`;
    * CoTE(x) = -Σ p(answer) log p(answer)
    */
   async computeCoTEntropy(problem: string): Promise<number> {
-    const numSamples = this.config.entropyConfig.numSamples;
-    const answers: string[] = [];
+    try {
+      const numSamples = this.config.entropyConfig.numSamples;
+      const answers: string[] = [];
 
-    // Sample multiple rationales
-    for (let i = 0; i < numSamples; i++) {
-      const prompt = COT_ENTROPY_SAMPLE_PROMPT.replace('{problem}', problem);
-      const result = await this.llm.chat(prompt);
+      // Sample multiple rationales
+      for (let i = 0; i < numSamples; i++) {
+        const prompt = COT_ENTROPY_SAMPLE_PROMPT.replace('{problem}', problem);
+        const result = await this.llm.chat(prompt);
 
-      // Extract answer
-      const answerMatch = result.content.match(/<answer>([\s\S]*?)<\/answer>/);
-      if (answerMatch) {
-        answers.push(answerMatch[1].trim().toLowerCase());
+        // Extract answer
+        const answerMatch = result.content.match(/<answer>([\s\S]*?)<\/answer>/);
+        if (answerMatch) {
+          answers.push(answerMatch[1].trim().toLowerCase());
+        }
       }
-    }
 
-    if (answers.length === 0) return 1;  // Max uncertainty
+      if (answers.length === 0) return 1;  // Max uncertainty
 
-    // Cluster answers (simple: exact match)
-    const clusters = new Map<string, number>();
-    for (const answer of answers) {
-      clusters.set(answer, (clusters.get(answer) || 0) + 1);
-    }
-
-    // Compute entropy
-    let entropy = 0;
-    const total = answers.length;
-    for (const count of clusters.values()) {
-      const p = count / total;
-      if (p > 0) {
-        entropy -= p * Math.log2(p);
+      // Cluster answers (simple: exact match)
+      const clusters = new Map<string, number>();
+      for (const answer of answers) {
+        clusters.set(answer, (clusters.get(answer) || 0) + 1);
       }
-    }
 
-    // Normalize to 0-1 (max entropy is log2(numSamples))
-    const maxEntropy = Math.log2(numSamples);
-    return maxEntropy > 0 ? entropy / maxEntropy : 0;
+      // Compute entropy
+      let entropy = 0;
+      const total = answers.length;
+      for (const count of clusters.values()) {
+        const p = count / total;
+        if (p > 0) {
+          entropy -= p * Math.log2(p);
+        }
+      }
+
+      // Normalize to 0-1 (max entropy is log2(numSamples))
+      const maxEntropy = Math.log2(numSamples);
+      return maxEntropy > 0 ? entropy / maxEntropy : 0;
+    } catch (err) {
+      console.error('[thinking] computeCoTEntropy failed:', err);
+      return 1; // Max uncertainty on error
+    }
   }
 
   // ==========================================================================
@@ -3753,37 +3869,42 @@ Next step:`;
     reasoningType: string;
     budget: number;
   }> {
-    const prompt = DIFFICULTY_ESTIMATION_PROMPT.replace('{problem}', problem);
-    const result = await this.llm.chat(prompt);
+    try {
+      const prompt = DIFFICULTY_ESTIMATION_PROMPT.replace('{problem}', problem);
+      const result = await this.llm.chat(prompt);
 
-    let level: 'easy' | 'medium' | 'hard' | 'very_hard' = 'medium';
-    let estimatedSteps = 3;
-    let reasoningType = 'logical';
+      let level: 'easy' | 'medium' | 'hard' | 'very_hard' = 'medium';
+      let estimatedSteps = 3;
+      let reasoningType = 'logical';
 
-    const diffMatch = result.content.match(/<difficulty>([\s\S]*?)<\/difficulty>/);
-    if (diffMatch) {
-      const content = diffMatch[1];
-      const levelMatch = content.match(/level:\s*(easy|medium|hard|very_hard)/i);
-      const stepsMatch = content.match(/estimated_steps:\s*(\d+)/i);
-      const typeMatch = content.match(/reasoning_type:\s*(\w+)/i);
+      const diffMatch = result.content.match(/<difficulty>([\s\S]*?)<\/difficulty>/);
+      if (diffMatch) {
+        const content = diffMatch[1];
+        const levelMatch = content.match(/level:\s*(easy|medium|hard|very_hard)/i);
+        const stepsMatch = content.match(/estimated_steps:\s*(\d+)/i);
+        const typeMatch = content.match(/reasoning_type:\s*(\w+)/i);
 
-      if (levelMatch) level = levelMatch[1].toLowerCase() as typeof level;
-      if (stepsMatch) estimatedSteps = parseInt(stepsMatch[1]);
-      if (typeMatch) reasoningType = typeMatch[1];
+        if (levelMatch) level = levelMatch[1].toLowerCase() as typeof level;
+        if (stepsMatch) estimatedSteps = parseInt(stepsMatch[1]);
+        if (typeMatch) reasoningType = typeMatch[1];
+      }
+
+      // Calculate budget based on difficulty
+      const config = this.config.computeBudgetConfig;
+      const budgetScale = {
+        easy: 0,
+        medium: 0.33,
+        hard: 0.66,
+        very_hard: 1,
+      };
+      const budget = config.minBudget +
+        (config.maxBudget - config.minBudget) * budgetScale[level];
+
+      return { level, estimatedSteps, reasoningType, budget: Math.round(budget) };
+    } catch (err) {
+      console.error('[thinking] estimateDifficulty failed:', err);
+      return { level: 'medium', estimatedSteps: 3, reasoningType: 'logical', budget: 1000 };
     }
-
-    // Calculate budget based on difficulty
-    const config = this.config.computeBudgetConfig;
-    const budgetScale = {
-      easy: 0,
-      medium: 0.33,
-      hard: 0.66,
-      very_hard: 1,
-    };
-    const budget = config.minBudget +
-      (config.maxBudget - config.minBudget) * budgetScale[level];
-
-    return { level, estimatedSteps, reasoningType, budget: Math.round(budget) };
   }
 
   // ==========================================================================
@@ -3964,26 +4085,31 @@ Next step:`;
    * Decompose problem into sub-problems
    */
   private async gotDecompose(problem: string, k: number): Promise<string[]> {
-    const prompt = GOT_DECOMPOSE_PROMPT
-      .replace('{problem}', problem)
-      .replace('{k}', k.toString());
+    try {
+      const prompt = GOT_DECOMPOSE_PROMPT
+        .replace('{problem}', problem)
+        .replace('{k}', k.toString());
 
-    const result = await this.llm.chat(prompt);
+      const result = await this.llm.chat(prompt);
 
-    // Parse sub-problems
-    const subProblems: string[] = [];
-    const subProblemRegex = /<subproblem[^>]*>([\s\S]*?)<\/subproblem>/g;
-    let match;
-    while ((match = subProblemRegex.exec(result.content)) !== null) {
-      subProblems.push(match[1].trim());
+      // Parse sub-problems
+      const subProblems: string[] = [];
+      const subProblemRegex = /<subproblem[^>]*>([\s\S]*?)<\/subproblem>/g;
+      let match;
+      while ((match = subProblemRegex.exec(result.content)) !== null) {
+        subProblems.push(match[1].trim());
+      }
+
+      // Fallback: if no tags found, treat whole response as one problem
+      if (subProblems.length === 0) {
+        subProblems.push(problem);
+      }
+
+      return subProblems;
+    } catch (err) {
+      console.error('[thinking] gotDecompose failed:', err);
+      return [problem];
     }
-
-    // Fallback: if no tags found, treat whole response as one problem
-    if (subProblems.length === 0) {
-      subProblems.push(problem);
-    }
-
-    return subProblems;
   }
 
   /**
@@ -3995,66 +4121,76 @@ Next step:`;
     nodes: GoTNode[],
     strategy: 'merge' | 'synthesize' | 'vote'
   ): Promise<GoTNode> {
-    const solutionsStr = nodes.map((n, i) =>
-      `Solution ${i + 1}:\n${n.state}`
-    ).join('\n\n---\n\n');
+    try {
+      const solutionsStr = nodes.map((n, i) =>
+        `Solution ${i + 1}:\n${n.state}`
+      ).join('\n\n---\n\n');
 
-    const prompt = GOT_AGGREGATE_PROMPT
-      .replace('{problem}', problem)
-      .replace('{solutions}', solutionsStr)
-      .replace('{strategy}', strategy);
+      const prompt = GOT_AGGREGATE_PROMPT
+        .replace('{problem}', problem)
+        .replace('{solutions}', solutionsStr)
+        .replace('{strategy}', strategy);
 
-    const result = await this.llm.chat(prompt);
+      const result = await this.llm.chat(prompt);
 
-    // Parse aggregated solution
-    const aggregatedMatch = result.content.match(/<aggregated>([\s\S]*?)<\/aggregated>/);
-    const aggregated = aggregatedMatch ? aggregatedMatch[1].trim() : result.content;
+      // Parse aggregated solution
+      const aggregatedMatch = result.content.match(/<aggregated>([\s\S]*?)<\/aggregated>/);
+      const aggregated = aggregatedMatch ? aggregatedMatch[1].trim() : result.content;
 
-    const node = this.createGoTNode(aggregated, null);
-    node.aggregatedFrom = nodes.map(n => n.id);
+      const node = this.createGoTNode(aggregated, null);
+      node.aggregatedFrom = nodes.map(n => n.id);
 
-    return node;
+      return node;
+    } catch (err) {
+      console.error('[thinking] gotAggregate failed:', err);
+      return this.createGoTNode('Failed to aggregate solutions', null);
+    }
   }
 
   /**
    * Refine a thought through self-loops
    */
   private async gotRefine(problem: string, node: GoTNode, maxRounds: number): Promise<GoTNode> {
-    let current = node;
+    try {
+      let current = node;
 
-    for (let round = 1; round <= maxRounds; round++) {
-      const prompt = GOT_REFINE_PROMPT
-        .replace('{problem}', problem)
-        .replace('{thought}', current.state)
-        .replace('{round}', round.toString())
-        .replace('{max_rounds}', maxRounds.toString());
+      for (let round = 1; round <= maxRounds; round++) {
+        const prompt = GOT_REFINE_PROMPT
+          .replace('{problem}', problem)
+          .replace('{thought}', current.state)
+          .replace('{round}', round.toString())
+          .replace('{max_rounds}', maxRounds.toString());
 
-      const result = await this.llm.chat(prompt);
+        const result = await this.llm.chat(prompt);
 
-      // Parse refined thought
-      const refinedMatch = result.content.match(/<refined>([\s\S]*?)<\/refined>/);
-      if (refinedMatch) {
-        const refinedNode = this.createGoTNode(refinedMatch[1].trim(), current.id);
-        refinedNode.parents = [current.id];
-        refinedNode.refinementCount = round;
-        current = refinedNode;
-      } else {
-        break;  // No improvement found
-      }
+        // Parse refined thought
+        const refinedMatch = result.content.match(/<refined>([\s\S]*?)<\/refined>/);
+        if (refinedMatch) {
+          const refinedNode = this.createGoTNode(refinedMatch[1].trim(), current.id);
+          refinedNode.parents = [current.id];
+          refinedNode.refinementCount = round;
+          current = refinedNode;
+        } else {
+          break;  // No improvement found
+        }
 
-      // Check if improvements section indicates no changes
-      const improvementsMatch = result.content.match(/<improvements>([\s\S]*?)<\/improvements>/);
-      if (improvementsMatch) {
-        const improvements = improvementsMatch[1].toLowerCase();
-        if (improvements.includes('no') && improvements.includes('change') ||
-            improvements.includes('none') ||
-            improvements.includes('already optimal')) {
-          break;
+        // Check if improvements section indicates no changes
+        const improvementsMatch = result.content.match(/<improvements>([\s\S]*?)<\/improvements>/);
+        if (improvementsMatch) {
+          const improvements = improvementsMatch[1].toLowerCase();
+          if (improvements.includes('no') && improvements.includes('change') ||
+              improvements.includes('none') ||
+              improvements.includes('already optimal')) {
+            break;
+          }
         }
       }
-    }
 
-    return current;
+      return current;
+    } catch (err) {
+      console.error('[thinking] gotRefine failed:', err);
+      return node;
+    }
   }
 
   /**
@@ -4292,12 +4428,13 @@ Next step:`;
     problem: string,
     template: HierarchicalThoughtTemplate
   ): Promise<string> {
-    const templateStr = `Strategy: ${template.highLevel.strategy}
+    try {
+      const templateStr = `Strategy: ${template.highLevel.strategy}
 Key Insights: ${template.highLevel.keyInsights.join(', ')}
 Steps to follow:
 ${template.detailed.steps.map(s => `${s.step}. ${s.description} (${s.reasoning})`).join('\n')}`;
 
-    const prompt = `Solve this problem following the template guidance.
+      const prompt = `Solve this problem following the template guidance.
 
 Problem: ${problem}
 
@@ -4306,8 +4443,12 @@ ${templateStr}
 
 Provide a complete solution following the steps in the template.`;
 
-    const result = await this.llm.chat(prompt);
-    return result.content;
+      const result = await this.llm.chat(prompt);
+      return result.content;
+    } catch (err) {
+      console.error('[thinking] generateSolutionFromTemplate failed:', err);
+      return `Unable to generate solution using template. Problem: ${problem}`;
+    }
   }
 
   /**
@@ -4367,25 +4508,30 @@ Provide a complete solution following the steps in the template.`;
     solution: string,
     errors: IdentifiedError[]
   ): Promise<{ correctedSolution: string; trace: string }> {
-    const errorsStr = errors.map((e, i) =>
-      `Error ${i + 1}: [${e.errorType}] ${e.description}\n  Severity: ${e.severity}\n  Fix: ${e.suggestedFix}`
-    ).join('\n\n');
+    try {
+      const errorsStr = errors.map((e, i) =>
+        `Error ${i + 1}: [${e.errorType}] ${e.description}\n  Severity: ${e.severity}\n  Fix: ${e.suggestedFix}`
+      ).join('\n\n');
 
-    const prompt = SUPERCORRECT_CORRECTION_PROMPT
-      .replace('{problem}', problem)
-      .replace('{solution}', solution)
-      .replace('{errors}', errorsStr);
+      const prompt = SUPERCORRECT_CORRECTION_PROMPT
+        .replace('{problem}', problem)
+        .replace('{solution}', solution)
+        .replace('{errors}', errorsStr);
 
-    const result = await this.llm.chat(prompt);
+      const result = await this.llm.chat(prompt);
 
-    // Parse corrected solution
-    const correctedMatch = result.content.match(/<corrected_solution>([\s\S]*?)<\/corrected_solution>/);
-    const traceMatch = result.content.match(/<correction_trace>([\s\S]*?)<\/correction_trace>/);
+      // Parse corrected solution
+      const correctedMatch = result.content.match(/<corrected_solution>([\s\S]*?)<\/corrected_solution>/);
+      const traceMatch = result.content.match(/<correction_trace>([\s\S]*?)<\/correction_trace>/);
 
-    return {
-      correctedSolution: correctedMatch?.[1]?.trim() || solution,
-      trace: traceMatch?.[1]?.trim() || '',
-    };
+      return {
+        correctedSolution: correctedMatch?.[1]?.trim() || solution,
+        trace: traceMatch?.[1]?.trim() || '',
+      };
+    } catch (err) {
+      console.error('[thinking] applyCorrections failed:', err);
+      return { correctedSolution: solution, trace: '' };
+    }
   }
 
   /**
@@ -4397,45 +4543,55 @@ Provide a complete solution following the steps in the template.`;
     correctedSolution: string,
     errors: IdentifiedError[]
   ): Promise<{ errorsFixed: boolean; newErrors: string[]; confidence: number }> {
-    const errorsStr = errors.map(e => e.description).join(', ');
+    try {
+      const errorsStr = errors.map(e => e.description).join(', ');
 
-    const prompt = SUPERCORRECT_VERIFY_CORRECTION_PROMPT
-      .replace('{problem}', problem)
-      .replace('{solution}', originalSolution)
-      .replace('{corrected}', correctedSolution)
-      .replace('{errors}', errorsStr);
+      const prompt = SUPERCORRECT_VERIFY_CORRECTION_PROMPT
+        .replace('{problem}', problem)
+        .replace('{solution}', originalSolution)
+        .replace('{corrected}', correctedSolution)
+        .replace('{errors}', errorsStr);
 
-    const result = await this.llm.chat(prompt);
+      const result = await this.llm.chat(prompt);
 
-    // Parse verification
-    const verifyMatch = result.content.match(/<verification>([\s\S]*?)<\/verification>/);
-    if (verifyMatch) {
-      const content = verifyMatch[1];
-      const fixedMatch = content.match(/errors_fixed:\s*(true|false)/i);
-      const newErrorsMatch = content.match(/new_errors:\s*(.+)/);
-      const confidenceMatch = content.match(/confidence:\s*([\d.]+)/);
+      // Parse verification
+      const verifyMatch = result.content.match(/<verification>([\s\S]*?)<\/verification>/);
+      if (verifyMatch) {
+        const content = verifyMatch[1];
+        const fixedMatch = content.match(/errors_fixed:\s*(true|false)/i);
+        const newErrorsMatch = content.match(/new_errors:\s*(.+)/);
+        const confidenceMatch = content.match(/confidence:\s*([\d.]+)/);
 
-      const newErrorsStr = newErrorsMatch?.[1]?.trim() || 'none';
-      const newErrors = newErrorsStr.toLowerCase() === 'none' ? [] : [newErrorsStr];
+        const newErrorsStr = newErrorsMatch?.[1]?.trim() || 'none';
+        const newErrors = newErrorsStr.toLowerCase() === 'none' ? [] : [newErrorsStr];
 
-      return {
-        errorsFixed: fixedMatch?.[1]?.toLowerCase() === 'true',
-        newErrors,
-        confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5,
-      };
+        return {
+          errorsFixed: fixedMatch?.[1]?.toLowerCase() === 'true',
+          newErrors,
+          confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5,
+        };
+      }
+
+      return { errorsFixed: false, newErrors: [], confidence: 0.5 };
+    } catch (err) {
+      console.error('[thinking] verifyCorrections failed:', err);
+      return { errorsFixed: false, newErrors: [], confidence: 0.5 };
     }
-
-    return { errorsFixed: false, newErrors: [], confidence: 0.5 };
   }
 
   /**
    * Estimate confidence in final solution
    */
   private async estimateSolutionConfidence(problem: string, solution: string): Promise<number> {
-    // Use GoT scoring for confidence
-    const node = this.createGoTNode(solution, null);
-    const score = await this.gotScore(problem, node);
-    return score.overall;
+    try {
+      // Use GoT scoring for confidence
+      const node = this.createGoTNode(solution, null);
+      const score = await this.gotScore(problem, node);
+      return score.overall;
+    } catch (err) {
+      console.error('[thinking] estimateSolutionConfidence failed:', err);
+      return 0.5;
+    }
   }
 
   /**
@@ -4760,32 +4916,37 @@ Provide a complete solution following the steps in the template.`;
    * Match problem to existing template
    */
   private async matchTemplate(problem: string): Promise<{ template: ThoughtTemplate; score: number } | null> {
-    if (this.metaBuffer.templates.length === 0) return null;
+    try {
+      if (this.metaBuffer.templates.length === 0) return null;
 
-    const templatesStr = this.metaBuffer.templates
-      .map(t => `ID: ${t.id}\nType: ${t.problemType}\nDescription: ${t.description}`)
-      .join('\n\n');
+      const templatesStr = this.metaBuffer.templates
+        .map(t => `ID: ${t.id}\nType: ${t.problemType}\nDescription: ${t.description}`)
+        .join('\n\n');
 
-    const prompt = TRACE_MATCH_TEMPLATE_PROMPT
-      .replace('{problem}', problem)
-      .replace('{templates}', templatesStr);
+      const prompt = TRACE_MATCH_TEMPLATE_PROMPT
+        .replace('{problem}', problem)
+        .replace('{templates}', templatesStr);
 
-    const result = await this.llm.chat(prompt);
+      const result = await this.llm.chat(prompt);
 
-    // Parse matching result
-    const matchingMatch = result.content.match(/<matching>([\s\S]*?)<\/matching>/);
-    if (!matchingMatch) return null;
+      // Parse matching result
+      const matchingMatch = result.content.match(/<matching>([\s\S]*?)<\/matching>/);
+      if (!matchingMatch) return null;
 
-    const content = matchingMatch[1];
-    const bestMatch = content.match(/best_match:\s*(.+)/)?.[1]?.trim();
-    const confidence = parseFloat(content.match(/confidence:\s*([\d.]+)/)?.[1] || '0');
+      const content = matchingMatch[1];
+      const bestMatch = content.match(/best_match:\s*(.+)/)?.[1]?.trim();
+      const confidence = parseFloat(content.match(/confidence:\s*([\d.]+)/)?.[1] || '0');
 
-    if (!bestMatch || bestMatch === 'none') return null;
+      if (!bestMatch || bestMatch === 'none') return null;
 
-    const template = this.metaBuffer.templates.find(t => t.id === bestMatch);
-    if (!template) return null;
+      const template = this.metaBuffer.templates.find(t => t.id === bestMatch);
+      if (!template) return null;
 
-    return { template, score: confidence };
+      return { template, score: confidence };
+    } catch (err) {
+      console.error('[thinking] matchTemplate failed:', err);
+      return null;
+    }
   }
 
   /**

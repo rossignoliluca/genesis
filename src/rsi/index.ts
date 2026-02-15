@@ -368,18 +368,22 @@ export class RSIOrchestrator extends EventEmitter {
     plan: ImprovementPlan,
     implementation: ImplementationResult
   ): Promise<void> {
-    // Create a mock deployment result for learning
-    const mockDeployment: DeploymentResult = {
-      planId: plan.id,
-      success: false,
-      branchName: '',
-      commitHash: '',
-      reviewStatus: 'pending',
-      mergeStatus: 'blocked',
-      error: 'Implementation failed',
-    };
+    try {
+      // Create a mock deployment result for learning
+      const mockDeployment: DeploymentResult = {
+        planId: plan.id,
+        success: false,
+        branchName: '',
+        commitHash: '',
+        reviewStatus: 'pending',
+        mergeStatus: 'blocked',
+        error: 'Implementation failed',
+      };
 
-    await this.learnEngine.learn(plan, implementation, mockDeployment);
+      await this.learnEngine.learn(plan, implementation, mockDeployment);
+    } catch (err) {
+      console.error('[rsi] learnFromFailure failed:', err);
+    }
   }
 
   private async requestHumanApproval(plan: ImprovementPlan): Promise<boolean> {

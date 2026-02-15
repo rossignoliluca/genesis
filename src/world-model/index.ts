@@ -250,6 +250,10 @@ export class WorldModelSystem {
    */
   updateState(source: string, state: Record<string, unknown>): void {
     this.externalStates.set(source, state);
+    if (this.externalStates.size > 500) {
+      const keys = Array.from(this.externalStates.keys());
+      for (let i = 0; i < 100; i++) this.externalStates.delete(keys[i]);
+    }
 
     // Emit update event
     this.emit({
@@ -388,6 +392,11 @@ export class WorldModelSystem {
    */
   addEntity(entity: WorldEntity): void {
     this.entities.set(entity.id, entity);
+    if (this.entities.size > 1000) {
+      // Delete oldest entries
+      const keys = Array.from(this.entities.keys());
+      for (let i = 0; i < 200; i++) this.entities.delete(keys[i]);
+    }
     this.predictor.addEntity(entity);
     this.emit({ type: 'entity_created', timestamp: new Date(), data: entity });
   }
@@ -428,6 +437,11 @@ export class WorldModelSystem {
    */
   addRelation(relation: EntityRelation): void {
     this.relations.set(relation.id, relation);
+    if (this.relations.size > 1000) {
+      // Delete oldest entries
+      const keys = Array.from(this.relations.keys());
+      for (let i = 0; i < 200; i++) this.relations.delete(keys[i]);
+    }
     this.predictor.addRelation(relation);
     this.emit({ type: 'relation_added', timestamp: new Date(), data: relation });
   }
@@ -629,108 +643,142 @@ export class WorldModelSystem {
    * Run dream cycle
    */
   async dream(): Promise<DreamResult> {
-    const startTime = new Date();
+    try {
+      const startTime = new Date();
 
-    this.emit({ type: 'dream_started', timestamp: startTime, data: {} });
+      this.emit({ type: 'dream_started', timestamp: startTime, data: {} });
 
-    // Phase 1: Slow-wave replay
-    const slowWaveResult = await this.slowWaveReplay();
+      // Phase 1: Slow-wave replay
+      const slowWaveResult = await this.slowWaveReplay();
 
-    // Phase 2: REM abstraction
-    const remResult = await this.remAbstraction();
+      // Phase 2: REM abstraction
+      const remResult = await this.remAbstraction();
 
-    // Phase 3: Consolidation
-    const consolidationResult = await this.consolidate();
+      // Phase 3: Consolidation
+      const consolidationResult = await this.consolidate();
 
-    const endTime = new Date();
+      const endTime = new Date();
 
-    const dreamResult: DreamResult = {
-      startTime,
-      endTime,
-      duration: endTime.getTime() - startTime.getTime(),
-      slowWaveReplay: slowWaveResult,
-      remAbstraction: remResult,
-      consolidation: consolidationResult,
-      memoriesConsolidated: consolidationResult.strengthened,
-      patternsExtracted: remResult.patternsFound.length,
-      modelImproved: consolidationResult.newConnections > 0,
-    };
+      const dreamResult: DreamResult = {
+        startTime,
+        endTime,
+        duration: endTime.getTime() - startTime.getTime(),
+        slowWaveReplay: slowWaveResult,
+        remAbstraction: remResult,
+        consolidation: consolidationResult,
+        memoriesConsolidated: consolidationResult.strengthened,
+        patternsExtracted: remResult.patternsFound.length,
+        modelImproved: consolidationResult.newConnections > 0,
+      };
 
-    this.dreamHistory.push(dreamResult);
-    if (this.dreamHistory.length > 100) {
-      this.dreamHistory.shift();
+      this.dreamHistory.push(dreamResult);
+      if (this.dreamHistory.length > 100) {
+        this.dreamHistory.shift();
+      }
+
+      // Clear pending consolidation
+      this.pendingConsolidation = [];
+
+      this.emit({ type: 'dream_complete', timestamp: endTime, data: dreamResult });
+
+      return dreamResult;
+    } catch (err) {
+      console.error('[world-model] dream failed:', err);
+      const now = new Date();
+      return {
+        startTime: now,
+        endTime: now,
+        duration: 0,
+        slowWaveReplay: { experiencesReplayed: 0, strongestMemories: [], replayDuration: 0 },
+        remAbstraction: { patternsFound: [], abstractionLevel: 0, creativeCombinations: 0 },
+        consolidation: { modelUpdates: 0, pruned: 0, strengthened: 0, newConnections: 0 },
+        memoriesConsolidated: 0,
+        patternsExtracted: 0,
+        modelImproved: false,
+      };
     }
-
-    // Clear pending consolidation
-    this.pendingConsolidation = [];
-
-    this.emit({ type: 'dream_complete', timestamp: endTime, data: dreamResult });
-
-    return dreamResult;
   }
 
   /**
    * Slow-wave replay phase
    */
   private async slowWaveReplay(): Promise<SlowWaveResult> {
-    // Simulate slow-wave sleep - replay recent experiences
-    const experiences = this.pendingConsolidation.slice(-50);
+    try {
+      // Simulate slow-wave sleep - replay recent experiences
+      const experiences = this.pendingConsolidation.slice(-50);
 
-    // Sort by confidence (strongest memories)
-    experiences.sort((a, b) => b.confidence - a.confidence);
+      // Sort by confidence (strongest memories)
+      experiences.sort((a, b) => b.confidence - a.confidence);
 
-    const strongestMemories = experiences
-      .slice(0, 10)
-      .map((e) => e.sourceId);
+      const strongestMemories = experiences
+        .slice(0, 10)
+        .map((e) => e.sourceId);
 
-    // Simulate replay time
-    await this.sleep(Math.min(this.dreamConfig.slowWaveDuration, 1000));
+      // Simulate replay time
+      await this.sleep(Math.min(this.dreamConfig.slowWaveDuration, 1000));
 
-    return {
-      experiencesReplayed: experiences.length,
-      strongestMemories,
-      replayDuration: this.dreamConfig.slowWaveDuration,
-    };
+      return {
+        experiencesReplayed: experiences.length,
+        strongestMemories,
+        replayDuration: this.dreamConfig.slowWaveDuration,
+      };
+    } catch (err) {
+      console.error('[world-model] slowWaveReplay failed:', err);
+      return {
+        experiencesReplayed: 0,
+        strongestMemories: [],
+        replayDuration: 0,
+      };
+    }
   }
 
   /**
    * REM abstraction phase
    */
   private async remAbstraction(): Promise<REMResult> {
-    const patterns: Pattern[] = [];
+    try {
+      const patterns: Pattern[] = [];
 
-    // Find sequence patterns
-    const sequences = this.findSequencePatterns();
-    patterns.push(...sequences);
+      // Find sequence patterns
+      const sequences = this.findSequencePatterns();
+      patterns.push(...sequences);
 
-    // Find structural patterns
-    const structural = this.findStructuralPatterns();
-    patterns.push(...structural);
+      // Find structural patterns
+      const structural = this.findStructuralPatterns();
+      patterns.push(...structural);
 
-    // Creative combinations (random associations)
-    let creativeCombinations = 0;
-    for (let i = 0; i < 5; i++) {
-      if (this.pendingConsolidation.length >= 2) {
-        const idx1 = Math.floor(Math.random() * this.pendingConsolidation.length);
-        const idx2 = Math.floor(Math.random() * this.pendingConsolidation.length);
-        if (idx1 !== idx2) {
-          const fused = this.encoder.fuse([
-            this.pendingConsolidation[idx1],
-            this.pendingConsolidation[idx2],
-          ]);
-          creativeCombinations++;
+      // Creative combinations (random associations)
+      let creativeCombinations = 0;
+      for (let i = 0; i < 5; i++) {
+        if (this.pendingConsolidation.length >= 2) {
+          const idx1 = Math.floor(Math.random() * this.pendingConsolidation.length);
+          const idx2 = Math.floor(Math.random() * this.pendingConsolidation.length);
+          if (idx1 !== idx2) {
+            const fused = this.encoder.fuse([
+              this.pendingConsolidation[idx1],
+              this.pendingConsolidation[idx2],
+            ]);
+            creativeCombinations++;
+          }
         }
       }
+
+      // Simulate abstraction time
+      await this.sleep(Math.min(this.dreamConfig.remDuration, 1000));
+
+      return {
+        patternsFound: patterns,
+        abstractionLevel: patterns.length > 5 ? 0.8 : patterns.length * 0.15,
+        creativeCombinations,
+      };
+    } catch (err) {
+      console.error('[world-model] remAbstraction failed:', err);
+      return {
+        patternsFound: [],
+        abstractionLevel: 0,
+        creativeCombinations: 0,
+      };
     }
-
-    // Simulate abstraction time
-    await this.sleep(Math.min(this.dreamConfig.remDuration, 1000));
-
-    return {
-      patternsFound: patterns,
-      abstractionLevel: patterns.length > 5 ? 0.8 : patterns.length * 0.15,
-      creativeCombinations,
-    };
   }
 
   /**

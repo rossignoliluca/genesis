@@ -224,6 +224,51 @@ export class FixGenerator {
         sections.push(`\n// === FIRST EXPORT BLOCK (lines ${from + 1}-${to}) ===`);
         sections.push(this.numberLines(lines.slice(from, to), from + 1));
       }
+    } else if (proposal.title.includes('TODO') || proposal.title.includes('FIXME')) {
+      // Show regions around flagged comments
+      for (let i = 0; i < lines.length; i++) {
+        if (/\/\/\s*(TODO|FIXME|HACK|XXX)\b/i.test(lines[i])) {
+          const from = Math.max(0, i - 3);
+          const to = Math.min(lines.length, i + 12);
+          sections.push(`\n// === FLAGGED COMMENT AT LINE ${i + 1} ===`);
+          sections.push(this.numberLines(lines.slice(from, to), from + 1));
+        }
+      }
+    } else if (proposal.title.includes('error handling')) {
+      // Show async methods without try/catch
+      for (let i = 0; i < lines.length; i++) {
+        if (/async\s+[\w]+\s*\(/.test(lines[i])) {
+          // Check if method has try
+          let hasTry = false;
+          let depth = 0;
+          let started = false;
+          let methodEnd = i + 30;
+          for (let j = i; j < Math.min(i + 50, lines.length); j++) {
+            for (const ch of lines[j]) {
+              if (ch === '{') { depth++; started = true; }
+              if (ch === '}') depth--;
+            }
+            if (started && depth === 0) { methodEnd = j; break; }
+            if (lines[j].includes('try')) hasTry = true;
+          }
+          if (!hasTry && lines.slice(i, methodEnd).some(l => l.includes('await '))) {
+            const from = Math.max(0, i - 2);
+            const to = Math.min(lines.length, methodEnd + 1);
+            sections.push(`\n// === UNPROTECTED ASYNC METHOD AT LINE ${i + 1} ===`);
+            sections.push(this.numberLines(lines.slice(from, to), from + 1));
+          }
+        }
+      }
+    } else if (proposal.title.includes('unbounded') || proposal.title.includes('Cap')) {
+      // Show regions around .push() / .set() without size caps
+      for (let i = 0; i < lines.length; i++) {
+        if (/this\.[\w]+\.(push|set)\s*\(/.test(lines[i])) {
+          const from = Math.max(0, i - 5);
+          const to = Math.min(lines.length, i + 10);
+          sections.push(`\n// === COLLECTION GROWTH AT LINE ${i + 1} ===`);
+          sections.push(this.numberLines(lines.slice(from, to), from + 1));
+        }
+      }
     }
 
     // Always show last 15 lines (file end, singletons, exports)
@@ -391,6 +436,75 @@ RULES:
 - Do NOT change the interval time, the method called, or anything else
 - Use '[${proposal.targetModule}]' as the log prefix
 - If the callback is a one-liner like "() => this.doWork()", expand it to arrow function body`;
+    }
+
+    if (proposal.title.includes('TODO') || proposal.title.includes('FIXME')) {
+      return `YOUR FIX — Resolve the TODO/FIXME/HACK comments shown in the code:
+
+RULES:
+- For each flagged comment, either:
+  a) IMPLEMENT the missing functionality if the TODO describes something concrete and small
+  b) REMOVE the comment if the described feature is already implemented nearby
+  c) If the TODO describes something too complex (>30 lines), skip it — output {"targetFile":"","type":"replace","search":"","content":"","reason":"cannot fix"}
+- Pick the SINGLE most impactful TODO/FIXME to fix (not all of them)
+- Prefer FIXME and HACK over TODO (they indicate bugs, not wishes)
+- Keep the fix under 20 lines of new code
+- Do NOT just delete TODO comments without implementing or confirming they're done`;
+    }
+
+    if (proposal.title.includes('error handling')) {
+      return `YOUR FIX — Add try/catch to the async method shown:
+
+BEFORE:
+  async doWork(): Promise<void> {
+    const result = await this.fetchData();
+    this.process(result);
+  }
+
+AFTER:
+  async doWork(): Promise<void> {
+    try {
+      const result = await this.fetchData();
+      this.process(result);
+    } catch (err) {
+      console.error('[${proposal.targetModule}] doWork failed:', err);
+    }
+  }
+
+RULES:
+- Wrap the ENTIRE method body in try/catch
+- Log with '[${proposal.targetModule}]' prefix
+- Do NOT rethrow unless the method signature returns a value that callers depend on
+- If the method returns a value, return a sensible default in catch (null, [], empty object)
+- Pick the SINGLE most critical unprotected async method (prefer public over private)
+- Keep it simple — just try/catch, no retry logic`;
+    }
+
+    if (proposal.title.includes('unbounded') || proposal.title.includes('Cap')) {
+      return `YOUR FIX — Add a size cap to the unbounded collection:
+
+PATTERN for arrays:
+  this.history.push(entry);
+  if (this.history.length > 200) {
+    this.history = this.history.slice(-100);
+  }
+
+PATTERN for Maps:
+  this.cache.set(key, value);
+  if (this.cache.size > 500) {
+    // Delete oldest entries
+    const keys = Array.from(this.cache.keys());
+    for (let i = 0; i < 100; i++) this.cache.delete(keys[i]);
+  }
+
+RULES:
+- Add the size check IMMEDIATELY after the push/set call
+- Use reasonable limits: 100-500 for arrays, 200-1000 for maps
+- For arrays, use .slice(-N) to keep the LAST N (most recent)
+- For maps, delete the FIRST entries (oldest)
+- Pick ONE collection to cap (the most dangerous one — largest growth rate)
+- If you see a class field like \`private readonly maxHistory = 100\`, use that constant
+- Do NOT add a new class field for the limit — just use a literal number`;
     }
 
     return `Fix the issue described. Keep changes minimal. Use "as any" for any type uncertainty.`;

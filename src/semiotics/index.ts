@@ -159,6 +159,9 @@ export class LargeSemiosisModel extends EventEmitter {
   interpret(sign: Sign): Triad {
     this.metrics.signsProcessed++;
     this.signHistory.push(sign);
+    if (this.signHistory.length > 200) {
+      this.signHistory = this.signHistory.slice(-100);
+    }
 
     // Step 1: Find the object (ground the sign)
     const object = this.groundSign(sign);
@@ -178,6 +181,10 @@ export class LargeSemiosisModel extends EventEmitter {
     };
 
     this.triads.set(sign.id, triad);
+    if (this.triads.size > 500) {
+      const keys = Array.from(this.triads.keys());
+      for (let i = 0; i < 100; i++) this.triads.delete(keys[i]);
+    }
     this.metrics.triadsFormed++;
 
     if (triad.grounded) {
@@ -657,6 +664,10 @@ export class SimpleWorldModel implements WorldModel {
       source: 'manual'
     };
     this.objects.set(key.toLowerCase(), object);
+    if (this.objects.size > 1000) {
+      const keys = Array.from(this.objects.keys());
+      for (let i = 0; i < 200; i++) this.objects.delete(keys[i]);
+    }
     return object;
   }
 

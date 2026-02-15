@@ -110,6 +110,9 @@ export class EpistemicStack {
    */
   register(claim: Claim): void {
     this.claims.push(claim);
+    if (this.claims.length > 200) {
+      this.claims = this.claims.slice(-100);
+    }
   }
 
   /**

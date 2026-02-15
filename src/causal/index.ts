@@ -390,6 +390,10 @@ class DoCalculus {
    */
   setSamples(variable: string, samples: number[]): void {
     this.samples.set(variable, samples);
+    if (this.samples.size > 200) {
+      const keys = Array.from(this.samples.keys());
+      for (let i = 0; i < 50; i++) this.samples.delete(keys[i]);
+    }
   }
 
   /**

@@ -253,6 +253,9 @@ export class Merkwelt extends EventEmitter {
     };
 
     this.perceptionBuffer.push(perception);
+    if (this.perceptionBuffer.length > 200) {
+      this.perceptionBuffer = this.perceptionBuffer.slice(-100);
+    }
     this.totalTokens += tokenCost;
 
     this.emit('perception:received', perception);
@@ -467,6 +470,9 @@ export class Wirkwelt extends EventEmitter {
       };
 
       this.actionHistory.push(outcome);
+      if (this.actionHistory.length > 200) {
+        this.actionHistory = this.actionHistory.slice(-100);
+      }
       this.emit('action:completed', outcome);
       return outcome;
 
@@ -571,39 +577,59 @@ export class AgentUmwelt extends EventEmitter {
     decisionFn: (perception: Perception, state: Map<string, unknown>) => Action | null,
     executorFn: (action: Action) => Promise<unknown>
   ): Promise<FunctionalCircle> {
-    const cycleStart = Date.now();
+    try {
+      const cycleStart = Date.now();
 
-    // Decide on action based on perception and internal state
-    const action = decisionFn(perception, this.internalState);
+      // Decide on action based on perception and internal state
+      const action = decisionFn(perception, this.internalState);
 
-    let outcome: ActionOutcome | null = null;
+      let outcome: ActionOutcome | null = null;
 
-    if (action) {
-      outcome = await this.wirkwelt.act(action, executorFn);
+      if (action) {
+        outcome = await this.wirkwelt.act(action, executorFn);
 
-      // Update internal state based on outcome
-      if (outcome.success) {
-        this.internalState.set('lastAction', action);
-        this.internalState.set('lastResult', outcome.result);
+        // Update internal state based on outcome
+        if (outcome.success) {
+          this.internalState.set('lastAction', action);
+          this.internalState.set('lastResult', outcome.result);
+          if (this.internalState.size > 500) {
+            // Delete oldest entries
+            const keys = Array.from(this.internalState.keys());
+            for (let i = 0; i < 100; i++) this.internalState.delete(keys[i]);
+          }
+        }
       }
+
+      const cycleTime = Date.now() - cycleStart;
+
+      const circle: FunctionalCircle = {
+        perception,
+        internalState: new Map(this.internalState),
+        action: action!,
+        outcome,
+        cycleTime
+      };
+
+      this.cycles.push(circle);
+      if (this.cycles.length > 200) {
+        this.cycles = this.cycles.slice(-100);
+      }
+      this.metrics.cyclesCompleted++;
+      this.updateAverageCycleTime(cycleTime);
+
+      this.emit('cycle:completed', circle);
+      return circle;
+    } catch (err) {
+      console.error('[umwelt] functionalCircle failed:', err);
+      const circle: FunctionalCircle = {
+        perception,
+        internalState: new Map(this.internalState),
+        action: null as any,
+        outcome: null,
+        cycleTime: 0
+      };
+      return circle;
     }
-
-    const cycleTime = Date.now() - cycleStart;
-
-    const circle: FunctionalCircle = {
-      perception,
-      internalState: new Map(this.internalState),
-      action: action!,
-      outcome,
-      cycleTime
-    };
-
-    this.cycles.push(circle);
-    this.metrics.cyclesCompleted++;
-    this.updateAverageCycleTime(cycleTime);
-
-    this.emit('cycle:completed', circle);
-    return circle;
   }
 
   /**
@@ -644,6 +670,11 @@ export class AgentUmwelt extends EventEmitter {
    */
   setState(key: string, value: unknown): void {
     this.internalState.set(key, value);
+    if (this.internalState.size > 500) {
+      // Delete oldest entries
+      const keys = Array.from(this.internalState.keys());
+      for (let i = 0; i < 100; i++) this.internalState.delete(keys[i]);
+    }
   }
 
   /**

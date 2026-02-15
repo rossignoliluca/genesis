@@ -269,6 +269,11 @@ export class X402Protocol {
 
   setRate(endpoint: string, pricePerRequest: number): void {
     this.rates.set(endpoint, pricePerRequest);
+    if (this.rates.size > 500) {
+      // Delete oldest entries
+      const keys = Array.from(this.rates.keys());
+      for (let i = 0; i < 100; i++) this.rates.delete(keys[i]);
+    }
   }
 
   getRate(endpoint: string): number {
@@ -372,53 +377,73 @@ export class EconomicSystem {
   }
 
   async initialize(): Promise<{ stripe: boolean; crypto: boolean }> {
-    const [stripe, crypto] = await Promise.all([
-      this.stripe.connect(),
-      this.crypto.connect(),
-    ]);
-    return { stripe, crypto };
+    try {
+      const [stripe, crypto] = await Promise.all([
+        this.stripe.connect(),
+        this.crypto.connect(),
+      ]);
+      return { stripe, crypto };
+    } catch (err) {
+      console.error('[economy] initialize failed:', err);
+      return { stripe: false, crypto: false };
+    }
   }
 
   async getUnifiedBalance(): Promise<TreasuryBalance> {
-    const [fiatBalance, cryptoBalance] = await Promise.all([
-      this.stripe.getBalance(),
-      this.crypto.getBalance(),
-    ]);
+    try {
+      const [fiatBalance, cryptoBalance] = await Promise.all([
+        this.stripe.getBalance(),
+        this.crypto.getBalance(),
+      ]);
 
-    return {
-      fiat: fiatBalance?.available || 0,
-      crypto: cryptoBalance || { usdc: 0, eth: 0, sol: 0 },
-      pending: fiatBalance?.pending || 0,
-      lastUpdated: new Date().toISOString(),
-    };
+      return {
+        fiat: fiatBalance?.available || 0,
+        crypto: cryptoBalance || { usdc: 0, eth: 0, sol: 0 },
+        pending: fiatBalance?.pending || 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch (err) {
+      console.error('[economy] getUnifiedBalance failed:', err);
+      return {
+        fiat: 0,
+        crypto: { usdc: 0, eth: 0, sol: 0 },
+        pending: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
   }
 
   async pay(request: PaymentRequest): Promise<PaymentResult> {
-    // Check budget
-    const budgetCheck = this.budget.checkBudget(request.amount);
-    if (!budgetCheck.allowed && !budgetCheck.requiresApproval) {
-      return { success: false, error: budgetCheck.reason };
-    }
+    try {
+      // Check budget
+      const budgetCheck = this.budget.checkBudget(request.amount);
+      if (!budgetCheck.allowed && !budgetCheck.requiresApproval) {
+        return { success: false, error: budgetCheck.reason };
+      }
 
-    // Auto-select payment method if not specified
-    let method = request.method || 'auto';
-    if (method === 'auto') {
-      const balance = await this.getUnifiedBalance();
-      method = balance.crypto.usdc >= request.amount ? 'crypto' : 'stripe';
-    }
+      // Auto-select payment method if not specified
+      let method = request.method || 'auto';
+      if (method === 'auto') {
+        const balance = await this.getUnifiedBalance();
+        method = balance.crypto.usdc >= request.amount ? 'crypto' : 'stripe';
+      }
 
-    let result: PaymentResult;
-    if (method === 'crypto') {
-      result = await this.crypto.sendUSDC(request.recipient, request.amount);
-    } else {
-      result = await this.stripe.createPayment(request);
-    }
+      let result: PaymentResult;
+      if (method === 'crypto') {
+        result = await this.crypto.sendUSDC(request.recipient, request.amount);
+      } else {
+        result = await this.stripe.createPayment(request);
+      }
 
-    if (result.success) {
-      this.budget.recordSpending(request.amount);
-    }
+      if (result.success) {
+        this.budget.recordSpending(request.amount);
+      }
 
-    return result;
+      return result;
+    } catch (err) {
+      console.error('[economy] pay failed:', err);
+      return { success: false, error: 'Payment processing failed' };
+    }
   }
 
   async createRevenueStream(
@@ -426,24 +451,29 @@ export class EconomicSystem {
     priceUSD: number,
     type: 'subscription' | 'one-time' = 'subscription'
   ): Promise<{ url?: string; priceId?: string } | null> {
-    if (type === 'subscription') {
-      return this.stripe.createSubscription({
-        name,
-        priceUSD,
-        interval: 'month',
-        features: ['API access', 'Priority support'],
+    try {
+      if (type === 'subscription') {
+        return this.stripe.createSubscription({
+          name,
+          priceUSD,
+          interval: 'month',
+          features: ['API access', 'Priority support'],
+        });
+      }
+
+      // One-time payment link
+      const result = await this.stripe.createPayment({
+        amount: priceUSD,
+        currency: 'USD',
+        recipient: 'genesis',
+        description: name,
       });
+
+      return result.success ? { url: `https://checkout.stripe.com/pay/${result.transactionId}` } : null;
+    } catch (err) {
+      console.error('[economy] createRevenueStream failed:', err);
+      return null;
     }
-
-    // One-time payment link
-    const result = await this.stripe.createPayment({
-      amount: priceUSD,
-      currency: 'USD',
-      recipient: 'genesis',
-      description: name,
-    });
-
-    return result.success ? { url: `https://checkout.stripe.com/pay/${result.transactionId}` } : null;
   }
 }
 

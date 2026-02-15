@@ -587,7 +587,8 @@ export class AdvancedRouter {
           available = !!config.apiKey;
           break;
       }
-    } catch {
+    } catch (err) {
+      console.error('[AdvancedRouter] Provider check failed:', err);
       available = false;
     }
 
@@ -797,7 +798,8 @@ export class AdvancedRouter {
             ...response,
             routing: { ...decision, provider: fallback, reason: `Fallback from ${decision.provider}` }
           };
-        } catch {
+        } catch (err) {
+          console.error('[AdvancedRouter] Fallback provider failed:', err);
           continue;
         }
       }

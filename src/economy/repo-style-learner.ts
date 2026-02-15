@@ -338,7 +338,7 @@ Return only the reformatted code:`;
               files.push({ path: file.path, content: decoded });
             }
           }
-        } catch {
+        } catch (err) {
           // Skip files we can't fetch
         }
       }
@@ -364,12 +364,14 @@ Return only the reformatted code:`;
           const decoded = Buffer.from(content.data.content, 'base64').toString('utf-8');
           try {
             return JSON.parse(decoded);
-          } catch {
+          } catch (err) {
             // Not JSON, might be JS
+            console.error('[RepoStyleLearner] Failed to parse lint config as JSON:', err);
           }
         }
-      } catch {
+      } catch (err) {
         // Config not found
+        console.error('[RepoStyleLearner] Lint config ' + configFile + ' not found:', err);
       }
     }
 
@@ -391,12 +393,14 @@ Return only the reformatted code:`;
           const decoded = Buffer.from(content.data.content, 'base64').toString('utf-8');
           try {
             return JSON.parse(decoded);
-          } catch {
+          } catch (err) {
             // Not JSON
+            console.error('[RepoStyleLearner] Failed to parse prettier config as JSON:', err);
           }
         }
-      } catch {
+      } catch (err) {
         // Config not found
+        console.error('[RepoStyleLearner] Prettier config ' + configFile + ' not found:', err);
       }
     }
 

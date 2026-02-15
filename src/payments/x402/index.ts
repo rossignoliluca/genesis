@@ -223,7 +223,8 @@ export function isClientConfigured(): boolean {
   try {
     getLiveWallet();
     return true;
-  } catch {
+  } catch (err) {
+    console.error('[X402] Wallet configuration check failed:', err);
     return false;
   }
 }

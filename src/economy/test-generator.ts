@@ -200,7 +200,7 @@ export class TestGenerator {
         if (deps['jest']) return FRAMEWORK_TEMPLATES.jest;
         if (deps['mocha']) return FRAMEWORK_TEMPLATES.mocha;
       }
-    } catch {
+    } catch (err) {
       // Not a JS project
     }
 
@@ -216,7 +216,7 @@ export class TestGenerator {
         const decoded = Buffer.from(requirements.data.content, 'base64').toString('utf-8');
         if (decoded.includes('pytest')) return FRAMEWORK_TEMPLATES.pytest;
       }
-    } catch {
+    } catch (err) {
       // Not a Python project
     }
 
@@ -231,7 +231,7 @@ export class TestGenerator {
       if (goMod?.data?.content) {
         return FRAMEWORK_TEMPLATES.go_test;
       }
-    } catch {
+    } catch (err) {
       // Not a Go project
     }
 
@@ -246,7 +246,7 @@ export class TestGenerator {
       if (cargoToml?.data?.content) {
         return FRAMEWORK_TEMPLATES.rust_test;
       }
-    } catch {
+    } catch (err) {
       // Not a Rust project
     }
 

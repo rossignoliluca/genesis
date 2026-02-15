@@ -101,7 +101,9 @@ export class MarketCollector {
     // Ensure output directory exists
     try {
       fs.mkdirSync(this.config.scrapedChartsDir, { recursive: true });
-    } catch { /* exists */ }
+    } catch (err) { /* exists */
+      console.error('[DataCollector] Failed to create scraped charts directory:', err);
+    }
 
     for (const source of enabledSources) {
       try {
@@ -232,7 +234,8 @@ export class MarketCollector {
         onlyMainContent: true,
       });
       return result.data;
-    } catch {
+    } catch (err) {
+      console.error('[DataCollector] Failed to scrape Bilello blog:', err);
       return null;
     }
   }
@@ -342,12 +345,14 @@ If data is not available for an asset, use "N/A" for missing fields.`,
   private parseJSON(text: string): any {
     try {
       return JSON.parse(text);
-    } catch {
+    } catch (err) {
+      console.error('[DataCollector] Initial JSON parse failed:', err);
       const match = text.match(/\[[\s\S]*\]/);
       if (match) {
         try {
           return JSON.parse(match[0]);
-        } catch {
+        } catch (err) {
+          console.error('[DataCollector] Failed to parse extracted JSON:', err);
           return null;
         }
       }

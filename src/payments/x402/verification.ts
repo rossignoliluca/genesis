@@ -361,7 +361,8 @@ export class PaymentVerifier {
         hash: txHash as Hash,
       });
       return receipt !== null && receipt.status === 'success';
-    } catch {
+    } catch (err) {
+      console.error('[PaymentVerifier] Transaction existence check failed:', err);
       return false;
     }
   }
@@ -392,8 +393,9 @@ export class PaymentVerifier {
 
       // Estimate time for required confirmations
       return Math.ceil(avgBlockTime * this.config.requiredConfirmations);
-    } catch {
+    } catch (err) {
       // Fallback to 12 seconds per confirmation (Base L2 average)
+      console.error('[PaymentVerifier] Verification time estimation failed:', err);
       return 12 * this.config.requiredConfirmations;
     }
   }

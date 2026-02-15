@@ -621,8 +621,9 @@ After completing your task, provide a clear summary of:
     for (const handler of this.eventHandlers) {
       try {
         handler(event);
-      } catch {
+      } catch (err) {
         // Ignore handler errors
+        console.error('[SubagentExecutor] Event handler error:', err);
       }
     }
   }

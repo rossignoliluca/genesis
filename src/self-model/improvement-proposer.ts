@@ -167,8 +167,9 @@ export class ImprovementProposer {
           estimatedEffort: 'trivial',
         }];
       }
-    } catch {
+    } catch (err) {
       // Can't stat — treat as non-existent
+      console.error('[ImprovementProposer] Failed to check self-model staleness:', err);
     }
 
     return [];
@@ -247,8 +248,9 @@ export class ImprovementProposer {
             estimatedEffort: 'small',
           });
         }
-      } catch {
+      } catch (err) {
         // skip unreadable
+        console.error('[ImprovementProposer] Failed to read module for shutdown detection:', err);
       }
     }
 
@@ -298,8 +300,9 @@ export class ImprovementProposer {
             estimatedEffort: 'small',
           });
         }
-      } catch {
+      } catch (err) {
         // skip
+        console.error('[ImprovementProposer] Failed to read module for timer detection:', err);
       }
     }
 
@@ -358,8 +361,9 @@ export class ImprovementProposer {
             estimatedEffort: flags.length > 3 ? 'medium' : 'small',
           });
         }
-      } catch {
+      } catch (err) {
         // skip
+        console.error('[ImprovementProposer] Failed to read module for TODO/FIXME detection:', err);
       }
     }
 
@@ -443,8 +447,9 @@ export class ImprovementProposer {
             estimatedEffort: 'small',
           });
         }
-      } catch {
+      } catch (err) {
         // skip
+        console.error('[ImprovementProposer] Failed to read module for async error handling detection:', err);
       }
     }
 
@@ -530,8 +535,9 @@ export class ImprovementProposer {
             estimatedEffort: 'small',
           });
         }
-      } catch {
+      } catch (err) {
         // skip
+        console.error('[ImprovementProposer] Failed to read module for unbounded collection detection:', err);
       }
     }
 
@@ -605,8 +611,9 @@ export class ImprovementProposer {
             estimatedEffort: 'small',
           });
         }
-      } catch {
+      } catch (err) {
         // skip
+        console.error('[ImprovementProposer] Failed to read module for empty catch detection:', err);
       }
     }
 
@@ -678,8 +685,9 @@ export class ImprovementProposer {
             estimatedEffort: 'small',
           });
         }
-      } catch {
+      } catch (err) {
         // skip
+        console.error('[ImprovementProposer] Failed to read module for duplicate block detection:', err);
       }
     }
 

@@ -79,7 +79,8 @@ class AsyncPipelineImpl<T> implements AsyncTransformPipeline<T> {
     try {
       const result = await this.dataPromise;
       return result ?? fallback;
-    } catch {
+    } catch (err) {
+      console.error('[AsyncPipeline] value resolution failed:', err);
       return fallback;
     }
   }
@@ -254,7 +255,8 @@ export function normalizeSearchResult(): Transformer<any, NormalizedSearchResult
 function extractDomain(url: string): string {
   try {
     return new URL(url).hostname;
-  } catch {
+  } catch (err) {
+    console.error('[transformers] URL parsing failed:', err);
     return 'unknown';
   }
 }

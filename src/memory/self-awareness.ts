@@ -298,7 +298,9 @@ export class SelfAwareness {
           files.push(fullPath);
         }
       }
-    } catch {
+    } catch (err) {
+
+      console.error('[self-awareness] operation failed:', err);
       // Ignore unreadable directories
     }
 

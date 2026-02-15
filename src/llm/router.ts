@@ -563,7 +563,8 @@ export class HybridRouter {
       const result = response.ok;
       this.ollamaAvailableCache = { result, timestamp: now };
       return result;
-    } catch {
+    } catch (err) {
+      console.error('[Router] Ollama availability check failed:', err);
       this.ollamaAvailableCache = { result: false, timestamp: now };
       return false;
     }

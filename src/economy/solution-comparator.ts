@@ -172,7 +172,7 @@ export class SolutionComparator {
               if (similarPRs.length >= 5) break;
             }
           }
-        } catch {
+        } catch (err) {
           // Search query failed
         }
 
@@ -224,7 +224,7 @@ export class SolutionComparator {
         timeToMerge,
         approach: this.extractApproach(pr.data.body || ''),
       };
-    } catch {
+    } catch (err) {
       return null;
     }
   }

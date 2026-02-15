@@ -812,7 +812,8 @@ export function loadCodeQualityGraph(date?: string): {
     }
 
     return null;
-  } catch {
+  } catch (err) {
+    console.error('[CodeQualityAnalyzer] Loading knowledge graph failed:', err);
     return null;
   }
 }

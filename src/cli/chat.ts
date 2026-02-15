@@ -1690,7 +1690,9 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
       if (branch.trim()) {
         context.gitBranch = branch.trim();
       }
-    } catch {
+    } catch (err) {
+
+      console.error('[chat] operation failed:', err);
       // Not a git repo
     }
 
@@ -1700,7 +1702,9 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
       if (packageJson) {
         context.projectType = 'node';
       }
-    } catch {
+    } catch (err) {
+
+      console.error('[chat] operation failed:', err);
       // No package.json
     }
 
@@ -2452,7 +2456,10 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
             createdAt: new Date(),
           });
         }
-      } catch { /* File read error, skip this improvement */ }
+      } catch (err) {
+        console.error('[chat] file read for self-improvement failed:', err);
+        /* File read error, skip this improvement */
+      }
     }
 
     // If Φ is low, increase inference iterations
@@ -2481,7 +2488,10 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
             createdAt: new Date(),
           });
         }
-      } catch { /* File read error, skip this improvement */ }
+      } catch (err) {
+        console.error('[chat] file read for self-improvement failed:', err);
+        /* File read error, skip this improvement */
+      }
     }
 
     if (plans.length === 0) {
@@ -2670,7 +2680,9 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
       criticalServers.map(async (server) => {
         try {
           await client.isAvailable(server);
-        } catch {
+        } catch (err) {
+
+          console.error('[chat] operation failed:', err);
           // Ignore errors during pre-warming
         }
       })

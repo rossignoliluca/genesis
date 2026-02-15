@@ -65,7 +65,8 @@ async function handleGenerate(req: http.IncomingMessage, res: http.ServerRespons
   try {
     const body = await readBody(req);
     spec = JSON.parse(body) as PresentationSpec;
-  } catch {
+  } catch (err) {
+    console.error('[Presentation API] Invalid JSON body:', err);
     jsonResponse(res, 400, { error: 'Invalid JSON body' });
     return;
   }

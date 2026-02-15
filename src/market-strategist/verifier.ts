@@ -498,8 +498,9 @@ export class DataVerifier {
             : new Date(),
         };
       }
-    } catch {
+    } catch (err) {
       // Silent fallback failure
+      console.error('[DataVerifier] AlphaVantage fallback failed:', err);
     }
     return null;
   }
@@ -743,8 +744,9 @@ export class DataVerifier {
             timestamp: data.last_updated ? new Date(data.last_updated) : new Date(),
           });
         }
-      } catch {
+      } catch (err) {
         // Silent failure per coin
+        console.error('[DataVerifier] CoinPaprika fetch failed for coin:', err);
       }
     });
 

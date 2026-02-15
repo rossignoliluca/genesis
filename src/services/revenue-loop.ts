@@ -276,7 +276,10 @@ export class RevenueLoop {
         p.metadata?.genesis === 'compintel'
       );
       if (found) return found;
-    } catch { /* continue to create */ }
+    } catch (err) {
+      /* continue to create */
+      console.error('[RevenueLoop] Product lookup failed:', err);
+    }
 
     return this.stripe.createProduct({
       name: this.config.productName || 'Genesis Competitive Intelligence',
@@ -298,7 +301,10 @@ export class RevenueLoop {
         p.recurring?.interval === planConfig.interval
       );
       if (found) return found;
-    } catch { /* continue to create */ }
+    } catch (err) {
+      /* continue to create */
+      console.error('[RevenueLoop] Price lookup failed:', err);
+    }
 
     return this.stripe.createPrice({
       product: productId,

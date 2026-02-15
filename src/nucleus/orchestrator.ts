@@ -207,8 +207,9 @@ export class Orchestrator {
         latencyMs: totalLatency,
         confidence: confidenceValue,
       });
-    } catch {
+    } catch (err) {
       // Bus not available
+      console.error('[NucleusOrchestrator] Failed to publish nucleus event:', err);
     }
 
     return ctx;

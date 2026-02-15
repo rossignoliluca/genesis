@@ -303,8 +303,9 @@ export class LatentEncoder {
         ? data.split('base64,')[1]
         : data;
       imageBytes = Buffer.from(base64Data, 'base64');
-    } catch {
+    } catch (err) {
       // Fallback: treat as URL or path, use hash
+      console.error('[WorldModelEncoder] Base64 decode failed, using fallback:', err);
       imageBytes = Buffer.from(data);
     }
 

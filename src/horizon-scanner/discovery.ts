@@ -67,8 +67,9 @@ export class DiscoveryLayer {
             lastPublished: pkg.date,
           });
         }
-      } catch {
+      } catch (err) {
         // Network failure — continue with other sources
+        console.error('[CapabilityDiscovery] NPM search failed:', err);
       }
     }
 

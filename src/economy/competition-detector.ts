@@ -347,8 +347,9 @@ export class CompetitionDetector {
                   existingPRs.add(prNumber);
                 }
               }
-            } catch {
+            } catch (err) {
               // Not a PR or not accessible
+              console.error('[CompetitionDetector] Failed to check PR #' + prNumber + ':', err);
             }
           }
         }

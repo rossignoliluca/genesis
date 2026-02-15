@@ -244,7 +244,7 @@ Provide your review in JSON format.`;
         } else {
           throw new Error('No JSON found');
         }
-      } catch {
+      } catch (err) {
         // If parsing fails, create a neutral response
         console.log(`[MultiValidator] Failed to parse ${reviewerType} response`);
         return {
@@ -392,7 +392,7 @@ Respond in JSON:
           suggestions: parsed.suggestions || [],
         };
       }
-    } catch {
+    } catch (err) {
       // Fall through to default
     }
 

@@ -89,7 +89,10 @@ export class AnalyticsAggregator {
         totalImpressions += metrics.impressions;
         totalEngagements += metrics.engagements;
         followerGrowth += metrics.followerGrowth;
-      } catch { /* skip */ }
+      } catch (err) {
+        /* skip */
+        console.error('[Analytics Aggregator] Platform metrics fetch failed:', err);
+      }
     }));
 
     const revenueGenerated = Array.from(this.trackedContent.values())
@@ -121,7 +124,8 @@ export class AnalyticsAggregator {
         byPlatform[platform] = { impressions: analytics.impressions, engagements: analytics.engagements, url: post.url };
         totalImpressions += analytics.impressions;
         totalEngagements += analytics.engagements;
-      } catch {
+      } catch (err) {
+        console.error('[Analytics Aggregator] Post analytics fetch failed:', err);
         byPlatform[platform] = { impressions: 0, engagements: 0, url: post.url };
       }
     }
@@ -197,7 +201,10 @@ export class AnalyticsAggregator {
         followers = profile.followersCount;
         postsCount = profile.postsCount;
       }
-    } catch { /* skip */ }
+    } catch (err) {
+      /* skip */
+      console.error('[Analytics Aggregator] Platform profile fetch failed:', err);
+    }
 
     return {
       platform,

@@ -286,7 +286,7 @@ export class AutoRevisionEngine {
             const decoded = Buffer.from(content.data.content, 'base64').toString('utf-8');
             files.set(file.filename, decoded);
           }
-        } catch {
+        } catch (err) {
           // Skip files we can't fetch
         }
       }

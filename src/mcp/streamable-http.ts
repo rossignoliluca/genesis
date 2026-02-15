@@ -177,7 +177,10 @@ export class StreamableHTTPTransport {
             } else {
               lastResult = parsed;
             }
-          } catch { /* skip unparseable */ }
+          } catch (err) {
+            console.error('[StreamableHTTPTransport] SSE parse failed:', err);
+            /* skip unparseable */
+          }
         }
       }
     }

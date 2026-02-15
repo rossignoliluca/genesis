@@ -119,8 +119,9 @@ export class PersistentMessageLog {
         }
       }
       appendFileSync(this.currentFile, line, 'utf8');
-    } catch {
+    } catch (err) {
       // Silent fail — don't crash the system for logging
+      console.error('[MessageBus] Log write failed:', err);
     }
   }
 
@@ -159,8 +160,9 @@ export class PersistentMessageLog {
         results.push(entry);
         if (options?.limit && results.length >= options.limit) break;
       }
-    } catch {
+    } catch (err) {
       // File read error
+      console.error('[MessageBus] Log read failed:', err);
     }
 
     return results;

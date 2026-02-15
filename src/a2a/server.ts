@@ -154,7 +154,8 @@ export class A2AServer extends EventEmitter {
         from: message.from,
         id: message.id,
       });
-    } catch {
+    } catch (err) {
+      console.error('[A2A Server] Governance gate error:', err);
       return false; // Gate error = deny
     }
   }
@@ -466,7 +467,10 @@ export class A2AServer extends EventEmitter {
             metadata: { taskId: task.request.id, capability: capability.name },
           });
           this.emit('revenue', capability.pricing.basePrice, `a2a:${task.request.capabilityId}`);
-        } catch { /* revenue tracking is optional */ }
+        } catch (err) {
+          /* revenue tracking is optional */
+          console.error('[A2A Server] Revenue tracking failed:', err);
+        }
       }
 
       const taskResult: TaskResult = {

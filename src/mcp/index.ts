@@ -762,7 +762,8 @@ class MCPConnectionManager {
           if (first.type === 'text' && typeof first.text === 'string') {
             try {
               return JSON.parse(first.text) as T;
-            } catch {
+            } catch (err) {
+              console.error('[MCPConnectionManager] JSON parse failed:', err);
               return first.text as unknown as T;
             }
           }
@@ -876,7 +877,8 @@ class MCPConnectionManager {
     try {
       await this.getConnection(server);
       return true;
-    } catch {
+    } catch (err) {
+      console.error('[MCPConnectionManager] server availability check failed:', err);
       return false;
     }
   }
@@ -889,7 +891,8 @@ class MCPConnectionManager {
     if (connection) {
       try {
         await connection.client.close();
-      } catch {
+      } catch (err) {
+        console.error('[MCPConnectionManager] close connection failed:', err);
         // Ignore close errors
       }
       connection.connected = false;
@@ -1148,7 +1151,8 @@ class RealMCPClient implements IMCPClient {
       servers.map(async (server) => {
         try {
           result[server] = await this.listToolsWithSchema(server);
-        } catch {
+        } catch (err) {
+          console.error('[RealMCPClient] discover tools failed, using registry fallback:', err);
           // Server not available, use registry fallback
           result[server] = MCP_SERVER_REGISTRY[server].tools.map(name => ({ name }));
         }
@@ -1375,7 +1379,8 @@ class HybridMCPClient implements IMCPClient {
   async listTools(server: MCPServerName): Promise<string[]> {
     try {
       return await this.realClient.listTools(server);
-    } catch {
+    } catch (err) {
+      console.error('[HybridMCPClient] list tools failed, falling back to simulated:', err);
       return this.simClient.listTools(server);
     }
   }
@@ -1383,7 +1388,8 @@ class HybridMCPClient implements IMCPClient {
   async listToolsWithSchema(server: MCPServerName): Promise<MCPToolDefinition[]> {
     try {
       return await this.realClient.listToolsWithSchema(server);
-    } catch {
+    } catch (err) {
+      console.error('[HybridMCPClient] list tools with schema failed, falling back to simulated:', err);
       return this.simClient.listToolsWithSchema(server);
     }
   }
@@ -1391,7 +1397,8 @@ class HybridMCPClient implements IMCPClient {
   async discoverAllTools(): Promise<Record<MCPServerName, MCPToolDefinition[]>> {
     try {
       return await this.realClient.discoverAllTools();
-    } catch {
+    } catch (err) {
+      console.error('[HybridMCPClient] discover all tools failed, falling back to simulated:', err);
       return this.simClient.discoverAllTools();
     }
   }

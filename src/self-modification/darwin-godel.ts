@@ -501,7 +501,8 @@ export class DarwinGodelEngine {
               results: []
             });
           }
-        } catch {
+        } catch (err) {
+          console.error('[DarwinGodel] Test result parsing failed:', err);
           resolve({ passed: false, ranSuccessfully: false, results: [] });
         }
       });
@@ -536,7 +537,8 @@ export class DarwinGodelEngine {
       // Get commit hash
       const hashResult = this.runCommand('git', ['rev-parse', 'HEAD'], this.config.genesisRoot);
       return hashResult.stdout?.toString().trim() || null;
-    } catch {
+    } catch (err) {
+      console.error('[DarwinGodel] Creating git checkpoint failed:', err);
       return null;
     }
   }
@@ -550,7 +552,8 @@ export class DarwinGodelEngine {
     try {
       this.runCommand('git', ['reset', '--hard', commitHash], this.config.genesisRoot);
       return true;
-    } catch {
+    } catch (err) {
+      console.error('[DarwinGodel] Git rollback failed:', err);
       return false;
     }
   }

@@ -443,7 +443,9 @@ export class ModelRacer {
           yield event;
         }
       }
-    } catch {
+    } catch (err) {
+
+      console.error('[model-racer] operation failed:', err);
       // Fast model failed mid-stream
       if (tokenCount === 0) {
         const fallback = sorted[1] || sorted[0];
@@ -550,7 +552,9 @@ export class ModelRacer {
           }
           // Skip non-token events (metadata, etc) and keep pulling
         }
-      } catch {
+      } catch (err) {
+
+        console.error('[model-racer] operation failed:', err);
         return null;
       }
     });
@@ -578,7 +582,9 @@ export class ModelRacer {
         }
         // Skip non-token/error events and keep pulling
       }
-    } catch {
+    } catch (err) {
+
+      console.error('[model-racer] operation failed:', err);
       return null;
     }
   }

@@ -226,7 +226,9 @@ export class ProjectIndexer {
         this.index = new Map(Object.entries(data.files || {}));
         this.rebuildTrigramIndex();
       }
-    } catch {
+    } catch (err) {
+
+      console.error('[indexer] operation failed:', err);
       this.index = new Map();
     }
   }
@@ -355,7 +357,9 @@ export class ProjectIndexer {
           files.push(fullPath);
         }
       }
-    } catch {
+    } catch (err) {
+
+      console.error('[indexer] operation failed:', err);
       // Skip unreadable directories
     }
 

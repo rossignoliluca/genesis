@@ -271,8 +271,9 @@ export class StrategyOrchestrator {
       const state = orchestrator.getState();
       bountyAvailability = Math.min(1, state.activeBounties.size / 5);
       // Competition would come from competition detector
-    } catch {
+    } catch (err) {
       // Not initialized
+      console.error('[StrategyOrchestrator] Failed to get bounty availability:', err);
     }
 
     let contentDemand = 0.5;
@@ -282,8 +283,9 @@ export class StrategyOrchestrator {
       const stats = intelligence.getEngagementStats();
       contentDemand = stats.avgEngagement / 1000;  // Normalize
       trendingTopics = intelligence.getActiveTrends().length;
-    } catch {
+    } catch (err) {
       // Not initialized
+      console.error('[StrategyOrchestrator] Failed to get content demand:', err);
     }
 
     // System metrics
@@ -486,8 +488,9 @@ export class StrategyOrchestrator {
         confidence: decision.confidence,
         timestamp: decision.timestamp.toISOString(),
       });
-    } catch {
+    } catch (err) {
       // Event bus may not support custom topics
+      console.error('[StrategyOrchestrator] Failed to publish allocation decision:', err);
     }
   }
 

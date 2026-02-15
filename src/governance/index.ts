@@ -658,7 +658,8 @@ export class GovernanceEngine {
       // Unsupported condition format - fail closed
       console.warn(`[Governance] Unsupported condition format: ${condition}`);
       return false;
-    } catch {
+    } catch (err) {
+      console.error('[Governance] Condition check failed:', err);
       return false;
     }
   }

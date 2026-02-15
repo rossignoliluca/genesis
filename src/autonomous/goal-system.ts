@@ -701,8 +701,9 @@ export class GoalSystem {
         this.activateGoal(goal.id);
       }
 
-    } catch {
+    } catch (err) {
       // Strategy orchestrator not available
+      console.error('[GoalSystem] Failed to get strategic priorities:', err);
     }
 
     return generated;
@@ -746,8 +747,9 @@ export class GoalSystem {
         importance: goal.importance,
         tags: ['goal', 'completed', goal.domain, ...goal.tags],
       });
-    } catch {
+    } catch (err) {
       // Memory system not available
+      console.error('[GoalSystem] Failed to store goal completion in memory:', err);
     }
   }
 

@@ -9,8 +9,7 @@ import { readdirSync, readFileSync, statSync, existsSync } from 'fs';
 import { join, resolve } from 'path';
 import type { ModuleManifestEntry } from './types.js';
 
-// Use __dirname for path resolution (CommonJS pattern works in NodeNext)
-const __dirname = resolve(__filename, '..');
+// __dirname is provided natively in CJS
 
 // ============================================================================
 // Bus Topic Mapping
@@ -108,8 +107,9 @@ export class ManifestGenerator {
       try {
         const stats = statSync(file);
         totalSize += stats.size;
-      } catch {
+      } catch (err) {
         // Skip if file can't be read
+        console.error('[ManifestGenerator] Failed to stat file:', err);
       }
     }
 
@@ -176,8 +176,9 @@ export class ManifestGenerator {
           }
         }
       }
-    } catch {
+    } catch (err) {
       // Skip directories we can't read
+      console.error('[ManifestGenerator] Failed to read directory:', err);
     }
 
     return files;
@@ -212,8 +213,9 @@ export class ManifestGenerator {
       while ((match = exportRegex.exec(content)) !== null && exports.length < 20) {
         exports.push(match[2]);
       }
-    } catch {
+    } catch (err) {
       // Skip if file can't be read
+      console.error('[ManifestGenerator] Failed to analyze index file:', err);
     }
 
     return { description, exports };
@@ -229,8 +231,9 @@ export class ManifestGenerator {
         if (content.includes('createPublisher') || content.includes('createSubscriber')) {
           return true;
         }
-      } catch {
+      } catch (err) {
         // skip
+        console.error('[ManifestGenerator] Failed to check for bus wiring:', err);
       }
     }
     return false;
@@ -253,8 +256,9 @@ export class ManifestGenerator {
             deps.add(depName);
           }
         }
-      } catch {
+      } catch (err) {
         // Skip files we can't read
+        console.error('[ManifestGenerator] Failed to find dependencies:', err);
       }
     }
 

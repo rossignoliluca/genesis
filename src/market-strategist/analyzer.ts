@@ -249,7 +249,8 @@ Be specific with data references, not generic.`,
 
       const content = this.extractMCPContent(result);
       return (typeof content === 'string' ? content : JSON.stringify(content)) || consensus;
-    } catch {
+    } catch (err) {
+      console.error('[AnalysisEngine] Failed to generate bear case:', err);
       return `Contrarian to consensus: ${consensus}`;
     }
   }
@@ -332,8 +333,9 @@ Narratives: ${narratives.map(n => `${n.title}: ${n.thesis}`).join('\n')}`,
         // Programmatic enforcement: if LLM ignores calibration caps, force downgrade
         return this.enforceCalibrationCaps(parsed, calibration);
       }
-    } catch {
+    } catch (err) {
       // Fall through to defaults
+      console.error('[AnalysisEngine] Failed to generate positioning:', err);
     }
 
     return this.defaultPositioning();
@@ -492,13 +494,15 @@ Narratives: ${narratives.map(n => `${n.title}: ${n.thesis}`).join('\n')}`,
     // Try to extract JSON from text that may have markdown formatting
     try {
       return JSON.parse(text);
-    } catch {
+    } catch (err) {
       // Try to find JSON array in the text
+      console.error('[AnalysisEngine] Initial JSON parse failed:', err);
       const match = text.match(/\[[\s\S]*\]/);
       if (match) {
         try {
           return JSON.parse(match[0]);
-        } catch {
+        } catch (err) {
+          console.error('[AnalysisEngine] Failed to parse extracted JSON:', err);
           return null;
         }
       }

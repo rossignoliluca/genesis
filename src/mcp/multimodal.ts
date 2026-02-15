@@ -246,7 +246,8 @@ async function displayITerm2(imagePath: string, options: DisplayOptions): Promis
 
     process.stdout.write(`${osc}${params}:${base64}${st}\n`);
     return true;
-  } catch {
+  } catch (err) {
+    console.error('[multimodal] display failed:', err);
     return false;
   }
 }
@@ -256,7 +257,8 @@ async function displayKitty(imagePath: string, options: DisplayOptions): Promise
     // Use kitten icat for Kitty terminal
     await execAsync(`kitten icat --place ${options.maxWidth || 80}x${options.maxHeight || 24}@0x0 "${imagePath}"`);
     return true;
-  } catch {
+  } catch (err) {
+    console.error('[multimodal] display failed:', err);
     return false;
   }
 }
@@ -266,7 +268,8 @@ async function displaySixel(imagePath: string, options: DisplayOptions): Promise
     // Use img2sixel if available
     await execAsync(`img2sixel -w ${options.maxWidth || 800} "${imagePath}"`);
     return true;
-  } catch {
+  } catch (err) {
+    console.error('[multimodal] display failed:', err);
     return false;
   }
 }
@@ -285,7 +288,8 @@ async function displayAscii(imagePath: string, options: DisplayOptions): Promise
     console.log(`│    Path: ...${imagePath.slice(-22).padEnd(23)} │`);
     console.log('└─────────────────────────────────────┘');
     return true;
-  } catch {
+  } catch (err) {
+    console.error('[multimodal] display failed:', err);
     return false;
   }
 }

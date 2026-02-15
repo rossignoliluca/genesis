@@ -65,7 +65,7 @@ export { FixGenerator } from './fix-generator.js';
 export { SelfImprovementLoop } from './self-improvement-loop.js';
 export type { CycleResult, FixAttempt } from './self-improvement-loop.js';
 
-const __dirname = resolve(__filename, '..');
+// __dirname is provided natively in CJS
 
 // ============================================================================
 // Holistic Self-Model

@@ -268,5 +268,8 @@ export function emitSystemError(
       severity,
       recoverable: severity !== 'fatal',
     });
-  } catch { /* bus unavailable */ }
+  } catch (err) {
+    /* bus unavailable */
+    console.error('[Bus] Error emission failed:', err);
+  }
 }

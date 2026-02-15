@@ -103,8 +103,9 @@ export function registerDefaultHandlers(): void {
       const client = getMCPClient();
       await client.close();
       console.log('[Shutdown] MCP connections closed');
-    } catch {
+    } catch (err) {
       // MCP module may not be loaded
+      console.error('[Shutdown] Failed to close MCP connections:', err);
     }
   });
 
@@ -114,8 +115,9 @@ export function registerDefaultHandlers(): void {
       const { resetRateLimiter } = await import('./rate-limiter.js');
       resetRateLimiter();
       console.log('[Shutdown] Rate limiters stopped');
-    } catch {
+    } catch (err) {
       // Rate limiter may not be loaded
+      console.error('[Shutdown] Failed to stop rate limiters:', err);
     }
   });
 
@@ -127,8 +129,9 @@ export function registerDefaultHandlers(): void {
       await alerter.flush();
       alerter.stop();
       console.log('[Shutdown] Alerts flushed');
-    } catch {
+    } catch (err) {
       // Alerter may not be loaded
+      console.error('[Shutdown] Failed to flush alerts:', err);
     }
   });
 }

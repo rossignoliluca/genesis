@@ -227,7 +227,12 @@ export class SharedTaskContext {
 
       if (matches) {
         for (const cb of callbacks) {
-          try { cb(entry); } catch { /* ignore listener errors */ }
+          try {
+            cb(entry);
+          } catch (err) {
+            /* ignore listener errors */
+            console.error('[SharedTaskContext] Listener callback error:', err);
+          }
         }
       }
     }

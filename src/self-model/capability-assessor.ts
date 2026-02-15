@@ -11,7 +11,7 @@ import type { RuntimeObservatory } from './runtime-observatory.js';
 import { existsSync, readdirSync } from 'fs';
 import { join, resolve } from 'path';
 
-const __dirname = resolve(__filename, '..');
+// __dirname is provided natively in CJS
 
 export class CapabilityAssessor {
   private rootPath: string;
@@ -103,7 +103,8 @@ export class CapabilityAssessor {
 
       const files = readdirSync(modulePath);
       return files.some(file => file.endsWith('.test.ts'));
-    } catch {
+    } catch (err) {
+      console.error('[CapabilityAssessor] Failed to check for tests:', err);
       return false;
     }
   }

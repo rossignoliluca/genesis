@@ -139,7 +139,7 @@ export class PRTemplateMatcher {
           console.log(`[PRTemplateMatcher] Found template at ${templatePath}`);
           return template;
         }
-      } catch {
+      } catch (err) {
         // Try next path
       }
     }

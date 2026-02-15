@@ -100,7 +100,9 @@ class JSONCache {
         this.hits = parsed.hits || 0;
         this.misses = parsed.misses || 0;
       }
-    } catch {
+    } catch (err) {
+
+      console.error('[cache] operation failed:', err);
       this.data = new Map();
     }
   }
@@ -186,7 +188,9 @@ class JSONCache {
       if (fs.existsSync(this.dbPath)) {
         dbSize = fs.statSync(this.dbPath).size;
       }
-    } catch {
+    } catch (err) {
+
+      console.error('[cache] operation failed:', err);
       // File stats unavailable, return 0
     }
 

@@ -320,7 +320,8 @@ export class SelfBriefingGenerator {
     try {
       const pkg = JSON.parse(readFileSync(join(this.rootPath, 'package.json'), 'utf-8'));
       return pkg.version || '0.0.0';
-    } catch {
+    } catch (err) {
+      console.error('[SelfBriefingGenerator] Failed to read package.json version:', err);
       return '0.0.0';
     }
   }

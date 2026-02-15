@@ -348,7 +348,9 @@ export async function checkGovernance(
     });
 
     return { allowed: result.approved, reason: result.reason };
-  } catch {
+  } catch (err) {
+
+    console.error('[index] operation failed:', err);
     // Governance not configured - allow by default
     return { allowed: true };
   }
@@ -396,7 +398,9 @@ export async function delegateToRemoteAgent(
     }
 
     return { delegated: false };
-  } catch {
+  } catch (err) {
+
+    console.error('[index] operation failed:', err);
     return { delegated: false };
   }
 }

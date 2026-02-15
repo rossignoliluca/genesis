@@ -619,7 +619,8 @@ export class MCPClientManager extends EventEmitter {
     if (connection) {
       try {
         await connection.client.close();
-      } catch {
+      } catch (err) {
+        console.error('[MCPClientManager] close connection failed:', err);
         // Ignore close errors
       }
 
@@ -732,7 +733,8 @@ export class MCPClientManager extends EventEmitter {
         inputSchema: t.inputSchema as Record<string, unknown>,
         server: serverName,
       }));
-    } catch {
+    } catch (err) {
+      console.error('[MCPClientManager] discover tools failed:', err);
       return [];
     }
   }
@@ -750,7 +752,8 @@ export class MCPClientManager extends EventEmitter {
         mimeType: r.mimeType,
         server: serverName,
       }));
-    } catch {
+    } catch (err) {
+      console.error('[MCPClientManager] discover resources failed:', err);
       return [];
     }
   }
@@ -767,7 +770,8 @@ export class MCPClientManager extends EventEmitter {
         arguments: p.arguments,
         server: serverName,
       }));
-    } catch {
+    } catch (err) {
+      console.error('[MCPClientManager] discover prompts failed:', err);
       return [];
     }
   }
@@ -803,7 +807,8 @@ export class MCPClientManager extends EventEmitter {
       if (first.type === 'text' && typeof first.text === 'string') {
         try {
           parsed = JSON.parse(first.text) as T;
-        } catch {
+        } catch (err) {
+          console.error('[MCPClientManager] JSON parse failed:', err);
           parsed = first.text as unknown as T;
         }
       } else {

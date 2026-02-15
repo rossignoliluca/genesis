@@ -253,7 +253,8 @@ function simpleGlob(pattern: string, cwd: string): string[] {
           }
         }
       }
-    } catch {
+    } catch (err) {
+      console.error('[agentic] file operation failed:', err);
       // Ignore permission errors
     }
   }
@@ -269,7 +270,8 @@ function simpleGlob(pattern: string, cwd: string): string[] {
 
     try {
       return new RegExp(`^${regexPat}$`).test(filePath);
-    } catch {
+    } catch (err) {
+      console.error('[agentic] regex pattern matching failed:', err);
       // Fallback to simple includes for malformed patterns
       return filePath.includes(pat.replace(/\*/g, ''));
     }
@@ -434,7 +436,8 @@ export class AgenticToolExecutor {
       const result = execSync(cmd, { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }).trim();
       const lines = result.split('\n');
       return lines.slice(0, 200).join('\n') + (lines.length > 200 ? `\n... and ${lines.length - 200} more matches` : '');
-    } catch {
+    } catch (err) {
+      console.error('[agentic] search operation failed:', err);
       return 'No matches found';
     }
   }
@@ -488,7 +491,8 @@ export class AgenticToolExecutor {
           if (result.success && result.data) {
             return typeof result.data === 'string' ? result.data : JSON.stringify(result.data, null, 2);
           }
-        } catch {
+        } catch (err) {
+          console.error('[agentic] file read operation failed:', err);
           continue;
         }
       }
@@ -881,7 +885,9 @@ ${colorize('Commands:', 'cyan')}
               currentPrompt = `Tool result for ${toolCall.name}:\n\`\`\`\n${result}\n\`\`\`\n\nContinue with your task. When done, provide a summary without tool calls.`;
               spinner.start();
             }
-          } catch {
+          } catch (err) {
+
+            console.error('[agentic] operation failed:', err);
             // Not a valid tool call, treat as regular response
             this.conversationHistory.push(`Assistant: ${content}`);
             console.log('\n' + this.formatResponse(content));

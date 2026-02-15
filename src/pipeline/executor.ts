@@ -347,8 +347,9 @@ export class PipelineExecutor {
       if (currentPaper?.title) {
         papers.push(currentPaper as Paper);
       }
-    } catch {
+    } catch (err) {
       // Return empty if parsing fails
+      console.error('[PipelineExecutor] Paper parsing failed:', err);
     }
 
     return papers.slice(0, 5); // Limit to 5 papers
@@ -496,8 +497,9 @@ Design 3-5 components. Be specific and practical.`;
           };
         }
       }
-    } catch {
+    } catch (err) {
       this.log('Using default architecture template', 'debug');
+      console.error('[PipelineExecutor] Architecture parsing failed:', err);
     }
 
     return defaultArch;
@@ -815,8 +817,9 @@ if (import.meta.url === \`file://\${process.argv[1]}\`) {
 
       try {
         await this.mcp.call('memory', 'create_relations', { relations });
-      } catch {
+      } catch (err) {
         // Relations may fail if entities don't exist
+        console.error('[PipelineExecutor] Creating relations failed:', err);
       }
     }
   }

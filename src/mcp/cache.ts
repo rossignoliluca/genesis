@@ -373,7 +373,8 @@ export class MCPCache {
   private estimateSize(data: any): number {
     try {
       return JSON.stringify(data).length * 2; // Rough estimate for UTF-16
-    } catch {
+    } catch (err) {
+      console.error('[MCPCache] size estimation failed:', err);
       return 1000; // Default estimate
     }
   }
@@ -439,7 +440,8 @@ export class MCPCache {
         }
         this.stats.entries = this.cache.size;
       }
-    } catch {
+    } catch (err) {
+      console.error('[MCPCache] load from disk failed:', err);
       // Ignore load errors
     }
   }
@@ -453,7 +455,8 @@ export class MCPCache {
       const indexPath = path.join(this.config.persistPath, 'cache-index.json');
       const index = { entries: Array.from(this.cache.values()) };
       fs.writeFileSync(indexPath, JSON.stringify(index));
-    } catch {
+    } catch (err) {
+      console.error('[MCPCache] persist to disk failed:', err);
       // Ignore persist errors
     }
   }
@@ -464,7 +467,8 @@ export class MCPCache {
       if (fs.existsSync(indexPath)) {
         fs.unlinkSync(indexPath);
       }
-    } catch {
+    } catch (err) {
+      console.error('[MCPCache] clear disk failed:', err);
       // Ignore clear errors
     }
   }

@@ -354,7 +354,8 @@ export class A2AClient extends EventEmitter {
       const trust = response.result as TrustScore;
       this.trustCache.set(agentId, trust);
       return trust;
-    } catch {
+    } catch (err) {
+      console.error('[A2A Client] Trust score fetch failed:', err);
       return this.getDefaultTrust(agentId);
     }
   }

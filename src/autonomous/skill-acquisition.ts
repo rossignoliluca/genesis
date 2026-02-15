@@ -541,8 +541,9 @@ export class SkillAcquisitionSystem {
           }
         }
       }
-    } catch {
+    } catch (err) {
       // Reflection engine not available
+      console.error('[SkillAcquisition] Failed to get reflection insights:', err);
     }
 
     // Add plans for identified skill gaps
@@ -685,8 +686,9 @@ export class SkillAcquisitionSystem {
         steps: steps.length > 0 ? steps : [{ action: skill.name }],
         tags: [skill.category, success ? 'success' : 'failure', ...skill.tags],
       });
-    } catch {
+    } catch (err) {
       // Memory system not available
+      console.error('[SkillAcquisition] Failed to store execution memory:', err);
     }
   }
 

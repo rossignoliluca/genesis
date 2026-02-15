@@ -157,8 +157,9 @@ export class FixGenerator {
       if (files.length > 0) {
         sections.push(`\n--- Other files in ${proposal.targetModule}/: ${files.join(', ')} ---`);
       }
-    } catch {
+    } catch (err) {
       // ignore
+      console.error('[FixGenerator] Failed to list other files in module:', err);
     }
 
     return sections.join('\n');
@@ -374,7 +375,8 @@ export class FixGenerator {
       }
 
       return topicLines.join('\n');
-    } catch {
+    } catch (err) {
+      console.error('[FixGenerator] Failed to read bus events:', err);
       return '(could not read bus events)';
     }
   }
@@ -550,7 +552,7 @@ RULES:
       return `YOUR FIX — Add error logging to empty catch blocks:
 
 BEFORE:
-  } catch {
+  } catch (err) {
     /* non-fatal */
   }
 
@@ -639,7 +641,8 @@ RULES:
         modifications: [modification],
         createdAt: new Date(),
       };
-    } catch {
+    } catch (err) {
+      console.error('[FixGenerator] Failed to parse LLM response:', err);
       return null;
     }
   }

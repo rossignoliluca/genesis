@@ -267,7 +267,9 @@ export class UnifiedMemoryQuery {
           };
         }
         return { source: source.sourceId, results: [] };
-      } catch {
+      } catch (err) {
+
+        console.error('[unified-query] operation failed:', err);
         return { source: source.sourceId, results: [] };
       }
     });
@@ -322,7 +324,9 @@ export class UnifiedMemoryQuery {
           if (item) {
             return src.normalize(item, 1.0);
           }
-        } catch {
+        } catch (err) {
+
+          console.error('[unified-query] operation failed:', err);
           // Continue to next source
         }
       }

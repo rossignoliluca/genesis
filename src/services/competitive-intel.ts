@@ -309,7 +309,10 @@ export class CompetitiveIntelService extends EventEmitter {
       const r = result as any;
       const content = r?.data?.choices?.[0]?.message?.content || r?.choices?.[0]?.message?.content;
       if (content) return content;
-    } catch { /* fall through to direct */ }
+    } catch (err) {
+      /* fall through to direct */
+      console.error('[CompetitiveIntel] MCP call failed:', err);
+    }
 
     // Fallback: direct OpenAI HTTP call
     const apiKey = process.env.OPENAI_API_KEY;
@@ -361,7 +364,8 @@ export class CompetitiveIntelService extends EventEmitter {
         significance: parsed.significance || 'medium',
         analysis: parsed.analysis || 'Unable to analyze change.',
       };
-    } catch {
+    } catch (err) {
+      console.error('[CompetitiveIntel] Change analysis failed:', err);
       return { significance: 'medium', analysis: 'Analysis unavailable (LLM error).' };
     }
   }
@@ -397,7 +401,8 @@ export class CompetitiveIntelService extends EventEmitter {
         insights: parsed.insights || ['Analysis unavailable.'],
         recommendations: parsed.recommendations || [],
       };
-    } catch {
+    } catch (err) {
+      console.error('[CompetitiveIntel] Insight generation failed:', err);
       return { insights: ['Analysis unavailable.'], recommendations: [] };
     }
   }

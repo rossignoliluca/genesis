@@ -234,7 +234,7 @@ class PriceFeedManager {
           confidence: 'high',
         };
       }
-    } catch {
+    } catch (err) {
       // Fall through to next source
     }
 
@@ -257,7 +257,7 @@ class PriceFeedManager {
           }
         }
       }
-    } catch {
+    } catch (err) {
       // Fall through to fallback
     }
 

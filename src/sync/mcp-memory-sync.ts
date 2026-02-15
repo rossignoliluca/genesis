@@ -99,7 +99,10 @@ export class MCPMemorySync {
   constructor(config: Partial<SyncConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.state = this.loadState();
-    try { this.mcp = getMCPClient(); } catch { this.mcp = null; }
+    try { this.mcp = getMCPClient(); } catch (err) {
+      console.error('[MCPMemorySync] Failed to get MCP client:', err);
+      this.mcp = null;
+    }
   }
 
   /**
@@ -328,8 +331,9 @@ export class MCPMemorySync {
         const data = fs.readFileSync(cachePath, 'utf-8');
         return JSON.parse(data) as MCPMemoryGraph;
       }
-    } catch {
+    } catch (err) {
       // Cache miss or parse error
+      console.error('[MCPMemorySync] Failed to load MCP memory cache:', err);
     }
 
     return { entities: [], relations: [] };
@@ -372,7 +376,8 @@ export class MCPMemorySync {
       }
       fs.writeFileSync(cachePath, JSON.stringify(graph, null, 2));
       return { success: true };
-    } catch {
+    } catch (err) {
+      console.error('[MCPMemorySync] Failed to write MCP memory cache:', err);
       return { success: false };
     }
   }
@@ -450,8 +455,9 @@ export class MCPMemorySync {
         const data = fs.readFileSync(this.config.statePath, 'utf-8');
         return JSON.parse(data) as SyncState;
       }
-    } catch {
+    } catch (err) {
       // Ignore errors, return default state
+      console.error('[MCPMemorySync] Failed to load sync state:', err);
     }
 
     return {
@@ -510,7 +516,8 @@ export class MCPMemorySync {
       } else {
         return [];
       }
-    } catch {
+    } catch (err) {
+      console.error('[MCPMemorySync] Failed to load last graph for workspace items:', err);
       return [];
     }
 

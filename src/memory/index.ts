@@ -362,7 +362,9 @@ export class MemorySystem {
       try {
         this.vectorDb = getVectorDatabase();
         await this.vectorDb.load();
-      } catch {
+      } catch (err) {
+
+        console.error('[index] operation failed:', err);
         // VectorDB unavailable — fall back to keyword recall
         return this.recall(query, { types: options.types, limit: topK })
           .map(m => ({ memory: m, score: 0.5 }));
@@ -390,7 +392,9 @@ export class MemorySystem {
       }
 
       return memories;
-    } catch {
+    } catch (err) {
+
+      console.error('[index] operation failed:', err);
       // Fallback to keyword search on vector failure
       return this.recall(query, { types: options.types, limit: topK })
         .map(m => ({ memory: m, score: 0.5 }));

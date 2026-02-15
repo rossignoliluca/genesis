@@ -166,8 +166,9 @@ export class ContentIntelligence {
       }
 
       console.log(`[ContentIntelligence] Loaded ${patterns.length} historical patterns`);
-    } catch {
+    } catch (err) {
       // Memory not available, start fresh
+      console.error('[ContentIntelligence] Pattern loading failed:', err);
     }
   }
 
@@ -391,8 +392,9 @@ Return as JSON array.`;
           });
         }
       }
-    } catch {
+    } catch (err) {
       // Idea generation failed
+      console.error('[ContentIntelligence] Idea generation failed:', err);
     }
   }
 

@@ -190,7 +190,9 @@ export class SystemMonitor {
         failed: state.todayStats.bountiesFailed,
         revenue: state.todayStats.revenue,
       };
-    } catch {
+    } catch (err) {
+
+      console.error('[monitor] operation failed:', err);
       // Orchestrator not initialized
     }
 
@@ -204,7 +206,9 @@ export class SystemMonitor {
         viral: stats.viralCount,
         topPlatform: stats.topPlatform,
       };
-    } catch {
+    } catch (err) {
+
+      console.error('[monitor] operation failed:', err);
       // Content intelligence not initialized
     }
 

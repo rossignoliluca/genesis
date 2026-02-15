@@ -170,7 +170,9 @@ export class HybridRetriever {
           type: m.metadata?.type || 'episodic',
         }));
       }
-    } catch {
+    } catch (err) {
+
+      console.error('[hybrid-retriever] operation failed:', err);
       // Pinecone unavailable, try local VectorStore
       if (this.config.localFallback) {
         return this.localVectorSearch(query, limit);
@@ -194,7 +196,9 @@ export class HybridRetriever {
         content: r.document?.metadata || {},
         type: (r.document?.metadata?.type as string) || 'episodic',
       }));
-    } catch {
+    } catch (err) {
+
+      console.error('[hybrid-retriever] operation failed:', err);
       return [];
     }
   }
@@ -232,7 +236,9 @@ export class HybridRetriever {
           hops: 0,
         }));
       }
-    } catch {
+    } catch (err) {
+
+      console.error('[hybrid-retriever] operation failed:', err);
       // Neo4j unavailable - no local fallback for graph
     }
     return [];
@@ -261,7 +267,9 @@ export class HybridRetriever {
           matchedTerms: this.extractMatchedTerms(query, JSON.stringify(r)),
         }));
       }
-    } catch {
+    } catch (err) {
+
+      console.error('[hybrid-retriever] operation failed:', err);
       // Supabase unavailable, use local keyword search
       if (this.config.localFallback) {
         return this.localKeywordSearch(query, limit);

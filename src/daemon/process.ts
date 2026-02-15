@@ -83,7 +83,8 @@ export class DaemonProcessManager {
     try {
       const pid = parseInt(fs.readFileSync(PID_FILE, 'utf-8').trim(), 10);
       return isNaN(pid) ? null : pid;
-    } catch {
+    } catch (err) {
+      console.error('[DaemonProcess] Failed to read PID file:', err);
       return null;
     }
   }
@@ -91,8 +92,9 @@ export class DaemonProcessManager {
   private removePid(): void {
     try {
       fs.unlinkSync(PID_FILE);
-    } catch {
+    } catch (err) {
       // Ignore
+      console.error('[DaemonProcess] Failed to remove PID file:', err);
     }
   }
 
@@ -100,7 +102,8 @@ export class DaemonProcessManager {
     try {
       process.kill(pid, 0);
       return true;
-    } catch {
+    } catch (err) {
+      console.error('[DaemonProcess] Process not running:', err);
       return false;
     }
   }
@@ -114,8 +117,9 @@ export class DaemonProcessManager {
       if (fs.existsSync(SOCKET_PATH)) {
         fs.unlinkSync(SOCKET_PATH);
       }
-    } catch {
+    } catch (err) {
       // Ignore
+      console.error('[DaemonProcess] Failed to cleanup socket:', err);
     }
   }
 
@@ -217,7 +221,8 @@ export class DaemonProcessManager {
 
     try {
       request = JSON.parse(data);
-    } catch {
+    } catch (err) {
+      console.error('[DaemonProcess] Failed to parse IPC request:', err);
       this.sendResponse(socket, { id: 'unknown', success: false, error: 'Invalid JSON' });
       return;
     }
@@ -293,8 +298,9 @@ export class DaemonProcessManager {
   private sendResponse(socket: net.Socket, response: IPCResponse): void {
     try {
       socket.write(JSON.stringify(response) + '\n');
-    } catch {
+    } catch (err) {
       // Socket may be closed
+      console.error('[DaemonProcess] Failed to send IPC response:', err);
     }
   }
 
@@ -437,8 +443,9 @@ export class DaemonProcessManager {
         await new Promise((r) => setTimeout(r, 1000));
         return { success: true };
       }
-    } catch {
+    } catch (err) {
       // IPC failed, try SIGTERM
+      console.error('[DaemonProcess] IPC stop failed, falling back to SIGTERM:', err);
     }
 
     // Fallback to SIGTERM
@@ -447,7 +454,8 @@ export class DaemonProcessManager {
         process.kill(info.pid, 'SIGTERM');
         await new Promise((r) => setTimeout(r, 1000));
         return { success: true };
-      } catch {
+      } catch (err) {
+        console.error('[DaemonProcess] Failed to kill process:', err);
         return { success: false, error: 'Failed to kill process' };
       }
     }
@@ -484,7 +492,8 @@ export class DaemonProcessManager {
         try {
           const response = JSON.parse(data.toString().trim());
           resolve(response);
-        } catch {
+        } catch (err) {
+          console.error('[DaemonProcess] Failed to parse IPC response:', err);
           reject(new Error('Invalid response'));
         }
         socket.end();

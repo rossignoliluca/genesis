@@ -1153,7 +1153,8 @@ export class AgentCoordinator extends EventEmitter {
       try {
         const parsed = JSON.parse(response);
         return parsed.vote || null;
-      } catch {
+      } catch (err) {
+        console.error('[Coordinator] Vote parsing failed:', err);
         return response;
       }
     }
@@ -1188,8 +1189,9 @@ export class AgentCoordinator extends EventEmitter {
           return this.parseSubtasks(obj.subtasks, workers);
         }
       }
-    } catch {
+    } catch (err) {
       // Fall through to default
+      console.error('[Coordinator] Decomposition parsing failed:', err);
     }
 
     // Default: distribute original task to all workers

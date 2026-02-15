@@ -73,8 +73,9 @@ export class CuriosityEngine {
           category: 'nucleus',
           confidence: 0.7,
         });
-      } catch {
+      } catch (err) {
         // Non-fatal
+        console.error('[CuriosityEngine] Failed to store exploration in memory:', err);
       }
 
       // Publish to bus
@@ -88,8 +89,9 @@ export class CuriosityEngine {
           description: result.description,
           findingsCount: result.findings.length,
         });
-      } catch {
+      } catch (err) {
         // Bus not available
+        console.error('[CuriosityEngine] Failed to publish exploration to bus:', err);
       }
     }
 

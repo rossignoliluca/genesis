@@ -383,7 +383,8 @@ export class LLMBridge {
         signal: AbortSignal.timeout(2000),
       });
       return response.ok;
-    } catch {
+    } catch (err) {
+      console.error('[LLMBridge] isOllamaAvailable check failed:', err);
       return false;
     }
   }
@@ -1025,8 +1026,9 @@ export class LLMBridge {
       // Properly clean up the stream to prevent connection leaks
       try {
         await response.body?.cancel();
-      } catch {
+      } catch (err) {
         // Ignore cancel errors - stream may already be closed
+        console.error('[LLMBridge] Stream cancel error (non-fatal):', err);
       }
     }
 
@@ -1151,7 +1153,8 @@ export class LLMBridge {
       if (!response.ok) return [];
       const data = await response.json();
       return data.models?.map((m: any) => m.name) || [];
-    } catch {
+    } catch (err) {
+      console.error('[LLMBridge] Failed to list Ollama models:', err);
       return [];
     }
   }

@@ -407,7 +407,8 @@ export class ResilientMCP {
           })),
         } as T;
       }
-    } catch {
+    } catch (err) {
+      console.error('[ResilientMCP] project index search failed:', err);
       // Index not available
     }
 

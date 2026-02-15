@@ -453,7 +453,8 @@ export class Kernel {
         10000
       );
       return response.payload;
-    } catch {
+    } catch (err) {
+      console.error('[Kernel] Failed to gather sensory data:', err);
       return { sensors: 'unavailable' };
     }
   }
@@ -492,8 +493,9 @@ export class Kernel {
         currentStep: 0,
         status: 'planning',
       };
-    } catch {
+    } catch (err) {
       // Fallback: simple single-step plan
+      console.error('[Kernel] Planner failed, using simple fallback plan:', err);
       return {
         id: randomUUID(),
         taskId: task.id,
@@ -580,8 +582,9 @@ export class Kernel {
         10000
       );
       return response.payload;
-    } catch {
+    } catch (err) {
       // Conservative: defer if ethicist unavailable
+      console.error('[Kernel] Ethicist unavailable:', err);
       return { allow: 'defer', reason: 'Ethicist unavailable, deferring to human' };
     }
   }
@@ -680,7 +683,8 @@ export class Kernel {
         5000
       );
       return { shouldContinue: response.payload.score > 0.5 };
-    } catch {
+    } catch (err) {
+      console.error('[Kernel] Failed to evaluate recovery viability:', err);
       return { shouldContinue: false };
     }
   }
@@ -704,8 +708,9 @@ export class Kernel {
         },
         5000
       );
-    } catch {
+    } catch (err) {
       // Memory storage failed, log but continue
+      console.error('[Kernel] Failed to store task in memory:', err);
       this.log(`Warning: Failed to store task ${task.id} in memory`);
     }
 
@@ -722,8 +727,9 @@ export class Kernel {
         },
         5000
       );
-    } catch {
+    } catch (err) {
       // Narrative generation failed, non-critical
+      console.error('[Kernel] Failed to generate narrative:', err);
     }
   }
 
@@ -815,7 +821,8 @@ export class Kernel {
           id: agent.id,
           healthy: isHealthy,
         });
-      } catch {
+      } catch (err) {
+        console.error('[Kernel] Agent health check failed:', err);
         results.push({
           id: agent.id,
           healthy: false,

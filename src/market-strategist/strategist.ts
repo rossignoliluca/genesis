@@ -367,8 +367,9 @@ export class MarketStrategist {
           asset.signal = regimeToSignal[detection.regime] || 'neutral';
         }
       }
-    } catch {
+    } catch (err) {
       // Finance module not available — keep existing snapshot data
+      console.error('[MarketStrategist] Failed to enrich with regime signals:', err);
     }
   }
 
@@ -392,8 +393,9 @@ export class MarketStrategist {
           trendStrength: detection.trendStrength,
         };
       }
-    } catch {
+    } catch (err) {
       // Finance module not available
+      console.error('[MarketStrategist] Failed to get regime context:', err);
     }
     return undefined;
   }

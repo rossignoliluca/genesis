@@ -717,7 +717,8 @@ export class ImplementationEngine {
       }
       const content = fs.readFileSync(filePath);
       return createHash('sha256').update(content).digest('hex').slice(0, 16);
-    } catch {
+    } catch (err) {
+      console.error('[RSI Implement] File hash failed:', err);
       return '';
     }
   }

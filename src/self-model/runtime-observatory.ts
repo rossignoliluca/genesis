@@ -23,8 +23,7 @@ import type {
   AntifragileFailureEvent,
 } from '../bus/events.js';
 
-// Use __dirname for path resolution (CommonJS pattern works in NodeNext)
-const __dirname = resolve(__filename, '..');
+// __dirname is provided natively in CJS
 
 // ============================================================================
 // Runtime Observatory
@@ -326,8 +325,9 @@ export class RuntimeObservatory {
         try {
           const data = readFileSync(this.persistPath, 'utf-8');
           existing = JSON.parse(data);
-        } catch {
+        } catch (err) {
           // Start fresh if can't parse
+          console.error('[RuntimeObservatory] Failed to parse existing persisted data:', err);
         }
       }
 

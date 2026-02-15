@@ -539,7 +539,8 @@ export class DecisionEngine {
       const phiMonitor = getPhiMonitor();
       const levelData = phiMonitor.getCurrentLevel?.() ?? null;
       return typeof levelData === 'number' ? levelData : (levelData?.phi ?? 0.5);
-    } catch {
+    } catch (err) {
+      console.error('[DecisionEngine] Failed to get phi value:', err);
       return 0.5;
     }
   }
@@ -558,8 +559,9 @@ export class DecisionEngine {
         confidence: decision.confidence,
         timestamp: decision.timestamp.toISOString(),
       });
-    } catch {
+    } catch (err) {
       // Event bus may not support custom topics
+      console.error('[DecisionEngine] Failed to emit decision event:', err);
     }
   }
 

@@ -201,7 +201,10 @@ export class CodeAnalyzer {
               }
             }
           }
-        } catch { /* ignore */ }
+        } catch (err) {
+          /* ignore */
+          console.error('[RSI Observe] File scan error:', err);
+        }
       };
 
       countTodos(srcDir);
@@ -304,8 +307,9 @@ export class BountyLimitationSource {
       for (const bl of bountyLimitations) {
         limitations.push(this.convertBountyLimitation(bl));
       }
-    } catch {
+    } catch (err) {
       // Bounty feedback not available
+      console.error('[RSI Observe] Bounty feedback unavailable:', err);
     }
 
     return limitations;

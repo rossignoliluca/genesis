@@ -763,8 +763,9 @@ export class SemanticGrounding extends EventEmitter {
           source: 'inference',
         });
         added++;
-      } catch {
+      } catch (err) {
         // Skip invalid inferences
+        console.error('[SemanticGrounder] Invalid inference triple skipped:', err);
       }
     }
 
@@ -797,8 +798,9 @@ export class SemanticGrounding extends EventEmitter {
           confidence: triple.confidence,
           source: triple.source,
         });
-      } catch {
+      } catch (err) {
         // Skip invalid triples in evolution mode
+        console.error('[SemanticGrounder] Invalid triple in evolution mode skipped:', err);
       }
     }
 

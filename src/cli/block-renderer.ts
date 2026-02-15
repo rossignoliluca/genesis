@@ -216,7 +216,8 @@ export class BlockRenderer {
       }
 
       return [topBorder, ...lines, bottomBorder].join('\n');
-    } catch {
+    } catch (err) {
+      console.error('[block-renderer] render failed:', err);
       return `${COLORS.gray}│${COLORS.reset} ${COLORS.dim}${block.content}${COLORS.reset}`;
     }
   }

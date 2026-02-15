@@ -38,8 +38,9 @@ export class Plasticity {
           console.log(`[Plasticity] Loaded ${Object.keys(this.learned.weights).length} module weight maps`);
         }
       }
-    } catch {
+    } catch (err) {
       // Memory not available yet, start fresh
+      console.error('[Plasticity] Failed to load weights from memory:', err);
     }
 
     // Periodic persistence
@@ -114,8 +115,9 @@ export class Plasticity {
         confidence: 1.0,
       });
       this.dirty = false;
-    } catch {
+    } catch (err) {
       // Non-fatal
+      console.error('[Plasticity] Failed to persist weights:', err);
     }
   }
 

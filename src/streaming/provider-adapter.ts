@@ -226,7 +226,9 @@ class OpenAIStreamAdapter implements InternalAdapter {
               contentBuffer += delta.content;
               yield createToken(delta.content);
             }
-          } catch {
+          } catch (err) {
+
+            console.error('[provider-adapter] operation failed:', err);
             // Skip malformed JSON
           }
         }
@@ -401,7 +403,9 @@ class AnthropicStreamAdapter implements InternalAdapter {
                 return;
               }
             }
-          } catch {
+          } catch (err) {
+
+            console.error('[provider-adapter] operation failed:', err);
             // Skip malformed events
           }
         }
@@ -496,7 +500,9 @@ class OllamaStreamAdapter implements InternalAdapter {
               contentBuffer += parsed.message.content;
               yield createToken(parsed.message.content);
             }
-          } catch {
+          } catch (err) {
+
+            console.error('[provider-adapter] operation failed:', err);
             // Skip malformed lines
           }
         }
@@ -639,7 +645,9 @@ export type { InternalAdapter, AdapterStreamOptions };
 function safeParseJSON(str: string): Record<string, unknown> {
   try {
     return JSON.parse(str);
-  } catch {
+  } catch (err) {
+
+    console.error('[provider-adapter] operation failed:', err);
     return {};
   }
 }

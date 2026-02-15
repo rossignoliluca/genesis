@@ -252,7 +252,8 @@ export class SelfImprovementLoop {
           if (!content.includes(mod.search)) {
             return false;
           }
-        } catch {
+        } catch (err) {
+          console.error('[SelfImprovementLoop] Failed to read file for validation:', err);
           return false;
         }
       }
@@ -316,8 +317,9 @@ export class SelfImprovementLoop {
     for (const [filePath, content] of snapshots) {
       try {
         writeFileSync(filePath, content, 'utf-8');
-      } catch {
+      } catch (err) {
         // Last resort: git checkout
+        console.error('[SelfImprovementLoop] Rollback writeFile failed, using git checkout:', err);
         spawnSync('git', ['checkout', '--', filePath], { cwd: this.rootPath });
       }
     }

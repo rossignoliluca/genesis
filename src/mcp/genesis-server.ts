@@ -167,7 +167,8 @@ export async function handleGenesisToolCall(
           try {
             const { getOutcomeIntegrator } = await import('../active-inference/outcome-integrator.js');
             state.beliefs = getOutcomeIntegrator().getBeliefs();
-          } catch {
+          } catch (err) {
+            console.error('[genesis_cognitive_state] outcome integrator load failed:', err);
             state.beliefs = { note: 'Outcome integrator not initialized' };
           }
         }

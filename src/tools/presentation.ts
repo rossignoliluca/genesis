@@ -61,7 +61,12 @@ export async function generatePresentation(
       killed = true;
       child.kill('SIGTERM');
       setTimeout(() => {
-        try { child.kill('SIGKILL'); } catch { /* already dead */ }
+        try {
+          child.kill('SIGKILL');
+        } catch (err) {
+          /* already dead */
+          console.error('[Presentation] SIGKILL failed (process already dead):', err);
+        }
       }, 5000);
     }, timeout);
 
@@ -372,7 +377,8 @@ print(json.dumps(results))
               .map(([k]) => k === 'pptx' ? 'python-pptx' : k)
               .join(', '),
         });
-      } catch {
+      } catch (err) {
+        console.error('[Presentation] Package parsing failed:', err);
         resolve({
           available: false,
           python: true,

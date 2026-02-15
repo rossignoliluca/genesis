@@ -674,7 +674,7 @@ Fixes #${bounty.sourceMetadata?.issueNumber || 'XXX'}`;
         const parsed = JSON.parse(jsonMatch[1]);
         return parsed.changes || [];
       }
-    } catch {
+    } catch (err) {
       // Failed to parse JSON
     }
 

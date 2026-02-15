@@ -210,7 +210,8 @@ export class HorizonScanner {
       const raw = readFileSync(join(__dirname, '../../.mcp.json'), 'utf-8');
       const mcpJson = safeJsonParse<{ servers?: Record<string, unknown> }>(raw, { servers: {} });
       return Object.keys(mcpJson.servers ?? {});
-    } catch {
+    } catch (err) {
+      console.error('[HorizonScanner] Loading existing servers failed:', err);
       return [];
     }
   }

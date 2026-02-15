@@ -397,7 +397,10 @@ export class NeuromodulationSystem {
     for (const handler of this.handlers) {
       try {
         handler(this.levels, effect);
-      } catch { /* non-fatal */ }
+      } catch (err) {
+        /* non-fatal */
+        console.error('[Neuromodulation] Legacy handler failed:', err);
+      }
     }
   }
 }

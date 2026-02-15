@@ -233,7 +233,7 @@ export class BountyOrchestrator {
         source: 'bounty-orchestrator',
         ...data,
       });
-    } catch {
+    } catch (err) {
       // Event bus may not support custom topics
     }
 

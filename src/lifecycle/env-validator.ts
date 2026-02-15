@@ -55,7 +55,8 @@ export const validators = {
     try {
       new URL(value);
       return true;
-    } catch {
+    } catch (err) {
+      console.error('[EnvValidator] Invalid URL:', err);
       return false;
     }
   },
@@ -65,7 +66,8 @@ export const validators = {
     try {
       JSON.parse(value);
       return true;
-    } catch {
+    } catch (err) {
+      console.error('[EnvValidator] Invalid JSON:', err);
       return false;
     }
   },
@@ -214,7 +216,8 @@ export class EnvValidator {
         try {
           new URL(value);
           return { valid: true, value };
-        } catch {
+        } catch (err) {
+          console.error('[EnvValidator] URL validation failed:', err);
           return { valid: false, error: `Invalid URL: "${value}"` };
         }
 
@@ -222,7 +225,8 @@ export class EnvValidator {
         try {
           JSON.parse(value);
           return { valid: true, value };
-        } catch {
+        } catch (err) {
+          console.error('[EnvValidator] JSON validation failed:', err);
           return { valid: false, error: `Invalid JSON: "${value}"` };
         }
 

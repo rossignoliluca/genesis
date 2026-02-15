@@ -122,7 +122,12 @@ export class ChaosEngine {
     for (const mod of modulesToDisable) {
       const entry = this.moduleRegistry.get(mod);
       if (entry) {
-        try { await entry.disable(); } catch { /* continue */ }
+        try {
+          await entry.disable();
+        } catch (err) {
+          /* continue */
+          console.error('[ChaosEngine] Module disable failed:', err);
+        }
       }
     }
 
@@ -137,7 +142,12 @@ export class ChaosEngine {
     for (const mod of modulesToDisable) {
       const entry = this.moduleRegistry.get(mod);
       if (entry) {
-        try { await entry.enable(); } catch { /* continue */ }
+        try {
+          await entry.enable();
+        } catch (err) {
+          /* continue */
+          console.error('[ChaosEngine] Module re-enable failed:', err);
+        }
       }
     }
     await this.sleep(500);
@@ -179,7 +189,8 @@ export class ChaosEngine {
       try {
         const ok = await entry.healthCheck();
         health.set(name, ok ? 1 : 0);
-      } catch {
+      } catch (err) {
+        console.error('[ChaosEngine] Health check failed for module:', name, err);
         health.set(name, 0);
       }
     }

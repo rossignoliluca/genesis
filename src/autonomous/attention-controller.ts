@@ -593,8 +593,9 @@ export class AttentionController {
           this.updateSalience(existingItem);
         }
       }
-    } catch {
+    } catch (err) {
       // Goal system not available
+      console.error('[AttentionController] Failed to synchronize with goal system:', err);
     }
   }
 

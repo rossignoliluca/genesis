@@ -137,7 +137,8 @@ export class BeehiivConnector {
         active: data.total_results || 0,
         unsubscribed: 0,
       };
-    } catch {
+    } catch (err) {
+      console.error('[Newsletter Beehiiv] Subscriber count failed:', err);
       return { total: 0, active: 0, unsubscribed: 0 };
     }
   }
@@ -157,7 +158,8 @@ export class BeehiivConnector {
       );
 
       return response.ok;
-    } catch {
+    } catch (err) {
+      console.error('[Newsletter Beehiiv] Add subscriber failed:', err);
       return false;
     }
   }
@@ -257,7 +259,8 @@ export class ButtondownConnector {
         active: data.count || 0,
         unsubscribed: 0,
       };
-    } catch {
+    } catch (err) {
+      console.error('[Newsletter Buttondown] Subscriber count failed:', err);
       return { total: 0, active: 0, unsubscribed: 0 };
     }
   }
@@ -273,7 +276,8 @@ export class ButtondownConnector {
         body: JSON.stringify({ email }),
       });
       return response.ok;
-    } catch {
+    } catch (err) {
+      console.error('[Newsletter Buttondown] Add subscriber failed:', err);
       return false;
     }
   }

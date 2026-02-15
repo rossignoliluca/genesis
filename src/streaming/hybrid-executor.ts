@@ -400,7 +400,9 @@ export class HybridStreamExecutor {
       if (value.startsWith('{') || value.startsWith('[')) {
         try {
           value = JSON.parse(value);
-        } catch {
+        } catch (err) {
+
+          console.error('[hybrid-executor] operation failed:', err);
           // Keep as string
         }
       } else if (!isNaN(Number(value))) {

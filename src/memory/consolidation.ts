@@ -459,7 +459,9 @@ Rules:
         importance: episodes.reduce((s, e) => s + e.importance, 0) / episodes.length,
         tags: episodes.flatMap(e => e.tags).filter((t, i, arr) => arr.indexOf(t) === i).slice(0, 5),
       }));
-    } catch {
+    } catch (err) {
+
+      console.error('[consolidation] operation failed:', err);
       return []; // LLM unavailable, caller will use keyword fallback
     }
   }

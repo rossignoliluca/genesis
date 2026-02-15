@@ -339,7 +339,8 @@ export class ToolChainExecutor {
         if (result.success) {
           return step.transform ? step.transform(result.data) : result.data;
         }
-      } catch {
+      } catch (err) {
+        console.error('[ToolChainExecutor] retry step attempt failed:', err);
         // Continue retrying
       }
 

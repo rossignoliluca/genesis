@@ -842,7 +842,9 @@ export class ToolDispatcher {
 
     try {
       params = JSON.parse(call.function.arguments);
-    } catch {
+    } catch (err) {
+
+      console.error('[dispatcher] operation failed:', err);
       // Invalid JSON, use empty params
     }
 
@@ -909,7 +911,9 @@ export class ToolDispatcher {
           params,
           ...this.routeTool(normalizedName),
         });
-      } catch {
+      } catch (err) {
+
+        console.error('[dispatcher] operation failed:', err);
         // Invalid JSON, skip
       }
     }
@@ -955,7 +959,9 @@ export class ToolDispatcher {
       if (trimmed.startsWith('{')) {
         return JSON.parse(trimmed);
       }
-    } catch {
+    } catch (err) {
+
+      console.error('[dispatcher] operation failed:', err);
       // Not JSON, continue with XML parsing
     }
 
@@ -972,7 +978,9 @@ export class ToolDispatcher {
       if ((value as string).startsWith('{') || (value as string).startsWith('[')) {
         try {
           value = JSON.parse(value as string);
-        } catch {
+        } catch (err) {
+
+          console.error('[dispatcher] operation failed:', err);
           // Keep as string
         }
       }
@@ -1341,7 +1349,9 @@ export class ToolDispatcher {
 
     try {
       realSchemas = await client.discoverAllTools();
-    } catch {
+    } catch (err) {
+
+      console.error('[dispatcher] operation failed:', err);
       // Fall back to static schemas
       console.log('[Dispatcher] Failed to discover MCP tools, using static schemas');
     }

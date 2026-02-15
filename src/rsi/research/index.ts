@@ -289,8 +289,9 @@ export class WebSearcher {
           }
           break; // Use first successful provider
         }
-      } catch {
+      } catch (err) {
         // Try next provider
+        console.error('[RSI Research] Provider search failed:', err);
       }
     }
 

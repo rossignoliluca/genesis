@@ -450,7 +450,9 @@ export class InteractiveSession {
           }
         }
       }
-    } catch {
+    } catch (err) {
+
+      console.error('[interactive] operation failed:', err);
       // Use as single 'input' param
       if (paramsStr) {
         params.input = paramsStr;
@@ -624,7 +626,9 @@ export class InteractiveSession {
             .map(e => path.join(dir, e));
           return [matches, line];
         }
-      } catch {
+      } catch (err) {
+
+        console.error('[interactive] operation failed:', err);
         // Ignore errors
       }
     }
@@ -779,7 +783,9 @@ ${c('╚════════════════════════
         const content = fs.readFileSync(this.config.historyFile, 'utf-8');
         this.inputHistory = content.split('\n').filter(l => l.trim());
       }
-    } catch {
+    } catch (err) {
+
+      console.error('[interactive] operation failed:', err);
       // Ignore errors
     }
   }
@@ -790,7 +796,9 @@ ${c('╚════════════════════════
     try {
       const content = this.inputHistory.slice(-this.config.maxHistorySize!).join('\n');
       fs.writeFileSync(this.config.historyFile, content);
-    } catch {
+    } catch (err) {
+
+      console.error('[interactive] operation failed:', err);
       // Ignore errors
     }
   }

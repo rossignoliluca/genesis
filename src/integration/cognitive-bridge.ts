@@ -100,6 +100,7 @@ export class CognitiveBridge {
   private recentPerceptions: PerceptionOutput[] = [];
   private cachedEpisodes: any[] = [];
   private bridgeLog: BridgeEvent[] = [];
+  private cacheRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(config?: Partial<CognitiveBridgeConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -202,7 +203,9 @@ export class CognitiveBridge {
 
     try {
       (this.bus as any).publish('consciousness.workspace.propose', input);
-    } catch {
+    } catch (err) {
+
+      console.error('[cognitive-bridge] operation failed:', err);
       // Consciousness events may not be in typed event map
     }
 
@@ -221,7 +224,9 @@ export class CognitiveBridge {
           salience: event.payload.salience,
           source: 'cognitive-bridge',
         });
-      } catch {
+      } catch (err) {
+
+        console.error('[cognitive-bridge] operation failed:', err);
         // Attention events may not be in typed event map
       }
     }
@@ -256,7 +261,7 @@ export class CognitiveBridge {
     this.refreshEpisodeCache();
 
     // Refresh cache periodically
-    setInterval(() => this.refreshEpisodeCache(), 60000);
+    this.cacheRefreshTimer = setInterval(() => this.refreshEpisodeCache(), 60000);
   }
 
   private handlePhiUpdate(payload: any): void {
@@ -281,8 +286,9 @@ export class CognitiveBridge {
     try {
       this.cachedEpisodes = this.memory.episodic
         .getRecent(this.config.cacheRecentEpisodes);
-    } catch {
-      // Memory may not be initialized
+    } catch (err) {
+      // Memory may not be initialized yet — non-fatal
+      console.error('[CognitiveBridge] Episode cache refresh failed:', err);
     }
   }
 
@@ -293,7 +299,9 @@ export class CognitiveBridge {
     try {
       // Use basic memory recall as unified query is async
       return this.memory.recall(query, { limit });
-    } catch {
+    } catch (err) {
+
+      console.error('[cognitive-bridge] operation failed:', err);
       // Return empty if memory not available
       return [];
     }
@@ -307,7 +315,9 @@ export class CognitiveBridge {
       const unified = getUnifiedMemoryQuery();
       const result = await unified.search({ query, limit });
       return result.results;
-    } catch {
+    } catch (err) {
+
+      console.error('[cognitive-bridge] operation failed:', err);
       // Fallback to basic recall
       return this.memory.recall(query, { limit });
     }
@@ -369,7 +379,9 @@ export class CognitiveBridge {
         correlationId,
         priority: this.inferPriority(event.topic),
       });
-    } catch {
+    } catch (err) {
+
+      console.error('[cognitive-bridge] operation failed:', err);
       // Agent message channel may not exist
     }
   }
@@ -420,7 +432,9 @@ export class CognitiveBridge {
 
     try {
       (this.bus as any).publish('morphogenetic.capability.degraded', capabilitySignal);
-    } catch {
+    } catch (err) {
+
+      console.error('[cognitive-bridge] operation failed:', err);
       // Morphogenetic events may not be in typed event map
     }
 
@@ -576,6 +590,16 @@ export class CognitiveBridge {
   updateConfig(config: Partial<CognitiveBridgeConfig>): void {
     this.config = { ...this.config, ...config };
   }
+
+  /**
+   * Clean up timers and resources
+   */
+  shutdown(): void {
+    if (this.cacheRefreshTimer) {
+      clearInterval(this.cacheRefreshTimer);
+      this.cacheRefreshTimer = null;
+    }
+  }
 }
 
 // ============================================================================
@@ -592,5 +616,6 @@ export function getCognitiveBridge(config?: Partial<CognitiveBridgeConfig>): Cog
 }
 
 export function resetCognitiveBridge(): void {
+  bridgeInstance?.shutdown();
   bridgeInstance = null;
 }

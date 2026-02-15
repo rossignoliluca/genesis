@@ -91,7 +91,10 @@ export class MetricTracker {
       metrics['freeEnergy'] = perfMetrics.freeEnergy;
       metrics['memoryReuse'] = perfMetrics.memoryReuse;
       metrics['uptimeHours'] = perfMetrics.uptimeHours;
-    } catch { /* observation engine not available */ }
+    } catch (err) {
+      /* observation engine not available */
+      console.error('[RSI Learn] Observation engine unavailable:', err);
+    }
 
     // Memory system counts
     try {
@@ -99,7 +102,10 @@ export class MetricTracker {
       metrics['episodicCount'] = memSystem.episodic.count();
       metrics['semanticCount'] = memSystem.semantic.count();
       metrics['proceduralCount'] = memSystem.procedural.count();
-    } catch { /* memory system not available */ }
+    } catch (err) {
+      /* memory system not available */
+      console.error('[RSI Learn] Memory system unavailable:', err);
+    }
 
     return metrics;
   }

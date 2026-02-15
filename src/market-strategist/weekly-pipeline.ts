@@ -454,10 +454,26 @@ export class WeeklyReportPipeline {
     // ---- STEP 7: RENDER PPTX ----
     let pptxPath: string | undefined;
     if (this.config.generatePptx) {
-      console.log(`[7/8] RENDERING PPTX via presentation engine...`);
+      const renderMode = this.config.renderMode || 'pptx';
+      console.log(`[7/8] RENDERING PPTX via ${renderMode === 'pptx' ? 'Python engine' : 'HTML-screenshot pipeline'}...`);
       const t7 = Date.now();
       try {
-        pptxPath = await this.renderPptx(spec, specPath);
+        if (renderMode === 'pptx') {
+          pptxPath = await this.renderPptx(spec, specPath);
+        } else {
+          // html-screenshot or all — use the smart dispatcher
+          const { generatePresentationSmart } = await import('../tools/presentation.js');
+          spec.meta.render_mode = renderMode;
+          const result = await generatePresentationSmart(spec);
+          if (result.success) {
+            pptxPath = result.path;
+            if (result.screenshot_paths?.length) {
+              console.log(`  → ${result.screenshot_paths.length} slides screenshotted`);
+            }
+          } else {
+            throw new Error(result.error || 'HTML-screenshot rendering failed');
+          }
+        }
         timings.render = Date.now() - t7;
         console.log(`  → ${pptxPath} (${timings.render}ms)`);
       } catch (e) {

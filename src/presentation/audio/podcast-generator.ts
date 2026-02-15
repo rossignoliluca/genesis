@@ -170,7 +170,7 @@ Example: [{"speaker": "host", "text": "Welcome to Market Pulse Weekly..."}, {"sp
   try {
     const { getMCPClient } = await import('../../mcp/index.js');
     const mcp = getMCPClient();
-    const result = await mcp.callTool('openai' as any, 'openai_chat', {
+    const result = await mcp.call('openai' as any, 'openai_chat', {
       model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: systemPrompt },
@@ -181,7 +181,9 @@ Example: [{"speaker": "host", "text": "Welcome to Market Pulse Weekly..."}, {"sp
       response_format: { type: 'json_object' },
     });
 
-    const parsed = JSON.parse(typeof result === 'string' ? result : JSON.stringify(result));
+    const raw = result.data;
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) :
+      (typeof raw === 'object' ? raw : JSON.parse(JSON.stringify(raw)));
     const segments: DialogueSegment[] = Array.isArray(parsed) ? parsed :
       (parsed.segments || parsed.dialogue || []);
 
@@ -262,7 +264,7 @@ async function synthesizeSegment(
     const mcp = getMCPClient();
 
     // Use OpenAI TTS via MCP
-    const result = await mcp.callTool('openai' as any, 'openai_chat', {
+    const result = await mcp.call('openai' as any, 'openai_chat', {
       model: 'tts-1',
       input: text,
       voice,
@@ -270,8 +272,9 @@ async function synthesizeSegment(
     });
 
     // If MCP returns audio data, write it
-    if (result && typeof result === 'object' && 'audio' in (result as any)) {
-      const audioData = Buffer.from((result as any).audio, 'base64');
+    const data = result.data as any;
+    if (data && typeof data === 'object' && 'audio' in data) {
+      const audioData = Buffer.from(data.audio, 'base64');
       fs.writeFileSync(outputPath, audioData);
       return true;
     }

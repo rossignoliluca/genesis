@@ -831,18 +831,24 @@ def render_table_heatmap(data: dict, config: dict, palette, source: str, output_
         ),
     ))
 
+    # Plotly tables auto-size from top and don't stretch to fill.
+    # Compute a tight export height so PNG has no blank space below.
+    # Empirical: at width=3333, each row renders at ~45px in the output PNG.
+    n_total = len(rows) + 1  # header + data
+    source_px = 60 if source else 0
+    export_height = max(200, n_total * 45 + source_px + 40)
+
     layout = dict(
         paper_bgcolor=palette.fig_bg,
         plot_bgcolor=palette.fig_bg,
-        margin=dict(l=20, r=20, t=40, b=60),
-        height=800,
+        margin=dict(l=10, r=10, t=10, b=70 if source else 10),
     )
 
     if source:
         layout["annotations"] = [_source_annotation(source, palette)]
 
     fig.update_layout(**layout)
-    fig.write_image(output_path, width=3333, height=1875)  # Taller for table
+    fig.write_image(output_path, width=3333, height=export_height)
     return output_path
 
 

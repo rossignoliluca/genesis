@@ -942,6 +942,111 @@ export interface LegacyAutonomousEvent extends BusEvent {
 }
 
 // ============================================================================
+// Horizon Scanner Events
+// ============================================================================
+
+export interface HorizonCandidateEvent extends BusEvent {
+  candidateId: string;
+  packageName: string;
+  category: string;
+  decision: 'adopt' | 'defer' | 'reject';
+  expectedFreeEnergy: number;
+}
+
+export interface HorizonIntegrationEvent extends BusEvent {
+  candidateId: string;
+  packageName: string;
+  phase: 'sandbox' | 'canary' | 'promoted' | 'failed' | 'rolled-back';
+  success: boolean;
+  error?: string;
+}
+
+export interface HorizonPruningEvent extends BusEvent {
+  serverName: string;
+  decision: 'keep' | 'disable' | 'remove';
+  usageScore: number;
+  costScore: number;
+  netValue: number;
+}
+
+export interface HorizonCycleEvent extends BusEvent {
+  discovered: number;
+  evaluated: number;
+  approved: number;
+  integrated: number;
+  pruned: number;
+  durationMs: number;
+}
+
+// ============================================================================
+// Antifragile Events
+// ============================================================================
+
+export interface AntifragileFailureEvent extends BusEvent {
+  domain: string;
+  errorType: string;
+  severity: number;
+  patternHash: string;
+  classification?: { type: string; recurrence: number };
+}
+
+export interface AntifragilePatternEvent extends BusEvent {
+  patternId: string;
+  domain: string;
+  type: 'learned' | 'triggered';
+  description: string;
+  sampleCount: number;
+}
+
+export interface AntifragileStrengthEvent extends BusEvent {
+  domain: string;
+  strengthBefore: number;
+  strengthAfter: number;
+  totalPatternsLearned: number;
+}
+
+export interface ChaosExperimentEvent extends BusEvent {
+  experimentId: string;
+  disabledModules: string[];
+  degradationScore: number;
+  invariantsBroken: boolean;
+  phase: 'started' | 'completed';
+}
+
+export interface ResilienceMapUpdatedEvent extends BusEvent {
+  antifragilityIndex: number;
+  totalExperiments: number;
+  criticalModules: string[];
+  redundantModules: string[];
+}
+
+// ============================================================================
+// Tool Factory Events
+// ============================================================================
+
+export interface ToolCreatedEvent extends BusEvent {
+  toolName: string;
+  description: string;
+  status: string;
+  createdFrom: string;
+}
+
+export interface ToolPromotedEvent extends BusEvent {
+  toolName: string;
+  oldStatus: string;
+  newStatus: string;
+  usageCount: number;
+  successRate: number;
+}
+
+export interface ToolDeprecatedEvent extends BusEvent {
+  toolName: string;
+  reason: string;
+  usageCount: number;
+  daysSinceLastUse: number;
+}
+
+// ============================================================================
 // Genesis Event Map - All Topics
 // ============================================================================
 
@@ -1163,6 +1268,26 @@ export interface GenesisEventMap {
   'autonomous:task:started': LegacyAutonomousEvent;
   'autonomous:task:completed': LegacyAutonomousEvent;
   'autonomous:payment': LegacyAutonomousEvent;
+
+  // --- Horizon Scanner Events ---
+  'horizon.candidate.evaluated': HorizonCandidateEvent;
+  'horizon.integration.started': HorizonIntegrationEvent;
+  'horizon.integration.completed': HorizonIntegrationEvent;
+  'horizon.pruning.decided': HorizonPruningEvent;
+  'horizon.cycle.completed': HorizonCycleEvent;
+
+  // --- Antifragile Events ---
+  'antifragile.failure.captured': AntifragileFailureEvent;
+  'antifragile.pattern.learned': AntifragilePatternEvent;
+  'antifragile.pattern.triggered': AntifragilePatternEvent;
+  'antifragile.strength.updated': AntifragileStrengthEvent;
+  'antifragile.chaos.experiment': ChaosExperimentEvent;
+  'antifragile.resilience.updated': ResilienceMapUpdatedEvent;
+
+  // --- Tool Factory Events ---
+  'toolfactory.tool.created': ToolCreatedEvent;
+  'toolfactory.tool.promoted': ToolPromotedEvent;
+  'toolfactory.tool.deprecated': ToolDeprecatedEvent;
 }
 
 /** All valid topic names */

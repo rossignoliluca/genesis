@@ -1046,6 +1046,11 @@ export function wireAllModules(modules: ModuleRegistry): WiringResult {
   subscribersCreated += feedbackCount;
   console.debug(`[ModuleWiring] P4 feedback loops created: ${feedbackCount}`);
 
+  // v32.0: Frontier module feedback loops (Horizon Scanner, Antifragile, ToolFactory)
+  const frontierCount = wireFrontierFeedbackLoops(bus);
+  subscribersCreated += frontierCount;
+  console.debug(`[ModuleWiring] Frontier feedback loops created: ${frontierCount}`);
+
   // Apply neuromodulation effects
   if (modules.neuromodulation) {
     applyNeuromodulationEffects(modules, modules.neuromodulation);
@@ -1062,6 +1067,116 @@ export function wireAllModules(modules: ModuleRegistry): WiringResult {
     subscribersCreated,
     centralAwareness: awareness,
   };
+}
+
+/**
+ * v32.0: Frontier Module Feedback Loops
+ *
+ * Wires Horizon Scanner, Antifragile System, and ToolFactory
+ * events to neuromodulation for emotional regulation.
+ *
+ * - Horizon integration success → dopamine (reward for expanding capabilities)
+ * - Horizon integration failure → norepinephrine (vigilance)
+ * - Horizon pruning → serotonin (calm from simplification)
+ * - Antifragile failure captured → cortisol (pain from error)
+ * - Antifragile pattern learned → dopamine (reward for learning)
+ * - Antifragile chaos completed → norepinephrine → dopamine (stress → relief)
+ * - ToolFactory tool created → dopamine (reward for new capability)
+ * - ToolFactory tool deprecated → serotonin (calm from cleanup)
+ */
+function wireFrontierFeedbackLoops(bus: GenesisEventBus): number {
+  let count = 0;
+  const sub = createSubscriber('frontier-feedback');
+
+  // Horizon Scanner → neuromodulation
+  sub.on('horizon.integration.completed', (event) => {
+    if (event.success) {
+      bus.publish('neuromod.reward', {
+        source: 'frontier-feedback', precision: 0.8,
+        signalType: 'reward',
+        magnitude: 0.4,
+        cause: `Successfully integrated ${event.packageName}`,
+      });
+    } else {
+      bus.publish('neuromod.threat', {
+        source: 'frontier-feedback', precision: 0.7,
+        signalType: 'threat',
+        magnitude: 0.3,
+        cause: `Integration failed for ${event.packageName}: ${event.error || 'unknown'}`,
+      });
+    }
+  });
+  count++;
+
+  sub.on('horizon.pruning.decided', (event) => {
+    if (event.decision === 'remove') {
+      bus.publish('neuromod.calm', {
+        source: 'frontier-feedback', precision: 0.6,
+        signalType: 'calm',
+        magnitude: 0.2,
+        cause: `Pruned unused server: ${event.serverName}`,
+      });
+    }
+  });
+  count++;
+
+  // Antifragile → neuromodulation
+  sub.on('antifragile.failure.captured', (event) => {
+    bus.publish('neuromod.punishment', {
+      source: 'frontier-feedback', precision: 0.8,
+      signalType: 'punishment',
+      magnitude: event.severity * 0.5,
+      cause: `Failure captured in ${event.domain}: ${event.errorType}`,
+    });
+  });
+  count++;
+
+  sub.on('antifragile.pattern.learned', (event) => {
+    bus.publish('neuromod.reward', {
+      source: 'frontier-feedback', precision: 0.7,
+      signalType: 'reward',
+      magnitude: 0.3,
+      cause: `Learned failure pattern: ${event.description}`,
+    });
+  });
+  count++;
+
+  sub.on('antifragile.resilience.updated', (event) => {
+    // Reward proportional to antifragility improvement
+    const magnitude = Math.max(0, event.antifragilityIndex * 0.3);
+    if (magnitude > 0.05) {
+      bus.publish('neuromod.reward', {
+        source: 'frontier-feedback', precision: 0.8,
+        signalType: 'reward',
+        magnitude,
+        cause: `Resilience map updated: antifragility=${event.antifragilityIndex.toFixed(2)}, ${event.totalExperiments} experiments`,
+      });
+    }
+  });
+  count++;
+
+  // ToolFactory → neuromodulation
+  sub.on('toolfactory.tool.created', (event) => {
+    bus.publish('neuromod.novelty', {
+      source: 'frontier-feedback', precision: 0.7,
+      signalType: 'novelty',
+      magnitude: 0.4,
+      cause: `New dynamic tool created: ${event.toolName}`,
+    });
+  });
+  count++;
+
+  sub.on('toolfactory.tool.deprecated', (event) => {
+    bus.publish('neuromod.calm', {
+      source: 'frontier-feedback', precision: 0.6,
+      signalType: 'calm',
+      magnitude: 0.15,
+      cause: `Tool deprecated: ${event.toolName} (${event.reason})`,
+    });
+  });
+  count++;
+
+  return count;
 }
 
 /**

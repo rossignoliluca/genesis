@@ -466,3 +466,82 @@ toolRegistry.set('content_calendar', {
     };
   },
 });
+
+// ============================================================================
+// v32.0: Frontier Module Tools (Horizon Scanner, Antifragile, ToolFactory)
+// ============================================================================
+
+toolRegistry.set('horizon_scanner', {
+  name: 'horizon_scanner',
+  description: 'Run a horizon scan cycle to discover, evaluate, and integrate new MCP servers',
+  execute: async (params: Record<string, unknown>) => {
+    const { getHorizonScanner } = await import('../horizon-scanner/index.js');
+    const scanner = getHorizonScanner();
+    const action = (params.action as string) || 'cycle';
+
+    switch (action) {
+      case 'cycle':
+        return scanner.runCycle();
+      case 'candidates':
+        return scanner.getCandidates();
+      case 'start':
+        scanner.start();
+        return { status: 'started' };
+      case 'stop':
+        scanner.stop();
+        return { status: 'stopped' };
+      default:
+        return { error: `Unknown action: ${action}. Use: cycle, candidates, start, stop` };
+    }
+  },
+  validate: (params: Record<string, unknown>) => {
+    const valid = ['cycle', 'candidates', 'start', 'stop', undefined];
+    if (!valid.includes(params.action as string | undefined)) {
+      return { valid: false, reason: 'action must be: cycle, candidates, start, or stop' };
+    }
+    return { valid: true };
+  },
+});
+
+toolRegistry.set('antifragile', {
+  name: 'antifragile',
+  description: 'Interact with the antifragile system: check action safety, view patterns, run chaos tests',
+  execute: async (params: Record<string, unknown>) => {
+    const { getAntifragileSystem } = await import('../antifragile/index.js');
+    const system = getAntifragileSystem();
+    const action = (params.action as string) || 'status';
+
+    switch (action) {
+      case 'check': {
+        const domain = params.domain as string || 'general';
+        const description = params.description as string || '';
+        return system.checkAction(domain, description, params.context as Record<string, unknown>);
+      }
+      case 'patterns':
+        return system.getPatterns();
+      case 'attractors':
+        return system.getAttractors(params.domain as string);
+      case 'resilience':
+        return system.getResilienceMap();
+      case 'chaos':
+        return system.runChaosSession();
+      case 'start':
+        system.start();
+        return { status: 'antifragile system started' };
+      case 'status':
+        return {
+          patterns: system.getPatterns().length,
+          attractors: system.getAttractors().length,
+          resilience: system.getResilienceMap(),
+        };
+      default:
+        return { error: `Unknown action: ${action}. Use: check, patterns, attractors, resilience, chaos, start, status` };
+    }
+  },
+  validate: (params: Record<string, unknown>) => {
+    if (params.action === 'check' && !params.description) {
+      return { valid: false, reason: 'check action requires a description parameter' };
+    }
+    return { valid: true };
+  },
+});

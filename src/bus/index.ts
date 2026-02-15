@@ -83,6 +83,21 @@ export type {
   StrategyDataCollectedEvent,
   StrategyBriefGeneratedEvent,
   StrategyFeedbackEvent,
+  // Horizon Scanner events
+  HorizonCandidateEvent,
+  HorizonIntegrationEvent,
+  HorizonPruningEvent,
+  HorizonCycleEvent,
+  // Antifragile events
+  AntifragileFailureEvent,
+  AntifragilePatternEvent,
+  AntifragileStrengthEvent,
+  ChaosExperimentEvent,
+  ResilienceMapUpdatedEvent,
+  // Tool Factory events
+  ToolCreatedEvent,
+  ToolPromotedEvent,
+  ToolDeprecatedEvent,
 } from './events.js';
 
 // ============================================================================

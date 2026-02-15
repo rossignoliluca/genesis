@@ -17,7 +17,7 @@ import { LLMBridge, LLMProvider, LLMResponse, ModelTier, MODEL_TIERS, MODEL_COST
 // Extended Provider Types
 // ============================================================================
 
-export type ExtendedProvider = LLMProvider | 'groq' | 'huggingface' | 'together' | 'deepinfra' | 'xai';
+export type ExtendedProvider = LLMProvider | 'groq' | 'huggingface' | 'together' | 'deepinfra' | 'xai' | 'deepseek';
 
 export interface ProviderConfig {
   name: ExtendedProvider;
@@ -40,18 +40,38 @@ export const PROVIDER_REGISTRY: Record<ExtendedProvider, Partial<ProviderConfig>
     name: 'ollama',
     baseUrl: process.env.OLLAMA_HOST || 'http://localhost:11434',
     models: {
-      fast: 'deepseek-coder:latest',      // 776MB, very fast
-      balanced: 'qwen2.5-coder:latest',   // 4.7GB, good quality
-      powerful: 'mistral:latest',         // 4.4GB, best local quality
+      fast: 'qwen2.5-coder:latest',      // 7B, very fast
+      balanced: 'qwen2.5-coder:14b',     // 14B, best code quality
+      powerful: 'qwen3:14b',             // 14B, best reasoning
     },
     costs: {
-      'deepseek-coder:latest': { input: 0, output: 0 },
       'qwen2.5-coder:latest': { input: 0, output: 0 },
+      'qwen2.5-coder:14b': { input: 0, output: 0 },
+      'qwen3:14b': { input: 0, output: 0 },
       'mistral:latest': { input: 0, output: 0 },
     },
-    maxTokens: 8192,
+    maxTokens: 16384,
     rateLimit: 999,
     latency: 'medium',
+  },
+
+  // DeepSeek - CHEAPEST CLOUD, HIGH QUALITY
+  deepseek: {
+    name: 'deepseek',
+    apiKey: process.env.DEEPSEEK_API_KEY || '',
+    baseUrl: 'https://api.deepseek.com/v1',
+    models: {
+      fast: 'deepseek-chat',             // V3 - $0.27/$1.10 per 1M
+      balanced: 'deepseek-chat',          // V3 - great for daily coding
+      powerful: 'deepseek-reasoner',      // R1 - $0.55/$2.19 per 1M
+    },
+    costs: {
+      'deepseek-chat': { input: 0.27, output: 1.10 },
+      'deepseek-reasoner': { input: 0.55, output: 2.19 },
+    },
+    maxTokens: 64000,
+    rateLimit: 60,
+    latency: 'fast',
   },
 
   // Groq - ULTRA FAST, CHEAP
@@ -229,7 +249,7 @@ export interface TaskProfile {
 const TASK_PROFILES: Record<TaskType, TaskProfile> = {
   'code-generation': {
     type: 'code-generation',
-    preferredProviders: ['groq', 'together', 'openai'],
+    preferredProviders: ['deepseek', 'groq', 'openai'],
     preferredTier: 'balanced',
     maxLatency: 5000,
     requiresReasoning: true,
@@ -238,7 +258,7 @@ const TASK_PROFILES: Record<TaskType, TaskProfile> = {
   },
   'code-review': {
     type: 'code-review',
-    preferredProviders: ['groq', 'anthropic', 'openai'],
+    preferredProviders: ['deepseek', 'anthropic', 'openai'],
     preferredTier: 'balanced',
     maxLatency: 10000,
     requiresReasoning: true,
@@ -247,7 +267,7 @@ const TASK_PROFILES: Record<TaskType, TaskProfile> = {
   },
   'code-fix': {
     type: 'code-fix',
-    preferredProviders: ['groq', 'ollama', 'together'],  // Fast, cheap
+    preferredProviders: ['ollama', 'deepseek', 'groq'],  // Fast, cheap
     preferredTier: 'fast',
     maxLatency: 2000,
     requiresReasoning: false,
@@ -274,7 +294,7 @@ const TASK_PROFILES: Record<TaskType, TaskProfile> = {
   },
   'documentation': {
     type: 'documentation',
-    preferredProviders: ['groq', 'together', 'huggingface'],
+    preferredProviders: ['deepseek', 'groq', 'ollama'],
     preferredTier: 'fast',
     maxLatency: 5000,
     requiresReasoning: false,
@@ -283,7 +303,7 @@ const TASK_PROFILES: Record<TaskType, TaskProfile> = {
   },
   'research': {
     type: 'research',
-    preferredProviders: ['groq', 'anthropic'],
+    preferredProviders: ['deepseek', 'groq', 'anthropic'],
     preferredTier: 'balanced',
     maxLatency: 10000,
     requiresReasoning: true,
@@ -328,7 +348,7 @@ const TASK_PROFILES: Record<TaskType, TaskProfile> = {
   },
   'summarization': {
     type: 'summarization',
-    preferredProviders: ['groq', 'together', 'ollama'],
+    preferredProviders: ['deepseek', 'groq', 'ollama'],
     preferredTier: 'fast',
     maxLatency: 5000,
     requiresReasoning: false,
@@ -346,7 +366,7 @@ const TASK_PROFILES: Record<TaskType, TaskProfile> = {
   },
   'general': {
     type: 'general',
-    preferredProviders: ['groq', 'ollama', 'together'],
+    preferredProviders: ['deepseek', 'ollama', 'groq'],
     preferredTier: 'balanced',
     maxLatency: 5000,
     requiresReasoning: false,
@@ -555,6 +575,7 @@ export class AdvancedRouter {
         case 'deepinfra':
         case 'openai':
         case 'xai':
+        case 'deepseek':
           available = !!config.apiKey;
           break;
 
@@ -708,7 +729,7 @@ export class AdvancedRouter {
   }
 
   private selectFastest(providers: ExtendedProvider[]): ExtendedProvider {
-    const latencyOrder: ExtendedProvider[] = ['groq', 'ollama', 'together', 'deepinfra', 'huggingface', 'openai', 'anthropic'];
+    const latencyOrder: ExtendedProvider[] = ['groq', 'ollama', 'deepseek', 'together', 'deepinfra', 'huggingface', 'openai', 'anthropic'];
     for (const p of latencyOrder) {
       if (providers.includes(p)) return p;
     }
@@ -716,7 +737,7 @@ export class AdvancedRouter {
   }
 
   private selectBestQuality(providers: ExtendedProvider[]): ExtendedProvider {
-    const qualityOrder: ExtendedProvider[] = ['anthropic', 'openai', 'groq', 'together', 'deepinfra', 'ollama', 'huggingface'];
+    const qualityOrder: ExtendedProvider[] = ['anthropic', 'openai', 'deepseek', 'groq', 'together', 'deepinfra', 'ollama', 'huggingface'];
     for (const p of qualityOrder) {
       if (providers.includes(p)) return p;
     }
@@ -727,6 +748,7 @@ export class AdvancedRouter {
     const latencyMap: Record<string, number> = {
       'groq': 300,
       'ollama': 1000,
+      'deepseek': 600,
       'together': 800,
       'deepinfra': 700,
       'huggingface': 2000,
@@ -810,6 +832,7 @@ export class AdvancedRouter {
       case 'together':
       case 'deepinfra':
       case 'xai':
+      case 'deepseek':
         return this.callOpenAICompatible(provider, model, prompt, systemPrompt);
 
       case 'ollama':

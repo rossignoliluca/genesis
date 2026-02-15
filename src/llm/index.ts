@@ -40,22 +40,22 @@ export const MODEL_TIERS: Record<LLMProvider, Record<ModelTier, string>> = {
     powerful: 'claude-sonnet-4-20250514',
   },
   ollama: {
-    fast: 'qwen2.5-coder',          // Fast local
-    balanced: 'qwen2.5-coder',
-    powerful: 'mistral-small',      // Higher quality local
+    fast: 'qwen2.5-coder',          // Fast local 7B
+    balanced: 'qwen2.5-coder:14b',  // Best code quality 14B
+    powerful: 'qwen3:14b',          // Best reasoning 14B
   },
 };
 
 // Ollama config
 export const OLLAMA_CONFIG = {
   baseUrl: process.env.OLLAMA_HOST || 'http://localhost:11434',
-  defaultModel: 'qwen2.5-coder',  // Best for code: 7x faster, concise output
+  defaultModel: 'qwen2.5-coder:14b',  // Best for code on M4 Pro 24GB
   models: {
-    'qwen2.5-coder': { name: 'qwen2.5-coder', description: 'Qwen 2.5 Coder - Code specialist (DEFAULT)' },
-    'mistral': { name: 'mistral', description: 'Mistral 7B - Best for chat' },
-    'mistral-small': { name: 'mistral-small', description: 'Mistral Small 24B - High quality' },
+    'qwen2.5-coder:14b': { name: 'qwen2.5-coder:14b', description: 'Qwen 2.5 Coder 14B - Best code quality (DEFAULT)' },
+    'qwen3:14b': { name: 'qwen3:14b', description: 'Qwen3 14B - Best reasoning + code' },
+    'qwen2.5-coder': { name: 'qwen2.5-coder', description: 'Qwen 2.5 Coder 7B - Fast code specialist' },
+    'mistral': { name: 'mistral', description: 'Mistral 7B - Chat fallback' },
     'deepseek-coder': { name: 'deepseek-coder', description: 'DeepSeek Coder - Lightweight (776MB)' },
-    'phi3.5': { name: 'phi3.5', description: 'Phi-3.5 - Fast, lightweight' },
   },
 };
 
@@ -112,10 +112,14 @@ export const MODEL_COSTS: Record<string, { input: number; output: number }> = {
   'claude-sonnet-4-20250514': { input: 3, output: 15 },
   'claude-3-5-haiku-20241022': { input: 0.8, output: 4 },
   'claude-opus-4-20250514': { input: 15, output: 75 },
+  // DeepSeek (cheapest cloud)
+  'deepseek-chat': { input: 0.27, output: 1.10 },
+  'deepseek-reasoner': { input: 0.55, output: 2.19 },
   // Ollama (local, free)
   'qwen2.5-coder': { input: 0, output: 0 },
+  'qwen2.5-coder:14b': { input: 0, output: 0 },
+  'qwen3:14b': { input: 0, output: 0 },
   'mistral': { input: 0, output: 0 },
-  'mistral-small': { input: 0, output: 0 },
 };
 
 export function calculateCost(model: string, inputTokens: number, outputTokens: number): number {

@@ -6,6 +6,7 @@
  */
 
 import { readFileSync } from 'fs';
+import { join } from 'path';
 import { safeJsonParse } from '../utils/safe-json.js';
 import { createSubscriber, getEventBus } from '../bus/index.js';
 import { getMemorySystem } from '../memory/index.js';
@@ -206,7 +207,7 @@ export class HorizonScanner {
 
   private loadExistingServers(): string[] {
     try {
-      const raw = readFileSync('/Users/lucarossignoli/genesis/.mcp.json', 'utf-8');
+      const raw = readFileSync(join(__dirname, '../../.mcp.json'), 'utf-8');
       const mcpJson = safeJsonParse<{ servers?: Record<string, unknown> }>(raw, { servers: {} });
       return Object.keys(mcpJson.servers ?? {});
     } catch {

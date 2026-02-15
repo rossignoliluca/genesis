@@ -299,7 +299,9 @@ export class MCPBridge {
         efeSelector.recordOutcome(
           call.server, call.tool, true, latency, surprise, 0
         );
-      } catch { /* EFE integration non-fatal */ }
+      } catch (err) {
+        console.error('[mcp-bridge] EFE outcome recording failed:', err);
+      }
 
       return toolResult;
     } catch (err: any) {
@@ -309,7 +311,9 @@ export class MCPBridge {
         efeSelector.recordOutcome(
           call.server, call.tool, false, Date.now() - startTime, 5.0, 0
         );
-      } catch { /* EFE integration non-fatal */ }
+      } catch (err) {
+        console.error('[mcp-bridge] EFE failure recording failed:', err);
+      }
 
       return {
         id: call.id,
@@ -367,7 +371,9 @@ export class MCPBridge {
           this.prefetchAttempts++;
           prefetchedTools.push(`${call.server}/${call.tool}`);
         }
-      } catch { /* prefetch failure is non-fatal */ }
+      } catch (err) {
+        console.error('[mcp-bridge] Prefetch operation failed:', err);
+      }
     });
 
     // Don't await all - let them run in background

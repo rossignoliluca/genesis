@@ -341,8 +341,8 @@ export class SelfModelGenerator {
           exports.push(...items.filter(i => i && !i.startsWith('type')));
         }
       }
-    } catch {
-      // Module not found or error reading
+    } catch (err) {
+      console.error('[self-modification] Module export scan failed:', err);
     }
 
     return [...new Set(exports)]; // Deduplicate
@@ -385,7 +385,8 @@ export class SelfModelGenerator {
           trend: 'stable',
         },
       ];
-    } catch {
+    } catch (err) {
+      console.error('[self-modification] Brain metrics gathering failed:', err);
       // Brain not available, return defaults
       return [
         { name: 'avgPhi', current: 0, trend: 'unknown' },
@@ -457,7 +458,8 @@ export class SelfModelGenerator {
       const pkgPath = path.join(this.basePath, 'package.json');
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
       return pkg.version || 'unknown';
-    } catch {
+    } catch (err) {
+      console.error('[self-modification] Version read failed:', err);
       return 'unknown';
     }
   }
@@ -781,7 +783,8 @@ export function loadSelfModelGraph(): {
       return { entities: data.entities, relations: data.relations };
     }
     return null;
-  } catch {
+  } catch (err) {
+    console.error('[self-modification] Self-model graph load failed:', err);
     return null;
   }
 }

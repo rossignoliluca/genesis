@@ -592,7 +592,9 @@ class GroqStreamAdapter implements InternalAdapter {
               contentBuffer += content;
               yield createToken(content);
             }
-          } catch { /* skip */ }
+          } catch (err) {
+            console.error('[provider-adapter] Groq delta parse failed:', err);
+          }
         }
       }
     } finally {

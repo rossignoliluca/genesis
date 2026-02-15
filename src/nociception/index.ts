@@ -388,7 +388,9 @@ export class NociceptiveSystem {
     for (const handler of this.handlers) {
       try {
         handler(state);
-      } catch { /* non-fatal */ }
+      } catch (err) {
+        console.error('[nociception] Handler execution failed:', err);
+      }
     }
   }
 }

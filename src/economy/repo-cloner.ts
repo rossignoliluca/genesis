@@ -174,8 +174,9 @@ export class RepoCloner {
     if (fs.existsSync(localPath)) {
       try {
         fs.rmSync(localPath, { recursive: true, force: true });
-      } catch {
+      } catch (err) {
         // Ignore cleanup errors
+        console.error('[repo-cloner] Cleanup failed:', err);
       }
     }
 
@@ -345,7 +346,7 @@ export class RepoCloner {
       const headRef = fs.readFileSync(path.join(localPath, '.git', 'HEAD'), 'utf-8').trim();
       const match = headRef.match(/ref: refs\/heads\/(.+)/);
       if (match) defaultBranch = match[1];
-    } catch { /* ignore */ }
+    } catch (err) { /* ignore */ console.error('[repo-cloner] Default branch detection failed:', err); }
 
     // Contributing & PR template
     const hasContributing = fileTree.some(f =>
@@ -371,7 +372,7 @@ export class RepoCloner {
           const content = fs.readFileSync(fullPath, 'utf-8');
           totalLinesOfCode += content.split('\n').filter(l => l.trim().length > 0).length;
         }
-      } catch { /* skip */ }
+      } catch (err) { /* skip */ console.error('[repo-cloner] LOC count failed:', err); }
     }
 
     return {
@@ -400,7 +401,8 @@ export class RepoCloner {
         return null; // Too large
       }
       return fs.readFileSync(fullPath, 'utf-8');
-    } catch {
+    } catch (err) {
+      console.error('[repo-cloner] File read failed:', err);
       return null;
     }
   }
@@ -453,8 +455,9 @@ export class RepoCloner {
         if (fs.existsSync(cached.repo.localPath)) {
           fs.rmSync(cached.repo.localPath, { recursive: true, force: true });
         }
-      } catch {
+      } catch (err) {
         // Ignore cleanup errors
+        console.error('[repo-cloner] Cache cleanup failed:', err);
       }
     }
     this.cloneCache.clear();
@@ -470,7 +473,7 @@ export class RepoCloner {
         if (fs.existsSync(cached.repo.localPath)) {
           fs.rmSync(cached.repo.localPath, { recursive: true, force: true });
         }
-      } catch { /* ignore */ }
+      } catch (err) { /* ignore */ console.error('[repo-cloner] Repo cleanup failed:', err); }
       this.cloneCache.delete(repoKey);
     }
   }
@@ -504,8 +507,9 @@ export class RepoCloner {
             }
           }
         }
-      } catch {
+      } catch (err) {
         // Permission error or similar — skip
+        console.error('[repo-cloner] Directory walk failed:', err);
       }
     };
 
@@ -593,7 +597,7 @@ export class RepoCloner {
             testFilePattern: '*.test.{ts,js}',
           };
         }
-      } catch { /* ignore parse errors */ }
+      } catch (err) { /* ignore parse errors */ console.error('[repo-cloner] package.json parse failed:', err); }
     }
 
     // Check pyproject.toml / setup.cfg for pytest
@@ -610,7 +614,7 @@ export class RepoCloner {
             testFilePattern: 'test_*.py',
           };
         }
-      } catch { /* ignore */ }
+      } catch (err) { /* ignore */ console.error('[repo-cloner] pyproject.toml read failed:', err); }
     }
 
     // Check for Go tests
@@ -653,7 +657,7 @@ export class RepoCloner {
           if (runMatches) {
             commands.push(...runMatches.map(m => m.replace('run:', '').trim()).slice(0, 5));
           }
-        } catch { /* ignore */ }
+        } catch (err) { /* ignore */ console.error('[repo-cloner] Workflow parse failed:', err); }
       }
       return {
         name: 'github-actions',
@@ -716,7 +720,7 @@ export class RepoCloner {
             content.includes('ban ai') || content.includes('close ai')) {
           signals.push(`CONTRIBUTING.md explicitly bans AI contributions`);
         }
-      } catch { /* ignore */ }
+      } catch (err) { /* ignore */ console.error('[repo-cloner] CONTRIBUTING.md read failed:', err); }
     }
 
     // Check for bot-detection in CI (e.g., checking for AI patterns)
@@ -731,7 +735,7 @@ export class RepoCloner {
             content.includes('copilot-detect') || content.includes('bot-detect')) {
           signals.push(`CI has AI detection checks`);
         }
-      } catch { /* ignore */ }
+      } catch (err) { /* ignore */ console.error('[repo-cloner] CI file read failed:', err); }
     }
 
     // Check README for AI policy
@@ -743,7 +747,7 @@ export class RepoCloner {
             content.includes('ai contributions will')) {
           signals.push(`README mentions AI PR policy`);
         }
-      } catch { /* ignore */ }
+      } catch (err) { /* ignore */ console.error('[repo-cloner] README.md read failed:', err); }
     }
 
     return signals;

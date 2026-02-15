@@ -144,6 +144,9 @@ import {
   type ParallelEngineConfig,
 } from './concurrency/index.js';
 
+// Self-Model — holistic self-awareness, module health tracking (v33.0)
+import { getHolisticSelfModel, type HolisticSelfModel } from './self-model/index.js';
+
 // Nucleus — gravitational center for module orchestration (v34.0)
 import { getNucleus, getPlasticity, getCuriosityEngine, type Orchestrator, type CuriosityEngine as CuriosityEngineType } from './nucleus/index.js';
 
@@ -543,7 +546,7 @@ export class Genesis {
   private parallelEngine: ParallelExecutionEngine | null = null;
 
   // v33.0: Holistic Self-Model — persistent self-awareness
-  private holisticSelfModel: any = null;
+  private holisticSelfModel: HolisticSelfModel | null = null;
 
   // v34.0: Nucleus — gravitational center for module orchestration
   private nucleus: Orchestrator | null = null;
@@ -2306,7 +2309,6 @@ export class Genesis {
 
     // v33.0: Holistic Self-Model — boots after bus, tracks all module health
     try {
-      const { getHolisticSelfModel } = await import('./self-model/index.js');
       this.holisticSelfModel = getHolisticSelfModel({ rootPath: process.cwd() });
       await this.holisticSelfModel.boot();
       console.log('[Genesis] Holistic Self-Model booted — tracking module health');
@@ -2472,7 +2474,7 @@ export class Genesis {
           }));
           ctx.processContext.workspaceItems = [...((ctx.processContext.workspaceItems as any[]) || []), ...vecItems];
         }
-      } catch { /* best-effort */ }
+      } catch (err) { /* best-effort */ console.error('[genesis] Memory recall integration failed:', err); }
       if (this.fiber) this.fiber.recordCost('memory', 0.003, 'recall');
     });
 
@@ -2546,7 +2548,7 @@ export class Genesis {
             predictedState: predicted.state,
           } };
         }
-      } catch { /* best-effort */ }
+      } catch (err) { /* best-effort */ console.error('[genesis] World model integration failed:', err); }
       if (this.fiber) this.fiber.recordCost('worldmodel', 0.005, 'encode');
     });
 
@@ -3198,7 +3200,7 @@ export class Genesis {
         try {
           const stats = this.streamOrchestrator!.getRaceStats();
           return { activeStreams: stats.raceCount || 0, avgLatency: stats.avgSaved || 0 };
-        } catch { return { activeStreams: 0, avgLatency: 0 }; }
+        } catch (err) { console.error('[genesis] Stream stats fetch failed:', err); return { activeStreams: 0, avgLatency: 0 }; }
       })() : null,
       pipeline: !!this.pipelineExecutor,
       a2a: this.a2aServer ? { connected: true, peers: 0 } : null,
@@ -3299,7 +3301,7 @@ export class Genesis {
 
     // v33.0: Shutdown self-model (persists health data)
     if (this.holisticSelfModel) {
-      try { await this.holisticSelfModel.shutdown(); } catch { /* non-fatal */ }
+      try { await this.holisticSelfModel.shutdown(); } catch (err) { /* non-fatal */ console.error('[genesis] Self-model shutdown failed:', err); }
       this.holisticSelfModel = null;
     }
 
@@ -3314,13 +3316,13 @@ export class Genesis {
     try {
       const { resetAutonomousLoop } = await import('./active-inference/autonomous-loop.js');
       resetAutonomousLoop();
-    } catch { /* optional */ }
+    } catch (err) { /* optional */ console.error('[genesis] Autonomous loop reset failed:', err); }
 
     // v18.2: Reset market strategist singleton
     try {
       const { resetMarketStrategist } = await import('./market-strategist/index.js');
       resetMarketStrategist();
-    } catch { /* optional */ }
+    } catch (err) { /* optional */ console.error('[genesis] Market strategist reset failed:', err); }
 
     // v18.1.0: Content module shutdown
     if (this.contentOrchestrator) {
@@ -3416,7 +3418,7 @@ export class Genesis {
     try {
       const { resetEventBus } = await import('./bus/index.js');
       resetEventBus();
-    } catch { /* optional */ }
+    } catch (err) { /* optional */ console.error('[genesis] Event bus reset failed:', err); }
 
     this.booted = false;
     this.levels = { L1: false, L2: false, L3: false, L4: false };

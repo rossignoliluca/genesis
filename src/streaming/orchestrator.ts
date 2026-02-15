@@ -558,7 +558,9 @@ export class StreamOrchestrator {
     for (const hook of completionHooks) {
       try {
         hook(this.metrics, provider, model);
-      } catch { /* integration hooks must not break streaming */ }
+      } catch (err) {
+        console.error('[orchestrator] Stream completion hook failed:', err);
+      }
     }
   }
 

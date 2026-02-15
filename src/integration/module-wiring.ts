@@ -130,7 +130,7 @@ function wireConsciousness(
             tags: ['consciousness', 'phi-shift', delta > 0 ? 'increase' : 'decrease'],
             importance: Math.abs(delta),
           });
-        } catch { /* memory optional */ }
+        } catch (err) { /* memory optional */ console.error('[module-wiring] Memory record failed:', err); }
       }
 
       // v16.2.0: Bidirectional feedback - φ modulates neurotransmitters
@@ -231,7 +231,7 @@ function wireNociception(nociception: NociceptiveSystem, bus: GenesisEventBus): 
         const neuromod = getNeuromodulationSystem();
         neuromod.modulate('cortisol', state.aggregatePain * 0.2, 'pain-response');
         neuromod.modulate('norepinephrine', 0.1, 'pain-alertness');
-      } catch { /* neuromod optional */ }
+      } catch (err) { /* neuromod optional */ console.error('[module-wiring] Neuromodulation update failed:', err); }
     }
   });
 
@@ -325,7 +325,7 @@ function wireActiveInference(
           lastAction: action,
           cycle,
         });
-      } catch { /* world model update is optional */ }
+      } catch (err) { /* world model update is optional */ console.error('[module-wiring] World model update failed:', err); }
     }
 
     // Emit cycle completion event
@@ -353,7 +353,7 @@ function wireActiveInference(
       } else if (domain === 'energy') {
         obs.setPrecision('energy', confidence);
       }
-    } catch { /* optional */ }
+    } catch (err) { /* optional */ console.error('[module-wiring] Observation precision update failed:', err); }
   });
 
   // Subscribe to stop events

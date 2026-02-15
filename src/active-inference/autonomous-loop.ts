@@ -208,7 +208,7 @@ export class AutonomousLoop {
       this.busSubscriber.on('allostasis.hibernate', () => {
         this.runDreamConsolidation();
       });
-    } catch { /* bus optional */ }
+    } catch (err) { /* bus optional */ console.error('[autonomous-loop] Bus subscription failed:', err); }
 
     // Subscribe to engine events
     this.engine.on(this.handleEngineEvent.bind(this));
@@ -334,7 +334,7 @@ export class AutonomousLoop {
       this.engine.config.priorWeight = 0.1 * effect.precisionGain;
       this.engine.config.inferenceIterations = Math.max(8, Math.round(26 * effect.processingDepth));
       this.engine.config.policyHorizon = Math.round(2 + effect.temporalDiscount * 3);
-    } catch { /* neuromodulation optional */ }
+    } catch (err) { /* neuromodulation optional */ console.error('[autonomous-loop] Neuromodulation integration failed:', err); }
 
     // v18.3: φ-gated action escalation
     // Low consciousness → force conservative action selection
@@ -350,7 +350,7 @@ export class AutonomousLoop {
           console.log(`[AI Loop] φ-gated action: φ=${phi.toFixed(3)} → conservative mode (temp=0.5, explore=0.3)`);
         }
       }
-    } catch { /* consciousness optional */ }
+    } catch (err) { /* consciousness optional */ console.error('[autonomous-loop] Consciousness integration failed:', err); }
 
     if (this.config.verbose) {
       console.log(`[AI Loop] Cycle ${this.cycleCount} - Observation:`, obs);
@@ -413,7 +413,7 @@ export class AutonomousLoop {
           this.lastAllostaticDelta = true;
         }
       }
-    } catch { /* meta-memory optional */ }
+    } catch (err) { /* meta-memory optional */ console.error('[autonomous-loop] MetaMemory integration failed:', err); }
 
     // 2. Run inference (beliefs + policy + action)
     let action: ActionType;
@@ -482,7 +482,7 @@ export class AutonomousLoop {
           reward: result.success ? 0.5 : -0.3,
           newObservation: nextObs,
         });
-      } catch { /* value update non-fatal */ }
+      } catch (err) { /* value update non-fatal */ console.error('[autonomous-loop] Value engine update failed:', err); }
     }
 
     // 4b. v11.4: Conformal calibration (feed prediction vs actual surprise)
@@ -537,7 +537,7 @@ export class AutonomousLoop {
           tags: ['active-inference', 'auto-record', action, outcome],
           importance: surprise / 10,
         });
-      } catch { /* memory optional */ }
+      } catch (err) { /* memory optional */ console.error('[autonomous-loop] Auto-record to memory failed:', err); }
     }
 
     // 5b. v10.8.1: Meta-learning triggers (every 20 cycles)

@@ -243,7 +243,9 @@ export class ModelRacer {
         yield event;
         if (event.type === 'done') break;
       }
-    } catch { /* stream ended */ }
+    } catch (err) {
+      console.error('[model-racer] Stream iteration failed:', err);
+    }
 
     // Record result for learning + track savings
     const saved = Math.max(0, candidates[0].expectedTTFT - ttft);
@@ -324,7 +326,9 @@ export class ModelRacer {
           yield event;
           if (event.type === 'done') break;
         }
-      } catch { /* done */ }
+      } catch (err) {
+        console.error('[model-racer] Hedged primary stream failed:', err);
+      }
 
       // Primary won: savings = expected backup TTFT - primary's actual TTFT
       const saved = Math.max(0, backup.expectedTTFT - ttft);
@@ -360,7 +364,9 @@ export class ModelRacer {
             yield event;
             if (event.type === 'done') break;
           }
-        } catch { /* done */ }
+        } catch (err) {
+          console.error('[model-racer] Hedged backup stream failed:', err);
+        }
 
         if (this.config.enableLearning) {
           this.recordRaceResult(backup.provider, backup.model, {

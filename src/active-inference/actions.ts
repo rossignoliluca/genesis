@@ -789,7 +789,8 @@ function safeEvaluateExpression(expr: string): unknown {
       // Use a simple recursive descent parser instead of eval
       const tokens = expr.match(/(\d+\.?\d*|[+\-*/%()])/g) || [];
       return evaluateMathTokens(tokens);
-    } catch {
+    } catch (err) {
+      console.error('[actions] Math expression parse failed:', err);
       throw new Error('Invalid math expression');
     }
   }
@@ -1006,8 +1007,9 @@ registerAction('self.analyze', async (context) => {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
       analysis.name = pkg.name || 'genesis';
       analysis.version = pkg.version || 'unknown';
-    } catch {
+    } catch (err) {
       // Ignore
+      console.error('[actions] Package.json read failed:', err);
     }
 
     // List modules
@@ -1019,8 +1021,9 @@ registerAction('self.analyze', async (context) => {
           .filter(e => e.isDirectory())
           .map(e => e.name);
       }
-    } catch {
+    } catch (err) {
       // Ignore
+      console.error('[actions] Module directory scan failed:', err);
     }
 
     // Define capabilities based on registered actions
@@ -1576,7 +1579,7 @@ registerAction('code.snapshot', async (context) => {
     try {
       currentCommit = execSync('git rev-parse --short HEAD', { cwd, encoding: 'utf-8' }).trim();
       branch = execSync('git branch --show-current', { cwd, encoding: 'utf-8' }).trim();
-    } catch { /* not a git repo */ }
+    } catch (err) { /* not a git repo */ console.error('[actions] Git command failed:', err); }
 
     // Get package version
     try {
@@ -1586,7 +1589,7 @@ registerAction('code.snapshot', async (context) => {
         const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
         version = pkg.version || 'unknown';
       }
-    } catch { /* no package.json */ }
+    } catch (err) { /* no package.json */ console.error('[actions] Package version read failed:', err); }
 
     // Count TypeScript files and get structure
     let fileCount = 0;
@@ -1610,7 +1613,7 @@ registerAction('code.snapshot', async (context) => {
         const match = wcOutput.match(/(\d+)/);
         if (match) totalLines = parseInt(match[1], 10);
       }
-    } catch { /* ignore */ }
+    } catch (err) { /* ignore */ console.error('[actions] File count failed:', err); }
 
     // Store in memory using the MCP memory server
     const snapshot = {
@@ -1643,8 +1646,9 @@ registerAction('code.snapshot', async (context) => {
           ],
         }],
       });
-    } catch {
+    } catch (err) {
       // Memory MCP not available, continue anyway
+      console.error('[actions] Memory MCP snapshot storage failed:', err);
     }
 
     return {
@@ -1694,7 +1698,7 @@ registerAction('code.history', async (context) => {
       const fs = await import('fs');
       const pkg = JSON.parse(fs.readFileSync(`${cwd}/package.json`, 'utf-8'));
       version = pkg.version || 'unknown';
-    } catch { /* no package.json */ }
+    } catch (err) { /* no package.json */ console.error('[actions] History version read failed:', err); }
 
     // Get tags (versions)
     let tags: string[] = [];
@@ -1703,7 +1707,7 @@ registerAction('code.history', async (context) => {
         .trim()
         .split('\n')
         .filter(Boolean);
-    } catch { /* no tags */ }
+    } catch (err) { /* no tags */ console.error('[actions] Git tags fetch failed:', err); }
 
     // Also retrieve from MCP memory if available
     let memorySnapshots: unknown[] = [];
@@ -1715,8 +1719,9 @@ registerAction('code.history', async (context) => {
       if (result.data?.entities) {
         memorySnapshots = result.data.entities;
       }
-    } catch {
+    } catch (err) {
       // Memory MCP not available
+      console.error('[actions] Memory snapshot retrieval failed:', err);
     }
 
     return {
@@ -2103,8 +2108,9 @@ registerAction('create.presentation', async (context) => {
         },
         importance: 0.7,
       });
-    } catch {
+    } catch (err) {
       // Memory not available, continue
+      console.error('[actions] Memory storage failed:', err);
     }
 
     return {
@@ -2803,8 +2809,9 @@ registerAction('opportunity.build', async (context) => {
             message: `[Genesis] Deploy ${plan.name}: ${plan.description}`,
             branch: 'main',
           });
-        } catch {
+        } catch (err) {
           // Repo might not exist - create it first
+          console.error('[actions] GitHub commit failed:', err);
           await mcp.call('github' as any, 'create_repository', {
             name: plan.name,
             description: plan.description,

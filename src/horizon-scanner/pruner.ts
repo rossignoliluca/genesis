@@ -4,6 +4,7 @@
  */
 
 import { readFile, writeFile } from 'fs/promises';
+import { join } from 'path';
 import { ToolUsageRecord, PruningDecision, HorizonScannerConfig } from './types.js';
 
 export class PruningLayer {
@@ -75,7 +76,7 @@ export class PruningLayer {
 
   async executePruning(
     decision: PruningDecision,
-    mcpJsonPath = '/Users/lucarossignoli/genesis/.mcp.json',
+    mcpJsonPath = join(__dirname, '../../.mcp.json'),
   ): Promise<void> {
     if (decision.decision === 'keep') return;
 

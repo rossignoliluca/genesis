@@ -314,7 +314,9 @@ export async function updateSelfModel(
           }],
         });
         updatesApplied++;
-      } catch { /* non-fatal */ }
+      } catch (err) {
+        console.error('[autopoiesis] Anomaly recording failed:', err);
+      }
     }
 
   } catch (error) {

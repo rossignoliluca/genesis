@@ -9,6 +9,7 @@
 
 import { readFile, writeFile } from 'fs/promises';
 import { spawn, ChildProcess } from 'child_process';
+import { join } from 'path';
 import { IntegrationPlan, SandboxTest } from './types.js';
 import { toolRegistry, Tool } from '../tools/index.js';
 
@@ -49,7 +50,7 @@ interface CanaryResult {
 export class IntegrationLayer {
   private sandboxProcesses = new Map<string, ChildProcess>();
   private canaryServers = new Map<string, CanaryState>();
-  private readonly MCP_JSON_PATH = '/Users/lucarossignoli/genesis/.mcp.json';
+  private readonly MCP_JSON_PATH = join(__dirname, '../../.mcp.json');
 
   /** Phase 1: Sandbox Test — spawn MCP server, run smoke tests */
   async sandboxTest(plan: IntegrationPlan): Promise<SandboxResult> {

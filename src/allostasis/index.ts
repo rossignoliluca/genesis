@@ -924,7 +924,9 @@ export class AllostasisSystem extends EventEmitter {
           break;
         }
       }
-    } catch { /* bus optional */ }
+    } catch (err) {
+      console.error('[allostasis] Bus publish failed:', err);
+    }
 
     this.emit('action-executed', action);
 

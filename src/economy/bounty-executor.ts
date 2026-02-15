@@ -279,8 +279,9 @@ export class BountyCodeGenerator {
             }
           }
         }
-      } catch {
+      } catch (err) {
         // Issue not available via API
+        console.error('[bounty-executor] Issue fetch failed:', err);
       }
     }
 
@@ -380,12 +381,12 @@ export class BountyCodeGenerator {
         parts.push(`- Description: ${r.description || 'N/A'}`);
         this.lastRepoContext!.primaryLanguage = r.language || 'Unknown';
       }
-    } catch { /* ignore */ }
+    } catch (err) { /* ignore */ console.error('[bounty-executor] Repo info fetch failed:', err); }
 
     try {
       const readme = await this.mcp.call('github', 'get_file_contents', { owner, repo, path: 'README.md' });
       if (readme) parts.push(`\n## Repository README:\n${String(readme).slice(0, 2000)}`);
-    } catch { /* ignore */ }
+    } catch (err) { /* ignore */ console.error('[bounty-executor] README fetch failed:', err); }
 
     if (bounty.sourceMetadata?.issueNumber) {
       try {
@@ -408,10 +409,10 @@ export class BountyCodeGenerator {
                 parts.push(`\n## Existing File: ${filePath}\n\`\`\`\n${decoded.slice(0, 15000)}\n\`\`\``);
                 this.lastRepoContext!.existingFiles.push(filePath);
               }
-            } catch { /* ignore */ }
+            } catch (err) { /* ignore */ console.error('[bounty-executor] File content fetch failed:', err); }
           }
         }
-      } catch { /* ignore */ }
+      } catch (err) { /* ignore */ console.error('[bounty-executor] Issue details fetch failed:', err); }
     }
 
     try {
@@ -423,7 +424,7 @@ export class BountyCodeGenerator {
         parts.push(`\n## Repository Structure (root files):\n${files.join('\n')}`);
         this.lastRepoContext!.existingFiles = files;
       }
-    } catch { /* ignore */ }
+    } catch (err) { /* ignore */ console.error('[bounty-executor] Repo tree fetch failed:', err); }
 
     for (const contributingPath of ['CONTRIBUTING.md', 'contributing.md', '.github/CONTRIBUTING.md']) {
       try {
@@ -433,7 +434,7 @@ export class BountyCodeGenerator {
           parts.push(`\n## CONTRIBUTING GUIDE (MUST FOLLOW):\n${decoded.slice(0, 3000)}`);
           break;
         }
-      } catch { /* ignore */ }
+      } catch (err) { /* ignore */ console.error('[bounty-executor] CONTRIBUTING.md fetch failed:', err); }
     }
 
     if (this.lastRepoContext!.primaryLanguage !== 'Unknown') {
@@ -966,8 +967,9 @@ export class BountyExecutor {
           console.log(`[BountyExecutor] Loaded rejections for ${this.repoRejections.size} repos (${this.lowPriorityRepos.size} low-priority, blocked via rejections: ${[...this.repoRejections.entries()].filter(([, c]) => c >= 2).length})`);
         }
       }
-    } catch {
+    } catch (err) {
       // File may not exist yet
+      console.error('[bounty-executor] Repo rejections load failed:', err);
     }
   }
 

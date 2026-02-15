@@ -214,7 +214,9 @@ export class PhiMonitor {
       try {
         const coherence = Math.max(0, Math.min(1, this.workspaceCoherenceProvider()));
         phiResult.phi *= (0.5 + 0.5 * coherence);
-      } catch { /* coherence provider failure is non-fatal */ }
+      } catch (err) {
+        console.error('[phi-monitor] Workspace coherence provider failed:', err);
+      }
     }
 
     // Normalize φ to 0-1 range

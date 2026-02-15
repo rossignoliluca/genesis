@@ -645,6 +645,119 @@ export class GenesisMCPServer extends EventEmitter {
       annotations: { readOnlyHint: true, longRunningHint: true },
       handler: this.handleResearch.bind(this),
     });
+
+    // v34.0: genesis.nucleus.status — current state, learned weights, performance
+    this.registerTool({
+      name: 'genesis.nucleus.status',
+      description: 'Get the current Nucleus status: classification weights, performance stats, recent explorations, and module activation map. Use this to understand how Genesis is processing inputs and learning.',
+      inputSchema: z.object({
+        includeWeights: z.boolean().optional().default(false).describe('Include full per-module learned weights'),
+        includeExplorations: z.boolean().optional().default(false).describe('Include recent curiosity explorations'),
+      }),
+      requiredScopes: ['status'],
+      baseCost: 0.001,
+      supportsStreaming: false,
+      maxExecutionTime: 5000,
+      annotations: { readOnlyHint: true },
+      handler: async (rawInput: unknown) => {
+        try {
+          const args = rawInput as { includeWeights?: boolean; includeExplorations?: boolean };
+          const { getNucleus, getPlasticity, getCuriosityEngine } = await import('../nucleus/index.js');
+          const nucleus = getNucleus();
+          const plasticity = getPlasticity();
+          const curiosity = getCuriosityEngine();
+
+          const result: Record<string, unknown> = {
+            totalModules: nucleus.getModuleCount(),
+            boundModules: nucleus.getBoundModuleCount(),
+            plasticityStats: plasticity.getStats(),
+          };
+
+          if (args.includeWeights) {
+            result.learnedWeights = plasticity.getAllWeights();
+          }
+          if (args.includeExplorations) {
+            result.recentExplorations = curiosity.getExplorations(10);
+          }
+
+          return { success: true, data: result, metadata: { duration: 0 } };
+        } catch (err) {
+          return { success: false, error: `Nucleus not available: ${(err as Error)?.message}`, metadata: { duration: 0 } };
+        }
+      },
+    });
+
+    // v34.0: genesis.nucleus.improve — trigger curiosity cycle
+    this.registerTool({
+      name: 'genesis.nucleus.improve',
+      description: 'Trigger a curiosity exploration cycle. Genesis will analyze its own performance, identify capability gaps, and propose improvements.',
+      inputSchema: z.object({}),
+      requiredScopes: ['status'],
+      baseCost: 0.005,
+      supportsStreaming: false,
+      maxExecutionTime: 10000,
+      annotations: { readOnlyHint: true },
+      handler: async () => {
+        try {
+          const { getCuriosityEngine } = await import('../nucleus/index.js');
+          const curiosity = getCuriosityEngine();
+          curiosity.recordActivity();
+          const explorations = curiosity.getExplorations(5);
+          return {
+            success: true,
+            data: {
+              message: 'Curiosity engine is active. Here are the most recent explorations:',
+              explorations,
+            },
+            metadata: { duration: 0 },
+          };
+        } catch (err) {
+          return { success: false, error: `Curiosity engine not available: ${(err as Error)?.message}`, metadata: { duration: 0 } };
+        }
+      },
+    });
+
+    // v34.0: genesis.nucleus.profile — creator profile
+    this.registerTool({
+      name: 'genesis.nucleus.profile',
+      description: 'Get the Genesis creator profile: Luca Rossignoli, Rossignoli & Partners, system capabilities, and architecture overview.',
+      inputSchema: z.object({}),
+      requiredScopes: ['status'],
+      baseCost: 0.001,
+      supportsStreaming: false,
+      maxExecutionTime: 5000,
+      annotations: { readOnlyHint: true },
+      handler: async () => {
+        return {
+          success: true,
+          data: {
+            creator: 'Luca Rossignoli',
+            organization: 'Rossignoli & Partners',
+            system: 'Genesis — Autonomous AI System',
+            version: 'v34.0 (The Nucleus)',
+            architecture: {
+              modules: '~80 modules, 2544 TS files, 603K LOC',
+              mcpServers: '51 MCP servers',
+              core: 'Bio-inspired cognitive architecture with recursive self-improvement',
+              nucleus: 'Input classification → module selection → execution → plasticity learning → curiosity',
+            },
+            capabilities: [
+              'Multi-model LLM routing (Ollama, DeepSeek, Anthropic)',
+              'Market intelligence & weekly strategy briefs',
+              'Multi-agent orchestration (11 agent types)',
+              'Episodic/semantic/procedural memory with vector search',
+              'Consciousness monitoring (IIT φ + GWT + AST)',
+              'Neuromodulatory tone (DA/5HT/NE/cortisol)',
+              'Autonomous self-improvement (RSI, curiosity engine)',
+              'Content creation (social media, presentations, podcasts)',
+              'Financial analysis & trading signals',
+              'Bounty hunting & PR pipeline',
+            ],
+          },
+          metadata: { duration: 0 },
+        };
+      },
+    });
   }
 
   // ============================================================================

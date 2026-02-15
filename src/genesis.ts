@@ -144,6 +144,9 @@ import {
   type ParallelEngineConfig,
 } from './concurrency/index.js';
 
+// Nucleus — gravitational center for module orchestration (v34.0)
+import { getNucleus, getPlasticity, getCuriosityEngine, type Orchestrator, type CuriosityEngine as CuriosityEngineType } from './nucleus/index.js';
+
 // Integration — cross-module wiring
 import { bootstrapIntegration, wireAllModules, type WiringResult, getCognitiveBridge, type CognitiveBridge } from './integration/index.js';
 import { initLearningSignalMapper } from './memory/learning-signal-mapper.js';
@@ -541,6 +544,10 @@ export class Genesis {
 
   // v33.0: Holistic Self-Model — persistent self-awareness
   private holisticSelfModel: any = null;
+
+  // v34.0: Nucleus — gravitational center for module orchestration
+  private nucleus: Orchestrator | null = null;
+  private curiosityEngine: CuriosityEngineType | null = null;
 
   // v26.0: WebSocket Real-Time API
   private websocket: GenesisWebSocket | null = null;
@@ -2307,496 +2314,399 @@ export class Genesis {
       console.warn('[Genesis] Self-Model boot failed (non-fatal):', err);
     }
 
+    // v34.0: Nucleus — Centro Gravitazionale
+    // Classifies inputs, selects modules, learns from outcomes
+    this.nucleus = getNucleus();
+    const plasticity = getPlasticity();
+    await plasticity.boot();
+
+    // Bind all pipeline modules to the Nucleus orchestrator
+    this.bindNucleusModules();
+
+    // Start curiosity engine (idle-time self-improvement)
+    this.curiosityEngine = getCuriosityEngine();
+    this.curiosityEngine.start();
+
+    console.log(`[Genesis] Nucleus active: ${this.nucleus.getBoundModuleCount()}/${this.nucleus.getModuleCount()} modules bound, curiosity engine started`);
+
     this.levels.L4 = true;
   }
 
   // ==========================================================================
-  // Main Processing Pipeline
+  // Nucleus Module Bindings (v34.0)
   // ==========================================================================
 
-  /**
-   * Process an input through the full Genesis stack:
-   * 1. Metacognition pre-check (should we defer?)
-   * 2. Brain processes query
-   * 3. Metacognition audits response
-   * 4. Causal reasoning (if errors detected)
-   * 5. FEK cycle with observations
-   * 6. NESS + Fiber economic tracking
-   */
-  async process(input: string): Promise<ProcessResult> {
-    if (!this.booted) await this.boot();
-    this.cycleCount++;
+  private bindNucleusModules(): void {
+    if (!this.nucleus) return;
 
-    const startTime = Date.now();
-    let confidence: ConfidenceEstimate | null = null;
-    let audit: ThoughtAudit | null = null;
-
-    // v13.8: Fire pre-message hook
-    if (this.hooks?.hasHooks()) {
-      const hookResult = await this.hooks.execute('pre-message', { event: 'pre-message', message: input });
-      if (hookResult?.blocked) {
-        return { response: '[Hook blocked processing]', confidence: null, audit: null, cost: 0, fekState: null };
-      }
-    }
-
-    // v13.11.0: Central Awareness consciousness gating
-    // Check if system is conscious enough to process this request
-    if (this.centralAwareness) {
-      const riskLevel = this.assessInputRisk(input);
-      const gate = this.centralAwareness.gateDecision(riskLevel, `process:${input.slice(0, 50)}`);
-
-      if (!gate.allowed) {
-        if (gate.recommendation === 'block') {
-          return {
-            response: `[Consciousness Gate] ${gate.reason}. Please wait or simplify your request.`,
-            confidence: null,
-            audit: null,
-            cost: 0,
-            fekState: null,
-          };
+    // === GATE ===
+    this.nucleus.bindModule('consciousness-gate', async (_input, ctx) => {
+      if (this.centralAwareness) {
+        const riskLevel = this.assessInputRisk(ctx.input);
+        const gate = this.centralAwareness.gateDecision(riskLevel, `process:${ctx.input.slice(0, 50)}`);
+        if (!gate.allowed && gate.recommendation === 'block') {
+          ctx.response = `[Consciousness Gate] ${gate.reason}. Please wait or simplify your request.`;
+          ctx.meta.blocked = true;
+          return;
         }
-        // For 'defer' or 'escalate', log warning but proceed
-        console.warn(`[CentralAwareness] ${gate.reason} (proceeding with caution)`);
       }
-    }
-
-    // Step 0: Assess processing depth from consciousness + FEK mode
-    const currentPhi = this.consciousness?.getSnapshot()?.level?.rawPhi ?? 1.0;
-    const fekMode = this.fek?.getMode() ?? 'awake';
-    if (this.consciousness) {
-      const domain = this.inferDomain(input);
-      this.consciousness.attend(`process:${domain}`, 'internal');
-    }
-
-    // Nociceptive gate control: high φ (focused consciousness) suppresses pain
-    if (this.nociception) {
-      this.nociception.updateGateControl(currentPhi);
-      // Low φ → consciousness pain (identity/coherence threat)
-      if (currentPhi < 0.25) {
-        this.nociception.stimulus('consciousness', (0.25 - currentPhi) * 3, 'phi:critically_low');
+      // φ assessment + consciousness attendance
+      const currentPhi = this.consciousness?.getSnapshot()?.level?.rawPhi ?? 1.0;
+      const fekMode = this.fek?.getMode() ?? 'awake';
+      if (this.consciousness) {
+        const domain = this.inferDomain(ctx.input);
+        this.consciousness.attend(`process:${domain}`, 'internal');
       }
-      // Periodic decay/habituation
-      this.nociception.tick();
-    }
+      ctx.meta.currentPhi = currentPhi;
+      ctx.meta.fekMode = fekMode;
+      const neuroDepth = this.neuromodulation?.getEffect().processingDepth ?? 1.0;
+      const phiGateThreshold = Math.max(0.1, 0.2 / neuroDepth);
+      ctx.meta.deepProcessing = currentPhi > phiGateThreshold && fekMode !== 'dormant' && fekMode !== 'dreaming';
+      ctx.meta.enhancedAudit = fekMode === 'focused' || fekMode === 'self_improving';
+    });
 
-    // Step 0.5: Factor graph belief propagation — synchronize module beliefs
-    if (this.factorGraph) {
-      // Inject live evidence from modules before propagation
+    this.nucleus.bindModule('nociception-gate', async (_input, ctx) => {
+      const currentPhi = (ctx.meta.currentPhi as number) ?? 1.0;
+      if (this.nociception) {
+        this.nociception.updateGateControl(currentPhi);
+        if (currentPhi < 0.25) {
+          this.nociception.stimulus('consciousness', (0.25 - currentPhi) * 3, 'phi:critically_low');
+        }
+        this.nociception.tick();
+      }
+    });
+
+    // === PRE ===
+    this.nucleus.bindModule('factor-graph', async (_input, ctx) => {
+      if (!this.factorGraph) return;
       const feLevel = this.fek?.getTotalFE?.() ?? 0.5;
       this.factorGraph.injectEvidence('FEK', 'viability', 1 - feLevel);
       this.factorGraph.injectEvidence('FEK', 'surprise', feLevel);
-
       const calibErr = this.getCalibrationError();
       this.factorGraph.injectEvidence('Brain', 'confidence', 1 - calibErr);
-
       const section = this.fiber?.getGlobalSection();
       this.factorGraph.injectEvidence('Economy', 'sustainable', section?.sustainable ? 0.9 : 0.2);
       this.factorGraph.injectEvidence('Economy', 'net_flow', Math.max(0, Math.min(1, (section?.netFlow ?? 0) + 0.5)));
-
       const phi = this.consciousness?.getSnapshot()?.level?.rawPhi ?? 0.5;
       this.factorGraph.injectEvidence('Consciousness', 'phi', phi);
-
       const nessDeviation = this.lastNESSState?.deviation ?? 0.5;
       this.factorGraph.injectEvidence('Metacognition', 'calibration', 1 - calibErr);
       this.factorGraph.injectEvidence('Metacognition', 'ness_proximity', 1 - nessDeviation);
-
-      // Neuromodulatory tone modulates factor graph precision
       if (this.neuromodulation) {
         const effect = this.neuromodulation.getEffect();
         this.factorGraph.injectEvidence('Brain', 'arousal', effect.precisionGain / 2);
         this.factorGraph.injectEvidence('Consciousness', 'depth', effect.processingDepth);
       }
-
       this.factorGraph.propagate(5, 0.01);
-    }
+    });
 
-    // Processing depth gated by φ AND FEK mode AND neuromodulatory tone:
-    // - dormant/dreaming: minimal processing (skip audit, causal, meta-rl)
-    // - vigilant: enhanced L2 (faster, reactive), reduced L3/L4 (less deep thinking)
-    // - focused: enhanced L3/L4 (deeper analysis), suppressed L2
-    // - awake: full processing
-    // Neuromodulation: high processingDepth (calm+focused) lowers φ threshold
-    const neuroDepth = this.neuromodulation?.getEffect().processingDepth ?? 1.0;
-    const phiGateThreshold = Math.max(0.1, 0.2 / neuroDepth);
-    const deepProcessing = currentPhi > phiGateThreshold && fekMode !== 'dormant' && fekMode !== 'dreaming';
-    const enhancedAudit = fekMode === 'focused' || fekMode === 'self_improving';
-
-    // v13.2: Meta-RL adaptive thresholds
-    const adaptiveDeferThreshold = this.getAdaptiveDeferThreshold();
-
-    // Step 0.7: Limbic evaluation — assess emotional tone of input
-    if (this.feelingAgent && this.neuromodulation) {
+    this.nucleus.bindModule('limbic-pre', async (input, ctx) => {
+      if (!this.feelingAgent || !this.neuromodulation) return;
       const feeling = this.feelingAgent.evaluate(input);
-      // Positive valence → dopamine (reward anticipation)
       if (feeling.valence > 0.3) {
         this.neuromodulation.modulate('dopamine', feeling.valence * 0.1, `feeling:${feeling.category}`);
       }
-      // Negative valence → cortisol (stress anticipation)
       if (feeling.valence < -0.3) {
         this.neuromodulation.modulate('cortisol', Math.abs(feeling.valence) * 0.1, `feeling:${feeling.category}`);
       }
-      // High arousal → norepinephrine (alertness)
       if (feeling.arousal > 0.6) {
         this.neuromodulation.modulate('norepinephrine', feeling.arousal * 0.1, `feeling:${feeling.category}`);
       }
-    }
+    });
 
-    // Step 1: Metacognitive pre-check (uses adaptive threshold from meta-RL)
-    if (this.metacognition && deepProcessing) {
+    this.nucleus.bindModule('metacognition-pre', async (input, ctx) => {
+      if (!this.metacognition || !ctx.meta.deepProcessing) return;
+      const adaptiveDeferThreshold = this.getAdaptiveDeferThreshold();
       const domain = this.inferDomain(input);
       if (this.metacognition.shouldDefer(domain)) {
-        confidence = this.metacognition.getConfidence(adaptiveDeferThreshold, domain);
+        ctx.confidence = this.metacognition.getConfidence(adaptiveDeferThreshold, domain) as any;
       }
-    }
+      // φ-based deferral
+      if (this.consciousness && this.consciousness.shouldDefer()) {
+        ctx.confidence = { value: 0.3, calibrationError: 0.15 };
+      }
+      ctx.meta.adaptiveDeferThreshold = adaptiveDeferThreshold;
+    });
 
-    // v18.3: Consciousness φ-based deferral for high-stakes decisions
-    // If φ is too low, reduce confidence and fall back to safer strategies
-    if (this.consciousness && deepProcessing) {
-      const phiDefer = this.consciousness.shouldDefer();
-      if (phiDefer) {
-        // φ is below threshold → reduce confidence, signal need for simpler processing
-        const phi = this.consciousness.getSnapshot()?.level?.rawPhi ?? 0;
-        confidence = {
-          value: 0.3,
-          calibrationError: 0.15,
-          uncertaintySources: [{
-            type: 'epistemic',
-            source: 'low_phi_consciousness',
-            magnitude: 0.7,
-          }],
+    // === CONTEXT ===
+    this.nucleus.bindModule('workspace-anticipate', async (input, ctx) => {
+      if (!this.cognitiveWorkspace || !ctx.meta.deepProcessing) return;
+      const domain = this.inferDomain(input);
+      const feeling = this.feelingAgent?.getCurrentFeeling();
+      const anticipated = await this.cognitiveWorkspace.anticipate({
+        task: input.slice(0, 100),
+        goal: domain,
+        keywords: input.split(/\s+/).filter(w => w.length > 4).slice(0, 5),
+        emotionalState: feeling ? { valence: feeling.valence, arousal: feeling.arousal } : undefined,
+      });
+      if (anticipated.length > 0) {
+        ctx.processContext.workspaceItems = anticipated.map(item => ({
+          content: this.extractMemoryContent(item.memory),
+          type: item.memory.type,
+          relevance: item.relevance,
+          source: 'anticipate',
+        }));
+      }
+    });
+
+    this.nucleus.bindModule('memory-recall', async (input, ctx) => {
+      if (!this.memory || !ctx.meta.deepProcessing) return;
+      const memories = this.memory.recall(input, { limit: 5 });
+      if (memories.length > 0) {
+        const memItems = memories.map(m => ({
+          content: this.extractMemoryContent(m as any),
+          type: ((m as any).type || 'semantic'),
+          relevance: 0.7,
+          source: 'memory-system',
+        }));
+        ctx.processContext.workspaceItems = [...((ctx.processContext.workspaceItems as any[]) || []), ...memItems];
+      }
+      try {
+        const vectorResults = await this.memory.semanticRecall(input, { topK: 3, minScore: 0.5 });
+        if (vectorResults.length > 0) {
+          const vecItems = vectorResults.map(r => ({
+            content: this.extractMemoryContent(r.memory as any),
+            type: ((r.memory as any).type || 'semantic'),
+            relevance: r.score,
+            source: 'memory-vectors',
+          }));
+          ctx.processContext.workspaceItems = [...((ctx.processContext.workspaceItems as any[]) || []), ...vecItems];
+        }
+      } catch { /* best-effort */ }
+      if (this.fiber) this.fiber.recordCost('memory', 0.003, 'recall');
+    });
+
+    this.nucleus.bindModule('sensorimotor-inject', async (_input, ctx) => {
+      if (!this.sensorimotor) return;
+      const sensorState = this.sensorimotor.getSensorState();
+      if (sensorState) {
+        ctx.processContext.sensorimotorState = {
+          perception: {
+            features: Array.from(sensorState.forces || []),
+            confidence: sensorState.safetyStatus?.safe ? 0.8 : 0.3,
+            modalities: ['proprioceptive', 'force_torque'],
+          },
+          sensorState: {
+            joints: sensorState.jointStates.map((j: { position: number }) => j.position),
+            forces: sensorState.forces,
+            safety: sensorState.safetyStatus?.safe ? 'nominal' : 'warning',
+          },
         };
       }
-    }
+    });
 
-    // Step 2: Brain processes (with multi-modal context injection)
-    let response = '';
-    if (this.brain) {
-      // v13.6: Build ProcessContext with live sensorimotor + consciousness data
-      const processContext: import('./brain/types.js').ProcessContext = {};
-
-      // v13.6: Anticipatory memory pre-loading (Baddeley working memory)
-      if (this.cognitiveWorkspace && deepProcessing) {
-        const domain = this.inferDomain(input);
-        const feeling = this.feelingAgent?.getCurrentFeeling();
-        const anticipated = await this.cognitiveWorkspace.anticipate({
-          task: input.slice(0, 100),
-          goal: domain,
-          keywords: input.split(/\s+/).filter(w => w.length > 4).slice(0, 5),
-          emotionalState: feeling ? { valence: feeling.valence, arousal: feeling.arousal } : undefined,
-        });
-        if (anticipated.length > 0) {
-          processContext.workspaceItems = anticipated.map(item => ({
-            content: this.extractMemoryContent(item.memory),
-            type: item.memory.type,
-            relevance: item.relevance,
-            source: 'anticipate',
-          }));
-        }
+    this.nucleus.bindModule('neuromod-inject', async (_input, ctx) => {
+      if (!this.neuromodulation) return;
+      const levels = this.neuromodulation.getLevels();
+      const effect = this.neuromodulation.getEffect();
+      ctx.processContext.neuromodulation = {
+        dopamine: levels.dopamine,
+        serotonin: levels.serotonin,
+        norepinephrine: levels.norepinephrine,
+        cortisol: levels.cortisol,
+        explorationRate: effect.explorationRate,
+        riskTolerance: effect.riskTolerance,
+        processingDepth: effect.processingDepth,
+        learningRate: effect.learningRate,
+      };
+      // Inject feeling
+      if (this.feelingAgent) {
+        const f = this.feelingAgent.getCurrentFeeling();
+        ctx.processContext.feeling = { valence: f.valence, arousal: f.arousal, category: f.category };
       }
-
-      // Inject sensorimotor perception if embodiment is active
-      if (this.sensorimotor) {
-        const sensorState = this.sensorimotor.getSensorState();
-        if (sensorState) {
-          processContext.sensorimotorState = {
-            perception: {
-              features: Array.from(sensorState.forces || []),
-              confidence: sensorState.safetyStatus?.safe ? 0.8 : 0.3,
-              modalities: ['proprioceptive', 'force_torque'],
-            },
-            sensorState: {
-              joints: sensorState.jointStates.map((j: { position: number }) => j.position),
-              forces: sensorState.forces,
-              safety: sensorState.safetyStatus?.safe ? 'nominal' : 'warning',
-            },
-          };
-        }
-      }
-
       // Inject consciousness metrics
       if (this.consciousness) {
-        processContext.consciousness = {
-          phi: currentPhi,
+        ctx.processContext.consciousness = {
+          phi: (ctx.meta.currentPhi as number) ?? 1.0,
           attentionFocus: this.consciousness.getAttentionFocus()?.target,
-          mode: fekMode,
+          mode: ctx.meta.fekMode,
         };
       }
+    });
 
-      // Inject synced memories as workspace items (appends to anticipated items)
+    this.nucleus.bindModule('allostasis-inject', async (_input, ctx) => {
+      if (!this.allostasis) return;
+      const state = this.allostasis.getState();
+      ctx.processContext.allostasis = {
+        energy: state.energy,
+        load: state.computationalLoad,
+        memoryPressure: state.memoryPressure,
+        errorRate: state.errorRate,
+      };
+    });
+
+    this.nucleus.bindModule('worldmodel-encode', async (input, ctx) => {
+      if (!this.worldModel || !ctx.meta.deepProcessing) return;
+      try {
+        this.lastLatentState = this.worldModel.encode({ modality: 'text', data: input, timestamp: new Date() });
+        if (this.lastLatentState) {
+          const predicted = this.worldModel.predict(this.lastLatentState, { id: 'predict', type: 'communicate' as any, parameters: {}, agent: 'genesis', timestamp: new Date() });
+          ctx.processContext.metadata = { ...((ctx.processContext.metadata as any) || {}), worldModelPrediction: {
+            uncertainty: this.worldModel.uncertainty(predicted),
+            predictedState: predicted.state,
+          } };
+        }
+      } catch { /* best-effort */ }
+      if (this.fiber) this.fiber.recordCost('worldmodel', 0.005, 'encode');
+    });
+
+    // === PROCESS ===
+    this.nucleus.bindModule('brain-process', async (input, ctx) => {
+      if (!this.brain) return;
+      // Inject synced memories
       if (this.memorySync) {
         const syncedItems = this.memorySync.getWorkspaceItems(5);
         if (syncedItems.length > 0) {
-          const mapped = syncedItems.map(item => ({
-            content: item.content,
-            type: item.type,
-            relevance: item.relevance,
-            source: item.source,
-          }));
-          processContext.workspaceItems = [...(processContext.workspaceItems || []), ...mapped];
+          const mapped = syncedItems.map(item => ({ content: item.content, type: item.type, relevance: item.relevance, source: item.source }));
+          ctx.processContext.workspaceItems = [...((ctx.processContext.workspaceItems as any[]) || []), ...mapped];
         }
       }
-
-      // Inject neuromodulatory tone (hormonal context for response modulation)
-      if (this.neuromodulation) {
-        const levels = this.neuromodulation.getLevels();
-        const effect = this.neuromodulation.getEffect();
-        processContext.neuromodulation = {
-          dopamine: levels.dopamine,
-          serotonin: levels.serotonin,
-          norepinephrine: levels.norepinephrine,
-          cortisol: levels.cortisol,
-          explorationRate: effect.explorationRate,
-          riskTolerance: effect.riskTolerance,
-          processingDepth: effect.processingDepth,
-          learningRate: effect.learningRate,
-        };
-      }
-
-      // Inject current emotional state from limbic evaluation
-      if (this.feelingAgent) {
-        const f = this.feelingAgent.getCurrentFeeling();
-        processContext.feeling = {
-          valence: f.valence,
-          arousal: f.arousal,
-          category: f.category,
-        };
-      }
-
-      // Inject allostatic interoceptive state (resource awareness)
-      if (this.allostasis) {
-        const state = this.allostasis.getState();
-        processContext.allostasis = {
-          energy: state.energy,
-          load: state.computationalLoad,
-          memoryPressure: state.memoryPressure,
-          errorRate: state.errorRate,
-        };
-      }
-
-      // Step 2.1: World model encoding — build latent representation of input
-      if (this.worldModel && deepProcessing) {
-        try {
-          this.lastLatentState = this.worldModel.encode({ modality: 'text', data: input, timestamp: new Date() });
-          // Predict expected output (used for post-hoc prediction error)
-          if (this.lastLatentState) {
-            const predicted = this.worldModel.predict(this.lastLatentState, { id: 'predict', type: 'communicate' as import('./world-model/types.js').ActionType, parameters: {}, agent: 'genesis', timestamp: new Date() });
-            processContext.metadata = { ...(processContext.metadata || {}), worldModelPrediction: {
-              uncertainty: this.worldModel.uncertainty(predicted),
-              predictedState: predicted.state,
-            } };
-          }
-        } catch (e) { console.debug('[WorldModel] encode best-effort failed:', (e as Error)?.message); }
-        if (this.fiber) this.fiber.recordCost('worldmodel', 0.005, 'encode');
-      }
-
-      // Step 2.2: Full memory recall — inject relevant memories from full stack
-      if (this.memory && deepProcessing) {
-        // Keyword recall (fast, synchronous)
-        const memories = this.memory.recall(input, { limit: 5 });
-        if (memories.length > 0) {
-          const memItems = memories.map(m => ({
-            content: this.extractMemoryContent(m as { type: string; content: unknown }),
-            type: ((m as { type: string }).type || 'semantic') as 'episodic' | 'semantic' | 'procedural',
-            relevance: 0.7,
-            source: 'memory-system',
-          }));
-          processContext.workspaceItems = [...(processContext.workspaceItems || []), ...memItems];
-        }
-
-        // v13.8: Semantic vector recall (async, higher relevance)
-        try {
-          const vectorResults = await this.memory.semanticRecall(input, { topK: 3, minScore: 0.5 });
-          if (vectorResults.length > 0) {
-            const vecItems = vectorResults.map(r => ({
-              content: this.extractMemoryContent(r.memory as { type: string; content: unknown }),
-              type: ((r.memory as { type: string }).type || 'semantic') as 'episodic' | 'semantic' | 'procedural',
-              relevance: r.score,
-              source: 'memory-vectors',
-            }));
-            processContext.workspaceItems = [...(processContext.workspaceItems || []), ...vecItems];
-          }
-        } catch (e) { console.debug('[Memory] vector recall best-effort failed:', (e as Error)?.message); }
-
-        if (this.fiber) this.fiber.recordCost('memory', 0.003, 'recall');
-      }
-
-      // Step 2.3: Route — reasoning controller for complex inputs, brain for simple
-      if (this.reasoningController && deepProcessing && enhancedAudit) {
-        // Complex query: metacognitive controller selects optimal strategy
-        const mcResult = await this.reasoningController.reason(input, response || undefined);
-        response = mcResult.response;
+      // Route: reasoning controller for complex, brain for simple
+      if (this.reasoningController && ctx.meta.deepProcessing && ctx.meta.enhancedAudit) {
+        const mcResult = await this.reasoningController.reason(input, ctx.response || undefined);
+        ctx.response = mcResult.response;
         if (this.fiber) this.fiber.recordCost('reasoning', 0.02, `strategy:${mcResult.strategy}`);
       } else {
-        response = await this.brain.process(input, processContext);
+        ctx.response = await this.brain.process(input, ctx.processContext as any);
       }
-    }
+    });
 
-    // Step 2.5: World model prediction error — compare predicted vs actual output
-    if (this.worldModel && this.lastLatentState && response && deepProcessing) {
-      const actualState = this.worldModel.encode({ modality: 'text', data: response, timestamp: new Date() });
-      const predicted = this.worldModel.predict(this.lastLatentState, { id: 'predict', type: 'communicate' as import('./world-model/types.js').ActionType, parameters: {}, agent: 'genesis', timestamp: new Date() });
+    // === AUDIT ===
+    this.nucleus.bindModule('worldmodel-predict-error', async (_input, ctx) => {
+      if (!this.worldModel || !this.lastLatentState || !ctx.response || !ctx.meta.deepProcessing) return;
+      const predicted = this.worldModel.predict(this.lastLatentState, { id: 'predict', type: 'communicate' as any, parameters: {}, agent: 'genesis', timestamp: new Date() });
       const predictionError = this.worldModel.uncertainty(predicted);
-      // High prediction error → world model was wrong → FEK surprise
       if (predictionError > 0.4 && this.fek) {
         this.nociception?.stimulus('cognitive', predictionError * 0.3, 'worldmodel:prediction_miss');
       }
       if (this.fiber) this.fiber.recordCost('worldmodel', 0.003, 'predict-compare');
-    }
+    });
 
-    // Step 2.7: Healing — detect errors in response before audit
-    if (this.config.healing && response) {
-      const errorReport = healing.detectErrors(response);
-      if (healing.hasErrors(response)) {
-        // Attempt auto-fix
-        const fixResult = await healing.autoFix(response);
+    this.nucleus.bindModule('healing', async (_input, ctx) => {
+      if (!this.config.healing || !ctx.response) return;
+      if (healing.hasErrors(ctx.response)) {
+        const fixResult = await healing.autoFix(ctx.response);
         if (fixResult.success && fixResult.appliedFix) {
-          response = fixResult.appliedFix.fixed;
+          ctx.response = fixResult.appliedFix.fixed;
           this.neuromodulation?.reward(0.2, 'healing:autofix');
         } else {
           this.nociception?.stimulus('cognitive', 0.3, 'healing:unfixable_error');
         }
       }
-    }
+    });
 
-    // Step 2.9: Epistemic grounding — qualify speculative claims before output
-    if (response) {
-      const violations = checkResponse(response);
+    this.nucleus.bindModule('epistemic-grounding', async (_input, ctx) => {
+      if (!ctx.response) return;
+      const violations = checkResponse(ctx.response);
       if (violations.length > 0) {
-        response = sanitizeResponse(response);
+        ctx.response = sanitizeResponse(ctx.response);
       }
-    }
+    });
 
-    // Step 3: Metacognitive audit (skipped if φ too low)
-    if (this.metacognition && this.config.auditResponses && response && deepProcessing) {
-      audit = this.metacognition.auditThought(response);
-
-      // Get calibrated confidence
+    this.nucleus.bindModule('metacognition-audit', async (input, ctx) => {
+      if (!this.metacognition || !this.config.auditResponses || !ctx.response || !ctx.meta.deepProcessing) return;
+      const audit = this.metacognition.auditThought(ctx.response);
       const domain = this.inferDomain(input);
       const rawConfidence = audit.coherence * 0.5 + audit.groundedness * 0.5;
-      confidence = this.metacognition.getConfidence(rawConfidence, domain);
-
-      // v13.2: Audit-driven corrective re-processing
-      // If audit detects low quality AND we're in focused/self_improving mode, apply correction
-      if (rawConfidence < 0.4 && enhancedAudit) {
-        const correction = this.metacognition.correctError(response, new Error('low coherence/groundedness'));
+      let confidence = this.metacognition.getConfidence(rawConfidence, domain);
+      // Corrective re-processing
+      if (rawConfidence < 0.4 && ctx.meta.enhancedAudit) {
+        const correction = this.metacognition.correctError(ctx.response, new Error('low coherence/groundedness'));
         if (correction.correction && correction.confidence > 0.5) {
-          response = correction.correction;
-          // Re-audit the correction
-          audit = this.metacognition.auditThought(response);
-          const newRaw = audit.coherence * 0.5 + audit.groundedness * 0.5;
+          ctx.response = correction.correction;
+          const reAudit = this.metacognition.auditThought(ctx.response);
+          const newRaw = reAudit.coherence * 0.5 + reAudit.groundedness * 0.5;
           confidence = this.metacognition.getConfidence(newRaw, domain);
+          ctx.audit = { coherence: reAudit.coherence, groundedness: reAudit.groundedness };
         }
       }
+      ctx.confidence = { value: confidence.value, calibrationError: confidence.calibrationError };
+      ctx.audit = ctx.audit || { coherence: audit.coherence, groundedness: audit.groundedness };
+      if (this.fiber) this.fiber.recordCost('metacognition', 0.005, 'audit');
+    });
 
-      // Record metacognition audit cost
-      if (this.fiber) {
-        this.fiber.recordCost('metacognition', 0.005, 'audit');
-      }
-    }
-
-    // Step 3.2: Epistemic grounding — verify factual claims in response
-    if (this.grounding && response && deepProcessing && confidence) {
-      // Only ground when confidence is moderate (high = trusted, low = already flagged)
-      if (confidence.value > 0.3 && confidence.value < 0.85) {
-        const claim = await this.grounding.ground(response.slice(0, 500));
+    this.nucleus.bindModule('grounding-verify', async (_input, ctx) => {
+      if (!this.grounding || !ctx.response || !ctx.meta.deepProcessing || !ctx.confidence) return;
+      if (ctx.confidence.value > 0.3 && ctx.confidence.value < 0.85) {
+        const claim = await this.grounding.ground(ctx.response.slice(0, 500));
         if (claim.confidence < 0.4) {
-          // Weak grounding → reduce confidence + neuromodulatory uncertainty
-          confidence = { ...confidence, value: confidence.value * 0.7 };
+          ctx.confidence = { ...ctx.confidence, value: ctx.confidence.value * 0.7 };
           this.neuromodulation?.modulate('norepinephrine', 0.1, 'grounding:weak');
         }
-        if (this.grounding.needsHuman(claim)) {
-          // Flag for HITL via governance
-          if (this.governance) {
-            this.governance.executeGoverned('genesis', 'claim_verification', response.slice(0, 100), async () => claim);
-          }
+        if (this.grounding.needsHuman(claim) && this.governance) {
+          this.governance.executeGoverned('genesis', 'claim_verification', ctx.response.slice(0, 100), async () => claim);
         }
         if (this.fiber) this.fiber.recordCost('grounding', 0.008, 'verify');
       }
-    }
+    });
 
-    // Step 3.3: Conformal prediction — calibrate uncertainty intervals
-    if (this.conformal && confidence) {
-      // Compute conformal interval from adapted alpha
+    this.nucleus.bindModule('conformal', async (_input, ctx) => {
+      if (!this.conformal || !ctx.confidence) return;
       const alpha = this.conformal.getCurrentAlpha();
       const halfWidth = alpha * 0.5;
-      const lower = Math.max(0, confidence.value - halfWidth);
-      const upper = Math.min(1, confidence.value + halfWidth);
+      const lower = Math.max(0, ctx.confidence.value - halfWidth);
+      const upper = Math.min(1, ctx.confidence.value + halfWidth);
       const width = upper - lower;
-      // Widen confidence to conformal interval bounds
-      confidence = {
-        ...confidence,
-        value: Math.max(lower, Math.min(upper, confidence.value)),
-      };
-      // Very wide interval → high uncertainty → neuromodulatory alert
+      ctx.confidence = { ...ctx.confidence, value: Math.max(lower, Math.min(upper, ctx.confidence.value)) };
       if (width > 0.5) {
         this.neuromodulation?.modulate('norepinephrine', width * 0.1, 'conformal:wide_interval');
       }
-    }
+    });
 
-    // Step 3.5: Post-processing limbic evaluation (response quality → emotional feedback)
-    if (this.feelingAgent && response && this.neuromodulation) {
-      const responseFeeling = this.feelingAgent.evaluate(response, input);
-      // Satisfaction with own output → dopamine reward
+    this.nucleus.bindModule('limbic-post', async (input, ctx) => {
+      if (!this.feelingAgent || !ctx.response || !this.neuromodulation) return;
+      const responseFeeling = this.feelingAgent.evaluate(ctx.response, input);
       if (responseFeeling.category === 'satisfaction') {
         this.neuromodulation.reward(responseFeeling.valence * 0.5, 'limbic:satisfaction');
       }
-      // Frustration with own output → cortisol + dopamine dip
       if (responseFeeling.category === 'frustration') {
         this.neuromodulation.punish(Math.abs(responseFeeling.valence) * 0.3, 'limbic:frustration');
       }
-      // High importance → norepinephrine boost (stay alert for consequential outputs)
       if (responseFeeling.importance > 0.7) {
         this.neuromodulation.modulate('norepinephrine', 0.1, 'limbic:important');
       }
-    }
+    });
 
-    // Step 4: FEK cycle with REAL observations
-    let fekState: FEKState | null = null;
-    if (this.fek) {
-      // v13.1: Real system observations from multiple sources
+    // === POST ===
+    this.nucleus.bindModule('fek-cycle', async (_input, ctx) => {
+      if (!this.fek) return;
       const mem = process.memoryUsage();
       const heapPressure = mem.heapUsed / mem.heapTotal;
       const phi = this.consciousness
         ? (this.consciousness.getSnapshot()?.level?.rawPhi ?? 0.5)
-        : (confidence?.value ?? 0.5);
-
-      // NESS deviation reduces perceived energy (economic pressure)
+        : (ctx.confidence?.value ?? 0.5);
       const nessDeviation = this.lastNESSState?.deviation ?? 0;
-      const economicPenalty = nessDeviation * 0.3; // Up to 30% energy reduction
-
-      fekState = this.fek.cycle({
+      const economicPenalty = nessDeviation * 0.3;
+      ctx.fekState = this.fek.cycle({
         energy: Math.max(0, Math.min(1, 1 - heapPressure - economicPenalty)),
         agentResponsive: !!this.brain,
         merkleValid: true,
         systemLoad: Math.min(1, heapPressure + nessDeviation * 0.2),
         phi,
       });
-    }
+    });
 
-    // Step 5: Economic tracking
-    const elapsed = Date.now() - startTime;
-    const cost = elapsed * 0.0001; // $0.0001/ms — process overhead only (real LLM costs tracked separately)
+    // === TRACK ===
+    this.nucleus.bindModule('economic-tracking', async (_input, ctx) => {
+      const elapsed = Date.now() - ctx.startTime;
+      const cost = elapsed * 0.0001;
+      if (this.fiber) this.fiber.recordCost('genesis', cost, 'process');
+      ctx.meta.processCost = cost;
+    });
 
-    if (this.fiber) {
-      this.fiber.recordCost('genesis', cost, 'process');
-    }
-
-    if (this.nessMonitor && this.fiber) {
+    this.nucleus.bindModule('ness-observe', async (input, ctx) => {
+      if (!this.nessMonitor || !this.fiber) return;
       const section = this.fiber.getGlobalSection();
       this.lastNESSState = this.nessMonitor.observe({
         revenue: section.totalRevenue,
         costs: section.totalCosts,
         customers: 1,
-        quality: confidence?.value ?? 0.8,
+        quality: ctx.confidence?.value ?? 0.8,
         balance: section.netFlow,
       });
-
-      // v13.1: High NESS deviation → trigger self-improvement if enabled
       if (this.lastNESSState.deviation > 0.5 && this.selfImprovement && this.cycleCount % 20 === 0) {
         this.triggerSelfImprovement().catch(() => { /* non-fatal */ });
       }
-
-      // v13.2: NESS deviation → neuromodulatory signals + nociceptive economic pain
       if (this.neuromodulation) {
         if (this.lastNESSState.deviation > 0.5) {
           this.neuromodulation.threat(this.lastNESSState.deviation, 'ness:deviation');
@@ -2806,64 +2716,71 @@ export class Genesis {
           this.nociception?.resolveSource('economic');
         }
       }
-    }
+      // Allostatic regulation
+      if (this.allostasis && this.cycleCount % 5 === 0) {
+        this.allostasis.regulate().catch(() => { /* non-fatal */ });
+      }
+    });
 
-    // Step 5.5: Allostatic regulation (every 5 cycles — predictive homeostasis)
-    if (this.allostasis && this.cycleCount % 5 === 0) {
-      this.allostasis.regulate().catch(() => { /* non-fatal */ });
-    }
-
-    // Track for calibration
-    if (confidence) {
-      this.performanceHistory.push({
-        predicted: confidence.value,
-        actual: true, // Updated externally via feedback()
-      });
-    }
-
-    // v13.2: Meta-RL curriculum learning — each process() is an experience
-    if (this.metaRL && confidence) {
+    this.nucleus.bindModule('meta-rl', async (input, ctx) => {
+      if (!this.metaRL || !ctx.confidence) return;
+      const adaptiveDeferThreshold = (ctx.meta.adaptiveDeferThreshold as number) ?? this.getAdaptiveDeferThreshold();
       const domain = this.inferDomain(input);
-      const success = confidence.value > adaptiveDeferThreshold;
+      const success = ctx.confidence.value > adaptiveDeferThreshold;
       this.metaRL.updateCurriculum(`${domain}:${this.cycleCount}`, success, 1);
-
-      // v13.2: Neuromodulatory feedback from confidence
       if (this.neuromodulation) {
         if (success) {
-          this.neuromodulation.reward(confidence.value, `process:${domain}`);
-          this.nociception?.resolveSource('cognitive'); // Success resolves cognitive pain
+          this.neuromodulation.reward(ctx.confidence.value, `process:${domain}`);
+          this.nociception?.resolveSource('cognitive');
         } else {
-          this.neuromodulation.punish(1 - confidence.value, `process:${domain}`);
-          // Low confidence → cognitive pain (proportional to failure severity)
-          if (confidence.value < 0.3) {
-            this.nociception?.stimulus('cognitive', (0.3 - confidence.value) * 2, `low_confidence:${domain}`);
+          this.neuromodulation.punish(1 - ctx.confidence.value, `process:${domain}`);
+          if (ctx.confidence.value < 0.3) {
+            this.nociception?.stimulus('cognitive', (0.3 - ctx.confidence.value) * 2, `low_confidence:${domain}`);
           }
         }
       }
-
-      // v13.8: Learning → AIF feedback loop
-      // Curriculum surprise (unexpected success/failure) → FEK learning signal
+      // Calibration tracking
+      this.performanceHistory.push({ predicted: ctx.confidence.value, actual: true });
+      // Curriculum surprise → FEK
       const curriculum = this.metaRL.getCurriculum();
       if (this.fek && curriculum && curriculum.taskHistory.length > 5) {
-        const recentSuccessRate = curriculum.successRate;
-        const surprise = Math.abs(recentSuccessRate - (confidence.value));
+        const surprise = Math.abs(curriculum.successRate - ctx.confidence.value);
         if (surprise > 0.4) {
-          // High surprise between meta-RL track record and current confidence → FEK update
           this.neuromodulation?.novelty(surprise, `metarl:surprise:${domain}`);
         }
       }
-    }
+      // Conformal calibration update
+      if (this.conformal && ctx.confidence) {
+        const wasCovered = ctx.audit ? (ctx.audit.coherence > 0.6 && ctx.audit.groundedness > 0.6) : true;
+        this.conformal.adapt(wasCovered);
+      }
+      // Memory consolidation
+      if (this.memory && ctx.response && ctx.meta.deepProcessing) {
+        this.memory.remember({
+          what: `processed: ${input.slice(0, 80)}`,
+          details: { response: ctx.response.slice(0, 200), confidence: ctx.confidence.value, domain },
+          tags: ['genesis:process', domain],
+        });
+      }
+      // Causal model feed
+      if (this.causal && ctx.meta.deepProcessing) {
+        this.causal.setData('observation', [ctx.confidence.value]);
+        this.causal.setData('outcome', [success ? 1 : 0]);
+        this.causal.setData('reward', [1 - ((ctx.meta.processCost as number) ?? 0)]);
+        if (this.fiber) this.fiber.recordCost('causal', 0.002, 'data-feed');
+      }
+    });
 
-    // Broadcast to observability dashboard
-    if (this.dashboard) {
+    this.nucleus.bindModule('dashboard-broadcast', async (input, ctx) => {
+      if (!this.dashboard) return;
       const neuroLevels = this.neuromodulation?.getLevels();
       const neuroEffect = this.neuromodulation?.getEffect();
       broadcastToDashboard('cycle', {
         cycleCount: this.cycleCount,
-        confidence: confidence?.value,
-        cost,
-        fekMode: fekState?.mode,
-        totalFE: fekState?.totalFE,
+        confidence: ctx.confidence?.value,
+        cost: (ctx.meta.processCost as number) ?? 0,
+        fekMode: (ctx.fekState as any)?.mode,
+        totalFE: (ctx.fekState as any)?.totalFE,
         phi: this.consciousness ? this.getPhi() : undefined,
         nessDeviation: this.lastNESSState?.deviation,
         sustainable: this.fiber?.getGlobalSection().sustainable,
@@ -2883,56 +2800,72 @@ export class Genesis {
           aggregate: this.nociception.getAggregatePain(),
           chronic: this.nociception.isChronic(),
         } : undefined,
+        // v34: Nucleus metrics
+        nucleus: {
+          classification: ctx.classification,
+          activatedModules: ctx.activatedModules.length,
+          totalModules: this.nucleus?.getModuleCount() ?? 0,
+        },
       });
-    }
+      // Release attention
+      if (this.consciousness) {
+        const domain = this.inferDomain(ctx.input);
+        this.consciousness.releaseAttention(`process:${domain}`);
+      }
+    });
+  }
 
-    // Step 7: Feed causal model with outcome data (only in deep processing)
-    if (this.causal && confidence && deepProcessing) {
-      // Each process() cycle is a data point: observation → belief → action → outcome
-      this.causal.setData('observation', [confidence.value]);
-      this.causal.setData('outcome', [confidence.value > adaptiveDeferThreshold ? 1 : 0]);
-      this.causal.setData('reward', [1 - cost]); // Higher reward = lower cost
+  // ==========================================================================
+  // Main Processing Pipeline
+  // ==========================================================================
 
-      // Record causal reasoning cost
-      if (this.fiber) {
-        this.fiber.recordCost('causal', 0.002, 'data-feed');
+  /**
+   * Process an input through the full Genesis stack:
+   * 1. Metacognition pre-check (should we defer?)
+   * 2. Brain processes query
+   * 3. Metacognition audits response
+   * 4. Causal reasoning (if errors detected)
+   * 5. FEK cycle with observations
+   * 6. NESS + Fiber economic tracking
+   */
+  async process(input: string): Promise<ProcessResult> {
+    if (!this.booted) await this.boot();
+    this.cycleCount++;
+
+    // v13.8: Fire pre-message hook
+    if (this.hooks?.hasHooks()) {
+      const hookResult = await this.hooks.execute('pre-message', { event: 'pre-message', message: input });
+      if (hookResult?.blocked) {
+        return { response: '[Hook blocked processing]', confidence: null, audit: null, cost: 0, fekState: null };
       }
     }
 
-    // Step 8: Memory consolidation — store interaction as episodic memory
-    if (this.memory && response && deepProcessing) {
-      this.memory.remember({
-        what: `processed: ${input.slice(0, 80)}`,
-        details: {
-          response: response.slice(0, 200),
-          confidence: confidence?.value,
-          cost,
-          fekMode: fekState?.mode,
-          domain: this.inferDomain(input),
-        },
-        tags: ['genesis:process', this.inferDomain(input)],
-      });
+    // v34.0: Nucleus orchestration — classify, select modules, execute
+    this.curiosityEngine?.recordActivity();
+    const ctx = await this.nucleus!.execute(input);
+
+    if (ctx.meta.blocked) {
+      return { response: ctx.response, confidence: null, audit: null, cost: 0, fekState: null };
     }
 
-    // Step 9: Conformal calibration update — feed outcome for interval recalibration
-    if (this.conformal && confidence) {
-      // Adapt conformal interval based on whether prediction was covered
-      const wasCovered = audit ? (audit.coherence > 0.6 && audit.groundedness > 0.6) : true;
-      this.conformal.adapt(wasCovered);
-    }
-
-    // Release attention focus after processing
-    if (this.consciousness) {
-      const domain = this.inferDomain(input);
-      this.consciousness.releaseAttention(`process:${domain}`);
+    // Update observed latencies for adaptive module selection
+    for (const [moduleId, timing] of Object.entries(ctx.timings)) {
+      this.nucleus!.updateLatency(moduleId, timing);
     }
 
     // v13.8: Fire post-message hook
     if (this.hooks?.hasHooks()) {
-      this.hooks.execute('post-message', { event: 'post-message', message: input, response }).catch(e => console.debug('[Hooks] post-message failed:', e?.message || e));
+      this.hooks.execute('post-message', { event: 'post-message', message: input, response: ctx.response }).catch(e => console.debug('[Hooks] post-message failed:', e?.message || e));
     }
 
-    return { response, confidence, audit, cost, fekState };
+    const cost = Object.values(ctx.timings).reduce((a, b) => a + b, 0) * 0.0001;
+    return {
+      response: ctx.response,
+      confidence: ctx.confidence as any,
+      audit: ctx.audit as any,
+      cost,
+      fekState: ctx.fekState as any,
+    };
   }
 
   // ==========================================================================

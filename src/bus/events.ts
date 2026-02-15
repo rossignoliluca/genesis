@@ -1047,6 +1047,31 @@ export interface ToolDeprecatedEvent extends BusEvent {
 }
 
 // ============================================================================
+// Nucleus Events (v34)
+// ============================================================================
+
+export interface NucleusCycleEvent extends BusEvent {
+  classification: string;
+  modulesActivated: number;
+  totalModulesAvailable: number;
+  latencyMs: number;
+  confidence: number;
+}
+
+export interface NucleusCuriosityEvent extends BusEvent {
+  explorationType: string;
+  description: string;
+  findingsCount: number;
+}
+
+export interface NucleusPlasticityEvent extends BusEvent {
+  moduleId: string;
+  classification: string;
+  oldWeight: number;
+  newWeight: number;
+}
+
+// ============================================================================
 // Genesis Event Map - All Topics
 // ============================================================================
 
@@ -1288,6 +1313,11 @@ export interface GenesisEventMap {
   'toolfactory.tool.created': ToolCreatedEvent;
   'toolfactory.tool.promoted': ToolPromotedEvent;
   'toolfactory.tool.deprecated': ToolDeprecatedEvent;
+
+  // --- Nucleus Events (v34) ---
+  'nucleus.cycle.completed': NucleusCycleEvent;
+  'nucleus.curiosity.explored': NucleusCuriosityEvent;
+  'nucleus.plasticity.updated': NucleusPlasticityEvent;
 }
 
 /** All valid topic names */

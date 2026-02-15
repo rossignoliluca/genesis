@@ -101,6 +101,7 @@ export class MarketAnalyzer {
     previousBriefs: Memory[],
     historicalAnalogues: SemanticMemory[],
     regimeContext?: { regime: string; confidence: number; trendStrength: number },
+    debateContext?: string,
   ): Promise<NarrativeThread[]> {
     const systemPrompt = `You are a senior market strategist at Rossignoli & Partners, a Swiss independent asset manager.
 Your style: contrarian with institutional rigor. You analyze data from Bilello, FRED, FactSet, JPM, GS, BLK.
@@ -129,6 +130,10 @@ Return EXACTLY a JSON array of narrative objects with this schema:
 - Current regime: ${regimeContext.regime} (confidence: ${regimeContext.confidence.toFixed(2)})
 - Trend strength: ${regimeContext.trendStrength.toFixed(2)}
 Factor this regime assessment into your narrative synthesis.`;
+    }
+
+    if (debateContext) {
+      userPrompt += `\n\nBULL vs BEAR DEBATE RESULTS:\n${debateContext}\nUse these adversarial insights to sharpen your narratives. Where bull and bear agree, increase conviction. Where they diverge, acknowledge the tension.`;
     }
 
     try {

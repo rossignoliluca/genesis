@@ -39,6 +39,9 @@ import type { PresentationSpec, SlideSpec, ChartSpec } from '../presentation/typ
 import { briefToSocialContent, publishMarketBrief } from '../content/strategy-wiring.js';
 import type { PublicationReport } from '../content/types.js';
 import { FeedbackEngine } from './feedback.js';
+import { getDebateEngine } from './debate-engine.js';
+import type { DebateResult } from './debate-engine.js';
+import { verifyMarketBrief, verifyPresentationSpec } from '../reasoning/verification-loop.js';
 import type { Prediction, TrackRecord, CalibrationProfile } from './types.js';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -286,6 +289,24 @@ export class WeeklyReportPipeline {
       };
     }
 
+    // ---- STEP 2c: DEBATE (bull vs bear adversarial pattern) ----
+    let debateResult: DebateResult | undefined;
+    {
+      console.log(`[2c/8] DEBATE — bull vs bear adversarial analysis...`);
+      const tDebate = Date.now();
+      try {
+        const debateEngine = getDebateEngine();
+        debateResult = await debateEngine.debate(snapshot);
+        timings.debate = Date.now() - tDebate;
+        console.log(`  → Regime: ${debateResult.synthesis.marketRegime} | Bull conf: ${debateResult.bullCase.confidence.toFixed(2)} | Bear conf: ${debateResult.bearCase.confidence.toFixed(2)}`);
+        console.log(`  → Consensus: ${debateResult.consensusPoints.length} points | Divergence: ${debateResult.divergencePoints.length} points (${timings.debate}ms)`);
+      } catch (e) {
+        errors.push(`Debate failed: ${e}`);
+        timings.debate = Date.now() - tDebate;
+        console.error(`  ⚠ Debate skipped: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+
     // ---- STEP 3: ANALYZE (with calibration and regime context) ----
     console.log(`[3/8] ANALYZING and synthesizing narratives...`);
     const t3 = Date.now();
@@ -305,15 +326,49 @@ export class WeeklyReportPipeline {
     }
 
     const context = await this.memoryLayers.recallContext('weekly market strategy');
+
+    // Inject debate insights into analyzer context
+    const debateContext = debateResult ? [
+      `DEBATE SYNTHESIS: ${debateResult.synthesis.narrative}`,
+      `Market Regime: ${debateResult.synthesis.marketRegime}`,
+      `Key Drivers: ${debateResult.synthesis.keyDrivers.join(', ')}`,
+      `Tail Risks: ${debateResult.synthesis.tailRisks.join(', ')}`,
+      `Consensus: ${debateResult.consensusPoints.join('; ')}`,
+      `Divergence: ${debateResult.divergencePoints.join('; ')}`,
+    ].join('\n') : undefined;
+
     const narratives = await this.analyzer.synthesizeNarrative(
       snapshot,
       context.recentWeeks,
       context.historicalAnalogues,
       regimeContext,
+      debateContext,
     );
     const brief = await this.analyzer.buildBrief(snapshot, narratives, this.memoryLayers, calibration);
     timings.analyze = Date.now() - t3;
     console.log(`  → ${narratives.length} narratives, ${brief.positioning.length} positions (${timings.analyze}ms)`);
+
+    // ---- STEP 3b: VERIFY brief quality ----
+    {
+      console.log(`[3b/8] VERIFYING brief quality...`);
+      const tVerify = Date.now();
+      try {
+        const verificationResult = await verifyMarketBrief(brief);
+        timings.verifyBrief = Date.now() - tVerify;
+        if (verificationResult.verified) {
+          console.log(`  → Brief verified (confidence: ${verificationResult.confidence.toFixed(2)}, ${verificationResult.issues.length} minor issues) (${timings.verifyBrief}ms)`);
+        } else {
+          const criticalIssues = verificationResult.issues.filter(i => i.severity === 'critical');
+          console.warn(`  ⚠ Brief verification: ${verificationResult.confidence.toFixed(2)} confidence, ${criticalIssues.length} critical issues (${timings.verifyBrief}ms)`);
+          for (const issue of criticalIssues) {
+            console.warn(`    - [${issue.severity}] ${issue.description}${issue.suggestion ? ` → ${issue.suggestion}` : ''}`);
+          }
+        }
+      } catch (e) {
+        timings.verifyBrief = Date.now() - tVerify;
+        console.error(`  ⚠ Verification skipped: ${e instanceof Error ? e.message : e}`);
+      }
+    }
 
     // ---- STEP 4: STORE IN MEMORY ----
     if (this.config.storeMemory) {

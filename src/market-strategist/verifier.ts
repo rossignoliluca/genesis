@@ -11,6 +11,12 @@
  * Real confidence scoring based on source count, freshness, agreement.
  */
 
+import { config as dotenvConfig } from 'dotenv';
+import * as path from 'path';
+
+// Ensure .env is loaded even when running standalone
+dotenvConfig({ path: path.resolve(process.cwd(), '.env') });
+
 import { getMCPClient } from '../mcp/index.js';
 import type { IMCPClient } from '../mcp/index.js';
 import type { AssetSnapshot, Headline } from './types.js';
@@ -320,81 +326,177 @@ export class DataVerifier {
   }
 
   /**
-   * Yahoo Finance v7 quote API — 1 request for all symbols
+   * Yahoo Finance v8 chart API — 1 request per symbol (parallel).
+   * v7 quote endpoint is deprecated (returns 401). v8 chart works without auth.
    */
   private async fetchYahoo(symbols: string[]): Promise<Map<string, { value: number; timestamp: Date }>> {
     const results = new Map<string, { value: number; timestamp: Date }>();
     if (symbols.length === 0) return results;
 
-    try {
-      const symbolStr = symbols.join(',');
-      const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbolStr}&fields=regularMarketPrice,regularMarketTime,shortName`;
+    const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-      const response = await fetch(url, {
-        headers: { 'User-Agent': 'Genesis/19.1' },
-        signal: AbortSignal.timeout(10000),
-      });
+    // Fetch each symbol via v8/finance/chart in parallel
+    const fetches = symbols.map(async (symbol) => {
+      try {
+        // Decode URL-encoded symbols for the API path (e.g. %5EGSPC → ^GSPC)
+        const decodedSymbol = decodeURIComponent(symbol);
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(decodedSymbol)}?interval=1d&range=1d`;
 
-      if (!response.ok) {
-        console.warn(`[Verifier] Yahoo API returned ${response.status}`);
-        return results;
-      }
+        const response = await fetch(url, {
+          headers: {
+            'User-Agent': BROWSER_UA,
+            'Accept': 'application/json',
+          },
+          signal: AbortSignal.timeout(10000),
+        });
 
-      const data = await response.json() as { quoteResponse?: { result?: YahooQuote[] } };
-      const quotes = data.quoteResponse?.result || [];
+        if (!response.ok) {
+          // Try AlphaVantage as fallback for this symbol
+          const avResult = await this.fetchAlphaVantage(decodedSymbol);
+          if (avResult) {
+            results.set(symbol, avResult);
+          } else {
+            console.warn(`[Verifier] Yahoo v8 returned ${response.status} for ${decodedSymbol}`);
+          }
+          return;
+        }
 
-      for (const quote of quotes) {
-        if (quote.regularMarketPrice != null) {
-          results.set(quote.symbol, {
-            value: quote.regularMarketPrice,
-            timestamp: quote.regularMarketTime
-              ? new Date(quote.regularMarketTime * 1000)
+        const data = await response.json() as {
+          chart?: {
+            result?: Array<{
+              meta?: {
+                regularMarketPrice?: number;
+                regularMarketTime?: number;
+                symbol?: string;
+              };
+            }>;
+          };
+        };
+
+        const meta = data.chart?.result?.[0]?.meta;
+        if (meta?.regularMarketPrice != null) {
+          results.set(symbol, {
+            value: meta.regularMarketPrice,
+            timestamp: meta.regularMarketTime
+              ? new Date(meta.regularMarketTime * 1000)
               : new Date(),
           });
         }
+      } catch (error) {
+        console.warn(`[Verifier] Yahoo v8 fetch failed for ${symbol}: ${error}`);
       }
-    } catch (error) {
-      console.warn(`[Verifier] Yahoo fetch failed: ${error}`);
-    }
+    });
 
+    await Promise.allSettled(fetches);
     return results;
   }
 
   /**
-   * CoinGecko simple price API — 1 request for all crypto
+   * AlphaVantage fallback for when Yahoo fails.
+   * Uses ALPHAVANTAGE_API_KEY from env. Free tier: 25 requests/day.
+   */
+  private async fetchAlphaVantage(symbol: string): Promise<{ value: number; timestamp: Date } | null> {
+    const apiKey = process.env.ALPHAVANTAGE_API_KEY;
+    if (!apiKey) return null;
+
+    try {
+      // Clean symbol for AlphaVantage (^GSPC → SPY equivalent not supported, skip index symbols)
+      if (symbol.startsWith('^') || symbol.includes('=')) return null;
+
+      const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
+
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) return null;
+
+      const data = await response.json() as {
+        'Global Quote'?: {
+          '05. price'?: string;
+          '07. latest trading day'?: string;
+        };
+      };
+
+      const quote = data['Global Quote'];
+      if (quote?.['05. price']) {
+        return {
+          value: parseFloat(quote['05. price']),
+          timestamp: quote['07. latest trading day']
+            ? new Date(quote['07. latest trading day'])
+            : new Date(),
+        };
+      }
+    } catch {
+      // Silent fallback failure
+    }
+    return null;
+  }
+
+  /**
+   * CoinGecko simple price API — 1 request for all crypto.
+   * Uses demo API key header to avoid 429 rate limits on free tier.
+   * Falls back to without key if COINGECKO_API_KEY not set.
    */
   private async fetchCoinGecko(ids: string[]): Promise<Map<string, { value: number; timestamp: Date }>> {
     const results = new Map<string, { value: number; timestamp: Date }>();
     if (ids.length === 0) return results;
 
-    try {
-      const idsStr = ids.join(',');
-      const url = `https://api.coingecko.com/api/v3/simple/price?ids=${idsStr}&vs_currencies=usd&include_last_updated_at=true`;
+    const apiKey = process.env.COINGECKO_API_KEY;
+    const idsStr = ids.join(',');
 
-      const response = await fetch(url, {
-        headers: { 'User-Agent': 'Genesis/19.1' },
-        signal: AbortSignal.timeout(10000),
-      });
+    // Try with demo key first, then without
+    for (const attempt of [true, false]) {
+      try {
+        const baseUrl = apiKey && attempt
+          ? 'https://api.coingecko.com/api/v3'
+          : 'https://api.coingecko.com/api/v3';
+        const url = `${baseUrl}/simple/price?ids=${idsStr}&vs_currencies=usd&include_last_updated_at=true`;
 
-      if (!response.ok) {
-        console.warn(`[Verifier] CoinGecko API returned ${response.status}`);
-        return results;
-      }
-
-      const data = await response.json() as Record<string, { usd: number; last_updated_at?: number }>;
-
-      for (const id of ids) {
-        if (data[id]?.usd != null) {
-          results.set(id, {
-            value: data[id].usd,
-            timestamp: data[id].last_updated_at
-              ? new Date(data[id].last_updated_at! * 1000)
-              : new Date(),
-          });
+        const headers: Record<string, string> = {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+          'Accept': 'application/json',
+        };
+        if (apiKey && attempt) {
+          headers['x-cg-demo-api-key'] = apiKey;
         }
+
+        const response = await fetch(url, {
+          headers,
+          signal: AbortSignal.timeout(10000),
+        });
+
+        if (response.status === 429) {
+          // Rate limited — wait 2s and try without key
+          console.warn(`[Verifier] CoinGecko 429 rate limited, ${attempt ? 'retrying without key...' : 'giving up'}`);
+          if (attempt) {
+            await new Promise(r => setTimeout(r, 2000));
+            continue;
+          }
+          return results;
+        }
+
+        if (!response.ok) {
+          console.warn(`[Verifier] CoinGecko API returned ${response.status}`);
+          return results;
+        }
+
+        const data = await response.json() as Record<string, { usd: number; last_updated_at?: number }>;
+
+        for (const id of ids) {
+          if (data[id]?.usd != null) {
+            results.set(id, {
+              value: data[id].usd,
+              timestamp: data[id].last_updated_at
+                ? new Date(data[id].last_updated_at! * 1000)
+                : new Date(),
+            });
+          }
+        }
+        return results; // Success, don't retry
+      } catch (error) {
+        console.warn(`[Verifier] CoinGecko fetch failed (attempt ${attempt ? 1 : 2}): ${error}`);
       }
-    } catch (error) {
-      console.warn(`[Verifier] CoinGecko fetch failed: ${error}`);
     }
 
     return results;

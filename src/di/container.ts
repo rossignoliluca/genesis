@@ -435,8 +435,8 @@ function registerCoreServices(di: DIContainer): void {
   }, { tags: ['autonomous'], dependencies: ['eventBus'] });
 
   di.register('selfReflection', async () => {
-    const { getSelfReflection } = await import('../autonomous/self-reflection.js');
-    return getSelfReflection();
+    const { getSelfReflectionEngine } = await import('../autonomous/self-reflection.js');
+    return getSelfReflectionEngine();
   }, { tags: ['autonomous'], dependencies: ['memory'] });
 
   // Layer 5: Market Strategist
@@ -453,8 +453,8 @@ function registerCoreServices(di: DIContainer): void {
 
   // Layer 7: Tools
   di.register('toolRegistry', async () => {
-    const { getToolRegistry } = await import('../tools/index.js');
-    return getToolRegistry();
+    const { toolRegistry } = await import('../tools/index.js');
+    return toolRegistry;
   }, { tags: ['tools'] });
 
   // Layer 8: Agents

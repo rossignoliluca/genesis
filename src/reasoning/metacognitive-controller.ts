@@ -58,6 +58,7 @@ export type ReasoningStrategy =
   | 'tree_of_thought' // BFS/DFS/MCTS tree search
   | 'graph_of_thought' // GoT with aggregation (k→1)
   | 'super_correct'   // Hierarchical templates + correction
+  | 'mcts_prm'        // Monte Carlo Tree Search with PRM scoring
   | 'ultimate';        // All strategies combined
 
 /**
@@ -222,6 +223,13 @@ const STRATEGY_PROFILES: Record<ReasoningStrategy, StrategyProfile> = {
     latencyMs: 25000,
     tokenBudget: 32768,
   },
+  mcts_prm: {
+    computeCost: 0.8,
+    expectedQuality: 0.92,
+    informationGain: 0.9,
+    latencyMs: 35000,
+    tokenBudget: 49152,
+  },
   ultimate: {
     computeCost: 1.0,
     expectedQuality: 0.95,
@@ -238,6 +246,7 @@ const ESCALATION_ORDER: ReasoningStrategy[] = [
   'tree_of_thought',
   'graph_of_thought',
   'super_correct',
+  'mcts_prm',
   'ultimate',
 ];
 

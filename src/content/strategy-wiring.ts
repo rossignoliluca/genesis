@@ -238,6 +238,7 @@ export async function publishMarketBrief(
   config: Partial<ContentStrategyConfig> = {},
   options?: {
     sendEmail?: boolean;
+    sendNewsletter?: boolean;
     emailRecipients?: string[];
     pptxPath?: string;
   },
@@ -361,7 +362,7 @@ export async function publishMarketBrief(
           tags: ['weekly-strategy'],
         });
         results.push({
-          platform: nlResult.platform,
+          platform: nlResult.platform as PublicationResult['platform'],
           success: nlResult.success,
           postId: nlResult.emailId,
           url: nlResult.url,
@@ -371,7 +372,7 @@ export async function publishMarketBrief(
       }
     } catch (error) {
       results.push({
-        platform: 'newsletter',
+        platform: 'email',
         success: false,
         error: error instanceof Error ? error.message : String(error),
         publishedAt: now,

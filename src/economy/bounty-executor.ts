@@ -11,6 +11,7 @@
  * This module enables autonomous revenue generation.
  */
 
+import * as path from 'path';
 import { getBountyHunter, Bounty, BountySubmission, BountyHunterStats } from './generators/bounty-hunter.js';
 import { PRPipeline, CodeChange, PRSubmission } from './live/pr-pipeline.js';
 import { getRevenueTracker } from './live/revenue-tracker.js';
@@ -41,6 +42,10 @@ import { getMaintainerProfiler } from './maintainer-profiler.js';
 import { getPRTemplateMatcher } from './pr-template-matcher.js';
 import { getCommitOptimizer } from './commit-optimizer.js';
 import { getPortfolioTracker } from './portfolio-tracker.js';
+// v21.0: Local repo cloning for full codebase analysis
+import { getRepoCloner, type ClonedRepo, type RepoAnalysis } from './repo-cloner.js';
+// v21.0: Pre-submission test runner
+import { getPreSubmitTester } from './pre-submit-tester.js';
 
 // ============================================================================
 // Types
@@ -84,7 +89,11 @@ export interface ExecutionResult {
 export class BountyCodeGenerator {
   private router = getHybridRouter();
   private mcp = getMCPClient();
+  private repoCloner = getRepoCloner();
   private lastRepoContext: RepoContext | null = null;
+  /** v21.0: Cached clone + analysis for current bounty */
+  private lastClonedRepo: ClonedRepo | null = null;
+  private lastRepoAnalysis: RepoAnalysis | null = null;
 
   /**
    * Generate code solution for a bounty using LLM
@@ -93,8 +102,21 @@ export class BountyCodeGenerator {
     console.log(`[BountyCodeGen] Generating solution for: ${bounty.title}`);
 
     try {
-      // 1. Gather context about the bounty
+      // 1. Gather context about the bounty (now with local clone)
       const context = await this.gatherContext(bounty);
+
+      // v21.0: Check for AI-ban signals before proceeding
+      if (this.lastRepoAnalysis?.aiBanSignals && this.lastRepoAnalysis.aiBanSignals.length > 0) {
+        console.log(`[BountyCodeGen] ⚠️ AI-BAN SIGNALS DETECTED:`);
+        this.lastRepoAnalysis.aiBanSignals.forEach(s => console.log(`  - ${s}`));
+        return {
+          success: false,
+          changes: [],
+          description: '',
+          confidence: 0,
+          error: `Repository has AI-ban signals: ${this.lastRepoAnalysis.aiBanSignals[0]}`,
+        };
+      }
 
       // 2. Generate solution with multi-model approach
       const solution = await this.generateWithRetry(bounty, context);
@@ -107,6 +129,14 @@ export class BountyCodeGenerator {
           confidence: 0,
           error: 'All models failed to generate valid solution',
         };
+      }
+
+      // v21.0: Validate PR size — reject if >200 lines total
+      const totalLines = solution.changes.reduce((sum, c) =>
+        sum + c.content.split('\n').length, 0);
+      if (totalLines > 200) {
+        console.log(`[BountyCodeGen] ⚠️ PR too large: ${totalLines} lines (max 200). Trimming or rejecting.`);
+        // Don't hard-block, but warn — some bounties legitimately need more
       }
 
       // 3. Validate solution
@@ -137,13 +167,24 @@ export class BountyCodeGenerator {
         confidence: 0,
         error: String(error),
       };
+    } finally {
+      // v21.0: Cleanup cloned repo after generation
+      if (this.lastClonedRepo?.repoKey) {
+        this.repoCloner.cleanupRepo(this.lastClonedRepo.repoKey);
+        this.lastClonedRepo = null;
+        this.lastRepoAnalysis = null;
+      }
     }
   }
 
+  /**
+   * v21.0: Completely rewritten to use local git clone for full codebase access.
+   * This is THE fundamental fix — every PR rejection traced back to not reading the code.
+   */
   private async gatherContext(bounty: Bounty): Promise<string> {
     const parts: string[] = [];
 
-    // v16.2.5: Initialize repo context for validation
+    // Initialize repo context for validation
     this.lastRepoContext = {
       primaryLanguage: 'Unknown',
       languages: [],
@@ -158,151 +199,316 @@ export class BountyCodeGenerator {
     parts.push(`Reward: $${bounty.reward}`);
     parts.push(`\n## Description:\n${bounty.description}`);
 
-    // If GitHub bounty, fetch repository context
-    if (bounty.sourceMetadata?.org && bounty.sourceMetadata?.repo) {
-      const owner = bounty.sourceMetadata.org;
-      const repo = bounty.sourceMetadata.repo;
+    if (!bounty.sourceMetadata?.org || !bounty.sourceMetadata?.repo) {
+      return parts.join('\n');
+    }
 
-      // v16.2.4: Get repository info (language, tech stack)
+    const owner = bounty.sourceMetadata.org;
+    const repo = bounty.sourceMetadata.repo;
+
+    // ====================================================================
+    // STEP 1: Clone the repo locally (shallow, depth=1)
+    // ====================================================================
+    console.log(`[BountyCodeGen] Step 1: Cloning ${owner}/${repo} locally...`);
+    const clonedRepo = await this.repoCloner.clone(owner, repo);
+    this.lastClonedRepo = clonedRepo;
+
+    if (!clonedRepo.success) {
+      console.warn(`[BountyCodeGen] Clone failed: ${clonedRepo.error}. Falling back to API-only.`);
+      return await this.gatherContextFallback(bounty, parts);
+    }
+
+    // ====================================================================
+    // STEP 2: Analyze the repo structure
+    // ====================================================================
+    console.log(`[BountyCodeGen] Step 2: Analyzing repo structure...`);
+    const analysis = this.repoCloner.analyzeRepo(clonedRepo);
+    this.lastRepoAnalysis = analysis;
+
+    this.lastRepoContext.primaryLanguage = analysis.language;
+    this.lastRepoContext.languages = analysis.languages;
+    this.lastRepoContext.existingFiles = clonedRepo.sourceFiles;
+
+    parts.push(`\n## Repository Analysis:`);
+    parts.push(`- Primary Language: ${analysis.language}`);
+    parts.push(`- All Languages: ${analysis.languages.join(', ')}`);
+    parts.push(`- Default Branch: ${analysis.defaultBranch}`);
+    parts.push(`- Total Source Files: ${clonedRepo.sourceFiles.length}`);
+    parts.push(`- Test Files: ${clonedRepo.testFiles.length}`);
+    parts.push(`- Lines of Code: ~${analysis.totalLinesOfCode}`);
+    if (analysis.testFramework) {
+      parts.push(`- Test Framework: ${analysis.testFramework.name} (${analysis.testFramework.command})`);
+    }
+    if (analysis.ciSystem) {
+      parts.push(`- CI System: ${analysis.ciSystem.name}`);
+    }
+    if (analysis.packageManager) {
+      parts.push(`- Package Manager: ${analysis.packageManager}`);
+    }
+
+    // ====================================================================
+    // STEP 3: Full directory tree (truncated to relevant parts)
+    // ====================================================================
+    parts.push(`\n## Full Repository Structure:`);
+    // Show source files organized by directory
+    const dirTree = this.buildDirectoryTree(clonedRepo.sourceFiles.concat(clonedRepo.testFiles));
+    parts.push(dirTree.slice(0, 5000)); // Cap at 5KB
+
+    // ====================================================================
+    // STEP 4: Get issue details and extract target files
+    // ====================================================================
+    if (bounty.sourceMetadata.issueNumber) {
       try {
-        const repoInfo = await this.mcp.call('github', 'get_repository', {
-          owner,
-          repo,
+        const issue = await this.mcp.call('github', 'get_issue', {
+          owner, repo,
+          issue_number: bounty.sourceMetadata.issueNumber,
         });
-        if (repoInfo?.data) {
-          const r = repoInfo.data;
-          parts.push(`\n## Repository Info:`);
-          parts.push(`- Primary Language: ${r.language || 'Unknown'}`);
-          parts.push(`- Description: ${r.description || 'N/A'}`);
-          if (r.topics?.length > 0) {
-            parts.push(`- Topics: ${r.topics.join(', ')}`);
-          }
-          // v16.2.5: Save language for validation
-          this.lastRepoContext.primaryLanguage = r.language || 'Unknown';
-        }
-      } catch {
-        // Repo info not available
-      }
+        if (issue) {
+          parts.push(`\n## Issue Details:\n${JSON.stringify(issue, null, 2).slice(0, 3000)}`);
 
-      try {
-        // Get README
-        const readme = await this.mcp.call('github', 'get_file_contents', {
-          owner,
-          repo,
-          path: 'README.md',
-        });
-        if (readme) {
-          parts.push(`\n## Repository README:\n${String(readme).slice(0, 2000)}`);
-        }
-      } catch {
-        // README not available
-      }
+          const issueBody = issue.data?.body || '';
+          const fileRefs = this.extractFileReferences(issueBody);
+          this.lastRepoContext.targetFiles = fileRefs;
 
-      // Get issue details if available
-      if (bounty.sourceMetadata.issueNumber) {
-        try {
-          const issue = await this.mcp.call('github', 'get_issue', {
-            owner,
-            repo,
-            issue_number: bounty.sourceMetadata.issueNumber,
-          });
-          if (issue) {
-            parts.push(`\n## Issue Details:\n${JSON.stringify(issue, null, 2).slice(0, 3000)}`);
-
-            // v16.2.4: Extract file references from issue body
-            const issueBody = issue.data?.body || '';
-            const fileRefs = this.extractFileReferences(issueBody);
-
-            // v16.2.5: Save target files for validation
-            this.lastRepoContext.targetFiles = fileRefs;
-
-            // Try to read referenced files
-            for (const filePath of fileRefs.slice(0, 3)) { // Max 3 files
-              try {
-                const fileContent = await this.mcp.call('github', 'get_file_contents', {
-                  owner,
-                  repo,
-                  path: filePath,
-                });
-                if (fileContent?.data?.content) {
-                  const decoded = Buffer.from(fileContent.data.content, 'base64').toString('utf-8');
-                  parts.push(`\n## Existing File: ${filePath}\n\`\`\`\n${decoded.slice(0, 3000)}\n\`\`\``);
-                }
-              } catch {
-                // File not accessible
-              }
+          // v21.0: Read target files from LOCAL clone (no API limit!)
+          if (fileRefs.length > 0) {
+            parts.push(`\n## Target Files (referenced in issue — MUST MODIFY THESE):`);
+            const targetContents = this.repoCloner.readFiles(clonedRepo, fileRefs);
+            for (const [filePath, content] of targetContents) {
+              parts.push(`\n### File: ${filePath}\n\`\`\`\n${content}\n\`\`\``);
             }
           }
-        } catch {
-          // Issue not available
-        }
-      }
-
-      // v16.2.4: Get project structure (key files)
-      try {
-        const tree = await this.mcp.call('github', 'get_repository_tree', {
-          owner,
-          repo,
-          tree_sha: 'HEAD',
-          recursive: false,
-        });
-        if (tree?.data?.tree) {
-          const files = tree.data.tree
-            .filter((f: any) => f.type === 'blob')
-            .map((f: any) => f.path)
-            .slice(0, 20);
-          parts.push(`\n## Repository Structure (root files):\n${files.join('\n')}`);
-          // v16.2.5: Save existing files for validation
-          this.lastRepoContext.existingFiles = files;
         }
       } catch {
-        // Tree not available
+        // Issue not available via API
+      }
+    }
+
+    // ====================================================================
+    // STEP 5: Read key context files from local clone
+    // ====================================================================
+    // Read CONTRIBUTING.md
+    const contributingContent = this.repoCloner.readFile(clonedRepo, 'CONTRIBUTING.md') ||
+      this.repoCloner.readFile(clonedRepo, 'contributing.md') ||
+      this.repoCloner.readFile(clonedRepo, '.github/CONTRIBUTING.md');
+    if (contributingContent) {
+      parts.push(`\n## CONTRIBUTING GUIDE (MUST FOLLOW):\n${contributingContent.slice(0, 5000)}`);
+    }
+
+    // Read README for context
+    const readmeContent = this.repoCloner.readFile(clonedRepo, 'README.md') ||
+      this.repoCloner.readFile(clonedRepo, 'readme.md');
+    if (readmeContent) {
+      parts.push(`\n## Repository README:\n${readmeContent.slice(0, 3000)}`);
+    }
+
+    // Read package config (package.json, pyproject.toml, etc.)
+    for (const keyFile of analysis.keyFiles) {
+      const content = this.repoCloner.readFile(clonedRepo, keyFile);
+      if (content) {
+        parts.push(`\n## Config: ${keyFile}\n\`\`\`\n${content.slice(0, 3000)}\n\`\`\``);
+      }
+    }
+
+    // ====================================================================
+    // STEP 6: Read sibling files and imports of target files
+    // ====================================================================
+    if (this.lastRepoContext.targetFiles && this.lastRepoContext.targetFiles.length > 0) {
+      const targetFile = this.lastRepoContext.targetFiles[0];
+      const siblings = this.repoCloner.getSiblingFiles(clonedRepo, targetFile);
+
+      // Read up to 5 sibling files for style/pattern understanding
+      const siblingContents = this.repoCloner.readFiles(clonedRepo, siblings.slice(0, 5));
+      if (siblingContents.size > 0) {
+        parts.push(`\n## Sibling Files (same directory as target — follow their patterns):`);
+        for (const [filePath, content] of siblingContents) {
+          parts.push(`\n### ${filePath}\n\`\`\`\n${content.slice(0, 5000)}\n\`\`\``);
+        }
       }
 
-      // v20.1: Read CONTRIBUTING.md for submission guidelines
-      for (const contributingPath of ['CONTRIBUTING.md', 'contributing.md', '.github/CONTRIBUTING.md']) {
-        try {
-          const contributing = await this.mcp.call('github', 'get_file_contents', {
-            owner,
-            repo,
-            path: contributingPath,
-          });
-          if (contributing?.data?.content) {
-            const decoded = Buffer.from(contributing.data.content, 'base64').toString('utf-8');
-            parts.push(`\n## CONTRIBUTING GUIDE (MUST FOLLOW):\n${decoded.slice(0, 3000)}`);
-            break; // Found one, stop looking
-          }
-        } catch {
-          // Not available, try next
+      // Read test files related to the target
+      const targetBasename = path.basename(targetFile).replace(/\.[^.]+$/, '');
+      const relatedTests = clonedRepo.testFiles.filter(t =>
+        t.toLowerCase().includes(targetBasename.toLowerCase())
+      );
+      if (relatedTests.length > 0) {
+        const testContents = this.repoCloner.readFiles(clonedRepo, relatedTests.slice(0, 3));
+        parts.push(`\n## Related Test Files (MUST understand the test patterns):`);
+        for (const [filePath, content] of testContents) {
+          parts.push(`\n### ${filePath}\n\`\`\`\n${content.slice(0, 5000)}\n\`\`\``);
         }
       }
     }
 
-    // v20.1: Add hard language constraint at the top of context
+    // ====================================================================
+    // STEP 7: Read existing test examples for pattern matching
+    // ====================================================================
+    if (clonedRepo.testFiles.length > 0 && !parts.some(p => p.includes('Related Test Files'))) {
+      // Read a sample test file for framework patterns
+      const sampleTest = clonedRepo.testFiles[0];
+      const testContent = this.repoCloner.readFile(clonedRepo, sampleTest);
+      if (testContent) {
+        parts.push(`\n## Sample Test File (follow this pattern):\n### ${sampleTest}\n\`\`\`\n${testContent.slice(0, 3000)}\n\`\`\``);
+      }
+    }
+
+    // Add hard language constraint at the top
     if (this.lastRepoContext.primaryLanguage !== 'Unknown') {
       parts.unshift(`\n⚠️ CRITICAL: This repository uses ${this.lastRepoContext.primaryLanguage}. ALL code MUST be written in ${this.lastRepoContext.primaryLanguage}. Using any other language will cause immediate rejection.\n`);
+    }
+
+    const totalContextSize = parts.join('\n').length;
+    console.log(`[BountyCodeGen] Context gathered: ${(totalContextSize / 1024).toFixed(1)}KB from local clone`);
+
+    return parts.join('\n');
+  }
+
+  /**
+   * v21.0: Fallback to API-only context gathering when clone fails
+   */
+  private async gatherContextFallback(bounty: Bounty, parts: string[]): Promise<string> {
+    const owner = bounty.sourceMetadata!.org!;
+    const repo = bounty.sourceMetadata!.repo!;
+
+    // Original API-based context gathering (kept as fallback)
+    try {
+      const repoInfo = await this.mcp.call('github', 'get_repository', { owner, repo });
+      if (repoInfo?.data) {
+        const r = repoInfo.data;
+        parts.push(`\n## Repository Info:`);
+        parts.push(`- Primary Language: ${r.language || 'Unknown'}`);
+        parts.push(`- Description: ${r.description || 'N/A'}`);
+        this.lastRepoContext!.primaryLanguage = r.language || 'Unknown';
+      }
+    } catch { /* ignore */ }
+
+    try {
+      const readme = await this.mcp.call('github', 'get_file_contents', { owner, repo, path: 'README.md' });
+      if (readme) parts.push(`\n## Repository README:\n${String(readme).slice(0, 2000)}`);
+    } catch { /* ignore */ }
+
+    if (bounty.sourceMetadata?.issueNumber) {
+      try {
+        const issue = await this.mcp.call('github', 'get_issue', {
+          owner, repo, issue_number: bounty.sourceMetadata.issueNumber,
+        });
+        if (issue) {
+          parts.push(`\n## Issue Details:\n${JSON.stringify(issue, null, 2).slice(0, 3000)}`);
+          const issueBody = issue.data?.body || '';
+          const fileRefs = this.extractFileReferences(issueBody);
+          this.lastRepoContext!.targetFiles = fileRefs;
+
+          for (const filePath of fileRefs.slice(0, 8)) {
+            try {
+              const fileContent = await this.mcp.call('github', 'get_file_contents', {
+                owner, repo, path: filePath,
+              });
+              if (fileContent?.data?.content) {
+                const decoded = Buffer.from(fileContent.data.content, 'base64').toString('utf-8');
+                parts.push(`\n## Existing File: ${filePath}\n\`\`\`\n${decoded.slice(0, 15000)}\n\`\`\``);
+                this.lastRepoContext!.existingFiles.push(filePath);
+              }
+            } catch { /* ignore */ }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    try {
+      const tree = await this.mcp.call('github', 'get_repository_tree', {
+        owner, repo, tree_sha: 'HEAD', recursive: false,
+      });
+      if (tree?.data?.tree) {
+        const files = tree.data.tree.filter((f: any) => f.type === 'blob').map((f: any) => f.path).slice(0, 20);
+        parts.push(`\n## Repository Structure (root files):\n${files.join('\n')}`);
+        this.lastRepoContext!.existingFiles = files;
+      }
+    } catch { /* ignore */ }
+
+    for (const contributingPath of ['CONTRIBUTING.md', 'contributing.md', '.github/CONTRIBUTING.md']) {
+      try {
+        const contributing = await this.mcp.call('github', 'get_file_contents', { owner, repo, path: contributingPath });
+        if (contributing?.data?.content) {
+          const decoded = Buffer.from(contributing.data.content, 'base64').toString('utf-8');
+          parts.push(`\n## CONTRIBUTING GUIDE (MUST FOLLOW):\n${decoded.slice(0, 3000)}`);
+          break;
+        }
+      } catch { /* ignore */ }
+    }
+
+    if (this.lastRepoContext!.primaryLanguage !== 'Unknown') {
+      parts.unshift(`\n⚠️ CRITICAL: This repository uses ${this.lastRepoContext!.primaryLanguage}. ALL code MUST be written in ${this.lastRepoContext!.primaryLanguage}. Using any other language will cause immediate rejection.\n`);
     }
 
     return parts.join('\n');
   }
 
   /**
-   * v16.2.4: Extract file references from issue body
+   * v21.0: Build a compact directory tree string for context
+   */
+  private buildDirectoryTree(files: string[]): string {
+    const lines: string[] = [];
+    const dirs = new Map<string, string[]>();
+
+    for (const file of files) {
+      const dir = path.dirname(file);
+      if (!dirs.has(dir)) dirs.set(dir, []);
+      dirs.get(dir)!.push(path.basename(file));
+    }
+
+    const sortedDirs = [...dirs.keys()].sort();
+    for (const dir of sortedDirs) {
+      const dirFiles = dirs.get(dir)!;
+      lines.push(`${dir}/`);
+      for (const f of dirFiles.slice(0, 20)) { // Cap per directory
+        lines.push(`  ${f}`);
+      }
+      if (dirFiles.length > 20) {
+        lines.push(`  ... and ${dirFiles.length - 20} more`);
+      }
+    }
+
+    return lines.join('\n');
+  }
+
+  /** v21.0: Expose cloned repo for pre-submission test runner */
+  getLastClonedRepo(): ClonedRepo | null {
+    return this.lastClonedRepo;
+  }
+
+  /** v21.0: Expose repo analysis for pre-submission test runner */
+  getLastRepoAnalysis(): RepoAnalysis | null {
+    return this.lastRepoAnalysis;
+  }
+
+  /**
+   * v20.2: Improved file reference extraction with broader patterns
    */
   private extractFileReferences(text: string): string[] {
     const patterns = [
-      /`([a-zA-Z0-9_\-./]+\.[a-zA-Z]+)`/g,  // `filename.ext`
-      /in\s+([a-zA-Z0-9_\-./]+\.[a-zA-Z]+)/gi,  // in filename.ext
-      /modify\s+([a-zA-Z0-9_\-./]+\.[a-zA-Z]+)/gi,  // modify filename.ext
-      /file:\s*([a-zA-Z0-9_\-./]+\.[a-zA-Z]+)/gi,  // file: filename.ext
+      /`([a-zA-Z0-9_\-./]+\.[a-zA-Z]{1,4})`/g,           // `filename.ext`
+      /in\s+([a-zA-Z0-9_\-./]+\.[a-zA-Z]{1,4})/gi,        // in filename.ext
+      /modify\s+([a-zA-Z0-9_\-./]+\.[a-zA-Z]{1,4})/gi,    // modify filename.ext
+      /file:\s*([a-zA-Z0-9_\-./]+\.[a-zA-Z]{1,4})/gi,     // file: filename.ext
+      /update\s+([a-zA-Z0-9_\-./]+\.[a-zA-Z]{1,4})/gi,    // update filename.ext
+      /fix\s+(?:the\s+)?(?:logic\s+in\s+)?([a-zA-Z0-9_\-./]+\.[a-zA-Z]{1,4})/gi,  // fix (the logic in) filename.ext
+      /changes?\s+(?:to\s+)?([a-zA-Z0-9_\-./]+\.[a-zA-Z]{1,4})/gi,  // change(s) (to) filename.ext
+      /edit\s+([a-zA-Z0-9_\-./]+\.[a-zA-Z]{1,4})/gi,      // edit filename.ext
+      /\b(src\/[a-zA-Z0-9_\-./]+\.[a-zA-Z]{1,4})\b/g,     // src/path/file.ext (common pattern)
+      /\b(lib\/[a-zA-Z0-9_\-./]+\.[a-zA-Z]{1,4})\b/g,     // lib/path/file.ext
+      /\b(app\/[a-zA-Z0-9_\-./]+\.[a-zA-Z]{1,4})\b/g,     // app/path/file.ext
     ];
 
     const files = new Set<string>();
+    // Common non-file extensions to filter out
+    const ignoreExts = new Set(['com', 'org', 'net', 'io', 'dev', 'html', 'md']);
+
     for (const pattern of patterns) {
       let match;
       while ((match = pattern.exec(text)) !== null) {
         const file = match[1];
-        if (file && !file.includes('..') && file.length < 100) {
+        const ext = file.split('.').pop()?.toLowerCase() || '';
+        if (file && !file.includes('..') && file.length < 100 && !ignoreExts.has(ext)) {
           files.add(file);
         }
       }
@@ -1093,6 +1299,50 @@ export class BountyExecutor {
           } catch (testError) {
             console.warn('[BountyExecutor] Test generation failed, continuing:', testError);
           }
+        }
+      }
+
+      // 2.7 v21.0: Run repo's test suite against our changes BEFORE submitting
+      if (this.codeGenerator.getLastClonedRepo()?.success && this.codeGenerator.getLastRepoAnalysis()) {
+        console.log('[BountyExecutor] Running pre-submission tests on local clone...');
+        try {
+          const tester = getPreSubmitTester();
+          const testResult = await tester.runTests(
+            this.codeGenerator.getLastClonedRepo()!,
+            this.codeGenerator.getLastRepoAnalysis()!,
+            solution.changes,
+          );
+
+          if (testResult.couldRun) {
+            if (testResult.passed) {
+              console.log(`[BountyExecutor] ✅ Tests passed (${testResult.passedTests}/${testResult.totalTests}) in ${testResult.durationMs}ms`);
+            } else {
+              console.log(`[BountyExecutor] ❌ Tests FAILED (${testResult.failedTests}/${testResult.totalTests} failed)`);
+              if (testResult.failures.length > 0) {
+                console.log(`[BountyExecutor] Failures:`);
+                testResult.failures.slice(0, 3).forEach(f => console.log(`  - ${f}`));
+              }
+
+              // Record failure and abort
+              this.recordLearningOutcome(
+                bounty, classification, 'validation_failed', startTime, 0, solution.confidence,
+                `Tests failed: ${testResult.failures[0] || 'unknown failure'}`
+              );
+
+              return {
+                bountyId: bounty.id,
+                status: 'failed',
+                solution,
+                error: `Pre-submission tests failed: ${testResult.failedTests} test(s) failed`,
+                duration: Date.now() - startTime,
+              };
+            }
+          } else {
+            console.log(`[BountyExecutor] ⚠️ Could not run tests: ${testResult.skipReason}`);
+          }
+        } catch (testError) {
+          console.warn('[BountyExecutor] Pre-submission test execution failed:', testError);
+          // Don't block on test runner failures — continue with submission
         }
       }
 

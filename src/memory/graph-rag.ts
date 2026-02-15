@@ -65,8 +65,7 @@ export class KnowledgeGraph {
         memoryId: sem.id,
         properties: {
           definition: sem.content.definition,
-          category: sem.content.category,
-          confidence: sem.content.confidence,
+          category: sem.category,
           ...sem.content.properties,
         },
         edges: [],
@@ -84,7 +83,6 @@ export class KnowledgeGraph {
         memoryId: ep.id,
         properties: {
           when: ep.when?.timestamp,
-          source: ep.content.source,
           details: ep.content.details,
         },
         edges: [],

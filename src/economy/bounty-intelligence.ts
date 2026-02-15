@@ -246,42 +246,55 @@ function detectBountyType(text: string, tags: string[]): Array<{ type: BountyTyp
 }
 
 function calculateAISuitability(type: BountyType, text: string, bounty: Bounty): number {
-  // Base suitability by type
+  // v21.0: Recalibrated based on real-world data:
+  // - Documentation bounties: 84% merge rate (HIGHEST)
+  // - Test-writing: ~60% merge rate
+  // - Bug-fix-simple: ~30% merge rate (requires reading codebase)
+  // - Feature code: ~10% merge rate for AI (very low)
+  // - Security: near 0% (too many false positives)
   const typeSuitability: Record<BountyType, number> = {
-    'documentation': 0.90,
-    'test-writing': 0.85,
-    'bug-fix-simple': 0.80,
-    'translation': 0.90,
-    'refactoring': 0.75,
-    'api-integration': 0.70,
-    'feature-small': 0.70,
-    'bug-fix-complex': 0.50,
-    'feature-large': 0.45,
-    'performance': 0.40,
-    'architecture': 0.30,
-    'security-audit': 0.25,
-    'unknown': 0.50,
+    'documentation': 0.95,         // 84% merge rate — our best bet
+    'translation': 0.90,           // High acceptance, mechanical task
+    'test-writing': 0.80,          // Good if we match test framework
+    'bug-fix-simple': 0.65,        // v21.0: Lowered — still needs codebase reading
+    'refactoring': 0.55,           // v21.0: Lowered — requires deep understanding
+    'api-integration': 0.50,       // v21.0: Lowered — needs external API knowledge
+    'feature-small': 0.50,         // v21.0: Lowered — ~10% merge rate for AI
+    'bug-fix-complex': 0.30,       // v21.0: Lowered significantly
+    'feature-large': 0.20,         // v21.0: Very low — scope creep risk
+    'performance': 0.20,           // v21.0: Needs profiling, not guessing
+    'architecture': 0.15,          // v21.0: Novel design is AI's weakness
+    'security-audit': 0.10,        // v21.0: Near 0% — high false positive risk
+    'unknown': 0.30,               // v21.0: Unknown = risky, lower default
   };
 
-  let suitability = typeSuitability[type] ?? 0.50;
+  let suitability = typeSuitability[type] ?? 0.30;
 
   // Modifiers based on text analysis
 
   // Negative modifiers (reduce suitability)
-  if (/\b(legacy|old|undocumented)\b/i.test(text)) suitability *= 0.7;
-  if (/\b(complex|complicated|tricky)\b/i.test(text)) suitability *= 0.8;
-  if (/\b(urgent|asap|immediately)\b/i.test(text)) suitability *= 0.9;
-  if (/\b(interactive|real[- ]time|live)\b/i.test(text)) suitability *= 0.7;
-  if (/\b(domain|business logic|proprietary)\b/i.test(text)) suitability *= 0.8;
-  if (bounty.description.length < 100) suitability *= 0.8; // Vague bounty
+  if (/\b(legacy|old|undocumented)\b/i.test(text)) suitability *= 0.6;
+  if (/\b(complex|complicated|tricky)\b/i.test(text)) suitability *= 0.7;
+  if (/\b(urgent|asap|immediately)\b/i.test(text)) suitability *= 0.8;
+  if (/\b(interactive|real[- ]time|live)\b/i.test(text)) suitability *= 0.6;
+  if (/\b(domain|business logic|proprietary)\b/i.test(text)) suitability *= 0.7;
+  if (bounty.description.length < 100) suitability *= 0.7; // Vague = dangerous
+  // v21.0: Multiple-file changes are much harder
+  if (/\b(multiple files|many files|across|several)\b/i.test(text)) suitability *= 0.7;
+  // v21.0: Cross-module or system-wide changes
+  if (/\b(system[- ]wide|cross[- ]module|end[- ]to[- ]end)\b/i.test(text)) suitability *= 0.5;
 
   // Positive modifiers (increase suitability)
   if (/\b(well[- ]documented|clear|straightforward)\b/i.test(text)) suitability *= 1.2;
   if (/\b(template|boilerplate|standard)\b/i.test(text)) suitability *= 1.2;
   if (/\b(crud|rest api|simple)\b/i.test(text)) suitability *= 1.1;
-  if (bounty.description.length > 500) suitability *= 1.1; // Detailed bounty
+  if (bounty.description.length > 500) suitability *= 1.1; // Detailed = better
+  // v21.0: Single-file changes are much more likely to succeed
+  if (/\b(single file|one file|in .+\.\w{1,4})\b/i.test(text)) suitability *= 1.3;
+  // v21.0: Good first issues tend to be well-scoped
+  if (/good.?first.?issue/i.test(text) || bounty.tags.some(t => t.includes('good-first'))) suitability *= 1.2;
 
-  return Math.min(Math.max(suitability, 0.1), 0.95);
+  return Math.min(Math.max(suitability, 0.05), 0.95);
 }
 
 function estimateDifficulty(bounty: Bounty, type: BountyType, text: string): number {
@@ -415,27 +428,31 @@ function generateRecommendation(
   riskCount: number,
   reward: number
 ): 'pursue' | 'consider' | 'avoid' | 'escalate' {
-  // Calculate expected value
-  const successProbability = aiSuitability * (1 - difficulty * 0.5);
-  const riskPenalty = riskCount * 0.1;
-  const adjustedProbability = Math.max(successProbability - riskPenalty, 0.1);
-  const expectedValue = reward * adjustedProbability;
+  // v21.0: More conservative — better to skip than get rejected.
+  // 0% success rate taught us: only pursue what we're confident about.
 
-  // Decision matrix
-  if (aiSuitability >= 0.75 && difficulty <= 0.4 && riskCount <= 2) {
-    return 'pursue';
-  }
-  if (aiSuitability >= 0.5 && difficulty <= 0.6 && expectedValue >= 100) {
-    return 'consider';
-  }
-  if (aiSuitability < 0.35 || difficulty >= 0.8 || riskCount >= 4) {
+  // Hard avoid: low suitability, high difficulty, or high risk
+  if (aiSuitability < 0.45 || difficulty >= 0.7 || riskCount >= 3) {
     return 'avoid';
   }
-  if (reward >= 1000 && aiSuitability >= 0.4) {
-    return 'escalate'; // High value, needs human review
+
+  // Escalate: high value but uncertain
+  if (reward >= 1000 && aiSuitability >= 0.5 && aiSuitability < 0.75) {
+    return 'escalate';
   }
 
-  return 'consider';
+  // Pursue: high suitability + low difficulty + low risk
+  if (aiSuitability >= 0.70 && difficulty <= 0.4 && riskCount <= 1) {
+    return 'pursue';
+  }
+
+  // Consider: moderate suitability
+  if (aiSuitability >= 0.55 && difficulty <= 0.5) {
+    return 'consider';
+  }
+
+  // Default to avoid — conservative is better than 0% success
+  return 'avoid';
 }
 
 function estimateHours(difficulty: number, type: BountyType, reward: number): number {
@@ -629,13 +646,14 @@ export function scoreBountyIntelligently(bounty: Bounty): IntelligentBountyScore
     reasoning.push(`Difficulty ${(classification.estimatedDifficulty * 100).toFixed(0)}% exceeds platform max ${(strategy.maxDifficulty * 100).toFixed(0)}%`);
   }
 
-  // Weighted overall score
+  // v21.0: Reweighted — AI suitability is by far the most important factor.
+  // We learned: a $20 doc bounty that merges > a $500 code bounty that gets rejected.
   const overallScore = (
-    aiSuitabilityScore * 0.30 +
+    aiSuitabilityScore * 0.40 +  // v21.0: Increased from 0.30 — this is what matters most
     difficultyScore * 0.25 +
-    rewardScore * 0.15 +
-    platformFitScore * 0.15 +
-    riskScore * 0.15
+    riskScore * 0.20 +           // v21.0: Increased from 0.15 — risk kills us
+    platformFitScore * 0.10 +
+    rewardScore * 0.05           // v21.0: Decreased from 0.15 — chasing high reward = bad strategy
   );
 
   reasoning.push(`Recommendation: ${classification.recommendation.toUpperCase()}`);
@@ -666,10 +684,15 @@ export function rankBountiesIntelligently(bounties: Bounty[]): IntelligentBounty
   // Sort by overall score descending
   scored.sort((a, b) => b.overallScore - a.overallScore);
 
-  // Filter out 'avoid' recommendations unless nothing else
-  const viable = scored.filter(s => s.classification.recommendation !== 'avoid');
+  // v21.0: Strictly filter — never pursue 'avoid' bounties.
+  // Our 0% success rate means we need to be very selective.
+  const viable = scored.filter(s =>
+    s.classification.recommendation !== 'avoid' &&
+    s.classification.aiSuitability >= 0.45 // v21.0: Hard minimum
+  );
 
-  return viable.length > 0 ? viable : scored.slice(0, 5);
+  // If nothing viable, return empty — better to skip than submit garbage
+  return viable;
 }
 
 // ============================================================================

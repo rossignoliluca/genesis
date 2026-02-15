@@ -372,7 +372,7 @@ valid: [true/false]
     let currentId: string | null = nodeId;
 
     while (currentId) {
-      const node = this.nodes.get(currentId)!;
+      const node: TreeNode = this.nodes.get(currentId)!;
       node.visits += 1;
       node.value += value;
       currentId = node.parentId;
@@ -477,7 +477,7 @@ valid: [true/false]
     let currentId: string | null = nodeId;
 
     while (currentId) {
-      const node = this.nodes.get(currentId)!;
+      const node: TreeNode = this.nodes.get(currentId)!;
       path.unshift(node);
       currentId = node.parentId;
     }

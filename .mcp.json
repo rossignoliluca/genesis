@@ -85,6 +85,15 @@
       "enabled": true,
       "category": "research"
     },
+    "wolfram": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-wolfram-alpha"],
+      "requiredEnv": ["WOLFRAM_APP_ID"],
+      "description": "Computational knowledge — math, physics, data analysis",
+      "enabled": true,
+      "category": "research"
+    },
 
     "openai": {
       "transport": "stdio",

@@ -215,17 +215,21 @@ export function validateCode(
   }
 
   // 5. Check if modifying existing files (if target files specified)
+  // v20.2: Promoted to error — if bounty says "modify X", creating Y is wrong
   if (context.targetFiles && context.targetFiles.length > 0) {
-    const creatingNew = !context.existingFiles.some(f =>
+    const matchesExisting = context.existingFiles.some(f =>
+      filename.endsWith(f) || f.endsWith(filename)
+    );
+    const matchesTarget = context.targetFiles.some(f =>
       filename.endsWith(f) || f.endsWith(filename)
     );
 
-    if (creatingNew) {
-      warnings.push({
-        type: 'new_file',
-        message: `Creating new file instead of modifying existing ones`,
-        severity: 'warning',
-        suggestion: `Consider modifying: ${context.targetFiles.slice(0, 3).join(', ')}`,
+    if (!matchesExisting && !matchesTarget) {
+      issues.push({
+        type: 'wrong_file_target',
+        message: `Creating new file "${filename}" instead of modifying the specified target files`,
+        severity: 'error',
+        suggestion: `Modify one of: ${context.targetFiles.slice(0, 3).join(', ')}`,
       });
     }
   }

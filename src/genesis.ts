@@ -231,6 +231,9 @@ import {
   type WebSocketConfig,
 } from './api/websocket.js';
 
+// Utils — error boundaries for non-critical module init
+import { safeModuleInit } from './utils/error-boundary.js';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -1015,6 +1018,7 @@ export class Genesis {
 
     // Consciousness monitoring (φ)
     if (this.config.consciousness) {
+      try {
       this.consciousness = getConsciousnessSystem();
 
       // v13.1: Wire real system state provider for φ calculation
@@ -1175,6 +1179,9 @@ export class Genesis {
       }
 
       this.consciousness.start();
+      } catch (error) {
+        console.error('[Genesis] Consciousness init failed — module disabled:', error instanceof Error ? error.message : error);
+      }
     }
 
     if (this.config.dashboard) {
@@ -1352,11 +1359,13 @@ export class Genesis {
 
     // Streaming Orchestrator — LLM streaming with latency tracking
     if (this.config.streaming) {
-      this.streamOrchestrator = createStreamOrchestrator();
-      this.fiber?.registerModule('streaming');
-
-      // v18.0: Stream completion → economic fiber handled by integration layer
-      // See: src/integration/index.ts recordStreamingCost() and emitLatencyObservation()
+      await safeModuleInit('StreamOrchestrator', async () => {
+        this.streamOrchestrator = createStreamOrchestrator();
+        this.fiber?.registerModule('streaming');
+        // v18.0: Stream completion → economic fiber handled by integration layer
+        // See: src/integration/index.ts recordStreamingCost() and emitLatencyObservation()
+        return this.streamOrchestrator;
+      });
     }
 
     // Pipeline Executor — multi-step orchestration
@@ -1779,6 +1788,7 @@ export class Genesis {
     // Competitive Intelligence — monitor competitors
     // v14.1: Full wiring with event bus integration
     if (this.config.compIntel) {
+      try {
       this.compIntelService = createCompetitiveIntelService({
         checkIntervalMs: 6 * 60 * 60 * 1000,  // 6 hours
         digestIntervalMs: 24 * 60 * 60 * 1000, // Daily
@@ -1809,17 +1819,24 @@ export class Genesis {
 
       // Start monitoring (auto-starts periodic checks)
       this.compIntelService.start();
+      } catch (error) {
+        console.error('[Genesis] CompIntel init failed — module disabled:', error instanceof Error ? error.message : error);
+      }
     }
 
     // Deployment — self-deployment capability
     if (this.config.deployment) {
-      this.deployer = new VercelDeployer();
-      this.fiber?.registerModule('deployment');
+      await safeModuleInit('Deployer', async () => {
+        this.deployer = new VercelDeployer();
+        this.fiber?.registerModule('deployment');
+        return this.deployer;
+      });
     }
 
     // Autonomous System — unified autonomous operation mode
     // v14.1: Full wiring with event bus integration
     if (this.config.autonomous) {
+      try {
       this.autonomousSystem = new AutonomousSystem({
         enableEconomy: true,
         enableDeployment: this.config.deployment,
@@ -1869,6 +1886,9 @@ export class Genesis {
       this.bountyOrchestrator.startAutonomous(30 * 60 * 1000);  // 30 min cycles
       this.fiber?.registerModule('bounty-orchestrator');
       console.log('[Genesis] Bounty Orchestrator started (autonomous mode, 30min cycles)');
+      } catch (error) {
+        console.error('[Genesis] Autonomous init failed — module disabled:', error instanceof Error ? error.message : error);
+      }
     }
 
     // v13.12.0: Finance Module — market data, signals, risk, portfolio

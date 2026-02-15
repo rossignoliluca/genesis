@@ -150,13 +150,25 @@ export class RevenueSystem {
     // Start autonomous run loop (scan and execute opportunities)
     const config = this.manager.getConfig();
     this.runLoopTimer = setInterval(
-      () => this.autonomousLoop(),
+      () => {
+        try {
+          this.autonomousLoop();
+        } catch (err) {
+          console.error('[revenue] Timer error:', err);
+        }
+      },
       config.opportunityScanInterval
     );
 
     // Start metrics publishing
     this.metricsTimer = setInterval(
-      () => this.wiring.publishMetrics(),
+      () => {
+        try {
+          this.wiring.publishMetrics();
+        } catch (err) {
+          console.error('[revenue] Timer error:', err);
+        }
+      },
       config.metricsUpdateInterval
     );
   }

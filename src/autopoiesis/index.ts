@@ -377,7 +377,13 @@ export class AutopoiesisEngine {
 
     // Then run at interval
     this.intervalHandle = setInterval(
-      () => this.cycle(),
+      () => {
+        try {
+          this.cycle();
+        } catch (err) {
+          console.error('[autopoiesis] Timer error:', err);
+        }
+      },
       this.config.observationIntervalMs,
     );
   }

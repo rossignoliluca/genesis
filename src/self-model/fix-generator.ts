@@ -82,22 +82,19 @@ export class FixGenerator {
   // ==========================================================================
 
   private async generateLLMFix(proposal: ImprovementProposal): Promise<FixResult> {
-    // Read target module code for context
-    const moduleCode = this.readModuleCode(proposal.targetModule);
-    if (!moduleCode) {
-      return { kind: 'skip', reason: `Cannot read module: ${proposal.targetModule}` };
-    }
-
-    // Read bus events for context
-    const busEvents = this.readBusEvents();
-
-    // Build prompt
-    const prompt = this.buildPrompt(proposal, moduleCode, busEvents);
-
     // Call LLM (requires ANTHROPIC_API_KEY)
     if (!process.env.ANTHROPIC_API_KEY) {
       return { kind: 'skip', reason: 'No ANTHROPIC_API_KEY — LLM-based fix requires API access' };
     }
+
+    // Read target module code — focused on the problem area
+    const codeContext = this.buildCodeContext(proposal);
+    if (!codeContext) {
+      return { kind: 'skip', reason: `Cannot read module: ${proposal.targetModule}` };
+    }
+
+    // Build the full prompt
+    const prompt = this.buildPrompt(proposal, codeContext);
 
     try {
       const { LLMBridge } = await import('../llm/index.js');
@@ -121,42 +118,164 @@ export class FixGenerator {
     }
   }
 
-  private readModuleCode(moduleName: string): string | null {
-    const modulePath = join(this.rootPath, 'src', moduleName);
+  // ==========================================================================
+  // Smart Code Context — show the LLM exactly what it needs
+  // ==========================================================================
+
+  /**
+   * Build focused code context. Instead of dumping 200 lines,
+   * we extract the EXACT region the LLM needs to modify.
+   */
+  private buildCodeContext(proposal: ImprovementProposal): string | null {
+    const modulePath = join(this.rootPath, 'src', proposal.targetModule);
     if (!existsSync(modulePath)) return null;
 
-    const lines: string[] = [];
-
-    // Read index.ts first (most important)
     const indexPath = join(modulePath, 'index.ts');
-    if (existsSync(indexPath)) {
-      const content = readFileSync(indexPath, 'utf-8');
-      // Cap at 200 lines to fit in context
-      const indexLines = content.split('\n').slice(0, 200);
-      lines.push(`--- ${moduleName}/index.ts (${indexLines.length} lines) ---`);
-      lines.push(indexLines.join('\n'));
+    if (!existsSync(indexPath)) return null;
+
+    const fullContent = readFileSync(indexPath, 'utf-8');
+    const allLines = fullContent.split('\n');
+    const totalLines = allLines.length;
+
+    const sections: string[] = [];
+
+    // Always show the file header line count
+    sections.push(`--- ${proposal.targetModule}/index.ts (${totalLines} lines total) ---`);
+
+    // For small files (<= 300 lines), show everything
+    if (totalLines <= 300) {
+      sections.push(this.numberLines(allLines, 1));
+    } else {
+      // For large files, show targeted regions
+      sections.push(this.extractFocusedContext(proposal, allLines));
     }
 
-    // List other .ts files
+    // List other files in the module
     try {
       const files = readdirSync(modulePath)
         .filter(f => f.endsWith('.ts') && f !== 'index.ts' && !f.endsWith('.test.ts'));
       if (files.length > 0) {
-        lines.push(`\n--- Other files in ${moduleName}/: ${files.join(', ')} ---`);
+        sections.push(`\n--- Other files in ${proposal.targetModule}/: ${files.join(', ')} ---`);
       }
     } catch {
       // ignore
     }
 
-    return lines.join('\n');
+    return sections.join('\n');
   }
+
+  /**
+   * For large files, extract the most relevant section for the proposal type.
+   */
+  private extractFocusedContext(proposal: ImprovementProposal, lines: string[]): string {
+    const sections: string[] = [];
+
+    // Always show imports + first 30 lines
+    sections.push('// === FILE START (imports + declarations) ===');
+    sections.push(this.numberLines(lines.slice(0, 40), 1));
+
+    // Extract the focus region based on proposal type
+    if (proposal.title.includes('shutdown') || proposal.title.includes('stop')) {
+      // Find the class with start() and show that region
+      const startLine = lines.findIndex(l => /\bstart\s*\(/.test(l));
+      if (startLine >= 0) {
+        // Show the class definition around start()
+        const classStart = this.findClassStart(lines, startLine);
+        const classEnd = this.findBlockEnd(lines, classStart);
+        const from = Math.max(0, classStart);
+        const to = Math.min(lines.length, classEnd + 1);
+        sections.push(`\n// === CLASS WITH start() (lines ${from + 1}-${to}) ===`);
+        sections.push(this.numberLines(lines.slice(from, to), from + 1));
+      }
+    } else if (proposal.title.includes('timer') || proposal.title.includes('Timer')) {
+      // Find ALL setInterval calls (not type declarations) and show each one
+      const timerLines: number[] = [];
+      for (let i = 0; i < lines.length; i++) {
+        if (/setInterval\s*\(/.test(lines[i]) && !lines[i].includes('typeof setInterval') && !lines[i].trim().startsWith('//')) {
+          // Check if this one is unprotected (no try in next 10 lines)
+          const context = lines.slice(i, Math.min(i + 10, lines.length)).join('\n');
+          if (!context.includes('try')) {
+            timerLines.push(i);
+          }
+        }
+      }
+
+      for (const timerLine of timerLines) {
+        const from = Math.max(0, timerLine - 5);
+        const to = Math.min(lines.length, timerLine + 15);
+        sections.push(`\n// === UNPROTECTED setInterval AT LINE ${timerLine + 1} ===`);
+        sections.push(this.numberLines(lines.slice(from, to), from + 1));
+      }
+
+      // Show class declaration if not in first 40 lines
+      if (timerLines.length > 0) {
+        const classStart = this.findClassStart(lines, timerLines[0]);
+        if (classStart > 40) {
+          sections.push(`\n// === CLASS DECLARATION (line ${classStart + 1}) ===`);
+          sections.push(this.numberLines(lines.slice(classStart, classStart + 5), classStart + 1));
+        }
+      }
+    } else if (proposal.category === 'wiring') {
+      // For wiring, show the first export block
+      const exportLine = lines.findIndex(l => l.includes('export'));
+      if (exportLine >= 0) {
+        const from = Math.max(0, exportLine - 2);
+        const to = Math.min(lines.length, exportLine + 30);
+        sections.push(`\n// === FIRST EXPORT BLOCK (lines ${from + 1}-${to}) ===`);
+        sections.push(this.numberLines(lines.slice(from, to), from + 1));
+      }
+    }
+
+    // Always show last 15 lines (file end, singletons, exports)
+    const tailStart = Math.max(0, lines.length - 15);
+    sections.push(`\n// === FILE END (lines ${tailStart + 1}-${lines.length}) ===`);
+    sections.push(this.numberLines(lines.slice(tailStart), tailStart + 1));
+
+    return sections.join('\n');
+  }
+
+  /**
+   * Add line numbers for LLM reference.
+   */
+  private numberLines(lines: string[], startNum: number): string {
+    return lines.map((line, i) => `${String(startNum + i).padStart(4)} | ${line}`).join('\n');
+  }
+
+  /**
+   * Walk backwards from a line to find the class/function start.
+   */
+  private findClassStart(lines: string[], fromLine: number): number {
+    for (let i = fromLine; i >= 0; i--) {
+      if (/^(export\s+)?(abstract\s+)?class\s+/.test(lines[i])) return i;
+    }
+    return Math.max(0, fromLine - 20); // fallback
+  }
+
+  /**
+   * Find the end of a block (matching closing brace).
+   */
+  private findBlockEnd(lines: string[], fromLine: number): number {
+    let depth = 0;
+    let started = false;
+    for (let i = fromLine; i < lines.length; i++) {
+      for (const ch of lines[i]) {
+        if (ch === '{') { depth++; started = true; }
+        if (ch === '}') depth--;
+        if (started && depth === 0) return i;
+      }
+    }
+    return Math.min(fromLine + 80, lines.length - 1);
+  }
+
+  // ==========================================================================
+  // Bus Events (for wiring proposals only)
+  // ==========================================================================
 
   private readBusEvents(): string {
     try {
       const eventsPath = join(this.rootPath, 'src', 'bus', 'events.ts');
       const content = readFileSync(eventsPath, 'utf-8');
 
-      // Extract just the GenesisEventMap keys (topic names)
       const topicLines: string[] = [];
       const lines = content.split('\n');
       let inMap = false;
@@ -176,110 +295,110 @@ export class FixGenerator {
     }
   }
 
+  // ==========================================================================
+  // Prompt Construction
+  // ==========================================================================
+
   private buildPrompt(
     proposal: ImprovementProposal,
-    moduleCode: string,
-    busEvents: string,
+    codeContext: string,
   ): string {
-    // Category-specific context
-    const categoryContext = this.getCategoryContext(proposal, busEvents);
+    const categoryBlock = this.getCategoryBlock(proposal);
 
-    return `Fix this issue in the Genesis TypeScript codebase.
+    return `You are modifying a TypeScript file. Here is the task:
 
-ISSUE: ${proposal.title}
-EVIDENCE: ${proposal.evidence}
-TARGET: src/${proposal.targetModule}/
-ACTION: ${proposal.suggestedAction}
+TASK: ${proposal.title}
+REASON: ${proposal.evidence}
+FILE: src/${proposal.targetModule}/index.ts
 
-TARGET MODULE CODE:
-${moduleCode}
+HERE IS THE CODE:
+${codeContext}
 
-${categoryContext}
+${categoryBlock}
 
-CRITICAL RULES:
-1. Modify ONE file only (the index.ts of the target module)
-2. All imports must use '.js' extension
-3. The "search" field must be a VERBATIM copy-paste from the code shown above — match whitespace exactly
-4. Use "type": "replace" to replace existing code with fixed version
-5. Keep added code to < 20 lines
-6. Preserve ALL existing exports and functionality — only ADD the fix
-7. Cast any event payloads with "as any"
+RESPOND WITH EXACTLY THIS JSON (no markdown, no explanation, no \`\`\` fences):
+{"targetFile":"${proposal.targetModule}/index.ts","type":"replace","search":"<EXACT lines from the code above>","content":"<replacement that includes your fix>","reason":"<one line>"}
 
-OUTPUT FORMAT — respond with ONLY this JSON, no markdown, no explanation:
-{"targetFile":"${proposal.targetModule}/index.ts","type":"replace","search":"exact verbatim string from code","content":"replacement with fix added","reason":"one line"}
-
-IMPORTANT: targetFile is relative to src/ — write "${proposal.targetModule}/index.ts", NOT "src/${proposal.targetModule}/index.ts"`;
+THE SEARCH FIELD IS CRITICAL:
+- It must be a VERBATIM substring of the code shown above (between the --- markers)
+- Copy-paste EXACTLY — same whitespace, same line breaks, same indentation
+- Do NOT include line numbers (the "  42 | " prefix) — only the code after the " | "
+- Choose the SMALLEST unique substring that contains the insertion point
+- For adding a method after start(): search for the ENTIRE start() method, then content = start() method + your new method`;
   }
 
-  private getCategoryContext(proposal: ImprovementProposal, busEvents: string): string {
-    switch (proposal.category) {
-      case 'wiring':
-        return `AVAILABLE BUS TOPICS (from GenesisEventMap):
-${busEvents}
+  private getCategoryBlock(proposal: ImprovementProposal): string {
+    if (proposal.category === 'wiring') {
+      const busEvents = this.readBusEvents();
+      return `YOUR FIX — Add bus event publishing to this module:
 
-CORRECT PATTERN FOR BUS PUBLISHING:
-\`\`\`typescript
 import { createPublisher } from '../bus/index.js';
-const publisher = createPublisher('module-name');
-publisher.publish('topic.event.name', {
-  source: 'module-name',
-  precision: 1.0,
-} as any);
-\`\`\`
+const publisher = createPublisher('${proposal.targetModule}');
+publisher.publish('system.booted', { source: '${proposal.targetModule}', precision: 1.0 } as any);
 
-NOTES:
-- createPublisher() returns an OBJECT with a .publish() method — NOT callable directly
-- Pick the SIMPLEST relevant bus topic (e.g., just emit on module init)`;
+RULES:
+- createPublisher() returns an object. Call publisher.publish(), NEVER publisher() directly
+- Add the import + publisher BEFORE the first export statement
+- Use 'system.booted' as the topic — simple and universal
+- Cast payload with "as any"
+- All imports use '.js' extension
 
-      case 'reliability':
-        if (proposal.title.includes('shutdown') || proposal.title.includes('stop')) {
-          return `FIX PATTERN — Add shutdown/stop method:
-\`\`\`typescript
-// If class has start(), add a matching stop()/shutdown():
-shutdown(): void {
-  // Cast subsystems to any for optional shutdown — they may not have it typed
-  (this.subsystem as any)?.shutdown?.();
-  // Clear any intervals/timeouts owned by this class
-  if (this.timer) { clearInterval(this.timer); this.timer = null; }
-}
-\`\`\`
-
-CRITICAL TYPE SAFETY:
-- When calling shutdown/stop on subsystems that may not have it typed, use "(this.x as any)?.shutdown?.()"
-- This avoids TS error "Property 'shutdown' does not exist on type"
-- For own class timers, use clearInterval/clearTimeout directly`;
-        }
-
-        if (proposal.title.includes('timer') || proposal.title.includes('Timer')) {
-          return `FIX PATTERN — Protect setInterval callback:
-\`\`\`typescript
-// BEFORE (unsafe):
-this.timer = setInterval(() => {
-  this.doSomething(); // throws → timer dies silently
-}, 5000);
-
-// AFTER (safe):
-this.timer = setInterval(() => {
-  try {
-    this.doSomething();
-  } catch (err) {
-    console.error('[ModuleName] Timer error:', err);
-  }
-}, 5000);
-\`\`\`
-
-NOTES:
-- Wrap ONLY the callback body, keep the setInterval structure
-- Log the error with module name prefix for debugging
-- Do NOT rethrow — let the timer survive`;
-        }
-
-        return `Fix the reliability issue described above. Keep changes minimal.`;
-
-      default:
-        return `Fix the issue described above. Keep changes minimal and focused.`;
+AVAILABLE BUS TOPICS:
+${busEvents}`;
     }
+
+    if (proposal.title.includes('shutdown') || proposal.title.includes('stop')) {
+      return `YOUR FIX — Add a shutdown() method to the class that has start():
+
+PATTERN:
+  shutdown(): void {
+    (this.fieldA as any)?.shutdown?.();
+    (this.fieldB as any)?.shutdown?.();
   }
+
+RULES:
+- Add shutdown() as a new method right AFTER the start() method
+- For each field initialized in start() or constructor, add (this.field as any)?.shutdown?.()
+- Use "as any" cast to avoid TypeScript errors — subsystems may not have shutdown() typed
+- If the class has any timer fields (setInterval/setTimeout), clear them:
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+- Do NOT modify the start() method — only ADD shutdown() after it
+- The search string must include the ENTIRE start() method so content = start() + shutdown()`;
+    }
+
+    if (proposal.title.includes('timer') || proposal.title.includes('Timer')) {
+      return `YOUR FIX — Wrap the setInterval callback in try/catch:
+
+BEFORE:
+  this.timer = setInterval(() => {
+    this.doWork();
+  }, 5000);
+
+AFTER:
+  this.timer = setInterval(() => {
+    try {
+      this.doWork();
+    } catch (err) {
+      console.error('[${proposal.targetModule}] Timer error:', err);
+    }
+  }, 5000);
+
+RULES:
+- Find the setInterval call in the code above
+- The search string must be the EXACT setInterval(...) block from the code
+- Wrap the callback body in try { ... } catch (err) { console.error(...) }
+- Do NOT rethrow — the timer must survive errors
+- Do NOT change the interval time, the method called, or anything else
+- Use '[${proposal.targetModule}]' as the log prefix
+- If the callback is a one-liner like "() => this.doWork()", expand it to arrow function body`;
+    }
+
+    return `Fix the issue described. Keep changes minimal. Use "as any" for any type uncertainty.`;
+  }
+
+  // ==========================================================================
+  // Response Parsing
+  // ==========================================================================
 
   private parseResponse(content: string, proposal: ImprovementProposal): ModificationPlan | null {
     try {
@@ -301,13 +420,26 @@ NOTES:
         targetFile = targetFile.slice(4);
       }
 
+      // Safety net: strip line number prefixes from search/content
+      // (in case LLM copied the "  42 | " prefix from numbered lines)
+      const stripLineNums = (s: string): string => {
+        if (!s) return s;
+        return s.split('\n').map(line => {
+          const match = line.match(/^\s*\d+\s*\|\s?(.*)/);
+          return match ? match[1] : line;
+        }).join('\n');
+      };
+
+      let search = parsed.search ? stripLineNums(parsed.search) : parsed.search;
+      let fixContent = stripLineNums(parsed.content);
+
       const modification: Modification = {
         id: `fix-${proposal.targetModule}-${Date.now()}`,
         description: parsed.reason || proposal.title,
         targetFile,
         type: parsed.type,
-        content: parsed.content,
-        search: parsed.search,
+        content: fixContent,
+        search,
         reason: parsed.reason || proposal.suggestedAction,
         expectedImprovement: proposal.title,
       };
@@ -329,15 +461,21 @@ NOTES:
 // System Prompt
 // ============================================================================
 
-const SYSTEM_PROMPT = `You are Genesis, an autonomous AI system modifying your own source code.
-Your self-model detected an issue. You must generate a precise code fix.
+const SYSTEM_PROMPT = `You are a precise code modification engine. You receive a TypeScript file and a task. You output a single JSON object describing the exact text replacement.
 
-ABSOLUTE REQUIREMENTS:
-- Output ONLY valid JSON. No markdown. No explanation. No \`\`\` fences.
-- The "search" field must be an EXACT substring from the code shown (copy-paste, preserve whitespace)
-- The "content" field replaces the search string entirely
-- createPublisher('name') returns { publish(topic, payload) } — call publisher.publish(), NEVER publisher()
-- All event payloads must be cast with "as any"
-- All imports use .js extension
+RULES:
+1. Output ONLY valid JSON. No markdown. No explanation. No backtick fences.
+2. The "search" field must be an EXACT verbatim substring from the code shown.
+   - Same whitespace. Same line breaks. Same indentation.
+   - Do NOT include line number prefixes like "  42 | " — only the code itself.
+3. The "content" field replaces the search string entirely.
+   - It must include the original code from "search" PLUS your additions.
+   - Never delete existing code — only add to it.
+4. TypeScript safety:
+   - All imports use '.js' extension (e.g., from '../bus/index.js')
+   - Use "as any" cast when calling methods that may not be typed on an interface
+   - Use optional chaining ?. when calling methods that might not exist
+5. Keep changes minimal — under 20 lines of new code.
 
-If you cannot produce a valid fix, output: {"targetFile":"","type":"replace","search":"","content":"","reason":"cannot fix"}`;
+If you absolutely cannot produce a valid fix, output:
+{"targetFile":"","type":"replace","search":"","content":"","reason":"cannot fix"}`;

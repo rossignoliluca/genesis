@@ -153,7 +153,13 @@ export class WorldModelSystem {
     // Start consistency checking if enabled
     if (this.config.consistencyCheckEnabled) {
       this.consistencyTimer = setInterval(
-        () => this.runConsistencyCheck(),
+        () => {
+          try {
+            this.runConsistencyCheck();
+          } catch (err) {
+            console.error('[world-model] Timer error:', err);
+          }
+        },
         this.config.predictor.consistencyCheckIntervalMs || 5000
       );
     }

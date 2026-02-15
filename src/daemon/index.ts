@@ -233,7 +233,13 @@ export class Daemon {
 
     // Start heartbeat
     this.heartbeatTimer = setInterval(
-      () => this.heartbeat(),
+      () => {
+        try {
+          this.heartbeat();
+        } catch (err) {
+          console.error('[daemon] Timer error:', err);
+        }
+      },
       this.config.heartbeatIntervalMs
     );
 

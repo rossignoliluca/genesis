@@ -157,7 +157,13 @@ export class NeuromodulationSystem {
 
   start(): void {
     if (this.updateTimer) return;
-    this.updateTimer = setInterval(() => this.decay(), this.config.updateIntervalMs);
+    this.updateTimer = setInterval(() => {
+      try {
+        this.decay();
+      } catch (err) {
+        console.error('[neuromodulation] Timer error:', err);
+      }
+    }, this.config.updateIntervalMs);
   }
 
   stop(): void {

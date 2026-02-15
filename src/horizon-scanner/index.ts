@@ -53,7 +53,13 @@ export class HorizonScanner {
     // Run first scan, then on interval
     this.runCycle().catch(console.error);
     this.scanTimer = setInterval(
-      () => this.runCycle().catch(console.error),
+      () => {
+        try {
+          this.runCycle().catch(console.error);
+        } catch (err) {
+          console.error('[horizon-scanner] Timer error:', err);
+        }
+      },
       this.config.scanIntervalMs,
     );
   }

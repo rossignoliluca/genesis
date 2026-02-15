@@ -738,7 +738,13 @@ export class Kernel {
 
   private startHealthMonitoring(): void {
     this.healthCheckTimer = setInterval(
-      async () => await this.performHealthCheck(),
+      async () => {
+        try {
+          await this.performHealthCheck();
+        } catch (err) {
+          console.error('[kernel] Timer error:', err);
+        }
+      },
       this.config.healthCheckInterval
     );
   }

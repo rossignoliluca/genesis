@@ -266,26 +266,32 @@ export class ImprovementProposer {
         const content = readFileSync(indexPath, 'utf-8');
         const lines = content.split('\n');
 
-        // Find setInterval calls and check if the callback has try/catch
+        // Find actual setInterval CALLS (not type declarations like ReturnType<typeof setInterval>)
+        let hasUnprotected = false;
+        const unprotectedLines: number[] = [];
         for (let i = 0; i < lines.length; i++) {
-          if (lines[i].includes('setInterval')) {
+          if (/setInterval\s*\(/.test(lines[i]) && !lines[i].includes('typeof setInterval')) {
             // Look at surrounding 10 lines for try/catch
             const context = lines.slice(i, Math.min(i + 10, lines.length)).join('\n');
             if (!context.includes('try')) {
-              proposals.push({
-                id: `proposal-safety-${entry.name}-timer-${Date.now()}`,
-                category: 'reliability',
-                priority: 0.55,
-                title: `Protect timer in ${entry.name}`,
-                description: `setInterval callback at line ${i + 1} has no try/catch — unhandled error kills the timer silently`,
-                targetModule: entry.name,
-                evidence: `Unprotected setInterval at line ${i + 1}: ${lines[i].trim().substring(0, 80)}`,
-                suggestedAction: `Wrap the setInterval callback body in try/catch to prevent silent timer death`,
-                estimatedEffort: 'small',
-              });
-              break; // One proposal per module
+              hasUnprotected = true;
+              unprotectedLines.push(i + 1);
             }
           }
+        }
+
+        if (hasUnprotected) {
+          proposals.push({
+            id: `proposal-safety-${entry.name}-timer-${Date.now()}`,
+            category: 'reliability',
+            priority: 0.55,
+            title: `Protect timer in ${entry.name}`,
+            description: `${unprotectedLines.length} setInterval callback(s) without try/catch — unhandled error kills timers silently`,
+            targetModule: entry.name,
+            evidence: `Unprotected setInterval at line(s): ${unprotectedLines.join(', ')}`,
+            suggestedAction: `Wrap each setInterval callback body in try/catch to prevent silent timer death`,
+            estimatedEffort: 'small',
+          });
         }
       } catch {
         // skip

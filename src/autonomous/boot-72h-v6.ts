@@ -325,7 +325,7 @@ async function boot(): Promise<CognitiveState> {
         // FEK processes observations through its cycle, no direct injection needed
         // The Active Inference loop handles observations internally
       }
-    } catch { /* FEK observation is non-fatal */ }
+    } catch (err) { /* FEK observation is non-fatal */ console.error('[Boot72h] FEK observation failed:', err); }
   });
 
   // Active Inference stop events

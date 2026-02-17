@@ -476,8 +476,8 @@ export class BountyHunter {
     try {
       const rsiFeedback = getBountyRSIFeedback();
       return rsiFeedback.getImprovedSuccessProbability(bounty);
-    } catch {
-      // Fallback to heuristics if RSI feedback not available
+    } catch (err) {
+      console.error('[BountyHunter] RSI feedback not available, falling back to heuristics:', err);
     }
 
     // Heuristic based on category and difficulty

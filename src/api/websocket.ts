@@ -285,8 +285,9 @@ export class GenesisWebSocket {
       closeFrame[1] = 0x00;
       client.socket.write(closeFrame);
       client.socket.end();
-    } catch {
+    } catch (err) {
       // Socket already closed
+      console.error('[WebSocket] Socket close error:', err);
     }
     this.clients.delete(client.id);
   }

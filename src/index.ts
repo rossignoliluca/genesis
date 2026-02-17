@@ -581,8 +581,9 @@ async function cmdMCP(subcommand: string | undefined, options: Record<string, st
     if (options.args) {
       try {
         args = JSON.parse(options.args);
-      } catch {
+      } catch (err) {
         // Try key=value format
+        console.error('[Index] Args JSON parse error:', err);
         args = { query: options.args };
       }
     }
@@ -712,8 +713,9 @@ async function cmdDaemon(subcommand: string | undefined, options: Record<string,
           console.log(`  ${c('Tasks:', 'cyan')}   ${status.completedTasks} completed, ${status.failedTasks} failed`);
           console.log(`  ${c('Dreams:', 'cyan')}  ${status.dreamCycles} cycles`);
         }
-      } catch {
+      } catch (err) {
         // IPC may fail
+        console.error('[Index] Daemon status IPC error:', err);
       }
     } else {
       console.log(`  ${c('Status:', 'cyan')}  ${c('Stopped', 'yellow')}`);
@@ -1757,7 +1759,8 @@ async function cmdHardware(): Promise<void> {
     } else {
       console.log(`  Ollama Status:    ${c('Error', 'red')}`);
     }
-  } catch {
+  } catch (err) {
+    console.error('[Index] Ollama check error:', err);
     console.log(`  Ollama Status:    ${c('Not running', 'yellow')} (start with: ollama serve)`);
   }
   console.log();
@@ -2535,8 +2538,9 @@ async function cmdInstall(options: Record<string, string>): Promise<void> {
     const result = execSync('npm list -g genesis-ai-cli --depth=0 2>/dev/null', { encoding: 'utf-8' });
     const match = result.match(/genesis-ai-cli@(\d+\.\d+\.\d+)/);
     if (match) currentVersion = match[1];
-  } catch {
+  } catch (err) {
     // Not installed globally
+    console.error('[Index] Global install check error:', err);
   }
 
   if (currentVersion) {

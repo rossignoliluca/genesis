@@ -156,12 +156,12 @@ export class ContentEngine {
             const topics = this.extractTopicSignals(query, result.data);
             signals.push(...topics);
           }
-        } catch {
-          // Individual search failure is non-fatal
+        } catch (err) {
+          console.error('[ContentEngine] Individual search failure is non-fatal:', err);
         }
       }
-    } catch {
-      // MCP client unavailable
+    } catch (err) {
+      console.error('[ContentEngine] MCP client unavailable for topic scan:', err);
     }
 
     // Deduplicate and rank
@@ -262,8 +262,8 @@ export class ContentEngine {
           platform.url = result.data?.url;
           published = true;
         }
-      } catch {
-        // Platform publish failure is non-fatal
+      } catch (err) {
+        console.error('[ContentEngine] Platform publish failure is non-fatal:', err);
       }
     }
 
@@ -315,8 +315,8 @@ export class ContentEngine {
             totalCollected += delta;
           }
         }
-      } catch {
-        // Will retry next cycle
+      } catch (err) {
+        console.error('[ContentEngine] Revenue collection failed, will retry next cycle:', err);
       }
     }
 

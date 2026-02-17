@@ -139,7 +139,8 @@ export async function getEconomicHealth(): Promise<EconomicHealth> {
         const balances = await liveWallet.getBalances();
         wallet.ethBalance = parseFloat(balances.ethFormatted);
         wallet.usdcBalance = parseFloat(balances.usdcFormatted);
-      } catch {
+      } catch (err) {
+        console.error('[EconomyHealth] Failed to fetch wallet balances:', err);
         issues.push('Failed to fetch wallet balances');
       }
 
@@ -151,7 +152,8 @@ export async function getEconomicHealth(): Promise<EconomicHealth> {
       issues.push('Wallet not configured');
       recommendations.push('Set GENESIS_PRIVATE_KEY to enable payments');
     }
-  } catch {
+  } catch (err) {
+    console.error('[EconomyHealth] Wallet module not available:', err);
     issues.push('Wallet module not available');
   }
 
@@ -161,8 +163,8 @@ export async function getEconomicHealth(): Promise<EconomicHealth> {
   let activation;
   try {
     activation = getRevenueActivation();
-  } catch {
-    // Not initialized
+  } catch (err) {
+    console.error('[EconomyHealth] Revenue activation not initialized:', err);
   }
 
   const activationStatus = activation?.getStatus();
@@ -223,7 +225,8 @@ export async function getEconomicHealth(): Promise<EconomicHealth> {
       streams.bounty.issues.push('GitHub not configured');
       recommendations.push('Set GITHUB_TOKEN and GITHUB_USERNAME for bounty execution');
     }
-  } catch {
+  } catch (err) {
+    console.error('[EconomyHealth] GitHub executor not available:', err);
     streams.bounty.issues.push('GitHub executor not available');
   }
 
@@ -232,8 +235,8 @@ export async function getEconomicHealth(): Promise<EconomicHealth> {
     const contentStats = getContentRevenueStats();
     streams.content.revenue = contentStats.totalRevenue;
     streams.content.transactions = contentStats.recordCount;
-  } catch {
-    // Monetization not initialized
+  } catch (err) {
+    console.error('[EconomyHealth] Content monetization not initialized:', err);
   }
 
   // ---------------------------------------------------------------------------
@@ -269,8 +272,8 @@ export async function getEconomicHealth(): Promise<EconomicHealth> {
         sustainable: roi > 0,
       };
     });
-  } catch {
-    // Fiber not initialized
+  } catch (err) {
+    console.error('[EconomyHealth] Economic fiber not initialized:', err);
   }
 
   const netProfit = totalRevenue - totalCost;
@@ -303,8 +306,8 @@ export async function getEconomicHealth(): Promise<EconomicHealth> {
       currentRevenue: totalRevenue,
       convergenceRate: 0, // Would need observation history
     };
-  } catch {
-    // NESS not initialized
+  } catch (err) {
+    console.error('[EconomyHealth] NESS monitor not initialized:', err);
   }
 
   // ---------------------------------------------------------------------------
@@ -326,8 +329,8 @@ export async function getEconomicHealth(): Promise<EconomicHealth> {
       failed: stats.failureCount,
       successRate: stats.successCount > 0 ? stats.successCount / (stats.successCount + stats.failureCount) : 0,
     };
-  } catch {
-    // Executor not initialized
+  } catch (err) {
+    console.error('[EconomyHealth] Revenue executor not initialized:', err);
   }
 
   // ---------------------------------------------------------------------------
@@ -586,8 +589,8 @@ export function startHealthMonitor(config: HealthMonitorConfig = {}): void {
               target: health.ness.targetRevenue,
             });
           }
-        } catch {
-          // Event bus not available
+        } catch (err) {
+          console.error('[EconomyHealth] Event bus not available for NESS deviation publish:', err);
         }
       }
 
@@ -608,8 +611,8 @@ export function startHealthMonitor(config: HealthMonitorConfig = {}): void {
             recommendations: health.recommendations,
             timestamp: health.timestamp.toISOString(),
           });
-        } catch {
-          // Dashboard not available
+        } catch (err) {
+          console.error('[EconomyHealth] Dashboard not available for broadcast:', err);
         }
       }
     } catch (error) {

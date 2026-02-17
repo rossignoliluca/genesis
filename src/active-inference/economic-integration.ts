@@ -785,8 +785,9 @@ export function recordLLMCost(
   try {
     const fiber = getEconomicFiber();
     fiber.recordCost('llm', realCost, `${provider}:${model}`);
-  } catch {
+  } catch (err) {
     // Fiber may not be initialized yet during startup
+    console.error('[EconomicIntegration] Fiber record cost error:', err);
   }
 }
 

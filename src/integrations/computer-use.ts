@@ -193,8 +193,9 @@ Be precise with numbers. Include trend directions, axis labels, legends, and any
       if (match) {
         try {
           return JSON.parse(match[0]);
-        } catch {
+        } catch (err) {
           // LLM returned malformed JSON
+          console.error('[ComputerUse] Chart JSON parse error:', err);
         }
       }
     } catch (error) {
@@ -246,8 +247,9 @@ Be precise with numbers. Include trend directions, axis labels, legends, and any
       if (match) {
         try {
           return JSON.parse(match[0]);
-        } catch {
+        } catch (err) {
           // LLM returned malformed JSON
+          console.error('[ComputerUse] Screenshot analysis JSON parse error:', err);
         }
       }
     } catch (error) {

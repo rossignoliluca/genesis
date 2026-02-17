@@ -803,8 +803,9 @@ export class MetacognitiveController {
           newKnowledge: 0,
         },
       };
-    } catch {
+    } catch (err) {
       // Knowledge enrichment is non-fatal
+      console.error('[MetacognitiveController] Knowledge enrichment error:', err);
       return { enrichedContext: context, stats: { knowledgePaths: 0, entitiesUsed: 0, newKnowledge: 0 } };
     }
   }
@@ -838,8 +839,9 @@ export class MetacognitiveController {
       if (result.entities.length > 0 || result.relations.length > 0) {
         // Graph grows over time
       }
-    } catch {
+    } catch (err) {
       // Non-fatal
+      console.error('[MetacognitiveController] Knowledge ingest error:', err);
     }
   }
 

@@ -64,15 +64,25 @@ export class GenesisSonification {
 
     // Stop all oscillators
     this.oscillators.forEach(osc => {
-      try { osc.stop(); } catch {}
+      try { osc.stop(); } catch (err) {
+        console.error('[Sonification] Failed to stop oscillator:', err);
+      }
     });
     this.oscillators.clear();
     this.gains.clear();
 
-    if (this.droneOsc1) try { this.droneOsc1.stop(); } catch {}
-    if (this.droneOsc2) try { this.droneOsc2.stop(); } catch {}
-    if (this.droneOsc3) try { this.droneOsc3.stop(); } catch {}
-    if (this.droneLFO) try { this.droneLFO.stop(); } catch {}
+    if (this.droneOsc1) try { this.droneOsc1.stop(); } catch (err) {
+      console.error('[Sonification] Failed to stop droneOsc1:', err);
+    }
+    if (this.droneOsc2) try { this.droneOsc2.stop(); } catch (err) {
+      console.error('[Sonification] Failed to stop droneOsc2:', err);
+    }
+    if (this.droneOsc3) try { this.droneOsc3.stop(); } catch (err) {
+      console.error('[Sonification] Failed to stop droneOsc3:', err);
+    }
+    if (this.droneLFO) try { this.droneLFO.stop(); } catch (err) {
+      console.error('[Sonification] Failed to stop droneLFO:', err);
+    }
 
     if (this.pulseInterval) {
       clearInterval(this.pulseInterval);

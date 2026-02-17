@@ -563,8 +563,8 @@ export class BountyRSIFeedback {
       }
 
       console.log(`[RSI Feedback] Loaded ${this.skillStats.size} skill stats from memory`);
-    } catch {
-      // Memory not available yet
+    } catch (err) {
+      console.error('[RSIFeedback] Memory not available for skill stats load:', err);
     }
   }
 

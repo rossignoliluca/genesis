@@ -396,8 +396,8 @@ export class CrossL2Arbitrageur {
                 slippage: result.data.slippage ?? 0.005,
               });
             }
-          } catch {
-            // Individual chain failure
+          } catch (err) {
+            console.error('[CrossL2Arb] Individual chain price fetch failure:', err);
           }
         }
 
@@ -405,8 +405,8 @@ export class CrossL2Arbitrageur {
           this.priceCache.set(asset, quotes);
         }
       }
-    } catch {
-      // Price refresh failure
+    } catch (err) {
+      console.error('[CrossL2Arb] Price refresh failure:', err);
     }
   }
 

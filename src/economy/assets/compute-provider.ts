@@ -148,7 +148,8 @@ export class ComputeProvider {
 
       this.registrations.set(network, reg);
       return reg;
-    } catch {
+    } catch (err) {
+      console.error('[ComputeProvider] Failed to register on network, using unregistered fallback:', err);
       const reg: ProviderRegistration = {
         network,
         stakeAmount: this.config.stakePerNetwork,
@@ -242,8 +243,8 @@ export class ComputeProvider {
             if (job) accepted.push(job);
           }
         }
-      } catch {
-        // Network unavailable
+      } catch (err) {
+        console.error('[ComputeProvider] Network unavailable for job check:', err);
       }
     }
 

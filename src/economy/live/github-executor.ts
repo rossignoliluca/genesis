@@ -117,7 +117,8 @@ export class GitHubExecutor {
       try {
         await this.octokit.repos.get({ owner, repo });
         return;
-      } catch {
+      } catch (err) {
+        console.error('[GitHubExecutor] Fork not yet available, retrying:', err);
         await new Promise(r => setTimeout(r, 2000));
       }
     }
@@ -265,8 +266,8 @@ export class GitHubExecutor {
           issue_number: pr.number,
           labels,
         });
-      } catch {
-        // Labels might not exist, ignore
+      } catch (err) {
+        console.error('[GitHubExecutor] Failed to add labels (labels may not exist):', err);
       }
     }
 

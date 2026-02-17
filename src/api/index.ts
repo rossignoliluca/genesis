@@ -291,7 +291,8 @@ export class GenesisAPI {
       req.on('end', () => {
         try {
           resolve(body ? JSON.parse(body) : null);
-        } catch {
+        } catch (err) {
+          console.error('[API] JSON body parse error:', err);
           reject(new Error('Invalid JSON body'));
         }
       });
@@ -327,8 +328,9 @@ export class GenesisAPI {
   private emitEvent(topic: string, data: unknown): void {
     try {
       (this.bus as any).publish(topic, data);
-    } catch {
+    } catch (err) {
       // Event bus may not support custom topics
+      console.error('[API] Event bus publish error:', err);
     }
   }
 

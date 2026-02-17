@@ -220,7 +220,10 @@ export class SelfProductionEngine {
         const code = data?.choices?.[0]?.message?.content;
         if (code) return code;
       }
-    } catch { /* fallback below */ }
+    } catch (err) {
+      /* fallback below */
+      console.error('[SelfProduction] Code generation error:', err);
+    }
 
     // Fallback: structural improvement template
     return `// Autopoietic improvement: ${improvement.id}\n// Type: ${improvement.type}\n// ${improvement.description}\n// Impact: ${improvement.estimatedImpact}`;

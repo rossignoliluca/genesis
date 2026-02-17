@@ -434,8 +434,8 @@ export class BountyLearningEngine {
         category: 'self-improvement',
         confidence: 0.7,
       });
-    } catch {
-      // Memory not available
+    } catch (err) {
+      console.error('[BountyLearning] Memory not available for bounty improvement research:', err);
     }
   }
 

@@ -299,8 +299,9 @@ export class Brain {
     // v18.1: Initialize memory system for grounding and meta-memory
     try {
       this.memorySystem = getMemorySystem();
-    } catch {
+    } catch (err) {
       console.warn('[Brain] Memory system not available');
+      console.error('[Brain] Memory system init error:', err);
     }
 
     // v7.13: Initialize full module integration (lazy - on first use)
@@ -575,7 +576,10 @@ export class Brain {
             importance: content.salience,
             tags: ['conscious', 'gwt-broadcast', content.type, content.sourceModule],
           });
-        } catch { /* memory encoding is non-fatal */ }
+        } catch (err) {
+          /* memory encoding is non-fatal */
+          console.error('[Brain] Memory encoding error:', err);
+        }
       },
       bottomUpSalience: () => {
         const stats = workspace.getStats?.() || { itemCount: 0 };
@@ -2015,8 +2019,9 @@ export class Brain {
           if (anticipated.length > 0) {
             this.metrics.anticipationHits += anticipated.length;
           }
-        } catch {
+        } catch (err) {
           // Memory anticipation failure is non-fatal
+          console.error('[Brain] Memory anticipation error:', err);
         }
 
         return {
@@ -2537,8 +2542,9 @@ export class Brain {
             }
           }
         }
-      } catch {
+      } catch (err) {
         // Non-critical
+        console.error('[Brain] Meta-memory hint error:', err);
       }
 
       // Run metacognitive reasoning (EFE strategy selection + execution)
@@ -3015,7 +3021,8 @@ export class Brain {
         // Try to parse as JSON
         try {
           params[paramName] = JSON.parse(paramValue);
-        } catch {
+        } catch (err) {
+          console.error('[Brain] JSON param parse error:', err);
           params[paramName] = paramValue;
         }
       }
@@ -3043,7 +3050,8 @@ export class Brain {
     try {
       const level = this.phiMonitor.getCurrentLevel();
       return level.phi;
-    } catch {
+    } catch (err) {
+      console.error('[Brain] Phi monitor error:', err);
       return 0.5; // Default if monitor not available
     }
   }

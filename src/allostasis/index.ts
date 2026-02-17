@@ -204,8 +204,9 @@ class InteroceptionSystem {
     for (const [variable, callback] of this.sensorCallbacks) {
       try {
         setStateValue(newState, variable, callback());
-      } catch {
+      } catch (err) {
         // Sensor failed, keep previous value
+        console.error('[Allostasis] Sensor callback error:', err);
       }
     }
 
@@ -238,7 +239,8 @@ class InteroceptionSystem {
       const used = process.memoryUsage();
       const heapUsed = used.heapUsed / used.heapTotal;
       return Math.min(1, heapUsed);
-    } catch {
+    } catch (err) {
+      console.error('[Allostasis] Memory pressure estimation error:', err);
       return this.currentState.memoryPressure;
     }
   }

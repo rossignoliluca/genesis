@@ -191,7 +191,8 @@ Example: [{"speaker": "host", "text": "Welcome to Market Pulse Weekly..."}, {"sp
       title: 'Market Pulse Weekly',
       segments,
     };
-  } catch {
+  } catch (err) {
+    console.error('[PodcastGenerator] Script generation via MCP failed, using fallback:', err);
     // Fallback: generate a basic script from content
     return generateFallbackScript(content, targetMin);
   }
@@ -280,7 +281,8 @@ async function synthesizeSegment(
     }
 
     return false;
-  } catch {
+  } catch (err) {
+    console.error('[PodcastGenerator] TTS synthesis via MCP failed, falling back to system say:', err);
     // Fallback: use system `say` command on macOS
     return new Promise((resolve) => {
       const child = spawn('say', [
@@ -329,7 +331,9 @@ async function concatenateAudio(
 
     child.on('close', (code) => {
       // Cleanup
-      try { fs.unlinkSync(concatFile); } catch {}
+      try { fs.unlinkSync(concatFile); } catch (err) {
+        console.error('[PodcastGenerator] Failed to remove concat file:', err);
+      }
       resolve(code === 0);
     });
     child.on('error', () => resolve(false));
@@ -435,9 +439,13 @@ export class PodcastGenerator {
 
       // Cleanup segment files
       for (const sp of segmentPaths) {
-        try { fs.unlinkSync(sp); } catch {}
+        try { fs.unlinkSync(sp); } catch (err) {
+          console.error('[PodcastGenerator] Failed to remove segment file:', err);
+        }
       }
-      try { fs.rmdirSync(segDir); } catch {}
+      try { fs.rmdirSync(segDir); } catch (err) {
+        console.error('[PodcastGenerator] Failed to remove segment directory:', err);
+      }
 
       return {
         success: true,

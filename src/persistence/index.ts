@@ -785,8 +785,9 @@ export class SessionManager {
           tokenCount: data.conversation?.totalTokens || 0,
           summary,
         });
-      } catch {
+      } catch (err) {
         // Skip invalid files
+        console.error('[Persistence] Failed to parse session file:', err);
       }
     }
 
@@ -853,7 +854,8 @@ export class SessionManager {
     try {
       const data = JSON.parse(fs.readFileSync(sessionPath, 'utf-8')) as GenesisState;
       return data;
-    } catch {
+    } catch (err) {
+      console.error('[Persistence] Failed to load session:', err);
       return null;
     }
   }

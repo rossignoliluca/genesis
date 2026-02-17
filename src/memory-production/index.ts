@@ -469,7 +469,8 @@ export class KnowledgeGraph {
     try {
       await this.runQuery(query, { from, to, now });
       return { success: true };
-    } catch {
+    } catch (err) {
+      console.error('[MemoryProduction] Relationship invalidation error:', err);
       return { success: false };
     }
   }
@@ -504,7 +505,8 @@ export class KnowledgeGraph {
         name: r.related.name,
         properties: r.related,
       }));
-    } catch {
+    } catch (err) {
+      console.error('[MemoryProduction] findCurrentRelated error:', err);
       return [];
     }
   }

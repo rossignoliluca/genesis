@@ -163,8 +163,8 @@ export class GrantsManager {
           }
         }
       }
-    } catch {
-      // Scan failure is non-fatal
+    } catch (err) {
+      console.error('[Grants] Grant program scan failure is non-fatal:', err);
     }
 
     this.lastScan = Date.now();
@@ -254,8 +254,8 @@ export class GrantsManager {
         app.submittedAt = Date.now();
         return true;
       }
-    } catch {
-      // Submission failure
+    } catch (err) {
+      console.error('[Grants] Application submission failed:', err);
     }
 
     return false;
@@ -302,8 +302,8 @@ export class GrantsManager {
             app.status = 'under_review';
           }
         }
-      } catch {
-        // Will retry next cycle
+      } catch (err) {
+        console.error('[Grants] Failed to check grant outcome, will retry next cycle:', err);
       }
     }
 

@@ -488,11 +488,7 @@ export class GenesisMCPServer extends EventEmitter {
   }
 
   private zodToJsonSchema(schema: z.ZodType<unknown>): Record<string, unknown> {
-    // Simplified Zod to JSON Schema conversion
-    return {
-      type: 'object',
-      properties: {},
-    };
+    return z.toJSONSchema(schema) as Record<string, unknown>;
   }
 
   private matchesPattern(uri: string, pattern: string): boolean {

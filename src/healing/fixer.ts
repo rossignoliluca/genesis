@@ -417,7 +417,8 @@ export class AutoFixer {
       // Skip directories
       try {
         if (!fs.statSync(filePath).isFile()) continue;
-      } catch {
+      } catch (err) {
+        console.error('[Fixer] stat error for path:', err);
         continue;
       }
 
@@ -439,8 +440,9 @@ export class AutoFixer {
         try {
           const llmCandidates = await this.config.llmFixGenerator(error, content);
           candidates.push(...llmCandidates);
-        } catch {
+        } catch (err) {
           // LLM generation failed, continue with pattern-based fixes
+          console.error('[Fixer] LLM fix generation failed:', err);
         }
       }
     }
@@ -510,7 +512,8 @@ export class AutoFixer {
     // Apply fix temporarily
     try {
       fs.writeFileSync(filePath, candidate.fixed, 'utf-8');
-    } catch {
+    } catch (err) {
+      console.error('[Fixer] Failed to write candidate fix:', err);
       return {
         candidate,
         testsPass: false,
@@ -620,7 +623,8 @@ export class AutoFixer {
       });
 
       return result.success;
-    } catch {
+    } catch (err) {
+      console.error('[Fixer] Apply fix failed:', err);
       return false;
     }
   }

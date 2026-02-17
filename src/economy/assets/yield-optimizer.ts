@@ -141,8 +141,8 @@ export class YieldOptimizer {
       }
 
       this.lastScan = Date.now();
-    } catch {
-      // Scan failure is non-fatal
+    } catch (err) {
+      console.error('[YieldOptimizer] Opportunity scan failure is non-fatal:', err);
     }
 
     return this.opportunities;
@@ -205,8 +205,8 @@ export class YieldOptimizer {
         this.positions.set(position.id, position);
         return position;
       }
-    } catch {
-      // Deploy failure
+    } catch (err) {
+      console.error('[YieldOptimizer] Capital deployment failed:', err);
     }
 
     return null;
@@ -250,8 +250,8 @@ export class YieldOptimizer {
             await this.withdraw(position.id);
           }
         }
-      } catch {
-        // Individual harvest failure
+      } catch (err) {
+        console.error('[YieldOptimizer] Individual harvest failure:', err);
       }
     }
 
@@ -285,8 +285,8 @@ export class YieldOptimizer {
 
         return withdrawn;
       }
-    } catch {
-      // Withdraw failure
+    } catch (err) {
+      console.error('[YieldOptimizer] Position withdrawal failed:', err);
     }
 
     return 0;

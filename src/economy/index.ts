@@ -254,7 +254,8 @@ export class CryptoWallet {
       const client = getMCPClient();
       const result = await client.call('coinbase' as MCPServerName, 'get_wallet_address', {});
       return result.data?.address || null;
-    } catch {
+    } catch (err) {
+      console.error('[Economy] Failed to get wallet address:', err);
       return null;
     }
   }

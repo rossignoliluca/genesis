@@ -87,7 +87,7 @@ export class MCPFinanceManager {
       cacheTTLMs: 5 * 60 * 1000, // 5 minutes
       ...config,
     };
-    try { this.mcp = getMCPClient(); } catch { this.mcp = null; }
+    try { this.mcp = getMCPClient(); } catch (err) { console.error('[MCPFinance] MCP client init error:', err); this.mcp = null; }
   }
 
   // ==========================================================================

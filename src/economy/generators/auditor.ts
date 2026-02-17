@@ -238,8 +238,8 @@ export class SmartContractAuditor {
           if (auditReq) opportunities.push(auditReq);
         }
       }
-    } catch {
-      // Platform unavailable
+    } catch (err) {
+      console.error('[Auditor] Platform unavailable for opportunity scan:', err);
     }
 
     return opportunities;
@@ -302,7 +302,8 @@ export class SmartContractAuditor {
         chain,
       });
       return result.data?.source ?? null;
-    } catch {
+    } catch (err) {
+      console.error('[Auditor] Failed to fetch contract source:', err);
       return null;
     }
   }
@@ -363,12 +364,12 @@ export class SmartContractAuditor {
                 });
               }
             }
-          } catch {
-            // LLM output parsing failure — pattern findings still valid
+          } catch (err) {
+            console.error('[Auditor] LLM output parsing failure — pattern findings still valid:', err);
           }
         }
-      } catch {
-        // Brain unavailable — pattern findings still valid
+      } catch (err) {
+        console.error('[Auditor] Brain unavailable — pattern findings still valid:', err);
       }
     }
 

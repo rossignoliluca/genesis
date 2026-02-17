@@ -299,8 +299,8 @@ class EmergencyManager {
       if (state) {
         lastState = state.savedAt;
       }
-    } catch {
-      // No saved state
+    } catch (err) {
+      console.error('[Emergency] Failed to load saved state:', err);
     }
 
     return {

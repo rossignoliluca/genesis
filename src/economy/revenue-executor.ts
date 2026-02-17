@@ -74,14 +74,14 @@ export class RevenueExecutor {
   private async initialize(): Promise<void> {
     try {
       this.fiber = getEconomicFiber();
-    } catch {
-      console.warn('[RevenueExecutor] Economic fiber not available');
+    } catch (err) {
+      console.error('[RevenueExecutor] Economic fiber not available:', err);
     }
 
     try {
       this.wallet = getLiveWallet();
-    } catch {
-      console.warn('[RevenueExecutor] Wallet not available');
+    } catch (err) {
+      console.error('[RevenueExecutor] Wallet not available:', err);
     }
 
     // Subscribe to revenue events

@@ -3204,8 +3204,9 @@ Question: ${query}`;
           return steps;
         }
       }
-    } catch {
+    } catch (err) {
       // Fallback to simple split
+      console.error('[Thinking] Step extraction error:', err);
     }
 
     return simpleSteps;
@@ -3263,8 +3264,9 @@ Question: ${query}`;
         if (match) {
           return match[1].toLowerCase() === 'true';
         }
-      } catch {
+      } catch (err) {
         // Fallback to string comparison
+        console.error('[Thinking] LLM equivalence check error:', err);
       }
     }
 

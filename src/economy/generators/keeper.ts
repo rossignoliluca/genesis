@@ -454,8 +454,8 @@ export class KeeperExecutor {
         for (const job of parsed) {
           knownJobs.push({ ...job, active: true });
         }
-      } catch {
-        console.warn('[Keeper] Failed to parse GENESIS_KEEPER_JOBS');
+      } catch (err) {
+        console.error('[Keeper] Failed to parse GENESIS_KEEPER_JOBS:', err);
       }
     }
 
@@ -481,7 +481,8 @@ export class KeeperExecutor {
       });
       // Return gas in gwei (rough estimate)
       return Number(gasEstimate) / 1e9;
-    } catch {
+    } catch (err) {
+      console.error('[Keeper] Failed to estimate gas price, using default 20 gwei:', err);
       return 20; // Default 20 gwei
     }
   }
@@ -490,7 +491,8 @@ export class KeeperExecutor {
     try {
       const priceFeed = getPriceFeed();
       return await priceFeed.getEthPrice();
-    } catch {
+    } catch (err) {
+      console.error('[Keeper] Failed to fetch ETH price, using default $3000:', err);
       return 3000; // Default $3000
     }
   }

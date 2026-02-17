@@ -952,8 +952,9 @@ export class ChatAPI extends EventEmitter {
     try {
       res.write(`event: ${event}\n`);
       res.write(`data: ${JSON.stringify(data)}\n\n`);
-    } catch {
+    } catch (err) {
       // Client disconnected
+      console.error('[ChatAPI] SSE write error:', err);
     }
   }
 

@@ -242,7 +242,8 @@ export class MemoryService {
       });
 
       return { stored: true };
-    } catch {
+    } catch (err) {
+      console.error('[MemoryService] Failed to store memory entry:', err);
       return { stored: false };
     }
   }
@@ -259,7 +260,8 @@ export class MemoryService {
       });
 
       return { results };
-    } catch {
+    } catch (err) {
+      console.error('[MemoryService] Failed to retrieve memory results:', err);
       return { results: [] };
     }
   }
@@ -273,7 +275,8 @@ export class MemoryService {
       const memory = getMemorySystem();
       await memory.consolidate();
       return { consolidated: count };
-    } catch {
+    } catch (err) {
+      console.error('[MemoryService] Failed to consolidate memories:', err);
       return { consolidated: 0 };
     }
   }
@@ -287,7 +290,8 @@ export class MemoryService {
       // MemorySystem uses natural forgetting (Ebbinghaus curve), no manual forget API
       void memory;
       return { forgotten: data.keys?.length ?? 0 };
-    } catch {
+    } catch (err) {
+      console.error('[MemoryService] Failed to process forget request:', err);
       return { forgotten: 0 };
     }
   }

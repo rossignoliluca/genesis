@@ -164,7 +164,10 @@ export class ObservationGatherer {
           // Map FE to energy: FE=0 → energy=1.0, FE≥5 → energy=0.0
           fekEnergy = Math.max(0, Math.min(1, 1 - totalFE / 5));
         }
-      } catch { /* FEK may not be initialized */ }
+      } catch (err) {
+        /* FEK may not be initialized */
+        console.error('[Observations] FEK init error:', err);
+      }
 
       // Blend: 30% heap pressure, 70% FEK free energy
       const energy = 0.3 * heapEnergy + 0.7 * fekEnergy;
@@ -255,8 +258,9 @@ export class ObservationGatherer {
       if (available < 10) return 1;       // low
       if (available < 100) return 2;      // stable
       return 3;                           // growing
-    } catch {
+    } catch (err) {
       // Stripe not available, use economic integration fallback
+      console.error('[Observations] Stripe balance error:', err);
       return 2; // stable default
     }
   }
@@ -323,11 +327,13 @@ export class ObservationGatherer {
     let economicObs: EconomicObs = 2; // Default stable
     try {
       economicObs = await this.getStripeBalance();
-    } catch {
+    } catch (err) {
+      console.error('[Observations] Stripe balance fetch error:', err);
       try {
         economicObs = await getEconomicIntegration().getDiscreteObservation() as EconomicObs;
-      } catch {
+      } catch (err2) {
         // Both failed, use default
+        console.error('[Observations] Economic integration fallback error:', err2);
       }
     }
 

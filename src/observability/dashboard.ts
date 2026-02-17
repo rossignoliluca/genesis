@@ -843,8 +843,8 @@ export class DashboardServer extends EventEmitter {
             try {
               const result = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
               // Clean up files
-              try { fs.unlinkSync(requestFile); } catch {}
-              try { fs.unlinkSync(resultFile); } catch {}
+              try { fs.unlinkSync(requestFile); } catch (err) { console.error('[Dashboard] Failed to unlink request file:', err); }
+              try { fs.unlinkSync(resultFile); } catch (err) { console.error('[Dashboard] Failed to unlink result file:', err); }
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify(result));
               return;
@@ -979,8 +979,9 @@ export class DashboardServer extends EventEmitter {
     for (const client of this.sseClients) {
       try {
         client.write(data);
-      } catch {
+      } catch (err) {
         // Client disconnected
+        console.error('[Dashboard] SSE client write error:', err);
       }
     }
   }

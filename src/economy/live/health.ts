@@ -314,8 +314,8 @@ export async function getSystemStatus(): Promise<SystemStatus> {
         connected: true,
       };
     }
-  } catch {
-    // No wallet
+  } catch (err) {
+    console.error('[LiveHealth] Failed to retrieve wallet status:', err);
   }
 
   // Controller status
@@ -336,8 +336,8 @@ export async function getSystemStatus(): Promise<SystemStatus> {
         lastCycle: state.lastCycle,
       };
     }
-  } catch {
-    // Not initialized
+  } catch (err) {
+    console.error('[LiveHealth] Controller not initialized:', err);
   }
 
   // Revenue stats
@@ -346,8 +346,8 @@ export async function getSystemStatus(): Promise<SystemStatus> {
     const tracker = getRevenueTracker();
     await tracker.load();
     revenue = tracker.getStats();
-  } catch {
-    // Not initialized
+  } catch (err) {
+    console.error('[LiveHealth] Revenue tracker not initialized:', err);
   }
 
   // Balance snapshot
@@ -358,8 +358,8 @@ export async function getSystemStatus(): Promise<SystemStatus> {
     if (history.length > 0) {
       balance = history[history.length - 1];
     }
-  } catch {
-    // Not initialized
+  } catch (err) {
+    console.error('[LiveHealth] Balance monitor not initialized:', err);
   }
 
   return {

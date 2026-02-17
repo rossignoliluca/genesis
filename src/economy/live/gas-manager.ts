@@ -102,8 +102,8 @@ export class GasManager {
     let ethPriceUsd = 3000; // Fallback
     try {
       ethPriceUsd = await getEthPrice();
-    } catch {
-      // Use fallback price
+    } catch (err) {
+      console.error('[GasManager] Failed to fetch ETH price, using fallback:', err);
     }
     const ethBalanceUsd = ethFloat * ethPriceUsd;
 

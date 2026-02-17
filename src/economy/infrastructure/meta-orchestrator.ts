@@ -178,8 +178,8 @@ export class MetaOrchestrator {
           if (profile) discovered.push(profile);
         }
       }
-    } catch {
-      // Discovery failure is non-fatal
+    } catch (err) {
+      console.error('[MetaOrchestrator] Agent discovery failure is non-fatal:', err);
     }
 
     return discovered;

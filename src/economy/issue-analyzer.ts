@@ -152,8 +152,8 @@ export class IssueAnalyzer {
         per_page: 10,
       });
       linkedPRs = searchResult?.data?.items || [];
-    } catch {
-      // Timeline not available
+    } catch (err) {
+      console.error('[IssueAnalyzer] Failed to search linked PRs for issue timeline:', err);
     }
 
     return {

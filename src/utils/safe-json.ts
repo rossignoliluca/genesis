@@ -5,7 +5,8 @@
 export function safeJsonParse<T>(input: string, defaultValue: T): T {
   try {
     return JSON.parse(input) as T;
-  } catch {
+  } catch (err) {
+    console.error('[SafeJson] safeJsonParse failed:', err);
     return defaultValue;
   }
 }
@@ -16,7 +17,8 @@ export function safeJsonParse<T>(input: string, defaultValue: T): T {
 export function tryJsonParse<T = unknown>(input: string): T | null {
   try {
     return JSON.parse(input) as T;
-  } catch {
+  } catch (err) {
+    console.error('[SafeJson] tryJsonParse failed:', err);
     return null;
   }
 }

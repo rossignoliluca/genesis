@@ -340,8 +340,9 @@ export class CodeRuntime {
       if (existsSync(filePath)) {
         unlinkSync(filePath);
       }
-    } catch {
+    } catch (err) {
       // Ignore cleanup errors
+      console.error('[Runtime] File cleanup error:', err);
     }
   }
 
@@ -470,8 +471,9 @@ export class CodeRuntime {
             structured: parsed,
           });
           continue;
-        } catch {
+        } catch (err) {
           // Not valid JSON
+          console.error('[Runtime] JSON pattern parse error:', err);
         }
       }
 

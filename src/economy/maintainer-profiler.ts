@@ -229,8 +229,8 @@ export class MaintainerProfiler {
               }
             }
           }
-        } catch {
-          // Skip PR if can't get reviews
+        } catch (err) {
+          console.error('[MaintainerProfiler] Failed to get PR reviews, skipping:', err);
         }
       }
 

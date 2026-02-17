@@ -797,6 +797,7 @@ export class GenesisMCPServer extends EventEmitter {
               audit: result.audit,
               fekState: result.fekState,
               cost: result.cost,
+              usage: result.usage,
               durationMs: duration,
               pipeline: 'Genesis.process() → Nucleus → full cognitive stack',
             },

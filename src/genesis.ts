@@ -113,6 +113,9 @@ import { A2AClient, A2AServer, generateA2AKeyPair, type A2AClientConfig, type A2
 // Payments — revenue and cost tracking
 import { getPaymentService, getRevenueTracker, type PaymentService, type RevenueTracker } from './payments/index.js';
 
+// Economic integration — cost tracking
+import { getEconomicIntegration } from './active-inference/economic-integration.js';
+
 // Services — competitive intel, revenue loop
 import { createCompetitiveIntelService, type CompetitiveIntelService } from './services/competitive-intel.js';
 import { createRevenueLoop, type RevenueLoop } from './services/revenue-loop.js';
@@ -441,6 +444,11 @@ export interface ProcessResult {
   confidence: ConfidenceEstimate | null;
   audit: ThoughtAudit | null;
   cost: number;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    model: string;
+  };
   fekState: FEKState | null;
 }
 
@@ -2844,6 +2852,10 @@ export class Genesis {
 
     // v34.0: Nucleus orchestration — classify, select modules, execute
     this.curiosityEngine?.recordActivity();
+
+    // Snapshot cost tracker before processing to compute real LLM cost delta
+    const costTimestampBefore = Date.now();
+
     const ctx = await this.nucleus!.execute(input);
 
     if (ctx.meta.blocked) {
@@ -2860,12 +2872,41 @@ export class Genesis {
       this.hooks.execute('post-message', { event: 'post-message', message: input, response: ctx.response }).catch(e => console.debug('[Hooks] post-message failed:', e?.message || e));
     }
 
-    const cost = Object.values(ctx.timings).reduce((a, b) => a + b, 0) * 0.0001;
+    // Compute real LLM cost from CostTracker delta
+    let realCost = 0;
+    let usage: ProcessResult['usage'] | undefined;
+    try {
+      const tracker = getEconomicIntegration().getCostTracker();
+      const recentCosts = tracker.getCosts(60000);
+      const llmRecords = recentCosts.filter(r => r.category === 'llm' && r.timestamp >= costTimestampBefore);
+
+      realCost = llmRecords.reduce((sum, r) => sum + r.amount, 0);
+
+      let totalInput = 0, totalOutput = 0;
+      let lastModel = '';
+      for (const r of llmRecords) {
+        const match = r.description.match(/^(.+?):\s*(\d+)\s*in,\s*(\d+)\s*out$/);
+        if (match) {
+          lastModel = match[1];
+          totalInput += parseInt(match[2]);
+          totalOutput += parseInt(match[3]);
+        }
+      }
+
+      if (totalInput > 0) {
+        usage = { inputTokens: totalInput, outputTokens: totalOutput, model: lastModel };
+      }
+    } catch {
+      // Fallback to time-based estimate if cost tracker unavailable
+      realCost = Object.values(ctx.timings).reduce((a, b) => a + b, 0) * 0.0001;
+    }
+
     return {
       response: ctx.response,
       confidence: ctx.confidence as any,
       audit: ctx.audit as any,
-      cost,
+      cost: realCost,
+      usage,
       fekState: ctx.fekState as any,
     };
   }

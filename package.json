@@ -3,6 +3,7 @@
   "mcpName": "io.github.rossignoliluca/genesis",
   "version": "18.0.0",
   "description": "Fully Autonomous AI System with RSI (Recursive Self-Improvement) - Self-funding, Self-deploying, Production Memory, A2A Protocol & Governance",
+  "type": "commonjs",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "bin": {
@@ -71,6 +72,7 @@
     "mailparser": "^3.9.3",
     "nodemailer": "^8.0.1",
     "pg": "^8.18.0",
+    "pino": "^10.3.1",
     "playwright": "^1.58.2",
     "remotion": "^4.0.422",
     "viem": "^2.44.4"

@@ -320,6 +320,10 @@ export class AgentPool {
 
     // Start cleanup timer
     this.cleanupInterval = setInterval(() => this.cleanup(), 30000);
+    // Prevent interval from blocking process exit
+    if (this.cleanupInterval.unref) {
+      this.cleanupInterval.unref();
+    }
   }
 
   // ==========================================================================

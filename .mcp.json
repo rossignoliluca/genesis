@@ -21,7 +21,7 @@
     "sequential-thinking": {
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@anthropic/mcp-server-sequential-thinking"],
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
       "description": "Enhanced multi-step reasoning",
       "enabled": true,
       "category": "cognition"
@@ -35,8 +35,8 @@
     },
     "time": {
       "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-time"],
+      "command": "uvx",
+      "args": ["mcp-server-time"],
       "description": "Timezone-aware time for scheduling (IT/US/UK/JP)",
       "enabled": true,
       "category": "infrastructure"
@@ -88,7 +88,7 @@
     "wolfram": {
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-wolfram-alpha"],
+      "args": ["-y", "wolfram-mcp"],
       "requiredEnv": ["WOLFRAM_APP_ID"],
       "description": "Computational knowledge — math, physics, data analysis",
       "enabled": true,
@@ -146,6 +146,9 @@
       "command": "npx",
       "args": ["-y", "@tacticlaunch/mcp-linear"],
       "requiredEnv": ["LINEAR_API_KEY"],
+      "env": {
+        "LINEAR_API_TOKEN": "${LINEAR_API_KEY}"
+      },
       "description": "Project management — autonomous task tracking",
       "enabled": true,
       "category": "dev"
@@ -154,6 +157,9 @@
       "transport": "stdio",
       "command": "npx",
       "args": ["-y", "@alisaitteke/docker-mcp"],
+      "env": {
+        "DOCKER_HOST": "unix:///Users/lucarossignoli/.docker/run/docker.sock"
+      },
       "description": "Container management for isolated testing",
       "enabled": true,
       "category": "dev"
@@ -164,6 +170,9 @@
       "command": "npx",
       "args": ["-y", "alpha-vantage-mcp"],
       "requiredEnv": ["ALPHAVANTAGE_API_KEY"],
+      "env": {
+        "ALPHA_VANTAGE_API_KEY": "${ALPHAVANTAGE_API_KEY}"
+      },
       "description": "Stocks, forex, crypto, economic indicators, fundamentals",
       "enabled": true,
       "category": "finance"
@@ -171,7 +180,7 @@
     "stripe": {
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@stripe/mcp", "--tools=all"],
+      "args": ["-y", "@stripe/mcp"],
       "requiredEnv": ["STRIPE_SECRET_KEY"],
       "description": "Payments, billing, treasury, virtual cards",
       "enabled": true,
@@ -182,8 +191,8 @@
       "command": "npx",
       "args": ["-y", "@coinbase/agentkit-model-context-protocol"],
       "requiredEnv": ["CDP_API_KEY_NAME", "CDP_API_KEY_PRIVATE_KEY"],
-      "description": "Crypto wallet, stablecoins, on-chain actions",
-      "enabled": true,
+      "description": "Crypto wallet, stablecoins, on-chain actions — DISABLED: package is a library, not a CLI. Needs wrapper script.",
+      "enabled": false,
       "category": "finance"
     },
     "bloomberg": {
@@ -192,7 +201,7 @@
       "args": ["src/mcp-servers/bloomberg/index.js"],
       "requiredEnv": ["BLOOMBERG_API_KEY"],
       "description": "Bloomberg Terminal API — market data, news, analytics (custom stub)",
-      "disabled": true,
+      "enabled": false,
       "category": "finance"
     },
 
@@ -246,24 +255,28 @@
     "slack": {
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@anthropic/mcp-server-slack"],
+      "args": ["-y", "@modelcontextprotocol/server-slack"],
       "requiredEnv": ["SLACK_MCP_XOXP_TOKEN"],
-      "description": "Team notifications & alerts",
+      "env": {
+        "SLACK_BOT_TOKEN": "${SLACK_MCP_XOXP_TOKEN}",
+        "SLACK_TEAM_ID": ""
+      },
+      "description": "Team notifications & alerts. NOTE: needs SLACK_TEAM_ID — find via Slack admin settings",
       "enabled": true,
       "category": "communication"
     },
     "telegram": {
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@nicepkg/mcp-telegram"],
+      "args": ["-y", "mcp-telegram-claudecode"],
       "requiredEnv": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_API_ID", "TELEGRAM_API_HASH"],
       "env": {
         "TELEGRAM_BOT_TOKEN": "${TELEGRAM_BOT_TOKEN}",
         "TELEGRAM_API_ID": "${TELEGRAM_API_ID}",
         "TELEGRAM_API_HASH": "${TELEGRAM_API_HASH}"
       },
-      "description": "Telegram bot for market alerts and notifications",
-      "enabled": true,
+      "description": "Telegram bot for market alerts and notifications. NEEDS: TELEGRAM_BOT_TOKEN, API_ID, API_HASH in .env",
+      "enabled": false,
       "category": "communication"
     },
 
@@ -272,7 +285,7 @@
       "command": "npx",
       "args": ["-y", "@mbelinky/x-mcp-server"],
       "requiredEnv": ["X_BEARER_TOKEN"],
-      "description": "FinTwit monitoring & content publishing",
+      "description": "FinTwit monitoring & content publishing. NOTE: needs full OAuth (X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET) for write ops",
       "enabled": true,
       "category": "social"
     },
@@ -282,7 +295,7 @@
       "args": ["-y", "reddit-mcp"],
       "requiredEnv": ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET"],
       "description": "Retail sentiment — WSB, r/investing, r/CryptoCurrency",
-      "enabled": false,
+      "enabled": true,
       "category": "social"
     },
     "youtube": {
@@ -298,7 +311,7 @@
     "playwright": {
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@anthropic/mcp-server-playwright"],
+      "args": ["-y", "@playwright/mcp@latest"],
       "description": "Browser automation for chart screenshots & scraping",
       "enabled": true,
       "category": "automation"
@@ -306,9 +319,9 @@
     "puppeteer": {
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@anthropic/mcp-server-puppeteer"],
-      "description": "Headless browser automation fallback",
-      "enabled": true,
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
+      "description": "Headless browser automation fallback (duplicato di playwright)",
+      "enabled": false,
       "category": "automation"
     },
 
@@ -343,7 +356,7 @@
     "vercel": {
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@vercel/mcp"],
+      "args": ["-y", "vercel-mcp-server"],
       "requiredEnv": ["VERCEL_API_TOKEN"],
       "description": "Website deployment, serverless functions",
       "enabled": true,
@@ -379,7 +392,7 @@
     "neo4j": {
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@jovanhsu/mcp-neo4j-memory-server"],
+      "args": ["-y", "@johnymontana/neo4j-mcp"],
       "requiredEnv": ["NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD"],
       "description": "Knowledge graph for relational memory",
       "enabled": true,
@@ -426,8 +439,8 @@
       "command": "uvx",
       "args": ["--from", "git+https://github.com/polygon-io/mcp_polygon", "mcp_polygon"],
       "requiredEnv": ["POLYGON_API_KEY"],
-      "description": "35+ tools: real-time trades, quotes, OHLC, options, forex, crypto, fundamentals",
-      "enabled": true,
+      "description": "DISABLED: repo renamed to mcp-massive, SyntaxError on Python 3.11, needs upstream fix",
+      "enabled": false,
       "category": "finance"
     },
     "figma": {
@@ -435,14 +448,14 @@
       "command": "npx",
       "args": ["-y", "figma-developer-mcp"],
       "requiredEnv": ["FIGMA_API_KEY"],
-      "description": "Read Figma designs, components, variables — design-to-code. Token may need figd_ prefix format",
+      "description": "Read Figma designs, components, variables — design-to-code",
       "enabled": true,
       "category": "design"
     },
     "mapbox": {
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@anthropic/mcp-server-mapbox"],
+      "args": ["-y", "@mapbox/mcp-server"],
       "requiredEnv": ["MAPBOX_ACCESS_TOKEN"],
       "description": "Geocoding, routing, POI, isochrones, static map images",
       "enabled": true,
@@ -472,8 +485,123 @@
       "args": ["-y", "runway-mcp-server"],
       "requiredEnv": ["RUNWAYML_API_SECRET"],
       "description": "RunwayML Gen-3 Alpha — AI video generation",
-      "enabled": false,
+      "enabled": true,
       "category": "video"
+    },
+
+    "sec-edgar": {
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["sec-edgar-mcp"],
+      "description": "SEC EDGAR filings — 10-K, 10-Q, 8-K, Form 4, 13F institutional holdings. Free public data.",
+      "enabled": true,
+      "category": "finance"
+    },
+    "e2b-sandbox": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@e2b/mcp-server"],
+      "requiredEnv": ["E2B_API_KEY"],
+      "description": "Secure cloud sandboxes for code execution — RSI validation, self-mod testing, data analysis",
+      "enabled": true,
+      "category": "dev"
+    },
+    "pdf-reader": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@sylphx/pdf-reader-mcp"],
+      "description": "PDF parsing — research reports, prospectuses, regulatory documents, tables extraction",
+      "enabled": true,
+      "category": "research"
+    },
+    "google-calendar": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@cocal/google-calendar-mcp"],
+      "requiredEnv": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI"],
+      "description": "Google Calendar — scheduling, earnings dates, FOMC calendar, event-driven triggers",
+      "enabled": false,
+      "category": "productivity"
+    },
+    "excel": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@negokaz/excel-mcp-server"],
+      "description": "Read/write Excel spreadsheets — structured data output for clients",
+      "enabled": true,
+      "category": "data"
+    },
+    "linkedin": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "linkedin-mcp-server"],
+      "requiredEnv": ["LINKEDIN_ACCESS_TOKEN"],
+      "description": "LinkedIn API — profiles, posts, messaging. Primary channel for R&P institutional content",
+      "enabled": false,
+      "category": "social"
+    },
+
+    "n8n": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "n8n-mcp"],
+      "requiredEnv": ["N8N_BASE_URL", "N8N_API_KEY"],
+      "description": "n8n workflow automation — 1084 nodes, self-hosted Zapier replacement",
+      "enabled": false,
+      "category": "automation"
+    },
+    "chrome-devtools": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp"],
+      "description": "Chrome DevTools protocol — advanced debugging, network inspection, DOM manipulation",
+      "enabled": true,
+      "category": "dev"
+    },
+    "crm": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@apideck/mcp-server-crm"],
+      "requiredEnv": ["APIDECK_API_KEY", "APIDECK_APP_ID", "APIDECK_CONSUMER_ID"],
+      "description": "Multi-CRM — Salesforce, HubSpot, Pipedrive via Apideck unified API",
+      "enabled": false,
+      "category": "enterprise"
+    },
+    "datadog": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "datadog-mcp"],
+      "requiredEnv": ["DD_API_KEY", "DD_APP_KEY"],
+      "description": "Datadog observability — metrics, logs, monitors, APM, dashboards",
+      "enabled": false,
+      "category": "dev"
+    },
+    "anyquery": {
+      "transport": "stdio",
+      "command": "anyquery",
+      "args": ["mcp", "--stdio"],
+      "description": "Universal SQL over 40+ apps — GitHub, Notion, CSV, Parquet. Install: brew install julien040/anyquery/anyquery",
+      "enabled": false,
+      "category": "data"
+    },
+    "graphiti": {
+      "transport": "stdio",
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "zepai/knowledge-graph-mcp"],
+      "requiredEnv": ["NEO4J_URI", "NEO4J_USER", "NEO4J_PASSWORD", "OPENAI_API_KEY"],
+      "description": "Zep/Graphiti temporal knowledge graph — bi-temporal agent memory (event + ingestion time). Requires Docker + Neo4j.",
+      "enabled": false,
+      "category": "data"
+    },
+
+    "genesis": {
+      "transport": "stdio",
+      "command": "node",
+      "args": ["/Users/lucarossignoli/genesis/dist/src/mcp-server/start.js"],
+      "cwd": "/Users/lucarossignoli/genesis",
+      "description": "Genesis cognitive stack — full Nucleus pipeline chat, memory, analysis",
+      "enabled": true,
+      "category": "cognition"
     }
   }
 }

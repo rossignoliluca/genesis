@@ -53,7 +53,7 @@ def _institutional_layout(palette, config: dict) -> dict:
             mirror=False,
             color=palette.body_text,
         ),
-        margin=dict(l=60, r=20, t=40, b=60),
+        margin=dict(l=50, r=50, t=45, b=65),
     )
 
 
@@ -351,18 +351,12 @@ def render_line(data: dict, config: dict, palette, source: str, output_path: str
             bgcolor="rgba(255,255,255,0.85)" if not dark else f"rgba({int(palette.chart_bg[1:3], 16)}, {int(palette.chart_bg[3:5], 16)}, {int(palette.chart_bg[5:7], 16)}, 0.85)",
             bordercolor=palette.card_border if dark else "#CCCCCC",
             borderwidth=0.5,
+            orientation="h",
             x=0,
-            y=1,
+            y=1.02,
             xanchor="left",
-            yanchor="top",
+            yanchor="bottom",
         )
-        legend_loc = config.get("legend_loc", "upper left")
-        if "right" in legend_loc:
-            layout["legend"]["x"] = 1
-            layout["legend"]["xanchor"] = "right"
-        if "lower" in legend_loc:
-            layout["legend"]["y"] = 0
-            layout["legend"]["yanchor"] = "bottom"
 
     if source:
         layout["annotations"] = layout.get("annotations", []) + [_source_annotation(source, palette)]
@@ -927,7 +921,7 @@ def render_gauge(data: dict, config: dict, palette, source: str, output_path: st
     layout = dict(
         paper_bgcolor=palette.fig_bg,
         plot_bgcolor=palette.fig_bg,
-        margin=dict(l=20, r=20, t=100, b=60),
+        margin=dict(l=20, r=20, t=80, b=60),
         annotations=annotations,
     )
 
@@ -1916,7 +1910,7 @@ def render_small_multiples(data: dict, config: dict, palette, source: str, outpu
     layout = dict(
         paper_bgcolor=palette.fig_bg,
         plot_bgcolor=palette.chart_bg,
-        margin=dict(l=40, r=20, t=100, b=40),
+        margin=dict(l=40, r=40, t=80, b=50),
         showlegend=False,
         height=max(600, nrows * 250),
     )

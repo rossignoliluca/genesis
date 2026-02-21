@@ -225,31 +225,45 @@ export class StreamingMCPWrapper extends EventEmitter {
         }
       };
 
+      const onComplete = (e: StreamEvent<T>) => {
+        push(e);
+        done = true;
+      };
+      const onError = (e: StreamEvent<T>) => {
+        push(e);
+        done = true;
+      };
+      const onTimeout = (e: StreamEvent<T>) => {
+        push(e);
+        done = true;
+      };
+
       events.on('started', push);
       events.on('progress', push);
       events.on('chunk', push);
-      events.on('complete', (e) => {
-        push(e);
-        done = true;
-      });
-      events.on('error', (e) => {
-        push(e);
-        done = true;
-      });
-      events.on('timeout', (e) => {
-        push(e);
-        done = true;
-      });
+      events.on('complete', onComplete);
+      events.on('error', onError);
+      events.on('timeout', onTimeout);
 
-      while (!done || queue.length > 0) {
-        if (queue.length > 0) {
-          yield queue.shift()!;
-        } else {
-          const event = await new Promise<StreamEvent<T>>((resolve) => {
-            resolveNext = (result) => resolve(result.value);
-          });
-          yield event;
+      try {
+        while (!done || queue.length > 0) {
+          if (queue.length > 0) {
+            yield queue.shift()!;
+          } else {
+            const event = await new Promise<StreamEvent<T>>((resolve) => {
+              resolveNext = (result) => resolve(result.value);
+            });
+            yield event;
+          }
         }
+      } finally {
+        // Clean up event listeners
+        events.removeListener('started', push);
+        events.removeListener('progress', push);
+        events.removeListener('chunk', push);
+        events.removeListener('complete', onComplete);
+        events.removeListener('error', onError);
+        events.removeListener('timeout', onTimeout);
       }
     };
 
@@ -280,16 +294,20 @@ export class StreamingMCPWrapper extends EventEmitter {
 
     const streams = calls.map((call) => this.callStreaming<T>(call.server, call.tool, call.params, options));
 
+    // Store listener references for cleanup
+    const cleanupFunctions: Array<() => void> = [];
+
     // Forward all events
     for (let i = 0; i < streams.length; i++) {
       const stream = streams[i];
-      stream.events.on('started', (e) => events.emit('started', { ...e, index: i }));
-      stream.events.on('progress', (e) => events.emit('progress', { ...e, index: i }));
-      stream.events.on('chunk', (e) => {
+
+      const onStarted = (e: StreamEvent<T>) => events.emit('started', { ...e, index: i });
+      const onProgress = (e: StreamEvent<T>) => events.emit('progress', { ...e, index: i });
+      const onChunk = (e: StreamEvent<T>) => {
         if (e.data) results[i] = e.data;
         events.emit('chunk', { ...e, index: i });
-      });
-      stream.events.on('complete', (e) => {
+      };
+      const onComplete = (e: StreamEvent<T>) => {
         completedCount++;
         if (e.data) results[i] = e.data;
         events.emit('progress', {
@@ -308,19 +326,43 @@ export class StreamingMCPWrapper extends EventEmitter {
             latency: Date.now() - startTime,
           });
         }
+      };
+      const onError = (e: StreamEvent<T>) => events.emit('error', { ...e, index: i });
+
+      stream.events.on('started', onStarted);
+      stream.events.on('progress', onProgress);
+      stream.events.on('chunk', onChunk);
+      stream.events.on('complete', onComplete);
+      stream.events.on('error', onError);
+
+      // Store cleanup function
+      cleanupFunctions.push(() => {
+        stream.events.removeListener('started', onStarted);
+        stream.events.removeListener('progress', onProgress);
+        stream.events.removeListener('chunk', onChunk);
+        stream.events.removeListener('complete', onComplete);
+        stream.events.removeListener('error', onError);
       });
-      stream.events.on('error', (e) => events.emit('error', { ...e, index: i }));
     }
 
-    const promise = Promise.all(streams.map((s) => s.promise)).then((allResults) => ({
-      success: allResults.every((r) => r.success),
-      data: allResults.map((r) => r.data) as T[],
-      server: 'parallel' as const,  // MCPServerName type
-      tool: 'batch',
-      mode: 'real' as const,
-      latency: Date.now() - startTime,
-      timestamp: new Date(),
-    }));
+    const promise = Promise.all(streams.map((s) => s.promise)).then((allResults) => {
+      // Clean up all listeners when promise completes
+      cleanupFunctions.forEach(fn => fn());
+
+      return {
+        success: allResults.every((r) => r.success),
+        data: allResults.map((r) => r.data) as T[],
+        server: 'parallel' as const,  // MCPServerName type
+        tool: 'batch',
+        mode: 'real' as const,
+        latency: Date.now() - startTime,
+        timestamp: new Date(),
+      };
+    }).catch((error) => {
+      // Clean up on error too
+      cleanupFunctions.forEach(fn => fn());
+      throw error;
+    });
 
     const asyncIterator = async function* (): AsyncGenerator<StreamEvent<T[]>> {
       for (const stream of streams) {
@@ -337,6 +379,7 @@ export class StreamingMCPWrapper extends EventEmitter {
       cancel: () => {
         cancelled = true;
         streams.forEach((s) => s.cancel());
+        cleanupFunctions.forEach(fn => fn());
       },
       isRunning: () => !cancelled && completedCount < calls.length,
     };

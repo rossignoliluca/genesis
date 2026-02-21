@@ -43,6 +43,10 @@ import { getDebateEngine } from './debate-engine.js';
 import type { DebateResult } from './debate-engine.js';
 import { verifyMarketBrief, verifyPresentationSpec } from '../reasoning/verification-loop.js';
 import type { Prediction, TrackRecord, CalibrationProfile } from './types.js';
+import { fetchAllNarrativeData, generateNarrativeCharts, selectTopNarratives, narrativesToSlides } from './narrative-charts.js';
+import type { NarrativeChart } from './narrative-charts.js';
+import { curateCharts, curatedChartsToSlides } from './chart-curator.js';
+import type { CuratedChart } from './chart-curator.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
@@ -151,6 +155,8 @@ export interface PipelineResult {
   videoPath?: string;
   /** Audio podcast path (when generateAudio=true) */
   audioPath?: string;
+  /** Curated external charts */
+  curatedCharts?: CuratedChart[];
   /** Publication report (when publishSocial=true) */
   publicationReport?: PublicationReport;
   /** Feedback results */
@@ -221,10 +227,26 @@ export class WeeklyReportPipeline {
     timings.collect = Date.now() - t1;
     console.log(`  → ${snapshot.headlines.length} headlines, ${snapshot.markets.length} assets, ${snapshot.themes.length} themes (${timings.collect}ms)`);
 
+    // ---- STEP 1.5: CURATE EXTERNAL CHARTS ----
+    console.log(`[1.5/8] CURATING charts from FinTwit + institutional sources...`);
+    const t15 = Date.now();
+    const chartsDir = path.join(this.config.outputDir, 'curated-charts');
+    let curatedChartsList: CuratedChart[] = [];
+    try {
+      curatedChartsList = await curateCharts(chartsDir, 15);
+      console.log(`  → ${curatedChartsList.length} curated charts collected (${Date.now() - t15}ms)`);
+    } catch (e) {
+      console.error(`  ⚠ Chart curation failed (non-fatal): ${e}`);
+      errors.push(`Chart curation: ${e}`);
+    }
+    timings.curateCharts = Date.now() - t15;
+
     // ---- STEP 2: VERIFY (with price replacement) ----
+    // Skip Yahoo in verifier — fetchFromAPIs already used Yahoo in Step 1
     let verificationResult;
     if (this.config.verify) {
-      console.log(`[2/8] VERIFYING data points via Yahoo/CoinGecko/FRED...`);
+      this.verifier.skipYahoo = true;
+      console.log(`[2/8] VERIFYING data points via CoinGecko/FRED/FMP (Yahoo skipped — already used in Step 1)...`);
       const t2 = Date.now();
       try {
         const report = await this.verifier.verifyAssets(snapshot.markets);
@@ -441,11 +463,26 @@ export class WeeklyReportPipeline {
       timings.feedback = Date.now() - t5;
     }
 
+    // ---- STEP 5.5: FETCH NARRATIVE CHART DATA (live APIs) ----
+    console.log(`[5.5/8] FETCHING narrative chart data (Yahoo, FRED, CNN, CoinGecko)...`);
+    const t55 = Date.now();
+    let narrativeCharts: NarrativeChart[] = [];
+    try {
+      const narrativeData = await fetchAllNarrativeData();
+      const allNarratives = generateNarrativeCharts(narrativeData);
+      narrativeCharts = selectTopNarratives(allNarratives, 20);
+      console.log(`  → ${narrativeCharts.length} narrative charts selected from ${allNarratives.length} generated (${Date.now() - t55}ms)`);
+    } catch (e) {
+      console.error(`  ⚠ Narrative charts failed (non-fatal): ${e}`);
+      errors.push(`Narrative charts: ${e}`);
+    }
+    timings.narrativeCharts = Date.now() - t55;
+
     // ---- STEP 6: BUILD PRESENTATION SPEC (with track record slide) ----
     console.log(`[6/8] BUILDING SYZ-style presentation spec...`);
     const t6 = Date.now();
 
-    const spec = this.buildRichPresentationSpec(brief, feedbackResult?.trackRecord);
+    const spec = this.buildRichPresentationSpec(brief, feedbackResult?.trackRecord, narrativeCharts, curatedChartsList);
     const specPath = path.join(this.config.outputDir, `weekly-strategy-${week}.json`);
     fs.writeFileSync(specPath, JSON.stringify(spec, null, 2));
     timings.buildSpec = Date.now() - t6;
@@ -616,6 +653,7 @@ export class WeeklyReportPipeline {
       specPath,
       videoPath,
       audioPath,
+      curatedCharts: curatedChartsList.length > 0 ? curatedChartsList : undefined,
       socialContent,
       publicationReport,
       feedback: feedbackResult,
@@ -784,7 +822,8 @@ export class WeeklyReportPipeline {
       }
 
       return { headlines, sourceName, sourceUrl: query };
-    } catch {
+    } catch (err) {
+      console.error('[WeeklyReportPipeline] Scrape via Brave search failed:', err);
       return null;
     }
   }
@@ -803,24 +842,48 @@ export class WeeklyReportPipeline {
 
       const headlines: Headline[] = [];
       if (result.data?.markdown) {
+        // Blocklist: scraped website navigation/UI text that is NOT a real headline
+        const NAV_BLOCKLIST = [
+          /new!?\s+/i, /dashboard/i, /interactive charts/i, /screeners?/i,
+          /indicators? for/i, /options\s+(?:data|»)/i, /sign up/i, /log ?in/i,
+          /subscribe/i, /free trial/i, /upgrade/i, /cookie/i, /privacy/i,
+          /manage\s+settings/i, /accept\s+all/i, /advertisement/i,
+          /your\s+(?:watchlist|portfolio|account)/i, /webinar/i,
+          /^\s*(?:stocks|etfs?|futures|options|forex)\s*$/i,
+          /barchart\s+(?:plus|premier)/i, /trade\s+picks/i,
+          /stocks\s*»/i, /before\s*&\s*after\s*markets/i,
+          /performance\s+leaders/i, /most\s+active/i,
+          /earnings\s+flag/i, /top\s+(?:gainers|losers)/i,
+          /market\s+(?:overview|movers|pulse|momentum)\s*$/i,
+          /^(?:overview|markets?|commodities|currencies|crypto)\s*$/i,
+          /highest\s+implied\s+volatility/i, /volume\s*&\s*open\s+interest/i,
+          /income\s+strategies/i, /unusual\s+(?:options|volume)/i,
+          /put.*call\s+ratio/i, /open\s+interest\s+change/i,
+          /implied\s+volatility\s+(?:rank|change)/i,
+        ];
+
         // Extract headlines from markdown — look for # headings and bold text
         const lines = result.data.markdown.split('\n');
         for (const line of lines) {
           const headingMatch = line.match(/^#{1,3}\s+(.+)/);
           if (headingMatch && headingMatch[1].length > 20 && headingMatch[1].length < 200) {
+            const text = headingMatch[1].trim();
+            // Skip navigation/UI text
+            if (NAV_BLOCKLIST.some(re => re.test(text))) continue;
             headlines.push({
-              title: headingMatch[1].trim(),
+              title: text,
               source: url,
               url,
-              impact: this.classifyImpact(headingMatch[1]),
-              theme: this.classifyTheme(headingMatch[1], category),
+              impact: this.classifyImpact(text),
+              theme: this.classifyTheme(text, category),
             });
           }
         }
       }
 
       return { headlines: headlines.slice(0, 10) };
-    } catch {
+    } catch (err) {
+      console.error('[WeeklyReportPipeline] Scrape via Firecrawl failed:', err);
       return null;
     }
   }
@@ -1053,7 +1116,19 @@ export class WeeklyReportPipeline {
   ): string {
     const filtered = assets.filter(a => a.change1w !== 'N/A');
     if (filtered.length === 0) {
-      return headlines.slice(0, 3).map(h => h.title).join('. ') + '.';
+      // Filter headlines to only real market news (not scraped UI text)
+      const validHeadlines = headlines.filter(h =>
+        h.title.length > 25 &&
+        !/(new!|dashboard|interactive|screener|sign up|subscribe|webinar|trade picks|stocks\s*»|performance leaders|before\s*&\s*after|most active|earnings flag|top (?:gainers|losers)|highest\s+implied|options\s*»|volume\s*&\s*open\s+interest|income\s+strategies|implied\s+volatility|put.*call\s+ratio)/i.test(h.title)
+      );
+      if (validHeadlines.length > 0) {
+        return validHeadlines.slice(0, 2).map(h => {
+          const url = h.url && !h.url.startsWith('http') ? '' : h.url;
+          return url ? `[${h.title}](${url})` : h.title;
+        }).join('. ') + '.';
+      }
+      // No usable headlines — return a generic but professional message
+      return `Limited data this week. Monitor for developments.`;
     }
 
     // WHAT — data with personality
@@ -1182,8 +1257,9 @@ export class WeeklyReportPipeline {
           asset.signal = regimeToSignal[detection.regime] || 'neutral';
         }
       }
-    } catch {
+    } catch (err) {
       // Finance module not available — keep existing snapshot data
+      console.error('[WeeklyReportPipeline] Failed to enrich with regime signals:', err);
     }
   }
 
@@ -1206,8 +1282,9 @@ export class WeeklyReportPipeline {
           trendStrength: detection.trendStrength,
         };
       }
-    } catch {
+    } catch (err) {
       // Finance module not available
+      console.error('[WeeklyReportPipeline] Failed to get regime context:', err);
     }
     return undefined;
   }
@@ -1244,7 +1321,7 @@ export class WeeklyReportPipeline {
   // Step 4: Build Presentation Spec — NARRATIVE-DRIVEN
   // ==========================================================================
 
-  buildRichPresentationSpec(brief: MarketBrief, trackRecord?: TrackRecord): PresentationSpec {
+  buildRichPresentationSpec(brief: MarketBrief, trackRecord?: TrackRecord, narrativeCharts?: NarrativeChart[], curatedCharts?: CuratedChart[]): PresentationSpec {
     const slides: SlideSpec[] = [];
     const c = this.config;
     const week = brief.week;
@@ -1735,6 +1812,39 @@ export class WeeklyReportPipeline {
     }
 
     // ════════════════════════════════════════════════════════════════════════
+    // DATA-DRIVEN NARRATIVE CHARTS — Live API data (Yahoo, FRED, CNN, CoinGecko)
+    // ════════════════════════════════════════════════════════════════════════
+    if (narrativeCharts && narrativeCharts.length > 0) {
+      sectionNum++;
+      slides.push({
+        type: 'section_divider',
+        content: {
+          section_num: String(sectionNum).padStart(2, '0'),
+          title: 'Under the Hood — What the Data Is Telling Us',
+          subtitle: `${narrativeCharts.length} data-driven charts from live market data`,
+          section: 'data_narratives',
+        },
+      });
+
+      // Convert narrative charts to slides
+      const narrativeSlides = narrativesToSlides(narrativeCharts);
+      slides.push(...narrativeSlides);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // CURATED EXTERNAL CHARTS — FinTwit + Institutional screenshots
+    // ════════════════════════════════════════════════════════════════════════
+    if (curatedCharts && curatedCharts.length > 0) {
+      sectionNum++;
+      const curatedSlides = curatedChartsToSlides(curatedCharts);
+      // Update section divider number
+      if (curatedSlides.length > 0 && curatedSlides[0].type === 'section_divider') {
+        (curatedSlides[0].content as any).section_num = String(sectionNum).padStart(2, '0');
+      }
+      slides.push(...curatedSlides);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
     // NARRATIVE DEEP DIVES — The strategic backbone
     // ════════════════════════════════════════════════════════════════════════
     for (const narrative of brief.narratives) {
@@ -1956,7 +2066,8 @@ export class WeeklyReportPipeline {
           try {
             const result = JSON.parse(stdout);
             resolve(result.path || spec.output_path);
-          } catch {
+          } catch (err) {
+            console.error('[WeeklyReportPipeline] Failed to parse Python engine output:', err);
             resolve(spec.output_path);
           }
         } else {
@@ -2030,8 +2141,9 @@ Use "N/A" for missing data. Be precise with numbers — only use numbers you act
             return { name: asset, level: 'N/A', change1w: 'N/A', changeMtd: 'N/A', changeYtd: 'N/A', signal: 'neutral' as const, commentary: '' };
           });
       }
-    } catch {
+    } catch (err) {
       // Fall through to defaults
+      console.error('[WeeklyReportPipeline] Failed to build asset snapshots from LLM:', err);
     }
 
     return this.config.focusAssets.map(asset => ({
@@ -2046,37 +2158,133 @@ Use "N/A" for missing data. Be precise with numbers — only use numbers you act
   }
 
   /**
-   * Fetch asset data from structured APIs (Yahoo Finance via DataVerifier).
-   * More reliable than LLM extraction from headlines.
+   * Fetch asset data: Yahoo Finance direct (spot + performance in one call),
+   * then verifier only for assets Yahoo missed.
+   * Yahoo is called FIRST to avoid rate-limit exhaustion by the multi-provider verifier.
    */
   private async fetchFromAPIs(): Promise<AssetSnapshot[]> {
-    const snapshots: AssetSnapshot[] = [];
-    try {
-      for (const asset of this.config.focusAssets.slice(0, 14)) {
-        try {
-          const report = await this.verifier.verifyAssets([
-            { name: asset, level: 'N/A', change1w: 'N/A', changeMtd: 'N/A', changeYtd: 'N/A', signal: 'neutral' as const, commentary: '' },
-          ]);
-          const dp = report.dataPoints[0];
-          if (dp?.verifiedPrice !== undefined) {
-            snapshots.push({
-              name: asset,
-              level: this.formatVerifiedPrice(dp.verifiedPrice, asset),
-              change1w: 'N/A',
-              changeMtd: 'N/A',
-              changeYtd: 'N/A',
-              signal: 'neutral' as const,
-              commentary: '',
-            });
-          }
-        } catch {
-          // Individual asset fetch failures are OK
-        }
+    // Ticker map: focusAsset name → Yahoo symbol
+    const ASSET_TICKERS: Record<string, string> = {
+      'S&P 500': '^GSPC', 'Nasdaq 100': '^NDX', 'Dow Jones': '^DJI',
+      'STOXX 600': '^STOXX', 'FTSE MIB': 'FTSEMIB.MI',
+      'US 10Y': '^TNX', 'US 2Y': '^IRX', 'German 10Y': 'DE10Y.F',
+      'EUR/USD': 'EURUSD=X', 'USD/CHF': 'CHF=X',
+      'Gold': 'GC=F', 'Oil WTI': 'CL=F', 'Bitcoin': 'BTC-USD', 'VIX': '^VIX',
+    };
+
+    const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+    const dataMap = new Map<string, AssetSnapshot>();
+
+    // Step 1: Yahoo Finance direct — gets spot price + 1W/MTD/YTD in one call
+    // Sequential with 2s delay to stay under rate limit (~5 req/s but conservative)
+    const yahooAssets = this.config.focusAssets.filter(a => ASSET_TICKERS[a]);
+    let consecutiveFailures = 0;
+
+    for (let i = 0; i < yahooAssets.length; i++) {
+      if (consecutiveFailures >= 4) {
+        console.warn(`  [API] Yahoo rate-limited after ${dataMap.size} tickers, stopping`);
+        break;
       }
-    } catch {
-      // API fetch failed entirely, will fall back to LLM
+      if (i > 0) await new Promise(r => setTimeout(r, 2000));
+
+      const asset = yahooAssets[i];
+      const ticker = ASSET_TICKERS[asset];
+      try {
+        const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=6mo&interval=1d`;
+        const response = await fetch(url, {
+          headers: { 'User-Agent': UA, 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (response.status === 429) {
+          consecutiveFailures++;
+          // Back off harder on 429
+          await new Promise(r => setTimeout(r, 4000));
+          continue;
+        }
+        if (!response.ok) { consecutiveFailures++; continue; }
+
+        const json = await response.json();
+        const chart = json?.chart?.result?.[0];
+        if (!chart) { continue; }
+
+        const closes = (chart.indicators?.quote?.[0]?.close || []).filter((c: number | null) => c !== null) as number[];
+        const meta = chart.meta || {};
+        if (closes.length < 5) continue;
+
+        consecutiveFailures = 0; // reset on success
+
+        const current = meta.regularMarketPrice || closes[closes.length - 1];
+        const oneWeekAgo = closes[Math.max(0, closes.length - 6)];
+        const oneMonthAgo = closes[Math.max(0, closes.length - 22)];
+
+        // YTD base
+        const timestamps = chart.timestamp || [];
+        const dates = timestamps.map((t: number) => new Date(t * 1000).toISOString().split('T')[0]);
+        const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0];
+        let ytdBase = closes[0];
+        for (let j = 0; j < dates.length; j++) {
+          if (dates[j] >= yearStart) { ytdBase = closes[j]; break; }
+        }
+
+        const chg1w = ((current - oneWeekAgo) / oneWeekAgo) * 100;
+        const chgMtd = ((current - oneMonthAgo) / oneMonthAgo) * 100;
+        const chgYtd = ((current - ytdBase) / ytdBase) * 100;
+
+        const fmt = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+        const signal: 'bullish' | 'bearish' | 'neutral' = asset === 'VIX'
+          ? (chg1w < -5 ? 'bullish' : chg1w > 10 ? 'bearish' : 'neutral')
+          : (chg1w > 1 ? 'bullish' : chg1w < -1 ? 'bearish' : 'neutral');
+
+        dataMap.set(asset, {
+          name: asset,
+          level: this.formatVerifiedPrice(current, asset),
+          change1w: fmt(chg1w),
+          changeMtd: fmt(chgMtd),
+          changeYtd: fmt(chgYtd),
+          signal,
+          commentary: '',
+        });
+      } catch (err) {
+        consecutiveFailures++;
+      }
     }
-    return snapshots;
+    console.log(`  [API] Yahoo direct: ${dataMap.size}/${yahooAssets.length} tickers with full performance data`);
+
+    // Step 2: For assets Yahoo missed, try verifier (multi-provider: CoinGecko, FRED, FMP, AlphaVantage)
+    const missingAssets = this.config.focusAssets.filter(a => !dataMap.has(a));
+    if (missingAssets.length > 0) {
+      try {
+        for (const asset of missingAssets) {
+          try {
+            const report = await this.verifier.verifyAssets([
+              { name: asset, level: 'N/A', change1w: 'N/A', changeMtd: 'N/A', changeYtd: 'N/A', signal: 'neutral' as const, commentary: '' },
+            ]);
+            const dp = report.dataPoints[0];
+            if (dp?.verifiedPrice !== undefined) {
+              dataMap.set(asset, {
+                name: asset,
+                level: this.formatVerifiedPrice(dp.verifiedPrice, asset),
+                change1w: 'N/A',
+                changeMtd: 'N/A',
+                changeYtd: 'N/A',
+                signal: 'neutral' as const,
+                commentary: '',
+              });
+            }
+          } catch { /* individual failures OK */ }
+        }
+      } catch (err) {
+        console.error('[WeeklyReportPipeline] Verifier fallback failed:', err);
+      }
+    }
+
+    // Step 3: Assemble all focus assets (in order, with N/A fallback)
+    return this.config.focusAssets.map(asset =>
+      dataMap.get(asset) || {
+        name: asset, level: 'N/A', change1w: 'N/A', changeMtd: 'N/A',
+        changeYtd: 'N/A', signal: 'neutral' as const, commentary: '',
+      }
+    );
   }
 
   private extractThemes(headlines: Headline[]): string[] {

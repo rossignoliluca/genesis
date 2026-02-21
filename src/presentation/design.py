@@ -450,18 +450,18 @@ class EditorialLayout:
     badge_height: float = 0.3
     hashtag_top: float = 1.05
     commentary_top: float = 1.4
-    commentary_height: float = 0.75  # tighter — chart is the hero
-    chart_top: float = 2.25
-    chart_height: float = 4.2  # massive chart area
-    source_top: float = 6.55
+    commentary_height: float = 1.1  # fits 3-4 lines of institutional commentary
+    chart_top: float = 2.65
+    chart_height: float = 3.65  # ~49% of slide — within JPM's 50-60% range
+    source_top: float = 6.45
     # Footer
-    footer_sep_top: float = 6.85
-    footer_top: float = 6.95
+    footer_sep_top: float = 6.75
+    footer_top: float = 6.85
     footer_height: float = 0.4
     # Margins
-    margin_left: float = 0.6
-    margin_right: float = 0.6
-    content_width: float = 12.1
+    margin_left: float = 0.8
+    margin_right: float = 0.8
+    content_width: float = 11.733  # 13.333 - 0.8 - 0.8
 
 
 EDITORIAL_LAYOUT = EditorialLayout()
@@ -561,7 +561,7 @@ def get_plotly_template(palette: Optional[ColorPalette] = None) -> dict:
         },
         "paper_bgcolor": palette.fig_bg,
         "plot_bgcolor": palette.chart_bg,
-        "margin": {"l": 60, "r": 30, "t": 60, "b": 80},
+        "margin": {"l": 50, "r": 50, "t": 60, "b": 80},
         "xaxis": {
             "showgrid": False,
             "showline": True,

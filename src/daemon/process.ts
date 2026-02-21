@@ -59,6 +59,11 @@ export class DaemonProcessManager {
 
   constructor() {
     this.ensureDataDir();
+
+    // FIX: Ensure log stream is closed on process exit
+    process.on('exit', () => {
+      this.closeLogging();
+    });
   }
 
   // ============================================================================
@@ -491,16 +496,18 @@ export class DaemonProcessManager {
         clearTimeout(timeout);
         try {
           const response = JSON.parse(data.toString().trim());
+          socket.end();
           resolve(response);
         } catch (err) {
           console.error('[DaemonProcess] Failed to parse IPC response:', err);
+          socket.destroy();
           reject(new Error('Invalid response'));
         }
-        socket.end();
       });
 
       socket.on('error', (err) => {
         clearTimeout(timeout);
+        socket.destroy();
         reject(err);
       });
     });

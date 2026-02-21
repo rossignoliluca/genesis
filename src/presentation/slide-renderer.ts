@@ -424,7 +424,13 @@ function renderEditorialHTML(slide: SlideSpec, chartPath: string | undefined, c:
   const badgeColor = SECTION_BADGE_COLORS[section.toLowerCase().replace(/\s+/g, '_')] || c.gray;
 
   let chartHtml = '';
-  if (chartPath && existsSync(chartPath)) {
+  // Support image_path in editorial content (for web screenshots)
+  const imagePath = content.image_path;
+  if (imagePath && existsSync(imagePath)) {
+    const imgData = readFileSync(imagePath).toString('base64');
+    const ext = path.extname(imagePath).slice(1) || 'png';
+    chartHtml = `<img src="data:image/${ext};base64,${imgData}" style="width: 100%; height: auto; max-height: 560px; object-fit: contain; border-radius: 4px;" />`;
+  } else if (chartPath && existsSync(chartPath)) {
     const imgData = readFileSync(chartPath).toString('base64');
     chartHtml = `<img src="data:image/png;base64,${imgData}" style="width: 100%; height: auto; max-height: 560px; object-fit: contain; border-radius: 4px;" />`;
   }
@@ -712,12 +718,19 @@ function renderChartGridHTML(slide: SlideSpec, chartPaths: string[], c: SlideCol
   const cols = content.cols || 2;
   const grid = content.grid || [];
 
-  const cellsHtml = chartPaths.map((cp, i) => {
-    const label = grid[i]?.label || '';
+  // Support both chartPaths (from Plotly) and grid[].image_path (from web screenshots)
+  const cellsHtml = grid.map((item: any, i: number) => {
+    const label = item?.label || '';
+    const itemImagePath = item?.image_path;
+    const cp = chartPaths[i];
     let imgHtml = '';
-    if (cp && existsSync(cp)) {
+    if (itemImagePath && existsSync(itemImagePath)) {
+      const imgData = readFileSync(itemImagePath).toString('base64');
+      const ext = path.extname(itemImagePath).slice(1) || 'png';
+      imgHtml = `<img src="data:image/${ext};base64,${imgData}" style="width: 100%; height: auto; max-height: 420px; object-fit: contain; border-radius: 4px;" />`;
+    } else if (cp && existsSync(cp)) {
       const imgData = readFileSync(cp).toString('base64');
-      imgHtml = `<img src="data:image/png;base64,${imgData}" style="width: 100%; height: auto; object-fit: contain; border-radius: 4px;" />`;
+      imgHtml = `<img src="data:image/png;base64,${imgData}" style="width: 100%; height: auto; max-height: 420px; object-fit: contain; border-radius: 4px;" />`;
     }
     return `
       <div style="flex: 0 0 calc(${100 / cols}% - 16px);">

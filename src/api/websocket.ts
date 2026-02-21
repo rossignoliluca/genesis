@@ -90,6 +90,7 @@ export class GenesisWebSocket {
   private bus: GenesisEventBus;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private metricsTimer: NodeJS.Timeout | null = null;
+  private busSubscriptions: Array<{ unsubscribe: () => void }> = [];
 
   constructor(config?: Partial<WebSocketConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -129,6 +130,12 @@ export class GenesisWebSocket {
     if (this.metricsTimer) {
       clearInterval(this.metricsTimer);
     }
+
+    // Unsubscribe from all bus subscriptions
+    for (const subscription of this.busSubscriptions) {
+      subscription.unsubscribe();
+    }
+    this.busSubscriptions = [];
 
     // Close all client connections
     for (const client of this.clients.values()) {
@@ -392,34 +399,46 @@ export class GenesisWebSocket {
 
   private setupEventForwarding(): void {
     // Forward decision events
-    this.bus.subscribePrefix('decision.', (event: any) => {
-      this.broadcast('decisions', event.topic, event.payload || event);
-    });
+    this.busSubscriptions.push(
+      this.bus.subscribePrefix('decision.', (event: any) => {
+        this.broadcast('decisions', event.topic, event.payload || event);
+      })
+    );
 
     // Forward bounty events
-    this.bus.subscribePrefix('bounty.', (event: any) => {
-      this.broadcast('bounty', event.topic, event.payload || event);
-    });
+    this.busSubscriptions.push(
+      this.bus.subscribePrefix('bounty.', (event: any) => {
+        this.broadcast('bounty', event.topic, event.payload || event);
+      })
+    );
 
     // Forward content events
-    this.bus.subscribePrefix('content.', (event: any) => {
-      this.broadcast('content', event.topic, event.payload || event);
-    });
+    this.busSubscriptions.push(
+      this.bus.subscribePrefix('content.', (event: any) => {
+        this.broadcast('content', event.topic, event.payload || event);
+      })
+    );
 
     // Forward consciousness events
-    this.bus.subscribePrefix('consciousness.', (event: any) => {
-      this.broadcast('consciousness', event.topic, event.payload || event);
-    });
+    this.busSubscriptions.push(
+      this.bus.subscribePrefix('consciousness.', (event: any) => {
+        this.broadcast('consciousness', event.topic, event.payload || event);
+      })
+    );
 
     // Forward neuromodulation events
-    this.bus.subscribePrefix('neuromod.', (event: any) => {
-      this.broadcast('metrics', event.topic, event.payload || event);
-    });
+    this.busSubscriptions.push(
+      this.bus.subscribePrefix('neuromod.', (event: any) => {
+        this.broadcast('metrics', event.topic, event.payload || event);
+      })
+    );
 
     // Forward pain events
-    this.bus.subscribePrefix('pain.', (event: any) => {
-      this.broadcast('metrics', event.topic, event.payload || event);
-    });
+    this.busSubscriptions.push(
+      this.bus.subscribePrefix('pain.', (event: any) => {
+        this.broadcast('metrics', event.topic, event.payload || event);
+      })
+    );
   }
 
   // ===========================================================================

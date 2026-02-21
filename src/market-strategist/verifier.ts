@@ -190,6 +190,7 @@ const ASSET_PROVIDER_MAP: AssetProviderConfig[] = [
 
 export class DataVerifier {
   private mcp: IMCPClient;
+  skipYahoo = false;
 
   constructor() {
     this.mcp = getMCPClient();
@@ -355,7 +356,7 @@ export class DataVerifier {
       yahooResult, coingeckoResult, fmpResult, frankfurterResult,
       coinpaprikaResult, exchangerateResult, ...fredResults
     ] = await Promise.allSettled([
-      this.fetchYahoo([...yahooSymbols]),
+      this.skipYahoo ? Promise.resolve(new Map()) : this.fetchYahoo([...yahooSymbols]),
       this.fetchCoinGecko([...coingeckoIds]),
       this.fetchFMP([...fmpSymbols]),
       this.fetchFrankfurter([...frankfurterCurrencies]),

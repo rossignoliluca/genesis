@@ -680,6 +680,11 @@ export class MCPClientManager extends EventEmitter {
         }
       }
     }, CHECK_INTERVAL);
+
+    // Prevent interval from blocking process exit
+    if (this.pruningTimer.unref) {
+      this.pruningTimer.unref();
+    }
   }
 
   /**

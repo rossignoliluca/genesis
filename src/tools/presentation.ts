@@ -7,7 +7,7 @@
  * Same pattern as tools/bash.ts but specialized for PPTX generation.
  */
 
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import type { PresentationSpec, PresentationResult } from '../presentation/types.js';
 
@@ -21,6 +21,56 @@ const ENGINE_PATH = path.resolve(__dirname, '..', 'presentation', 'engine.py');
 
 const DEFAULT_TIMEOUT = 120_000; // 2 minutes
 const MAX_OUTPUT_SIZE = 5 * 1024 * 1024; // 5MB
+
+// ============================================================================
+// Child Process Tracking (Resource Leak Prevention)
+// ============================================================================
+
+const activeChildren = new Set<ChildProcess>();
+
+/**
+ * Register a child process for cleanup tracking.
+ */
+function trackChild(child: ChildProcess): void {
+  activeChildren.add(child);
+  child.on('close', () => {
+    activeChildren.delete(child);
+  });
+}
+
+/**
+ * Kill all active child processes.
+ */
+function killAllChildren(): void {
+  for (const child of activeChildren) {
+    try {
+      child.kill('SIGTERM');
+      setTimeout(() => {
+        try {
+          if (!child.killed) {
+            child.kill('SIGKILL');
+          }
+        } catch (err) {
+          // Process already dead
+        }
+      }, 1000);
+    } catch (err) {
+      // Process already dead
+    }
+  }
+  activeChildren.clear();
+}
+
+// FIX: Cleanup on process exit
+process.on('exit', killAllChildren);
+process.on('SIGINT', () => {
+  killAllChildren();
+  process.exit(130);
+});
+process.on('SIGTERM', () => {
+  killAllChildren();
+  process.exit(143);
+});
 
 // ============================================================================
 // Bridge Implementation
@@ -55,6 +105,9 @@ export async function generatePresentation(
         MPLBACKEND: 'Agg',
       },
     });
+
+    // FIX: Track child process for cleanup
+    trackChild(child);
 
     // Timeout enforcement
     const timeoutId = setTimeout(() => {
@@ -204,6 +257,10 @@ export async function generatePresentationHTML(
       const child = spawn('python3', [ASSEMBLER_PATH], {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
+
+      // FIX: Track child process for cleanup
+      trackChild(child);
+
       child.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
       child.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
       child.stdin.write(JSON.stringify(assembleSpec));
@@ -265,6 +322,9 @@ os.makedirs(chart_dir, exist_ok=True)
 path = render_chart(spec["chart"], palette, chart_dir)
 print(path)
 `], { stdio: ['pipe', 'pipe', 'pipe'] });
+
+    // FIX: Track child process for cleanup
+    trackChild(child);
 
     let stdout = '';
     child.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
@@ -349,6 +409,9 @@ print(json.dumps(results))
 `], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+
+    // FIX: Track child process for cleanup
+    trackChild(child);
 
     let stdout = '';
     child.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });

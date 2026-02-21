@@ -480,4 +480,84 @@ function registerCoreServices(di: DIContainer): void {
     const { getNewsletterConnector } = await import('../content/connectors/newsletter.js');
     return getNewsletterConnector();
   }, { tags: ['content'] });
+
+  // =========================================================================
+  // v35: Missing core services — completing the DI graph
+  // =========================================================================
+
+  // Layer 1b: Kernel (autonomic substrate)
+  di.register('fek', async () => {
+    const { getFreeEnergyKernel } = await import('../kernel/free-energy-kernel.js');
+    return getFreeEnergyKernel();
+  }, { tags: ['kernel', 'infrastructure'] });
+
+  // Layer 1c: Neuromodulation (DA/5HT/NE/cortisol)
+  di.register('neuromodulation', async () => {
+    const { getNeuromodulationSystem } = await import('../neuromodulation/index.js');
+    return getNeuromodulationSystem();
+  }, { tags: ['infrastructure'], dependencies: ['eventBus'] });
+
+  // Layer 1d: Nociception (pain → error signal)
+  di.register('nociception', async () => {
+    const { getNociceptiveSystem } = await import('../nociception/index.js');
+    return getNociceptiveSystem();
+  }, { tags: ['infrastructure'], dependencies: ['neuromodulation'] });
+
+  // Layer 1e: Allostasis (anticipatory regulation)
+  di.register('allostasis', async () => {
+    const { createAllostasisSystem } = await import('../allostasis/index.js');
+    return createAllostasisSystem();
+  }, { tags: ['infrastructure'], dependencies: ['neuromodulation'] });
+
+  // Layer 2b: Brain (main cognitive processor)
+  di.register('brain', async () => {
+    const { getBrain } = await import('../brain/index.js');
+    return getBrain();
+  }, { tags: ['cognition'], dependencies: ['eventBus', 'memory'] });
+
+  // Layer 2c: Consciousness (IIT + GWT + AST)
+  di.register('consciousness', async () => {
+    const { getConsciousnessSystem } = await import('../consciousness/index.js');
+    return getConsciousnessSystem();
+  }, { tags: ['cognition'], dependencies: ['eventBus'] });
+
+  // Layer 2d: World Model (predictive engine)
+  di.register('worldModel', async () => {
+    const { getWorldModelSystem } = await import('../world-model/index.js');
+    return getWorldModelSystem();
+  }, { tags: ['cognition'], dependencies: ['eventBus'] });
+
+  // Layer 3b: Grounding (epistemic verification)
+  di.register('grounding', async () => {
+    const { getGroundingSystem } = await import('../grounding/index.js');
+    return getGroundingSystem();
+  }, { tags: ['cognition'] });
+
+  // Layer 4b: Governance (permission gates)
+  di.register('governance', async () => {
+    const { getGovernanceSystem } = await import('../governance/index.js');
+    return getGovernanceSystem();
+  }, { tags: ['autonomous'] });
+
+  // Layer 1f: Daemon (scheduler, dream mode)
+  di.register('daemon', async () => {
+    const { getDaemon } = await import('../daemon/index.js');
+    return getDaemon();
+  }, { tags: ['infrastructure'], dependencies: ['eventBus'] });
+
+  // Layer 0: Agent Loop (v35)
+  di.register('agentLoop', async (c) => {
+    const { AgentLoop, createGenesisModules } = await import('../core/agent-loop.js');
+    const fek = c.isResolved('fek') ? await c.resolve('fek') : undefined;
+    const memory = c.isResolved('memory') ? await c.resolve('memory') : undefined;
+    const tools = c.isResolved('toolRegistry') ? await c.resolve('toolRegistry') : undefined;
+    const brain = c.isResolved('brain') ? await c.resolve('brain') : undefined;
+    const modules = createGenesisModules({
+      fek: fek as any,
+      memory: memory as any,
+      tools: tools as any,
+      brain: brain as any,
+    });
+    return new AgentLoop(modules);
+  }, { tags: ['core'], dependencies: ['eventBus'] });
 }

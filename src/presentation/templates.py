@@ -6,6 +6,7 @@ dark-mode-aware rendering. The future of financial presentations.
 """
 
 import os
+from PIL import Image
 from pptx.util import Inches, Pt, Emu
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
@@ -98,6 +99,51 @@ def add_hyperlink_run(paragraph, text, url, font_size=10, color="#00D4FF", bold=
     if url:
         run.hyperlink.address = url
     return run
+
+
+def _fit_image_preserving_aspect(slide, img_path, max_left, max_top, max_width, max_height, border=False):
+    """
+    Add an image to a slide preserving its aspect ratio.
+    Fits within max_width x max_height, centered horizontally.
+    Optionally adds a 1pt #E0E0E0 border (for external screenshots).
+    """
+    try:
+        with Image.open(img_path) as img:
+            img_w, img_h = img.size
+    except Exception:
+        # Fallback: use max dimensions if PIL can't read
+        slide.shapes.add_picture(
+            img_path,
+            Inches(max_left), Inches(max_top),
+            Inches(max_width), Inches(max_height)
+        )
+        return
+
+    aspect = img_w / img_h
+    target_aspect = max_width / max_height
+
+    if aspect > target_aspect:
+        # Image is wider — fit to width
+        fit_w = max_width
+        fit_h = max_width / aspect
+    else:
+        # Image is taller — fit to height
+        fit_h = max_height
+        fit_w = max_height * aspect
+
+    # Center horizontally within the available space
+    x_offset = max_left + (max_width - fit_w) / 2
+    y_offset = max_top
+
+    pic = slide.shapes.add_picture(
+        img_path,
+        Inches(x_offset), Inches(y_offset),
+        Inches(fit_w), Inches(fit_h)
+    )
+
+    if border:
+        pic.line.color.rgb = rgb("#E0E0E0")
+        pic.line.width = Pt(1)
 
 
 def add_video_button(slide, url, label="▶ Watch Video", left=10.5, top=0.7,
@@ -1064,10 +1110,10 @@ def build_section_divider(prs, content: dict, palette, bg_image=None, meta=None)
         section = content.get("section", "")
         accent_color = SECTION_BADGE_COLORS.get(section, palette.orange)
 
-        # Bold colored accent bar on left (wider = more dramatic)
+        # Thin colored accent bar on left — understated institutional style
         bar = slide.shapes.add_shape(
             MSO_SHAPE.RECTANGLE, Inches(0), Inches(0),
-            Inches(0.25), slide_h
+            Inches(0.12), slide_h
         )
         bar.fill.solid()
         bar.fill.fore_color.rgb = rgb(accent_color)
@@ -1082,33 +1128,33 @@ def build_section_divider(prs, content: dict, palette, bg_image=None, meta=None)
         stripe.fill.fore_color.rgb = rgb(accent_color)
         stripe.line.fill.background()
 
-        # Section number (if provided) — oversized watermark
+        # Section number (if provided) — refined, not oversized
         section_num = content.get("section_num", "")
         if section_num:
-            tb_num = slide.shapes.add_textbox(Inches(0.7), Inches(1.8), Inches(2), Inches(0.8))
+            tb_num = slide.shapes.add_textbox(Inches(0.6), Inches(1.8), Inches(2), Inches(0.7))
             tf = tb_num.text_frame
             p = tf.paragraphs[0]
             r = p.add_run()
             r.text = section_num
-            r.font.size = Pt(72)
+            r.font.size = Pt(48)
             r.font.bold = True
             r.font.color.rgb = rgb(accent_color)
             r.font.name = "Arial"
 
         # Section badge
         if section:
-            add_section_badge(slide, section, 0.7, 2.6, palette)
+            add_section_badge(slide, section, 0.6, 2.5, palette)
 
-        # Section title — massive, in section color
+        # Section title — authoritative but not overpowering
         title = content.get("title", "")
         if title:
-            tb_t = slide.shapes.add_textbox(Inches(0.7), Inches(3.05), Inches(11), Inches(1.4))
+            tb_t = slide.shapes.add_textbox(Inches(0.6), Inches(2.9), Inches(11), Inches(1.2))
             tf = tb_t.text_frame
             tf.word_wrap = True
             p = tf.paragraphs[0]
             r = p.add_run()
             r.text = title
-            r.font.size = Pt(48)
+            r.font.size = Pt(36)
             r.font.bold = True
             r.font.color.rgb = rgb(accent_color)
             r.font.name = "Arial"
@@ -1116,18 +1162,18 @@ def build_section_divider(prs, content: dict, palette, bg_image=None, meta=None)
         # Subtitle — warm gray, elegant
         subtitle = content.get("subtitle", content.get("tag", ""))
         if subtitle:
-            tb_s = slide.shapes.add_textbox(Inches(0.7), Inches(4.5), Inches(10), Inches(0.8))
+            tb_s = slide.shapes.add_textbox(Inches(0.6), Inches(4.2), Inches(10), Inches(0.8))
             tf = tb_s.text_frame
             tf.word_wrap = True
             p = tf.paragraphs[0]
             r = p.add_run()
             r.text = subtitle
-            r.font.size = Pt(16)
+            r.font.size = Pt(14)
             r.font.color.rgb = rgb(palette.gray)
             r.font.name = "Arial"
 
         # Accent underline below subtitle
-        add_glow_line(slide, 0.7, 5.4, 4.0, palette, color=accent_color)
+        add_glow_line(slide, 0.6, 5.1, 4.0, palette, color=accent_color)
     else:
         # Standard mode: AI background or solid navy
         if bg_image and os.path.exists(bg_image):
@@ -1728,7 +1774,7 @@ def build_editorial(prs, content: dict, palette, meta: dict, page_num: int,
         tf = tb_comm.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
-        p.line_spacing = Pt(15)
+        p.line_spacing = Pt(16)
         r = p.add_run()
         r.text = commentary
         r.font.size = Pt(10.5)
@@ -1743,11 +1789,12 @@ def build_editorial(prs, content: dict, palette, meta: dict, page_num: int,
     img_height = dims.get("height", el.chart_height)
 
     img_path = chart_path or content.get("image_path", "")
+    is_external = not chart_path and content.get("image_path", "")
     if img_path and os.path.exists(img_path):
-        slide.shapes.add_picture(
-            img_path,
-            Inches(img_left), Inches(img_top),
-            Inches(img_width), Inches(img_height)
+        _fit_image_preserving_aspect(
+            slide, img_path,
+            img_left, img_top, img_width, img_height,
+            border=bool(is_external)
         )
     elif content.get("image_path"):
         # Fallback placeholder
@@ -1953,11 +2000,11 @@ def build_chart_grid(prs, content: dict, palette, meta: dict, page_num: int,
         return
 
     rows = (n_items + cols - 1) // cols
-    margin_l = 0.5
-    margin_r = 0.5
-    gap = 0.3
+    margin_l = 0.8
+    margin_r = 0.8
+    gap = 0.2
     grid_top = 1.9
-    grid_bottom = 6.4
+    grid_bottom = 6.5
     total_w = 13.333 - margin_l - margin_r
     total_h = grid_bottom - grid_top
     cell_w = (total_w - (cols - 1) * gap) / cols
@@ -1982,10 +2029,10 @@ def build_chart_grid(prs, content: dict, palette, meta: dict, page_num: int,
         if img_path and os.path.exists(img_path):
             # Leave room for label below image
             label_h = 0.3 if label else 0
-            slide.shapes.add_picture(
-                img_path,
-                Inches(x), Inches(y),
-                Inches(cell_w), Inches(cell_h - label_h)
+            _fit_image_preserving_aspect(
+                slide, img_path,
+                x, y, cell_w, cell_h - label_h,
+                border=True
             )
 
         if label:
@@ -2006,7 +2053,7 @@ def build_chart_grid(prs, content: dict, palette, meta: dict, page_num: int,
     source = content.get("source", "")
     if source:
         tb_src = slide.shapes.add_textbox(
-            Inches(0.6), Inches(6.5), Inches(12.1), Inches(0.3)
+            Inches(0.8), Inches(6.6), Inches(11.733), Inches(0.3)
         )
         tf = tb_src.text_frame
         p = tf.paragraphs[0]

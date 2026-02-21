@@ -10,19 +10,115 @@
 export * from './bash.js';
 export * from './edit.js';
 export * from './git.js';
+export * from './tool-types.js';
 
-// Tool registry for agent dispatch
-export interface Tool {
+// ============================================================================
+// Tool Interface — Legacy and Typed variants
+// ============================================================================
+
+/**
+ * @deprecated Use `TypedTool<T>` from `./tool-types.js` for new code.
+ *             This interface remains for backward compatibility with code
+ *             that registers or consumes tools via the raw `toolRegistry` Map.
+ */
+export interface LegacyTool {
   name: string;
   description: string;
   execute: (params: Record<string, unknown>) => Promise<unknown>;
   validate?: (params: Record<string, unknown>) => { valid: boolean; reason?: string };
 }
 
-// Will be populated as tools are added
-export const toolRegistry: Map<string, Tool> = new Map();
+/**
+ * Alias kept so that code written against the original `Tool` interface
+ * continues to compile without changes.
+ *
+ * @deprecated Prefer `LegacyTool` or `TypedTool<T>` for new registrations.
+ */
+export type Tool = LegacyTool;
 
+// ============================================================================
+// Raw Registry (backward-compatible)
+// ============================================================================
+
+// The underlying Map stores LegacyTool entries.  All existing call-sites that
+// read from this Map will continue to work unchanged.
+export const toolRegistry: Map<string, LegacyTool> = new Map();
+
+// ============================================================================
+// Typed Registry Wrapper
+// ============================================================================
+
+import type { ToolParams, TypedTool } from './tool-types.js';
+
+/**
+ * TypedToolRegistry wraps the raw `toolRegistry` Map and provides typed
+ * access to tools whose param shapes are declared in `tool-types.ts`.
+ *
+ * It is NOT a replacement for `toolRegistry` — it delegates every mutation
+ * to the same underlying Map so the two views are always in sync.
+ */
+export class TypedToolRegistry {
+  /** Register a typed tool.  Also populates the legacy `toolRegistry` so
+   *  existing consumers are unaffected. */
+  set<T extends ToolParams>(tool: TypedTool<T>): void {
+    // Adapt the typed tool to the legacy interface so it is stored once.
+    const legacy: LegacyTool = {
+      name: tool.name,
+      description: tool.description,
+      execute: (params: Record<string, unknown>) =>
+        // The caller is responsible for passing params with the correct `tool`
+        // discriminant.  At the raw boundary we have to trust the runtime shape.
+        tool.execute(params as unknown as T),
+      validate: tool.validate
+        ? (params: Record<string, unknown>) =>
+            tool.validate!(params as unknown as T)
+        : undefined,
+    };
+    toolRegistry.set(tool.name, legacy);
+  }
+
+  /** Retrieve a tool with its typed interface.  Returns `undefined` when the
+   *  name is not registered. */
+  get<T extends ToolParams>(name: string): TypedTool<T> | undefined {
+    const legacy = toolRegistry.get(name);
+    if (!legacy) return undefined;
+
+    // Wrap the legacy entry back into a TypedTool shell.
+    return {
+      name: legacy.name,
+      description: legacy.description,
+      execute: (params: T) =>
+        legacy.execute(params as unknown as Record<string, unknown>),
+      validate: legacy.validate
+        ? (params: T) =>
+            legacy.validate!(params as unknown as Record<string, unknown>)
+        : undefined,
+    } as TypedTool<T>;
+  }
+
+  /** Forward to the underlying Map for parity with the legacy API. */
+  has(name: string): boolean {
+    return toolRegistry.has(name);
+  }
+
+  /** Iterate over all registered tool names. */
+  keys(): IterableIterator<string> {
+    return toolRegistry.keys();
+  }
+
+  /** Number of registered tools. */
+  get size(): number {
+    return toolRegistry.size;
+  }
+}
+
+/** Singleton typed registry — shares state with `toolRegistry`. */
+export const typedRegistry = new TypedToolRegistry();
+
+// ============================================================================
 // v9.0.2: Helper methods for toolRegistry
+// ============================================================================
+
 export function listTools(): string[] {
   return Array.from(toolRegistry.keys());
 }
@@ -31,9 +127,25 @@ export function getToolCount(): number {
   return toolRegistry.size;
 }
 
-export function getTool(name: string): Tool | undefined {
+export function getTool(name: string): LegacyTool | undefined {
   return toolRegistry.get(name);
 }
+
+/**
+ * Retrieve a tool with typed params.
+ *
+ * ```ts
+ * const tool = getTypedTool<BashParams>('bash');
+ * const result = await tool?.execute({ tool: 'bash', command: 'ls -la' });
+ * ```
+ */
+export function getTypedTool<T extends ToolParams>(name: string): TypedTool<T> | undefined {
+  return typedRegistry.get<T>(name);
+}
+
+// ============================================================================
+// Tool Registrations
+// ============================================================================
 
 // Register bash tool
 import { getBashTool, BashOptions } from './bash.js';

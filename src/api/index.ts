@@ -151,6 +151,10 @@ export class GenesisAPI {
     // Integration routes
     this.addRoute('GET', '/integration/bridge', this.handleBridgeStats.bind(this));
     this.addRoute('POST', '/integration/ground', this.handleGroundAction.bind(this));
+
+    // RSI & Tool routes
+    this.addRoute('POST', '/rsi/trigger', this.handleRSITrigger.bind(this));
+    this.addRoute('POST', '/tools/execute', this.handleToolExecute.bind(this));
   }
 
   private addRoute(method: string, path: string, handler: RouteHandler['handler']): void {
@@ -763,6 +767,39 @@ export class GenesisAPI {
       timestamp: new Date().toISOString(),
       requestId: '',
     };
+  }
+
+  private async handleRSITrigger(): Promise<APIResponse> {
+    try {
+      const { getGenesis } = await import('../genesis.js');
+      const genesis = getGenesis();
+      const rsi = (genesis as any).rsiOrchestrator;
+      if (!rsi) {
+        return { success: false, error: 'RSI not initialized', timestamp: new Date().toISOString(), requestId: '' };
+      }
+      const result = await rsi.runCycle();
+      return { success: true, data: result, timestamp: new Date().toISOString(), requestId: '' };
+    } catch (err) {
+      return { success: false, error: `RSI failed: ${err instanceof Error ? err.message : String(err)}`, timestamp: new Date().toISOString(), requestId: '' };
+    }
+  }
+
+  private async handleToolExecute(_req: http.IncomingMessage, body: unknown): Promise<APIResponse> {
+    const { tool, params } = body as { tool: string; params?: Record<string, unknown> };
+    if (!tool) {
+      return { success: false, error: 'tool name required', timestamp: new Date().toISOString(), requestId: '' };
+    }
+    try {
+      const { toolRegistry } = await import('../tools/index.js');
+      const t = toolRegistry.get(tool);
+      if (!t) {
+        return { success: false, error: `Unknown tool: ${tool}`, timestamp: new Date().toISOString(), requestId: '' };
+      }
+      const result = await t.execute(params || {});
+      return { success: true, data: result, timestamp: new Date().toISOString(), requestId: '' };
+    } catch (err) {
+      return { success: false, error: `Tool failed: ${err instanceof Error ? err.message : String(err)}`, timestamp: new Date().toISOString(), requestId: '' };
+    }
   }
 }
 

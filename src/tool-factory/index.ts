@@ -218,3 +218,4 @@ export { ToolVerifier } from './verifier.js';
 export { ToolPromoter } from './promoter.js';
 export { ToolLibrary } from './library.js';
 export { DynamicToolRegistry } from './registry.js';
+export { MAPElitesArchive, createToolArchive, describeToolBehavior, toolFitness, type DimensionSpec, type MAPElitesConfig } from './map-elites.js';

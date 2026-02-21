@@ -21,6 +21,7 @@ import { GenesisEventBus } from './event-bus.js';
 // Re-export types and classes
 export { GenesisEventBus } from './event-bus.js';
 export type { Subscription, SubscribeOptions, BusStats } from './event-bus.js';
+export { createTypedPublisher, createTypedSubscriber, type TypedPublisher, type TypedSubscriber } from './typed-publisher.js';
 
 export type {
   // Base

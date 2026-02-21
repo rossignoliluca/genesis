@@ -287,18 +287,17 @@ toolRegistry.set('git_push', {
   },
 });
 
-// Register presentation tool
-import { generatePresentation } from './presentation.js';
-import type { PresentationSpec } from '../presentation/types.js';
-
+// Register presentation tool (lazy import — module may not exist in all builds)
 toolRegistry.set('presentation', {
   name: 'presentation',
   description: 'Generate institutional-quality PPTX presentation from JSON spec',
   execute: async (params: Record<string, unknown>) => {
-    return generatePresentation(params.spec as PresentationSpec);
+    const { generatePresentation } = await import('./presentation.js');
+    const spec = params.spec as import('../presentation/types.js').PresentationSpec;
+    return generatePresentation(spec);
   },
   validate: (params: Record<string, unknown>) => {
-    const spec = params.spec as PresentationSpec | undefined;
+    const spec = params.spec as { slides?: unknown[]; output_path?: string } | undefined;
     if (!spec) return { valid: false, reason: 'Missing spec parameter' };
     if (!spec.slides || !Array.isArray(spec.slides)) {
       return { valid: false, reason: 'spec.slides must be an array' };

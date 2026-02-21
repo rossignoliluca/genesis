@@ -17,6 +17,7 @@
  * genesis.ts can delegate its boot fields to this registry incrementally.
  */
 
+import { createLogger } from './logger.js';
 import { getFreeEnergyKernel } from '../kernel/free-energy-kernel.js';
 import { getBrain } from '../brain/index.js';
 import { getEventBus } from '../bus/index.js';
@@ -34,6 +35,12 @@ import { getGroundingSystem } from '../grounding/index.js';
 import { getAgentPool } from '../agents/index.js';
 import { getGovernanceSystem } from '../governance/index.js';
 import { getSelfImprovementEngine } from '../self-modification/index.js';
+
+// ============================================================================
+// Logging
+// ============================================================================
+
+const log = createLogger('module-registry');
 
 // ============================================================================
 // Public types
@@ -278,9 +285,8 @@ export class ModuleRegistry {
       entry.health.bootTimeMs = Date.now() - t0;
 
       if (entry.opts.optional) {
-        console.warn(
-          `[ModuleRegistry] Optional module '${entry.id}' failed to boot — ` +
-          `continuing. ${msg}`,
+        log.warn(
+          `Optional module '${entry.id}' failed to boot — continuing. ${msg}`,
         );
       } else {
         throw new Error(
@@ -368,8 +374,8 @@ export class ModuleRegistry {
         entry.bootedAt = null;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.warn(
-          `[ModuleRegistry] Shutdown error for '${entry.id}': ${msg}`,
+        log.warn(
+          `Shutdown error for '${entry.id}': ${msg}`,
         );
         entry.health.status = 'degraded';
       }

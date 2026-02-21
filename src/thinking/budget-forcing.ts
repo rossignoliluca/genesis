@@ -648,7 +648,7 @@ export function planBudget(
 }
 
 // ============================================================================
-// Required types: BudgetForcingConfig, SubQuestionBudget, BudgetPlan,
+// Required types: BudgetForcingConfig, SubQuestionBudget, ForcingBudgetPlan,
 //                 BudgetForcingResult
 // ============================================================================
 
@@ -702,7 +702,7 @@ export interface SubQuestionBudget {
 /**
  * Full decomposition plan returned by `PlanAndBudgetAllocator`.
  */
-export interface BudgetPlan {
+export interface ForcingBudgetPlan {
   /** Ordered list of sub-questions with individual token allocations. */
   subQuestions: SubQuestionBudget[];
   /** Sum of all `budgetTokens` — equals the input `totalBudget` (modulo rounding). */
@@ -886,7 +886,7 @@ export class PlanAndBudgetAllocator {
   }
 
   /**
-   * Produce a `BudgetPlan` for `query` given `totalBudget` tokens.
+   * Produce a `ForcingBudgetPlan` for `query` given `totalBudget` tokens.
    *
    * Steps:
    * 1. Decompose query into sub-questions.
@@ -895,7 +895,7 @@ export class PlanAndBudgetAllocator {
    * 4. Multiply by `totalBudget`; assign integer tokens (remainder to last).
    * 5. Assign priorities: earlier sub-questions get lower (higher-priority) numbers.
    */
-  allocate(query: string, totalBudget: number): BudgetPlan {
+  allocate(query: string, totalBudget: number): ForcingBudgetPlan {
     const subQuestions = this._decomposer.decompose(query);
 
     // Score each sub-question independently.

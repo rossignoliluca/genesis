@@ -145,9 +145,9 @@ function wrapPino(pinoLogger: PinoLogger): Logger {
   ): (o: Record<string, unknown> | string, m?: string | unknown, ...r: unknown[]) => void {
     return (o, m, ..._rest) => {
       if (typeof o === 'string') {
-        fn.call(pinoLogger, o);
+        (fn as Function).call(pinoLogger, o, m, ..._rest);
       } else {
-        fn.call(pinoLogger, o, typeof m === 'string' ? m : '');
+        (fn as Function).call(pinoLogger, o, typeof m === 'string' ? m : '');
       }
     };
   }

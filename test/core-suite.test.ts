@@ -415,9 +415,403 @@ describe('AgentLoop', () => {
       }),
       observe: async (state: any, _result: any) => state,
       learn: async (_state: any) => {},
+      shouldTerminate: (_state: any) => false,
     };
 
     const loop = new mod.AgentLoop(minimalModules);
     assert.ok(loop);
+  });
+});
+
+// ============================================================================
+// 7. Effect System
+// ============================================================================
+
+describe('Effect', () => {
+  test('succeed + runPromise', async () => {
+    const mod = await import('../dist/src/core/effect.js');
+    const result = await mod.runPromise(mod.succeed(42));
+    assert.strictEqual(result, 42);
+  });
+
+  test('fail + runPromise rejects', async () => {
+    const mod = await import('../dist/src/core/effect.js');
+    await assert.rejects(
+      () => mod.runPromise(mod.fail(new mod.ToolError('boom'))),
+      (err: any) => err._tag === 'ToolError' && err.message === 'boom'
+    );
+  });
+
+  test('succeed + runSync works', async () => {
+    const mod = await import('../dist/src/core/effect.js');
+    const value = mod.runSync(mod.succeed('hello'));
+    assert.strictEqual(value, 'hello');
+  });
+
+  test('sync + runSync works', async () => {
+    const mod = await import('../dist/src/core/effect.js');
+    const value = mod.runSync(mod.sync(() => 1 + 2));
+    assert.strictEqual(value, 3);
+  });
+
+  test('runSync throws on async effect', async () => {
+    const mod = await import('../dist/src/core/effect.js');
+    const asyncEffect = mod.tryPromise(
+      () => Promise.resolve(42),
+      (e) => new mod.LLMError('fail', e),
+    );
+    assert.throws(() => mod.runSync(asyncEffect as any), /synchronous evaluator/);
+  });
+
+  test('map transforms success value', async () => {
+    const mod = await import('../dist/src/core/effect.js');
+    const doubled = mod.map(mod.succeed(21), (n: number) => n * 2);
+    const result = await mod.runPromise(doubled);
+    assert.strictEqual(result, 42);
+  });
+
+  test('flatMap chains effects', async () => {
+    const mod = await import('../dist/src/core/effect.js');
+    const program = mod.flatMap(
+      mod.succeed(10),
+      (n: number) => mod.succeed(n * 3),
+    );
+    const result = await mod.runPromise(program);
+    assert.strictEqual(result, 30);
+  });
+
+  test('catchAll recovers from failure', async () => {
+    const mod = await import('../dist/src/core/effect.js');
+    const program = mod.catchAll(
+      mod.fail(new mod.ToolError('oops')),
+      (_err: any) => mod.succeed('recovered'),
+    );
+    const result = await mod.runPromise(program);
+    assert.strictEqual(result, 'recovered');
+  });
+
+  test('tryPromise catches rejection', async () => {
+    const mod = await import('../dist/src/core/effect.js');
+    const program = mod.tryPromise(
+      () => Promise.reject(new Error('network')),
+      (cause) => new mod.LLMError('request failed', cause),
+    );
+    const result = await mod.runEither(program);
+    assert.ok(mod.isLeft(result));
+    assert.strictEqual(result.error._tag, 'LLMError');
+  });
+
+  test('all runs concurrently and collects', async () => {
+    const mod = await import('../dist/src/core/effect.js');
+    const results = await mod.runPromise(mod.all([
+      mod.succeed(1),
+      mod.succeed(2),
+      mod.succeed(3),
+    ]));
+    assert.deepStrictEqual(results, [1, 2, 3]);
+  });
+
+  test('pipe composes left to right', async () => {
+    const mod = await import('../dist/src/core/effect.js');
+    const result = mod.pipe(
+      5,
+      (x: number) => x * 2,
+      (x: number) => x + 1,
+    );
+    assert.strictEqual(result, 11);
+  });
+
+  test('runEither returns Right on success', async () => {
+    const mod = await import('../dist/src/core/effect.js');
+    const result = await mod.runEither(mod.succeed(99));
+    assert.ok(mod.isRight(result));
+    assert.strictEqual(result.value, 99);
+  });
+
+  test('timeout fails slow effects', async () => {
+    const mod = await import('../dist/src/core/effect.js');
+    const slow = mod.tryPromise(
+      () => new Promise(r => setTimeout(() => r('done'), 500)),
+      (e) => new mod.LLMError('fail', e),
+    );
+    const bounded = mod.timeout(slow, 50);
+    const result = await mod.runEither(bounded);
+    assert.ok(mod.isLeft(result));
+    assert.strictEqual((result.error as any)._tag, 'TimeoutError');
+  });
+
+  test('GenesisError subtypes have correct _tag', async () => {
+    const mod = await import('../dist/src/core/effect.js');
+    const llm = new mod.LLMError('test');
+    const tool = new mod.ToolError('test');
+    const mem = new mod.MemoryError('test');
+    const bus = new mod.BusError('test');
+    const cfg = new mod.ConfigError('test');
+    const to = new mod.TimeoutError('test');
+
+    assert.strictEqual(llm._tag, 'LLMError');
+    assert.strictEqual(tool._tag, 'ToolError');
+    assert.strictEqual(mem._tag, 'MemoryError');
+    assert.strictEqual(bus._tag, 'BusError');
+    assert.strictEqual(cfg._tag, 'ConfigError');
+    assert.strictEqual(to._tag, 'TimeoutError');
+
+    assert.ok(llm instanceof Error);
+    assert.ok(tool instanceof mod.GenesisError);
+  });
+});
+
+// ============================================================================
+// 8. Budget Forcing
+// ============================================================================
+
+describe('BudgetForcing', () => {
+  test('estimateComplexity returns valid scores', async () => {
+    const mod = await import('../dist/src/thinking/budget-forcing.js');
+    const simple = mod.estimateComplexity('hello');
+    assert.ok(simple.score >= 0 && simple.score <= 1);
+
+    const complex = mod.estimateComplexity(
+      'Explain why the quantum field theory approach to consciousness ' +
+      'requires analyzing the Hamiltonian, then compare with IIT, ' +
+      'and finally derive the mathematical proof step by step'
+    );
+    assert.ok(complex.score > simple.score);
+  });
+
+  test('allocateBudget distributes across phases', async () => {
+    const mod = await import('../dist/src/thinking/budget-forcing.js');
+    const complexity = mod.estimateComplexity('analyze this problem');
+    const budget = mod.allocateBudget(complexity, 4000);
+    assert.ok(budget.totalBudget === 4000);
+    assert.ok(budget.phases.length > 0);
+    assert.ok(budget.softCeiling > 0);
+    assert.ok(budget.hardFloor > 0);
+  });
+
+  test('shouldExtendThinking detects premature stops', async () => {
+    const mod = await import('../dist/src/thinking/budget-forcing.js');
+    const complexity = mod.estimateComplexity('explain quantum computing step by step');
+    const budget = mod.allocateBudget(complexity, 4000);
+    // Very few tokens used → should extend
+    const extend = mod.shouldExtendThinking(10, budget);
+    assert.strictEqual(extend, true);
+  });
+
+  test('shouldTruncateThinking detects over-generation', async () => {
+    const mod = await import('../dist/src/thinking/budget-forcing.js');
+    const complexity = mod.estimateComplexity('hi');
+    const budget = mod.allocateBudget(complexity, 500);
+    // Way past soft ceiling + high confidence → should truncate
+    const truncate = mod.shouldTruncateThinking(budget.softCeiling + 100, budget, 0.95);
+    assert.strictEqual(truncate, true);
+  });
+});
+
+// ============================================================================
+// 9. Plan-and-Budget
+// ============================================================================
+
+describe('PlanAndBudget', () => {
+  test('PlanAndBudget class can plan and allocate', async () => {
+    const mod = await import('../dist/src/reasoning/plan-and-budget.js');
+    const pab = new mod.PlanAndBudget();
+
+    const plan = pab.plan(
+      'First explain the concept, then compare approaches, and finally recommend one',
+      4000
+    );
+
+    assert.ok(plan.subQuestions.length > 0);
+    assert.strictEqual(plan.totalBudget, 4000);
+    assert.ok(plan.synthesisReserve > 0);
+
+    // Allocate
+    const allocs = pab.allocate(plan);
+    assert.ok(allocs.length > 0);
+    assert.ok(allocs.every((a: any) => a.tokens > 0));
+  });
+
+  test('rebalance redistributes surplus', async () => {
+    const mod = await import('../dist/src/reasoning/plan-and-budget.js');
+    const pab = new mod.PlanAndBudget();
+
+    const plan = pab.plan('Compare A with B, then analyze C', 3000);
+
+    if (plan.subQuestions.length > 0) {
+      const results = [{
+        subQuestionId: plan.subQuestions[0].id,
+        tokensUsed: Math.floor(plan.subQuestions[0].allocatedTokens * 0.3),
+        confidence: 0.9,
+        answer: 'test answer',
+      }];
+
+      const rebalanced = pab.rebalance(plan, results);
+      assert.ok(rebalanced.totalBudget === plan.totalBudget);
+    }
+  });
+});
+
+// ============================================================================
+// 10. MAP-Elites Archive
+// ============================================================================
+
+describe('MAPElites', () => {
+  test('archive stores and retrieves elites', async () => {
+    const mod = await import('../dist/src/tool-factory/map-elites.js');
+    const archive = new mod.MAPElitesArchive(
+      [
+        { name: 'x', bins: 3, min: 0, max: 1 },
+        { name: 'y', bins: 3, min: 0, max: 1 },
+      ],
+    );
+
+    archive.add({ name: 'tool-a' }, [0.2, 0.8], 0.5);
+    archive.add({ name: 'tool-b' }, [0.9, 0.1], 0.9);
+
+    assert.ok(archive.coverage() > 0);
+    assert.ok(archive.qdScore() > 0);
+  });
+
+  test('describeToolBehavior returns valid descriptors', async () => {
+    const mod = await import('../dist/src/tool-factory/map-elites.js');
+    const mockTool = {
+      id: 'test-1',
+      name: 'test-tool',
+      description: 'A fast analysis tool for data',
+      version: 1,
+      status: 'candidate' as const,
+      source: 'function run(input) {\n  if (input.x) {\n    return input.x * 2;\n  }\n  return 0;\n}',
+      paramSchema: {
+        type: 'object',
+        properties: {
+          x: { type: 'number' },
+        },
+        description: 'Run analysis',
+      },
+      createdBy: 'agent' as const,
+      createdFrom: 'test',
+      usageCount: 50,
+      successCount: 42,
+      failureCount: 8,
+      avgDuration: 200,
+      lastUsed: new Date(),
+      createdAt: new Date(),
+    };
+
+    const desc = mod.describeToolBehavior(mockTool);
+    assert.strictEqual(desc.length, 4);
+    assert.ok(desc.every((d: number) => d >= 0 && d <= 1));
+  });
+
+  test('createToolArchive returns configured archive', async () => {
+    const mod = await import('../dist/src/tool-factory/map-elites.js');
+    const archive = mod.createToolArchive();
+    assert.ok(archive);
+    assert.strictEqual(archive.coverage(), 0);
+  });
+});
+
+// ============================================================================
+// 11. Core Barrel Exports
+// ============================================================================
+
+describe('CoreBarrel', () => {
+  test('core/index.ts exports all modules', async () => {
+    const core = await import('../dist/src/core/index.js');
+
+    // Logger
+    assert.ok(typeof core.createLogger === 'function');
+    assert.ok(typeof core.getLogger === 'function');
+
+    // Effect system
+    assert.ok(typeof core.succeed === 'function');
+    assert.ok(typeof core.fail === 'function');
+    assert.ok(typeof core.tryPromise === 'function');
+    assert.ok(typeof core.runPromise === 'function');
+    assert.ok(typeof core.runSync === 'function');
+    assert.ok(typeof core.pipe === 'function');
+    assert.ok(typeof core.map === 'function');
+    assert.ok(typeof core.flatMap === 'function');
+    assert.ok(core.GenesisError);
+    assert.ok(core.LLMError);
+    assert.ok(core.ToolError);
+
+    // FEK Bridge
+    assert.ok(core.FEKBrainBridge);
+
+    // Agent Loop
+    assert.ok(core.AgentLoop);
+
+    // Bootstrap
+    assert.ok(typeof core.bootstrap === 'function');
+    assert.ok(typeof core.resolve === 'function');
+    assert.ok(typeof core.shutdown === 'function');
+
+    // Module Registry
+    assert.ok(core.ModuleRegistry);
+    assert.ok(typeof core.getModuleRegistry === 'function');
+  });
+
+  test('effect system works via barrel import', async () => {
+    const { succeed, runSync, pipe } = await import('../dist/src/core/index.js');
+    const result = runSync(succeed(42));
+    assert.strictEqual(result, 42);
+
+    const piped = pipe(10, (x: number) => x * 3, (x: number) => x + 2);
+    assert.strictEqual(piped, 32);
+  });
+});
+
+// ============================================================================
+// 12. Typed Publisher
+// ============================================================================
+
+describe('TypedPublisher', () => {
+  test('createTypedPublisher and createTypedSubscriber are exported from bus', async () => {
+    const bus = await import('../dist/src/bus/index.js');
+    assert.ok(typeof bus.createTypedPublisher === 'function');
+    assert.ok(typeof bus.createTypedSubscriber === 'function');
+  });
+});
+
+// ============================================================================
+// 13. Module Registry
+// ============================================================================
+
+describe('ModuleRegistry', () => {
+  test('can instantiate registry', async () => {
+    const mod = await import('../dist/src/core/module-registry.js');
+    const registry = new mod.ModuleRegistry();
+    assert.ok(registry);
+  });
+
+  test('registers and queries modules', async () => {
+    const mod = await import('../dist/src/core/module-registry.js');
+    const registry = new mod.ModuleRegistry();
+
+    registry.register(
+      'test-module',
+      async () => ({ name: 'test' }),
+      { level: 1 },
+    );
+
+    assert.ok(registry.get('test-module') === undefined); // not booted yet, but registered
+    assert.strictEqual(registry.get('nonexistent'), undefined);
+  });
+
+  test('boot initializes registered modules', async () => {
+    const mod = await import('../dist/src/core/module-registry.js');
+    const registry = new mod.ModuleRegistry();
+
+    let initialized = false;
+    registry.register(
+      'my-svc',
+      async () => { initialized = true; return {}; },
+      { level: 1 },
+    );
+
+    await registry.boot(1);
+    assert.strictEqual(initialized, true);
   });
 });

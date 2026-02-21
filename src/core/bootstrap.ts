@@ -32,48 +32,29 @@ import { getDIContainer, type DIContainer } from '../di/container.js';
  * 3. Use resolve<ServiceTokenMap['yourToken']>('yourToken')
  */
 export interface ServiceTokenMap {
-  // Infrastructure
+  // Infrastructure (L1)
   eventBus: import('../bus/index.js').GenesisEventBus;
-  config: any; // TODO: type when config module is typed
   fek: import('../kernel/free-energy-kernel.js').FreeEnergyKernel;
   neuromodulation: import('../neuromodulation/index.js').NeuromodulationSystem;
   nociception: import('../nociception/index.js').NociceptiveSystem;
   allostasis: import('../allostasis/index.js').AllostasisSystem;
   daemon: import('../daemon/index.js').Daemon;
 
-  // Memory & Persistence
+  // Memory & Persistence (L2)
   memory: import('../memory/index.js').MemorySystem;
-  persistence: any;
-  graphRAG: any;
 
-  // Cognition
+  // Cognition (L3)
   brain: import('../brain/index.js').Brain;
   consciousness: import('../consciousness/index.js').ConsciousnessSystem;
   worldModel: import('../world-model/index.js').WorldModelSystem;
   thinking: import('../thinking/index.js').ThinkingEngine;
   metacognitive: import('../reasoning/metacognitive-controller.js').MetacognitiveController;
   grounding: import('../grounding/index.js').GroundingSystem;
-  mctsEngine: any;
-  outcomeIntegrator: any;
-
-  // Autonomous
-  goalSystem: any;
-  attentionController: any;
-  selfReflection: any;
   governance: import('../governance/index.js').GovernanceSystem;
 
-  // Market & Content
-  marketStrategist: any;
-  contentOrchestrator: any;
-  newsletter: any;
-  mcpClient: any;
-
-  // Tools & Agents
+  // Tools & Agents (L3)
   toolRegistry: Map<string, import('../tools/index.js').Tool>;
   agentPool: import('../agents/index.js').AgentPool;
-
-  // Observability
-  dashboard: any;
 
   // Core (v35)
   agentLoop: import('./agent-loop.js').AgentLoop;

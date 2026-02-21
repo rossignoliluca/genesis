@@ -146,6 +146,9 @@ export {
   DEFAULT_META_CONFIG,
 } from './meta-memory.js';
 
+// Re-export Activation Engine Module
+export { ActivationEngine, type ActivatedMemory, type ContextElement, type ActivationConfig, type RetrievalResult as ACTRRetrievalResult } from './activation.js';
+
 import { EpisodicStore, createEpisodicStore, CreateEpisodicOptions } from './episodic.js';
 import { SemanticStore, createSemanticStore, CreateSemanticOptions } from './semantic.js';
 import { ProceduralStore, createProceduralStore, CreateProceduralOptions } from './procedural.js';

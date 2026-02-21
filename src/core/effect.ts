@@ -67,6 +67,8 @@ export function isLeft<A, E>(e: Either<A, E>): e is Left<E> {
 export type Effect<A, E = never, R = unknown> = {
   readonly _tag: 'Effect';
   readonly run: (env: R) => Promise<Either<A, E>>;
+  /** Optional synchronous evaluator — set by `sync()` and `succeed()` for `runSync` support. */
+  readonly _sync?: (env: R) => Either<A, E>;
 };
 
 // ============================================================================
@@ -81,9 +83,11 @@ export type Effect<A, E = never, R = unknown> = {
  *   // Effect<number, never>
  */
 export function succeed<A>(value: A): Effect<A, never> {
+  const r = right(value);
   return {
     _tag: 'Effect',
-    run: (_env) => Promise.resolve(right(value)),
+    run: (_env) => Promise.resolve(r),
+    _sync: (_env) => r,
   };
 }
 
@@ -142,6 +146,7 @@ export function sync<A>(fn: () => A): Effect<A, never> {
   return {
     _tag: 'Effect',
     run: (_env) => Promise.resolve(right(fn())),
+    _sync: (_env) => right(fn()),
   };
 }
 
@@ -321,6 +326,7 @@ export function provide<A, E, R>(
   return {
     _tag: 'Effect',
     run: (_ignoredEnv: unknown) => effect.run(env),
+    _sync: effect._sync ? (_ignoredEnv: unknown) => effect._sync!(env) : undefined,
   };
 }
 
@@ -449,39 +455,20 @@ export async function runEither<A, E>(effect: Effect<A, E>): Promise<Either<A, E
  *   const value = runSync(sync(() => computePhi(state)));
  */
 export function runSync<A>(effect: Effect<A, never>): A {
-  // We rely on the invariant that sync/succeed return already-settled Promises.
-  // There is no way to block a Promise synchronously in Node without native
-  // extensions, so we surface the result through a shared slot.
-  let resolved = false;
-  let value: A | undefined;
-  let threw: unknown;
-
-  effect.run(undefined).then(
-    (result) => {
-      resolved = true;
-      if (isRight(result)) {
-        value = result.value;
-      } else {
-        // Effect<A, never> guarantees this branch is unreachable at compile
-        // time, but we defend against incorrect runtime usage.
-        threw = result.error;
-      }
-    },
-    (err) => {
-      resolved = true;
-      threw = err;
-    },
-  );
-
-  if (!resolved) {
-    throw new Error(
-      'runSync called on an asynchronous Effect. ' +
-      'Use runPromise or runEither for Effects that perform I/O.',
-    );
+  // Use the synchronous evaluator if available (set by sync/succeed).
+  if (effect._sync) {
+    const result = effect._sync(undefined);
+    if (isRight(result)) return result.value;
+    // Effect<A, never> guarantees this branch is unreachable at compile time,
+    // but we defend against incorrect runtime usage.
+    throw (result as Left<unknown>).error;
   }
 
-  if (threw !== undefined) throw threw;
-  return value as A;
+  throw new Error(
+    'runSync called on an Effect without a synchronous evaluator. ' +
+    'Only Effects created via sync() or succeed() support runSync. ' +
+    'Use runPromise or runEither for Effects that perform I/O.',
+  );
 }
 
 // ============================================================================

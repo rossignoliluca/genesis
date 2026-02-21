@@ -19,6 +19,8 @@
  *   bridge.feedbackResult(result);
  */
 
+import { estimateComplexity } from '../thinking/budget-forcing.js';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -122,45 +124,11 @@ function selectStrategy(
 }
 
 /**
- * Estimate query complexity using fast heuristics (no LLM call).
- *
- * Factors:
- * - Length (longer = more complex)
- * - Question words (what/why/how)
- * - Domain keywords
- * - Nested structure (clauses, conditions)
- * - Multi-step indicators
+ * Estimate query complexity using the budget-forcing module's algorithm.
+ * Delegates to estimateComplexity() to avoid duplication.
  */
 function estimateQueryComplexity(query: string): number {
-  const lower = query.toLowerCase();
-  let complexity = 0;
-
-  // Length factor (0-0.3)
-  const wordCount = query.split(/\s+/).length;
-  complexity += Math.min(0.3, wordCount / 200);
-
-  // Deep reasoning indicators (0-0.3)
-  const deepWords = ['why', 'how', 'explain', 'analyze', 'compare', 'evaluate',
-    'design', 'architect', 'optimize', 'debug', 'prove', 'derive'];
-  const deepCount = deepWords.filter(w => lower.includes(w)).length;
-  complexity += Math.min(0.3, deepCount * 0.1);
-
-  // Multi-step indicators (0-0.2)
-  const multiStep = ['and then', 'first', 'second', 'step', 'after that',
-    'followed by', 'next', 'finally', 'also', 'additionally'];
-  const stepCount = multiStep.filter(w => lower.includes(w)).length;
-  complexity += Math.min(0.2, stepCount * 0.05);
-
-  // Nested structure (0-0.1)
-  const nestingIndicators = (query.match(/[({[\]})]/g) || []).length;
-  complexity += Math.min(0.1, nestingIndicators * 0.02);
-
-  // Code indicators (0-0.1)
-  if (/```|function\s|class\s|import\s|const\s/.test(query)) {
-    complexity += 0.1;
-  }
-
-  return Math.min(1, complexity);
+  return estimateComplexity(query).score;
 }
 
 /**
@@ -235,7 +203,8 @@ export class FEKBrainBridge {
     } = {}
   ): FEKRouting {
     // 1. Run FEK cycle to get current free energy
-    let freeEnergy = 0.5;
+    // Default 0.1 = calm/low-uncertainty when no FEK; query complexity drives strategy
+    let freeEnergy = 0.1;
     let fekStrategy = 'sequential';
 
     if (this.fek) {

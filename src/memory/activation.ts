@@ -255,7 +255,7 @@ export class ActivationEngine<T = unknown> {
       const assocMap = this.associations.get(tag)!;
       const fan = assocMap.size;
       const strength = Math.max(0, this.config.maxAssociativeStrength - Math.log(Math.max(1, fan)));
-      for (const [mid] of assocMap) {
+      for (const mid of Array.from(assocMap.keys())) {
         assocMap.set(mid, strength);
       }
     }
@@ -273,7 +273,7 @@ export class ActivationEngine<T = unknown> {
     let bestMemory: ActivatedMemory<T> | null = null;
     let bestActivation = -Infinity;
 
-    for (const memory of this.memories.values()) {
+    for (const memory of Array.from(this.memories.values())) {
       const activation = this.computeActivation(memory.id, context);
       if (activation > bestActivation) {
         bestActivation = activation;
@@ -300,7 +300,7 @@ export class ActivationEngine<T = unknown> {
   retrieveTopK(k: number, context: ContextElement[] = []): ActivatedMemory<T>[] {
     const scored: Array<{ memory: ActivatedMemory<T>; activation: number }> = [];
 
-    for (const memory of this.memories.values()) {
+    for (const memory of Array.from(this.memories.values())) {
       const activation = this.computeActivation(memory.id, context);
       if (activation > this.config.retrievalThreshold) {
         scored.push({ memory, activation });
@@ -321,7 +321,7 @@ export class ActivationEngine<T = unknown> {
   ): ActivatedMemory<T>[] {
     const scored: Array<{ memory: ActivatedMemory<T>; activation: number }> = [];
 
-    for (const memory of this.memories.values()) {
+    for (const memory of Array.from(this.memories.values())) {
       if (!filter(memory)) continue;
       const activation = this.computeActivation(memory.id, context);
       if (activation > this.config.retrievalThreshold) {
@@ -345,7 +345,7 @@ export class ActivationEngine<T = unknown> {
     let pruned = 0;
     const toRemove: string[] = [];
 
-    for (const memory of this.memories.values()) {
+    for (const memory of Array.from(this.memories.values())) {
       const activation = this.computeActivation(memory.id, context);
       if (activation < this.config.retrievalThreshold - 2.0) {
         toRemove.push(memory.id);
@@ -379,7 +379,7 @@ export class ActivationEngine<T = unknown> {
 
   /** Get all memories (for debugging) */
   getAll(): ActivatedMemory<T>[] {
-    return [...this.memories.values()];
+    return Array.from(this.memories.values());
   }
 
   /** Get a specific memory by id */
@@ -393,7 +393,7 @@ export class ActivationEngine<T = unknown> {
     let totalActivation = 0;
     let totalAge = 0;
 
-    for (const memory of this.memories.values()) {
+    for (const memory of Array.from(this.memories.values())) {
       totalActivation += memory.activation;
       totalAge += now - memory.createdAt;
     }

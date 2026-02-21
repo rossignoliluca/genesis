@@ -488,6 +488,107 @@ export class WeeklyReportPipeline {
     timings.buildSpec = Date.now() - t6;
     console.log(`  → ${spec.slides.length} slides, spec saved to ${specPath} (${timings.buildSpec}ms)`);
 
+    // ---- STEP 6.5: AI SECTION BACKGROUNDS (Stability AI) ----
+    {
+      console.log(`[6.5/8] GENERATING AI section backgrounds...`);
+      const t65 = Date.now();
+      try {
+        const bgDir = path.join(this.config.outputDir, 'backgrounds');
+        fs.mkdirSync(bgDir, { recursive: true });
+        const stabilityOutDir = '/tmp/tadasant-mcp-server-stability-ai';
+        fs.mkdirSync(stabilityOutDir, { recursive: true });
+
+        const generateBg = async (prompt: string, fileName: string): Promise<string | null> => {
+          await this.mcp.call('stability-ai' as any, 'stability-ai-generate-image', {
+            prompt,
+            aspectRatio: '16:9',
+            stylePreset: 'digital-art',
+            outputImageFileName: fileName,
+          });
+          const serverPath = path.join(stabilityOutDir, `${fileName}.png`);
+          if (fs.existsSync(serverPath)) {
+            const destPath = path.join(bgDir, `${fileName}.png`);
+            fs.copyFileSync(serverPath, destPath);
+            return destPath;
+          }
+          console.warn(`  [bg] No image file found for ${fileName}`);
+          return null;
+        };
+
+        const sectionPrompts: Record<string, string> = {
+          equities: 'Equities & Stock Market',
+          fixed_income: 'Fixed Income & Bonds',
+          fx: 'Foreign Exchange & Currencies',
+          commodities: 'Commodities & Energy',
+          crypto: 'Cryptocurrency & Digital Assets',
+          macro: 'Macroeconomics & Central Banks',
+          geopolitics: 'Geopolitics & Global Risk',
+          data_narratives: 'Data Analytics & Market Breadth',
+          curated_charts: 'Financial Charts & Data Visualization',
+        };
+
+        const dividerSections = new Set<string>();
+        for (const slide of spec.slides) {
+          if (slide.type === 'section_divider') {
+            const sec = (slide.content as any).section;
+            if (sec) dividerSections.add(sec);
+          }
+        }
+
+        const bgMap = new Map<string, string>();
+        for (const sec of dividerSections) {
+          try {
+            const keyword = sectionPrompts[sec] || sec.replace(/_/g, ' ');
+            const fileName = `bg-${sec.replace(/_/g, '-')}`;
+            const bgPath = await generateBg(
+              `Minimal abstract financial background for ${keyword} section, dark navy gradient, subtle geometric patterns, institutional style, no text`,
+              fileName,
+            );
+            if (bgPath) {
+              bgMap.set(sec, bgPath);
+              console.log(`  [bg] ${sec}: ${bgPath}`);
+            }
+          } catch (e) {
+            console.warn(`  [bg] Failed ${sec}: ${(e as Error).message}`);
+          }
+        }
+
+        let coverPath: string | null = null;
+        try {
+          coverPath = await generateBg(
+            'Premium institutional finance report cover, abstract dark navy and gold gradient, subtle grid pattern, modern minimalist, no text, wide aspect ratio',
+            'bg-cover',
+          );
+          if (coverPath) console.log(`  [bg] Cover: ${coverPath}`);
+        } catch (e) {
+          console.warn(`  [bg] Failed cover: ${(e as Error).message}`);
+        }
+
+        if (coverPath) {
+          const coverSlide = spec.slides.find(s => s.type === 'cover');
+          if (coverSlide) (coverSlide.content as any).background_image = coverPath;
+        }
+        for (const slide of spec.slides) {
+          if (slide.type === 'section_divider') {
+            const sec = (slide.content as any).section;
+            if (sec && bgMap.has(sec)) {
+              (slide.content as any).background_image = bgMap.get(sec)!;
+            }
+          }
+        }
+
+        const generated = bgMap.size + (coverPath ? 1 : 0);
+        timings.aiBackgrounds = Date.now() - t65;
+        console.log(`  → ${generated} AI backgrounds generated, ${bgMap.size}/${dividerSections.size} dividers matched (${timings.aiBackgrounds}ms)`);
+      } catch (e) {
+        console.warn(`  ⚠ AI backgrounds failed (non-fatal): ${e}`);
+        errors.push(`AI backgrounds: ${e}`);
+        timings.aiBackgrounds = Date.now() - t65;
+      }
+
+      fs.writeFileSync(specPath, JSON.stringify(spec, null, 2));
+    }
+
     // ---- STEP 7: RENDER PPTX ----
     let pptxPath: string | undefined;
     if (this.config.generatePptx) {

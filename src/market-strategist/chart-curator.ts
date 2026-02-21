@@ -76,6 +76,41 @@ const WEB_CHART_SOURCES: WebChartSource[] = [
 const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 // ============================================================================
+// Content Quality Filters
+// ============================================================================
+
+/** Reject tweets matching these patterns — irrelevant to market analysis */
+const REJECT_PATTERNS = [
+  /apolog/i, /mistake/i, /correction/i, /fixed the/i,
+  /won a.*challenge/i, /newsletter/i, /subscribe/i,
+  /tutorial/i, /how to use/i, /useful part of/i,
+  /dataviz challenge/i, /tools I used/i,
+  /giveaway/i, /retweet to win/i, /follow me/i,
+];
+
+function isRelevantContent(text: string): boolean {
+  return !REJECT_PATTERNS.some(p => p.test(text));
+}
+
+/** Simple Levenshtein distance for title dedup */
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+// ============================================================================
 // Brave Search — Direct HTTP API
 // ============================================================================
 
@@ -103,7 +138,7 @@ async function braveWebSearch(query: string, count = 5): Promise<BraveSearchResu
   }
   _lastBraveCall = Date.now();
 
-  const params = new URLSearchParams({ q: query, count: String(count) });
+  const params = new URLSearchParams({ q: query, count: String(count), freshness: 'pw' });
   const url = `https://api.search.brave.com/res/v1/web/search?${params}`;
 
   const response = await fetch(url, {
@@ -279,10 +314,24 @@ export async function curateCharts(outputDir: string, maxCharts = 15): Promise<C
   // Close browser after all screenshots are done
   await closeBrowser();
 
-  // Rank by engagement (if available) and recency
-  allCharts.sort((a, b) => (b.engagement || 0) - (a.engagement || 0));
+  // Deduplicate by URL and near-identical titles
+  const seenUrls = new Set<string>();
+  const seenTitles: string[] = [];
+  const dedupedCharts: CuratedChart[] = [];
 
-  return allCharts.slice(0, maxCharts);
+  for (const chart of allCharts) {
+    if (seenUrls.has(chart.sourceUrl)) continue;
+    const normTitle = chart.title.toLowerCase().trim();
+    if (seenTitles.some(t => levenshtein(t, normTitle) < 10)) continue;
+    seenUrls.add(chart.sourceUrl);
+    seenTitles.push(normTitle);
+    dedupedCharts.push(chart);
+  }
+
+  // Rank by engagement (if available) and recency
+  dedupedCharts.sort((a, b) => (b.engagement || 0) - (a.engagement || 0));
+
+  return dedupedCharts.slice(0, maxCharts);
 }
 
 // ============================================================================
@@ -324,6 +373,11 @@ async function searchAccountCharts(
       if (!url.includes('x.com/') && !url.includes('twitter.com/')) continue;
       // Skip profile pages (we want individual tweets)
       if (!url.match(/\/status\/\d+/)) continue;
+      // Quality filter: reject irrelevant content
+      if (!isRelevantContent(title)) {
+        console.log(`  [chart-curator] Rejected (quality filter): ${title.slice(0, 60)}...`);
+        continue;
+      }
 
       try {
         // Extract images from the tweet page using Playwright

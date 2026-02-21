@@ -307,6 +307,11 @@ function renderCoverHTML(slide: SlideSpec, c: SlideColors, meta: PresentationMet
   const subheadline = content.subheadline || content.tagline || '';
   const dateRange = content.date_range || meta.date || '';
   const theme = content.theme || '';
+  const bgImage = content.background_image || '';
+
+  const coverBg = bgImage
+    ? `background: linear-gradient(135deg, rgba(44,62,80,0.85) 0%, rgba(26,37,47,0.9) 50%, rgba(44,62,80,0.85) 100%), url('file://${bgImage}') center/cover no-repeat;`
+    : `background: linear-gradient(135deg, ${c.navy} 0%, #1a252f 50%, ${c.navy} 100%);`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -317,7 +322,7 @@ function renderCoverHTML(slide: SlideSpec, c: SlideColors, meta: PresentationMet
     width: 1920px; height: 1080px;
     display: flex; flex-direction: column;
     justify-content: center; align-items: center;
-    background: linear-gradient(135deg, ${c.navy} 0%, #1a252f 50%, ${c.navy} 100%);
+    ${coverBg}
     color: white; text-align: center; position: relative;
   }
   .cover .accent-bar {
@@ -485,6 +490,11 @@ function renderSectionDividerHTML(slide: SlideSpec, c: SlideColors, meta: Presen
   const title = content.title || '';
   const subtitle = content.subtitle || '';
   const sectionNum = content.section_num || '';
+  const bgImage = content.background_image || '';
+
+  const dividerBg = bgImage
+    ? `background: linear-gradient(135deg, rgba(44,62,80,0.82) 0%, rgba(26,37,47,0.88) 100%), url('file://${bgImage}') center/cover no-repeat;`
+    : `background: linear-gradient(135deg, ${c.navy} 0%, #1a252f 100%);`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -495,7 +505,7 @@ function renderSectionDividerHTML(slide: SlideSpec, c: SlideColors, meta: Presen
     width: 1920px; height: 1080px;
     display: flex; flex-direction: column;
     justify-content: center; align-items: center;
-    background: linear-gradient(135deg, ${c.navy} 0%, #1a252f 100%);
+    ${dividerBg}
     color: white; text-align: center; position: relative;
   }
   .divider .accent-bar {

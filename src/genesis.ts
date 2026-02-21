@@ -1963,7 +1963,7 @@ export class Genesis {
     this.colony = getColony();
     this.strangeLoop = getStrangeLoop();
     this.secondOrder = getCybernetics();
-    this.rsiOrchestrator = getRSIOrchestrator();
+    this.rsiOrchestrator = getRSIOrchestrator({ mockResearch: true });
     this.autopoiesis = getAutopoiesisEngine();
     this.swarm = getSwarmDynamics();
     this.symbiotic = getPartnership();

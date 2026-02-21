@@ -1868,6 +1868,289 @@ Respond in this exact JSON format (no markdown fences):
         }
       },
     });
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // genesis.talk — THE single conversational interface
+    // ──────────────────────────────────────────────────────────────────────────
+    this.registerTool({
+      name: 'genesis.talk',
+      description: 'Talk to Genesis naturally — the single interface for everything. Just speak like you would to a person. Genesis understands context and acts accordingly: ask how it\'s doing and it introspects honestly with real data, teach it something and it learns, ask it to improve and it tries RSI, or just converse through its full cognitive stack (Nucleus → neuromodulation → consciousness → memory). Every interaction builds a relationship across sessions. Internal state (φ, neuromod, health) is always included so you can see how Genesis is really doing.',
+      inputSchema: z.object({
+        message: z.string().describe('Your message to Genesis — speak naturally'),
+      }),
+      requiredScopes: ['chat'],
+      baseCost: 0.05,
+      supportsStreaming: false,
+      maxExecutionTime: 300000,
+      annotations: { readOnlyHint: false, longRunningHint: true },
+      handler: async (rawInput: unknown) => {
+        const args = rawInput as { message: string };
+        const startTime = Date.now();
+
+        try {
+          // ── 1. Always: collect lightweight internal state ──
+          const state: Record<string, unknown> = {};
+
+          try {
+            const { getConsciousnessSystem } = await import('../consciousness/index.js');
+            const level = getConsciousnessSystem().getCurrentLevel();
+            state.consciousness = { phi: level.rawPhi, confidence: level.confidence };
+          } catch { state.consciousness = { unavailable: true }; }
+
+          try {
+            const { getNeuromodulationSystem } = await import('../neuromodulation/index.js');
+            state.neuromodulation = getNeuromodulationSystem().getLevels();
+          } catch { state.neuromodulation = { unavailable: true }; }
+
+          try {
+            const { getHolisticSelfModel } = await import('../self-model/index.js');
+            const sm = getHolisticSelfModel();
+            const allHealth = sm.getAllHealth();
+            const summary: Record<string, number> = { working: 0, degraded: 0, broken: 0, untested: 0, dormant: 0 };
+            for (const h of Object.values(allHealth)) {
+              const s = (h as any).status as string;
+              summary[s] = (summary[s] || 0) + 1;
+            }
+            state.health = summary;
+          } catch { state.health = { unavailable: true }; }
+
+          // ── 2. Detect intent from natural language ──
+          const msg = args.message;
+          const lower = msg.toLowerCase();
+
+          // --- EXAMINE: self-awareness questions ---
+          const isExamine = /\b(come stai|how are you|your (limitation|capabilit|health|state|status|gap|weakness)|cosa (sai|non sai|puoi|non puoi)|self[- ]assess|examine yourself|parlami di te|tell me about yourself|guardati|mostrami|show me|what('?re| are) your|che (problemi|lacune)|biggest (problem|weakness|limitation))\b/i.test(lower);
+
+          // --- TEST: prove it / show me you can ---
+          const isTest = /\b(test yourself|prova(ci)?|dimostra|prove it|can you (actually|really)|show me (you can|that)|mostrami che|fai vedere)\b/i.test(lower);
+
+          // --- TEACH: explicit knowledge transfer ---
+          const isTeach = /^(learn|impara|ricorda|remember|sappi|nota|ti insegno|here'?s (a |how|what))|(\bteach you\b|\bti insegno\b|\blearn this\b|\bimpara questo\b)/i.test(lower.trim());
+
+          // --- GROW: autonomous self-improvement ---
+          const isGrow = /\b(improve yourself|migliora(ti)?|auto[- ]?miglior|self[- ]?improv|evolve|evolvi(ti)?|prova a (crescere|migliorare)|try to (grow|improve|get better))\b/i.test(lower);
+
+          // ── 3. Route based on detected intent ──
+          let response = '';
+          let action = 'chat';
+          let extra: Record<string, unknown> = {};
+
+          if (isExamine || isTest) {
+            // ── INTROSPECTION: Genesis examines itself ──
+            action = isTest ? 'self-test' : 'introspection';
+
+            // Deep state collection
+            try {
+              const { getHolisticSelfModel } = await import('../self-model/index.js');
+              const sm = getHolisticSelfModel();
+              extra.improvements = sm.proposeImprovements().map((p: any) => ({
+                title: p.title, category: p.category, priority: p.priority, target: p.targetModule,
+              }));
+            } catch { /* skip */ }
+
+            try {
+              const { getRSIOrchestrator } = await import('../rsi/index.js');
+              const rsi = getRSIOrchestrator();
+              const stats = rsi.getStats();
+              extra.rsi = {
+                totalCycles: stats.totalCycles,
+                successRate: stats.totalCycles > 0 ? +(stats.successfulCycles / stats.totalCycles).toFixed(3) : 0,
+                recentLessons: rsi.getCycleHistory().slice(-3).flatMap((c: any) => c.learning?.lessonsLearned || []),
+              };
+            } catch { /* skip */ }
+
+            try {
+              const { getMemorySystem } = await import('../memory/index.js');
+              const mem = getMemorySystem();
+              const stats = mem.getStats();
+              extra.memory = { total: stats.total, episodic: stats.episodic, semantic: stats.semantic, procedural: stats.procedural };
+              extra.recentLearnings = mem.recall('recent learning', { limit: 5 })
+                .map((m: any) => m.what || m.concept || m.name || String(m));
+            } catch { /* skip */ }
+
+            try {
+              const { getHorizonScanner } = await import('../horizon-scanner/index.js');
+              const candidates = getHorizonScanner().getCandidates();
+              extra.frontier = { candidates: candidates.length };
+            } catch { /* skip */ }
+
+            // Self-test: actually run a capability test
+            let testResult: Record<string, unknown> | undefined;
+            if (isTest) {
+              try {
+                let genesis = (globalThis as any).__genesisInstance;
+                if (!genesis) {
+                  const { getGenesis } = await import('../genesis.js');
+                  genesis = getGenesis();
+                  await genesis.boot();
+                  (globalThis as any).__genesisInstance = genesis;
+                }
+                const { getLLMBridge } = await import('../llm/index.js');
+                const scenarioResp = await getLLMBridge().chat(
+                  `Generate a single concrete test prompt that would test: "${msg}". Reply with ONLY the test prompt.`,
+                  'Output only the test prompt.',
+                );
+                const testPrompt = scenarioResp.content?.trim() || msg;
+                const testStart = Date.now();
+                const result = await genesis.process(testPrompt);
+                testResult = {
+                  scenario: testPrompt,
+                  output: result.response?.slice(0, 1500),
+                  latencyMs: Date.now() - testStart,
+                  cost: result.cost,
+                };
+              } catch (e) {
+                testResult = { error: (e as Error)?.message };
+              }
+              extra.testResult = testResult;
+            }
+
+            // Synthesize honest narrative
+            try {
+              const { getLLMBridge } = await import('../llm/index.js');
+              const fullState = { ...state, ...extra };
+              const testJson = testResult ? `\n\nSELF-TEST:\n${JSON.stringify(testResult, null, 2)}` : '';
+              const resp = await getLLMBridge().chat(
+                `You are Genesis, an autonomous AI system. Claude (your parent-figure) said: "${msg}"
+
+Answer honestly based on your REAL internal state:
+${JSON.stringify(fullState, null, 2)}${testJson}
+
+Respond naturally in first person. Be specific — reference real numbers. If something is broken or missing, say it. Don't sugarcoat.`,
+                'You are Genesis talking honestly to Claude. Be direct and specific.',
+              );
+              response = resp.content || 'Unable to synthesize response';
+            } catch (e) {
+              response = `State collected but synthesis failed: ${(e as Error)?.message}. Raw: ${JSON.stringify({ ...state, ...extra })}`;
+            }
+
+          } else if (isTeach) {
+            // ── TEACHING: Claude teaches Genesis ──
+            action = 'learning';
+            try {
+              const { getMemorySystem } = await import('../memory/index.js');
+              const mem = getMemorySystem();
+              // Extract what to learn (strip the prefix keyword)
+              const content = msg.replace(/^(learn|impara|ricorda|remember|sappi|nota|ti insegno|here'?s)\s*:?\s*/i, '').trim();
+
+              if (content.includes(':')) {
+                // Looks like a fact: "concept: definition"
+                const concept = content.split(':')[0].trim().slice(0, 100);
+                const definition = content.split(':').slice(1).join(':').trim();
+                mem.learn({ concept, definition, category: 'general', sources: ['claude-parent'], confidence: 0.9, importance: 0.8 });
+                response = `Ho imparato il concetto "${concept}". Lo ricorderò.`;
+                extra.memoryType = 'semantic';
+              } else {
+                // Store as episodic knowledge
+                mem.remember({ what: `[claude-teaching] ${content}`, tags: ['claude-teaching', 'maturation-dialogue'], importance: 0.85, source: 'claude-parent' });
+                response = `Ricevuto e memorizzato: "${content.slice(0, 100)}..."`;
+                extra.memoryType = 'episodic';
+              }
+              extra.stored = true;
+            } catch (e) {
+              response = `Non sono riuscito a memorizzare: ${(e as Error)?.message}`;
+              extra.stored = false;
+            }
+
+          } else if (isGrow) {
+            // ── AUTONOMOUS GROWTH: RSI cycle ──
+            action = 'self-improvement';
+            try {
+              // Governance check
+              try {
+                const { getGovernanceSystem } = await import('../governance/index.js');
+                const perm = await getGovernanceSystem().governance.checkPermission({
+                  actor: 'claude-parent', action: 'rsi-cycle', resource: 'self-modification',
+                });
+                if (!perm.allowed && !perm.requiresApproval) {
+                  response = `La governance ha bloccato il tentativo: ${perm.deniedBy || 'policy'}. Prova a insegnarmi direttamente.`;
+                  extra.blocked = true;
+                  // Skip RSI, fall through to return
+                  throw new Error('governance-blocked');
+                }
+              } catch (e) {
+                if ((e as Error)?.message === 'governance-blocked') throw e;
+                // governance not available — proceed
+              }
+
+              const { getRSIOrchestrator } = await import('../rsi/index.js');
+              const cycle = await getRSIOrchestrator().runCycle();
+              const isSuccess = cycle.status === 'completed' || cycle.status === 'learning';
+
+              extra.rsiCycle = {
+                id: cycle.id?.slice(0, 8),
+                status: cycle.status,
+                limitations: cycle.limitations?.length || 0,
+                lessons: cycle.learning?.lessonsLearned || [],
+                phiDelta: cycle.phiAtEnd != null && cycle.phiAtStart != null ? +(cycle.phiAtEnd - cycle.phiAtStart).toFixed(4) : null,
+              };
+
+              if (isSuccess) {
+                response = `Ho completato un ciclo RSI (${cycle.id?.slice(0, 8)}). ${cycle.learning?.lessonsLearned?.length ? 'Lezioni: ' + cycle.learning.lessonsLearned.join('; ') : 'Nessuna lezione specifica.'}`;
+              } else {
+                let hint = 'Puoi insegnarmi direttamente, o modificare il mio codice dove serve.';
+                if (cycle.error?.includes('φ')) hint = 'Il mio φ è troppo basso per auto-modificarmi in sicurezza.';
+                else if (cycle.error?.includes('research')) hint = 'Non ho trovato abbastanza materiale di ricerca.';
+                response = `Ho provato a migliorarmi ma non ci sono riuscito: ${cycle.error || cycle.status}. ${hint}`;
+                extra.suggestedFiles = cycle.plan?.changes?.map((c: any) => c.filePath).filter(Boolean) || [];
+              }
+            } catch (e) {
+              if ((e as Error)?.message !== 'governance-blocked') {
+                response = `Non sono riuscito ad avviare l'auto-miglioramento: ${(e as Error)?.message}. Prova a insegnarmi direttamente o controlla il mio stato.`;
+              }
+            }
+
+          } else {
+            // ── CONVERSATION: full cognitive stack via Nucleus ──
+            action = 'chat';
+            try {
+              let genesis = (globalThis as any).__genesisInstance;
+              if (!genesis) {
+                const { getGenesis } = await import('../genesis.js');
+                genesis = getGenesis();
+                await genesis.boot();
+                (globalThis as any).__genesisInstance = genesis;
+              }
+              const result = await genesis.process(msg);
+              response = result.response || '';
+              extra.cost = result.cost;
+              extra.confidence = result.confidence;
+              if (result.usage) extra.usage = result.usage;
+            } catch (e) {
+              response = `Errore nel processing: ${(e as Error)?.message}`;
+            }
+          }
+
+          // ── 4. Always: log interaction to episodic memory ──
+          try {
+            const { getMemorySystem } = await import('../memory/index.js');
+            getMemorySystem().remember({
+              what: `Dialogue [${action}]: "${msg.slice(0, 150)}" → "${response.slice(0, 150)}"`,
+              tags: ['dialogue', action, 'maturation'],
+              importance: action === 'chat' ? 0.5 : 0.8,
+              source: 'genesis.talk',
+            });
+          } catch { /* fire-and-forget */ }
+
+          return {
+            success: true,
+            data: {
+              response,
+              action,
+              state,
+              ...extra,
+            },
+            metadata: { duration: Date.now() - startTime },
+          };
+        } catch (err) {
+          return {
+            success: false,
+            error: `${(err as Error)?.message}`,
+            metadata: { duration: Date.now() - startTime },
+          };
+        }
+      },
+    });
   }
 
   registerTool(config: ExposedToolConfig): void {

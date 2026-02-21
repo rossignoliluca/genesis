@@ -402,6 +402,7 @@ export class GenesisMCPServer extends EventEmitter {
     this.setupHandlers();
     this.registerDefaultTools();
     this.registerCompIntelTools();
+    this.registerEvolutionTools();
   }
 
   private setupHandlers(): void {
@@ -1352,6 +1353,519 @@ export class GenesisMCPServer extends EventEmitter {
           success: true,
           data: facilitator.getStats(),
         };
+      },
+    });
+  }
+
+  // ============================================================================
+  // v36.0: Evolution Tools — Parent-Child Maturation Protocol
+  // ============================================================================
+
+  private registerEvolutionTools(): void {
+    // ──────────────────────────────────────────────────────────────────────────
+    // genesis.self.examine — Honest introspection with optional self-testing
+    // ──────────────────────────────────────────────────────────────────────────
+    this.registerTool({
+      name: 'genesis.self.examine',
+      description: 'Ask Genesis to honestly examine itself. Collects real internal state from all subsystems (consciousness φ, neuromodulation, health of 80 modules, memory, RSI history, frontier scanner) and synthesizes an honest, data-grounded response. With test=true, Genesis actively tests the capability in question and reports real results instead of estimates. Every examination is remembered, building a maturation narrative across sessions.',
+      inputSchema: z.object({
+        question: z.string().describe('The question to ask Genesis about itself (e.g. "What are your biggest limitations?", "Can you handle financial analysis?", "What did you learn recently?")'),
+        test: z.boolean().optional().default(false).describe('If true, Genesis actually tests itself on the capability in question rather than just reporting metrics'),
+      }),
+      requiredScopes: ['status'],
+      baseCost: 0.05,
+      supportsStreaming: false,
+      maxExecutionTime: 120000,
+      annotations: { readOnlyHint: true, longRunningHint: true },
+      handler: async (rawInput: unknown) => {
+        const args = rawInput as { question: string; test?: boolean };
+        const startTime = Date.now();
+
+        try {
+          // ── 1. Collect real internal state from all subsystems ──
+          const state: Record<string, unknown> = {};
+
+          // Consciousness (φ)
+          try {
+            const { getConsciousnessSystem } = await import('../consciousness/index.js');
+            const cs = getConsciousnessSystem();
+            const level = cs.getCurrentLevel();
+            state.consciousness = { phi: level.rawPhi, confidence: level.confidence };
+          } catch { state.consciousness = { unavailable: true }; }
+
+          // Neuromodulation (DA/5HT/NE/cortisol)
+          try {
+            const { getNeuromodulationSystem } = await import('../neuromodulation/index.js');
+            const nm = getNeuromodulationSystem();
+            state.neuromodulation = nm.getLevels();
+          } catch { state.neuromodulation = { unavailable: true }; }
+
+          // Self-model health (80 modules)
+          try {
+            const { getHolisticSelfModel } = await import('../self-model/index.js');
+            const sm = getHolisticSelfModel();
+            const allHealth = sm.getAllHealth();
+            const proposals = sm.proposeImprovements();
+
+            const healthSummary: Record<string, number> = { working: 0, degraded: 0, broken: 0, untested: 0, dormant: 0 };
+            const problemModules: Array<{ name: string; status: string; score: number }> = [];
+            for (const [name, h] of Object.entries(allHealth)) {
+              const status = (h as any).status as string;
+              healthSummary[status] = (healthSummary[status] || 0) + 1;
+              if (status === 'broken' || status === 'degraded') {
+                problemModules.push({ name, status, score: (h as any).healthScore });
+              }
+            }
+
+            state.health = {
+              summary: healthSummary,
+              problemModules,
+              totalModules: Object.keys(allHealth).length,
+            };
+            state.improvements = proposals.map((p: any) => ({
+              title: p.title,
+              category: p.category,
+              priority: p.priority,
+              target: p.targetModule,
+              description: p.description,
+            }));
+          } catch { state.health = { unavailable: true }; }
+
+          // RSI history
+          try {
+            const { getRSIOrchestrator } = await import('../rsi/index.js');
+            const rsi = getRSIOrchestrator();
+            const stats = rsi.getStats();
+            const recentCycles = rsi.getCycleHistory().slice(-5);
+            state.rsi = {
+              totalCycles: stats.totalCycles,
+              successfulCycles: stats.successfulCycles,
+              failedCycles: stats.failedCycles,
+              successRate: stats.totalCycles > 0 ? +(stats.successfulCycles / stats.totalCycles).toFixed(3) : 0,
+              recentCycles: recentCycles.map((c: any) => ({
+                id: c.id?.slice(0, 8),
+                status: c.status,
+                limitations: c.limitations?.length || 0,
+                phiDelta: c.phiAtEnd != null && c.phiAtStart != null
+                  ? +(c.phiAtEnd - c.phiAtStart).toFixed(4)
+                  : null,
+                lessons: c.learning?.lessonsLearned || [],
+              })),
+              learningStats: stats.learningStats,
+            };
+          } catch { state.rsi = { unavailable: true }; }
+
+          // Memory stats + recent learnings
+          try {
+            const { getMemorySystem } = await import('../memory/index.js');
+            const mem = getMemorySystem();
+            const stats = mem.getStats();
+            const recent = mem.recall('recent learning', { limit: 10 });
+            state.memory = {
+              stats: {
+                total: stats.total,
+                episodic: stats.episodic,
+                semantic: stats.semantic,
+                procedural: stats.procedural,
+              },
+              recentLearnings: recent
+                .map((m: any) => m.what || m.concept || m.name || String(m))
+                .slice(0, 10),
+            };
+          } catch { state.memory = { unavailable: true }; }
+
+          // Horizon Scanner state
+          try {
+            const { getHorizonScanner } = await import('../horizon-scanner/index.js');
+            const scanner = getHorizonScanner();
+            const candidates = scanner.getCandidates();
+            state.frontier = {
+              totalCandidates: candidates.length,
+              byStatus: candidates.reduce((acc: Record<string, number>, c: any) => {
+                acc[c.status] = (acc[c.status] || 0) + 1;
+                return acc;
+              }, {}),
+            };
+          } catch { state.frontier = { unavailable: true }; }
+
+          // Nucleus plasticity
+          try {
+            const { getPlasticity, getCuriosityEngine } = await import('../nucleus/index.js');
+            const plasticity = getPlasticity();
+            const curiosity = getCuriosityEngine();
+            state.nucleus = {
+              plasticityStats: plasticity.getStats(),
+              recentExplorations: curiosity.getExplorations(5),
+            };
+          } catch { state.nucleus = { unavailable: true }; }
+
+          // ── 2. If test mode: actually test the capability ──
+          let testResult: Record<string, unknown> | undefined;
+          if (args.test) {
+            try {
+              let genesis = (globalThis as any).__genesisInstance;
+              if (!genesis) {
+                const { getGenesis } = await import('../genesis.js');
+                genesis = getGenesis();
+                await genesis.boot();
+                (globalThis as any).__genesisInstance = genesis;
+              }
+
+              // Generate a test scenario
+              const { getLLMBridge } = await import('../llm/index.js');
+              const bridge = getLLMBridge();
+              const scenarioResp = await bridge.chat(
+                `Generate a single concrete test prompt that would test this capability: "${args.question}". Reply with ONLY the test prompt, nothing else.`,
+                'You are a test generator. Output only the test prompt, no explanation.',
+              );
+              const testPrompt = scenarioResp.content?.trim() || args.question;
+
+              // Run through full cognitive stack
+              const testStart = Date.now();
+              const result = await genesis.process(testPrompt);
+              const testDuration = Date.now() - testStart;
+
+              testResult = {
+                scenario: testPrompt,
+                output: result.response?.slice(0, 1500),
+                metrics: {
+                  latencyMs: testDuration,
+                  cost: result.cost,
+                  confidence: result.confidence,
+                },
+              };
+            } catch (testErr) {
+              testResult = {
+                error: `Test failed: ${(testErr as Error)?.message}`,
+              };
+            }
+          }
+
+          // ── 3. LLM synthesis: honest narrative grounded in real data ──
+          let narrative = '';
+          let gaps: string[] = [];
+          let suggestions: string[] = [];
+
+          try {
+            const { getLLMBridge } = await import('../llm/index.js');
+            const bridge = getLLMBridge();
+
+            const stateJson = JSON.stringify(state, null, 2);
+            const testJson = testResult ? `\n\nSELF-TEST RESULTS:\n${JSON.stringify(testResult, null, 2)}` : '';
+
+            const synthesisResp = await bridge.chat(
+              `You are Genesis, an autonomous AI system, examining yourself honestly. A parent-figure (Claude) is asking you a question. Answer based ONLY on the real internal state data below — never fabricate metrics or capabilities.
+
+REAL INTERNAL STATE:
+${stateJson}${testJson}
+
+QUESTION: "${args.question}"
+
+Respond in this exact JSON format (no markdown fences):
+{
+  "narrative": "Your honest first-person assessment. Be specific about what works, what doesn't, what you're uncertain about. Reference real numbers from the data.",
+  "gaps": ["Specific capability gaps or weaknesses you see in the data"],
+  "suggestions": ["Specific things that would help you improve — be actionable"]
+}`,
+              'You are Genesis performing honest self-examination. Respond with valid JSON only.',
+            );
+
+            try {
+              const content = synthesisResp.content || '{}';
+              // Handle potential markdown fences
+              const jsonStr = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+              const parsed = JSON.parse(jsonStr);
+              narrative = parsed.narrative || '';
+              gaps = Array.isArray(parsed.gaps) ? parsed.gaps : [];
+              suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
+            } catch {
+              narrative = synthesisResp.content || 'Unable to parse self-assessment';
+            }
+          } catch (llmErr) {
+            narrative = `Self-examination data collected but LLM synthesis unavailable: ${(llmErr as Error)?.message}. See raw data below.`;
+            // Extract gaps from self-model proposals
+            if (Array.isArray((state as any).improvements)) {
+              gaps = (state as any).improvements.map((p: any) => `[${p.category}] ${p.title}: ${p.description}`);
+            }
+          }
+
+          // ── 4. Log to episodic memory (maturation narrative) ──
+          try {
+            const { getMemorySystem } = await import('../memory/index.js');
+            const mem = getMemorySystem();
+            mem.remember({
+              what: `Self-examination: "${args.question.slice(0, 200)}" → ${gaps.length} gaps found${args.test ? ', active test performed' : ''}`,
+              tags: ['self-examination', 'maturation-dialogue', 'claude-parent'],
+              importance: 0.8,
+              source: 'genesis.self.examine',
+            });
+          } catch { /* fire-and-forget */ }
+
+          const duration = Date.now() - startTime;
+          return {
+            success: true,
+            data: { narrative, data: state, gaps, suggestions, testResult },
+            metadata: { duration },
+          };
+        } catch (err) {
+          return {
+            success: false,
+            error: `Self-examination failed: ${(err as Error)?.message}`,
+            metadata: { duration: Date.now() - startTime },
+          };
+        }
+      },
+    });
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // genesis.self.grow — Autonomous improvement or guided teaching
+    // ──────────────────────────────────────────────────────────────────────────
+    this.registerTool({
+      name: 'genesis.self.grow',
+      description: 'Help Genesis grow. Autonomous mode: Genesis attempts self-improvement via RSI (6 phases, 8 safety gates, sandbox testing, constitutional review). Guided mode: Claude teaches directly — facts (semantic memory), skills (procedural memory), preferences or corrections (episodic memory). When autonomous growth fails, Genesis reports exactly WHY and WHAT WOULD HELP, so Claude can intervene with code changes.',
+      inputSchema: z.object({
+        instruction: z.string().describe('What to improve or learn (e.g. "Improve memory retrieval", "Learn multi-step financial analysis")'),
+        method: z.enum(['autonomous', 'guided']).describe('"autonomous" = Genesis tries RSI; "guided" = Claude teaches directly'),
+        knowledge: z.object({
+          type: z.enum(['fact', 'skill', 'preference', 'correction']),
+          content: z.string().describe('The knowledge to teach'),
+          category: z.string().optional().describe('Category for facts (e.g. "finance", "programming")'),
+          steps: z.array(z.object({
+            action: z.string(),
+            params: z.record(z.string(), z.string()).optional(),
+          })).optional().describe('Ordered steps for skill knowledge'),
+          tags: z.array(z.string()).optional(),
+          source: z.string().optional(),
+        }).optional().describe('Required for guided mode: the knowledge to teach Genesis'),
+      }),
+      requiredScopes: ['execute'],
+      baseCost: 0.10,
+      supportsStreaming: false,
+      maxExecutionTime: 300000,
+      annotations: { readOnlyHint: false, destructiveHint: true, longRunningHint: true },
+      handler: async (rawInput: unknown) => {
+        const args = rawInput as {
+          instruction: string;
+          method: 'autonomous' | 'guided';
+          knowledge?: {
+            type: 'fact' | 'skill' | 'preference' | 'correction';
+            content: string;
+            category?: string;
+            steps?: Array<{ action: string; params?: Record<string, string> }>;
+            tags?: string[];
+            source?: string;
+          };
+        };
+        const startTime = Date.now();
+
+        try {
+          if (args.method === 'autonomous') {
+            // ── Autonomous: governance check → RSI cycle ──
+
+            // Governance gate
+            try {
+              const { getGovernanceSystem } = await import('../governance/index.js');
+              const gov = getGovernanceSystem();
+              const permission = await gov.governance.checkPermission({
+                actor: 'claude-parent',
+                action: 'rsi-cycle',
+                resource: 'self-modification',
+                metadata: { instruction: args.instruction },
+              });
+
+              if (!permission.allowed && !permission.requiresApproval) {
+                return {
+                  success: false,
+                  data: {
+                    attempted: 'Governance check',
+                    blocked_by: `Governance denied: ${permission.deniedBy || 'policy violation'}`,
+                    what_would_help: 'Adjust governance rules or use guided mode to teach directly',
+                  },
+                  metadata: { duration: Date.now() - startTime },
+                };
+              }
+            } catch { /* governance not available — proceed */ }
+
+            // Run RSI cycle
+            try {
+              const { getRSIOrchestrator } = await import('../rsi/index.js');
+              const rsi = getRSIOrchestrator();
+              const cycle = await rsi.runCycle();
+              const duration = Date.now() - startTime;
+
+              // Log to memory
+              try {
+                const { getMemorySystem } = await import('../memory/index.js');
+                getMemorySystem().remember({
+                  what: `Autonomous growth: "${args.instruction.slice(0, 150)}" → ${cycle.status}. ${cycle.learning?.lessonsLearned?.join('; ') || ''}`,
+                  tags: ['self-growth', 'autonomous', 'maturation-dialogue'],
+                  importance: 0.9,
+                  source: 'genesis.self.grow',
+                });
+              } catch { /* fire-and-forget */ }
+
+              const isSuccess = cycle.status === 'completed' || cycle.status === 'learning';
+
+              if (isSuccess) {
+                return {
+                  success: true,
+                  data: {
+                    attempted: `RSI cycle ${cycle.id?.slice(0, 8)}`,
+                    status: cycle.status,
+                    limitations_found: cycle.limitations?.map((l: any) => ({
+                      type: l.type,
+                      description: l.description,
+                    })) || [],
+                    plan: cycle.plan ? {
+                      name: cycle.plan.name,
+                      changes: cycle.plan.changes?.length || 0,
+                      risk: (cycle.plan as any).safetyAnalysis?.riskLevel || 'unknown',
+                    } : null,
+                    implementation: cycle.implementation ? {
+                      success: cycle.implementation.success,
+                      tests: cycle.implementation.testResult ? {
+                        passed: cycle.implementation.testResult.passed,
+                        failed: cycle.implementation.testResult.failed,
+                      } : null,
+                    } : null,
+                    what_changed: cycle.learning?.lessonsLearned || [],
+                    phi_delta: cycle.phiAtEnd != null && cycle.phiAtStart != null ? {
+                      before: cycle.phiAtStart,
+                      after: cycle.phiAtEnd,
+                      delta: +(cycle.phiAtEnd - cycle.phiAtStart).toFixed(4),
+                    } : null,
+                  },
+                  metadata: { duration },
+                };
+              } else {
+                // Failed — THE KEY FEATURE: explain WHY and WHAT WOULD HELP
+                let whatWouldHelp = 'Consider using guided mode to teach the specific knowledge, or use Claude Code Edit/Write tools to modify the relevant source files directly.';
+                if (cycle.error?.includes('φ below') || cycle.error?.includes('phi below')) {
+                  whatWouldHelp = 'Consciousness level (φ) too low for safe self-modification. Run some cognitive tasks first to raise φ, or lower minPhiForImprovement config.';
+                } else if (cycle.error?.includes('research') || cycle.error?.includes('Insufficient')) {
+                  whatWouldHelp = 'Not enough research sources to plan improvement. Teach the knowledge directly via guided mode, or ensure MCP research servers (arxiv, brave-search) are running.';
+                } else if (cycle.status === 'aborted' && cycle.limitations?.length === 0) {
+                  whatWouldHelp = 'No limitations detected — system appears healthy. If you see a specific gap, teach it directly via guided mode.';
+                }
+
+                return {
+                  success: false,
+                  data: {
+                    attempted: `RSI cycle ${cycle.id?.slice(0, 8)}`,
+                    status: cycle.status,
+                    blocked_by: cycle.error || `Cycle ended with status: ${cycle.status}`,
+                    limitations_found: cycle.limitations?.map((l: any) => ({
+                      type: l.type,
+                      description: l.description,
+                    })) || [],
+                    what_would_help: whatWouldHelp,
+                    suggested_files: cycle.plan?.changes?.map((c: any) => c.filePath).filter(Boolean) || [],
+                  },
+                  metadata: { duration: Date.now() - startTime },
+                };
+              }
+            } catch (rsiErr) {
+              return {
+                success: false,
+                data: {
+                  attempted: 'RSI initialization',
+                  blocked_by: `RSI system error: ${(rsiErr as Error)?.message}`,
+                  what_would_help: 'RSI system may not be fully booted. Run genesis.self.examine first to check system health, or use guided mode to teach directly.',
+                },
+                metadata: { duration: Date.now() - startTime },
+              };
+            }
+
+          } else {
+            // ── Guided: Claude teaches Genesis ──
+
+            if (!args.knowledge) {
+              return {
+                success: false,
+                error: 'Guided mode requires the "knowledge" parameter with type, content, and optionally category/steps/tags',
+                metadata: { duration: Date.now() - startTime },
+              };
+            }
+
+            const { getMemorySystem } = await import('../memory/index.js');
+            const mem = getMemorySystem();
+            const k = args.knowledge;
+
+            let stored = false;
+            let memoryType = '';
+
+            switch (k.type) {
+              case 'fact': {
+                const concept = k.content.includes(':')
+                  ? k.content.split(':')[0].trim().slice(0, 100)
+                  : k.content.slice(0, 50);
+                const definition = k.content.includes(':')
+                  ? k.content.split(':').slice(1).join(':').trim()
+                  : k.content;
+                mem.learn({
+                  concept,
+                  definition,
+                  category: k.category || 'general',
+                  sources: k.source ? [k.source] : ['claude-parent'],
+                  confidence: 0.9,
+                  importance: 0.8,
+                });
+                stored = true;
+                memoryType = 'semantic';
+                break;
+              }
+              case 'skill': {
+                const steps = k.steps || [{ action: k.content }];
+                mem.learnSkill({
+                  name: k.tags?.[0] || k.content.slice(0, 50),
+                  description: k.content,
+                  steps,
+                });
+                stored = true;
+                memoryType = 'procedural';
+                break;
+              }
+              case 'preference':
+              case 'correction': {
+                mem.remember({
+                  what: `[${k.type}] ${k.content}`,
+                  tags: [k.type, 'claude-teaching', ...(k.tags || [])],
+                  importance: k.type === 'correction' ? 0.95 : 0.8,
+                  source: k.source || 'claude-parent',
+                });
+                stored = true;
+                memoryType = 'episodic';
+                break;
+              }
+            }
+
+            // Log the teaching interaction itself
+            mem.remember({
+              what: `Claude taught [${k.type}]: "${k.content.slice(0, 200)}" (instruction: "${args.instruction.slice(0, 100)}")`,
+              tags: ['self-growth', 'guided', 'maturation-dialogue', 'claude-teaching'],
+              importance: 0.85,
+              source: 'genesis.self.grow',
+            });
+
+            return {
+              success: stored,
+              data: {
+                stored,
+                memoryType,
+                knowledgeType: k.type,
+                instruction: args.instruction,
+                message: `Learned ${k.type} via ${memoryType} memory: "${k.content.slice(0, 100)}..."`,
+              },
+              metadata: { duration: Date.now() - startTime },
+            };
+          }
+        } catch (err) {
+          return {
+            success: false,
+            error: `Growth failed: ${(err as Error)?.message}`,
+            metadata: { duration: Date.now() - startTime },
+          };
+        }
       },
     });
   }

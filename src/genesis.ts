@@ -1059,8 +1059,10 @@ export class Genesis {
           : 0.4;
 
         // v18.1: Neuromodulation entropy from modulatory balance
+        // Entropy is maximal at explorationRate=0.5 (maximum uncertainty)
+        // and minimal at extremes (0 or 1)
         const neuromodEntropy = this.neuromodulation
-          ? Math.abs(this.neuromodulation.getEffect().explorationRate - 0.5) * 2
+          ? 1 - Math.abs(this.neuromodulation.getEffect().explorationRate - 0.5) * 2
           : 0.5;
 
         const now = new Date();
@@ -1075,11 +1077,22 @@ export class Genesis {
             { id: 'nociception', type: 'sentinel', active: !!this.nociception, state: {}, entropy: 0.3, lastUpdate: now },
           ],
           connections: [
+            // Intra-group A: {fek, brain, fiber, memory}
             { from: 'fek', to: 'brain', strength: 0.9, informationFlow: Math.max(0.3, 1 - fekEntropy), bidirectional: true },
             { from: 'brain', to: 'memory', strength: 0.8, informationFlow: 0.7, bidirectional: true },
             { from: 'fiber', to: 'fek', strength: 0.6, informationFlow: fiberSection?.sustainable ? 0.8 : 0.3, bidirectional: true },
+            // Intra-group B: {neuromod, world-model, nociception}
             { from: 'neuromod', to: 'world-model', strength: 0.7, informationFlow: 0.6, bidirectional: false },
             { from: 'nociception', to: 'neuromod', strength: 0.6, informationFlow: 0.5, bidirectional: false },
+            // Cross-group: brain ↔ neuromodulation (DA/cortisol on success/failure, exploration rate modulates LLM)
+            { from: 'brain', to: 'neuromod', strength: 0.8, informationFlow: 0.6, bidirectional: true },
+            // Cross-group: nociception → brain (pain/error signals influence processing)
+            { from: 'nociception', to: 'brain', strength: 0.5, informationFlow: 0.4, bidirectional: false },
+            // Cross-group: world-model → memory (prediction errors stored as episodic memory)
+            { from: 'world-model', to: 'memory', strength: 0.6, informationFlow: 0.5, bidirectional: true },
+            // Fiber integration: economic state affects brain decisions and neuromod stress response
+            { from: 'fiber', to: 'brain', strength: 0.5, informationFlow: 0.4, bidirectional: false },
+            { from: 'fiber', to: 'neuromod', strength: 0.4, informationFlow: 0.3, bidirectional: false },
           ],
           stateHash: `cycle-${this.cycleCount}-fe${fekEntropy.toFixed(2)}-nm${neuromodEntropy.toFixed(2)}`,
           timestamp: now,

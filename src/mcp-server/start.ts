@@ -27,8 +27,14 @@ async function main(): Promise<void> {
   const { getGenesis } = await import('../genesis.js');
   const { createGenesisMCPServer } = await import('./server.js');
 
-  // Boot full Genesis cognitive stack (Nucleus, neuromodulation, memory, etc.)
-  const genesis = getGenesis();
+  // Boot Genesis cognitive stack in MCP-safe mode:
+  // Disable HTTP API and WebSocket servers to avoid EADDRINUSE crashes.
+  // The MCP stdio transport is the sole communication channel.
+  const genesis = getGenesis({
+    apiServer: false,
+    websocket: false,
+    observatory: false,
+  });
   await genesis.boot();
   (globalThis as any).__genesisInstance = genesis;
 

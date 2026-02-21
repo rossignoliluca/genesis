@@ -795,6 +795,37 @@ const STATIC_TOOL_SCHEMAS: Record<string, { description?: string; inputSchema?: 
       required: ['query'],
     },
   },
+
+  // Self-introspection tools (LOCAL — always available)
+  'introspect': {
+    description: 'Read own internal state: phi, neuromodulation, memory stats, brain metrics. Use when asked about own status.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  'self_improve': {
+    description: 'Trigger RSI (Recursive Self-Improvement) cycle. Analyzes weaknesses, proposes improvements.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  'recall_memory': {
+    description: 'Search own memory for relevant knowledge',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'What to search for in memory' },
+      },
+      required: ['query'],
+    },
+  },
+  'learn_concept': {
+    description: 'Store a new concept in semantic memory',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        concept: { type: 'string', description: 'Concept name' },
+        definition: { type: 'string', description: 'What this concept means' },
+      },
+      required: ['concept', 'definition'],
+    },
+  },
 };
 
 // ============================================================================

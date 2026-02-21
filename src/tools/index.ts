@@ -198,6 +198,125 @@ toolRegistry.set('presentation', {
   },
 });
 
+// =============================================================================
+// Self-Introspection Tools — Allow Genesis to read its own internal state
+// =============================================================================
+
+toolRegistry.set('introspect', {
+  name: 'introspect',
+  description: 'Read own internal state: phi, neuromodulation (dopamine/serotonin/cortisol/norepinephrine), memory stats, brain metrics, module health. Use this when asked "how are you" or need to check own status.',
+  execute: async () => {
+    const report: Record<string, unknown> = {};
+
+    // Consciousness
+    try {
+      const { getConsciousnessSystem } = await import('../consciousness/index.js');
+      const cs = getConsciousnessSystem();
+      const level = cs.getCurrentLevel();
+      const state = cs.getState();
+      const trend = cs.getTrend();
+      report.consciousness = { phi: level.phi, rawPhi: level.rawPhi, state, trend };
+    } catch { report.consciousness = { error: 'not available' }; }
+
+    // Neuromodulation
+    try {
+      const { getNeuromodulationSystem } = await import('../neuromodulation/index.js');
+      const ns = getNeuromodulationSystem();
+      const levels = ns.getLevels();
+      report.neuromodulation = levels;
+    } catch { report.neuromodulation = { error: 'not available' }; }
+
+    // Memory
+    try {
+      const { getMemorySystem } = await import('../memory/index.js');
+      const mem = getMemorySystem();
+      report.memory = {
+        episodic: mem.episodic.count(),
+        semantic: mem.semantic.count(),
+        procedural: mem.procedural.count(),
+      };
+    } catch { report.memory = { error: 'not available' }; }
+
+    // Brain metrics
+    try {
+      const { getBrain } = await import('../brain/index.js');
+      const brain = getBrain();
+      const status = brain.getStatus();
+      report.brain = {
+        running: status.running,
+        totalCycles: status.metrics.totalCycles,
+        toolSuccessRate: status.metrics.toolExecutions > 0
+          ? `${Math.round((status.metrics.toolSuccesses / status.metrics.toolExecutions) * 100)}%`
+          : 'no executions',
+        toolFailures: status.metrics.toolFailures,
+        memoryReuseRate: status.metrics.memoryReuseRate,
+      };
+    } catch { report.brain = { error: 'not available' }; }
+
+    return report;
+  },
+});
+
+toolRegistry.set('self_improve', {
+  name: 'self_improve',
+  description: 'Trigger the RSI (Recursive Self-Improvement) system. Analyzes current weaknesses and proposes improvements. Returns analysis and proposed changes.',
+  execute: async () => {
+    try {
+      const { getGenesis } = await import('../genesis.js');
+      const genesis = getGenesis();
+      // Access RSI orchestrator through genesis
+      const rsi = (genesis as any).rsiOrchestrator;
+      if (!rsi) {
+        return { success: false, error: 'RSI system not initialized. Boot Genesis first.' };
+      }
+      const result = await rsi.proposeCycle();
+      return { success: true, proposals: result };
+    } catch (err) {
+      return { success: false, error: `RSI failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  },
+});
+
+toolRegistry.set('recall_memory', {
+  name: 'recall_memory',
+  description: 'Search own memory for relevant knowledge. Returns matching episodic, semantic, and procedural memories.',
+  execute: async (params: Record<string, unknown>) => {
+    const query = params.query as string;
+    if (!query) return { error: 'query parameter required' };
+    try {
+      const { getMemorySystem } = await import('../memory/index.js');
+      const mem = getMemorySystem();
+      const results = mem.recall(query, { limit: 10 });
+      return { results, count: results.length };
+    } catch (err) {
+      return { error: `Memory recall failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  },
+});
+
+toolRegistry.set('learn_concept', {
+  name: 'learn_concept',
+  description: 'Store a new concept in semantic memory. Use to remember lessons, patterns, or knowledge.',
+  execute: async (params: Record<string, unknown>) => {
+    const concept = params.concept as string;
+    const definition = params.definition as string;
+    if (!concept || !definition) return { error: 'concept and definition parameters required' };
+    try {
+      const { getMemorySystem } = await import('../memory/index.js');
+      const mem = getMemorySystem();
+      const id = mem.learn({
+        concept,
+        definition,
+        category: (params.category as string) || 'self-learned',
+        confidence: (params.confidence as number) || 0.8,
+      });
+      return { success: true, id, concept };
+    } catch (err) {
+      return { error: `Learn failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  },
+});
+
 // Register market strategist tool
 import { MarketStrategist } from '../market-strategist/strategist.js';
 import type { StrategyConfig } from '../market-strategist/types.js';

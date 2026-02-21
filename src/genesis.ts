@@ -914,6 +914,7 @@ export class Genesis {
 
     // Brain — the main cognitive processor
     this.brain = getBrain();
+    this.brain.start(); // Start phi monitor, global workspace, memory curation
 
     // Economic systems
     this.economy = getEconomicSystem({

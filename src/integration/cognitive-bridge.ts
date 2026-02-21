@@ -101,6 +101,7 @@ export class CognitiveBridge {
   private cachedEpisodes: any[] = [];
   private bridgeLog: BridgeEvent[] = [];
   private cacheRefreshTimer: ReturnType<typeof setInterval> | null = null;
+  private busUnsubscribers: Array<() => void> = [];
 
   constructor(config?: Partial<CognitiveBridgeConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -137,19 +138,21 @@ export class CognitiveBridge {
 
   private setupPerceptionBridge(): void {
     // Listen for perception events
-    this.bus.subscribePrefix('perception.', (event: any) => {
+    const perceptionSub = this.bus.subscribePrefix('perception.', (event: any) => {
       const output = this.extractPerceptionOutput(event);
       if (output && output.salience >= this.config.salienceThreshold) {
         this.propagateToConsciousness(output);
       }
     });
+    this.busUnsubscribers.push(() => perceptionSub.unsubscribe());
 
     // Listen for multimodal fusion events
-    this.bus.subscribePrefix('multimodal.', (event: any) => {
+    const multimodalSub = this.bus.subscribePrefix('multimodal.', (event: any) => {
       if (event.topic === 'multimodal.fused') {
         this.handleFusedPercept(event);
       }
     });
+    this.busUnsubscribers.push(() => multimodalSub.unsubscribe());
   }
 
   private extractPerceptionOutput(event: any): PerceptionOutput | null {
@@ -251,11 +254,12 @@ export class CognitiveBridge {
 
   private setupMemoryBridge(): void {
     // Listen for consciousness integration metrics (φ)
-    this.bus.subscribePrefix('consciousness.', (event: any) => {
+    const consciousnessSub = this.bus.subscribePrefix('consciousness.', (event: any) => {
       if (event.topic === 'consciousness.phi.updated') {
         this.handlePhiUpdate(event.payload);
       }
     });
+    this.busUnsubscribers.push(() => consciousnessSub.unsubscribe());
 
     // Cache recent episodes for fast workspace access
     this.refreshEpisodeCache();
@@ -346,9 +350,12 @@ export class CognitiveBridge {
     ];
 
     for (const pattern of criticalPatterns) {
-      this.bus.subscribePrefix(pattern, (event: any) => {
-        this.bridgeEventToAgent(event);
+      const patternSub = this.bus.subscribePrefix(pattern, (event: any) => {
+        // Bus prefix handlers receive the payload without a `topic` field.
+        // Attach the matched prefix so bridgeEventToAgent can route correctly.
+        this.bridgeEventToAgent({ ...event, topic: event.topic ?? pattern });
       });
+      this.busUnsubscribers.push(() => patternSub.unsubscribe());
     }
   }
 
@@ -386,7 +393,8 @@ export class CognitiveBridge {
     }
   }
 
-  private inferPriority(topic: string): 'low' | 'normal' | 'high' | 'critical' {
+  private inferPriority(topic: string | undefined): 'low' | 'normal' | 'high' | 'critical' {
+    if (!topic) return 'low';
     if (topic.includes('pain') || topic.includes('security')) return 'critical';
     if (topic.includes('error')) return 'high';
     if (topic.includes('resource')) return 'normal';
@@ -403,18 +411,20 @@ export class CognitiveBridge {
 
   private setupErrorBridge(): void {
     // Listen for execution errors
-    this.bus.subscribePrefix('execution.', (event: any) => {
+    const executionSub = this.bus.subscribePrefix('execution.', (event: any) => {
       if (event.topic === 'execution.error' || event.topic === 'execution.failed') {
         this.bridgeToMorphogenetic(event);
       }
     });
+    this.busUnsubscribers.push(() => executionSub.unsubscribe());
 
     // Listen for runtime errors
-    this.bus.subscribePrefix('runtime.', (event: any) => {
+    const runtimeSub = this.bus.subscribePrefix('runtime.', (event: any) => {
       if (event.topic === 'runtime.error') {
         this.bridgeToMorphogenetic(event);
       }
     });
+    this.busUnsubscribers.push(() => runtimeSub.unsubscribe());
   }
 
   private bridgeToMorphogenetic(event: any): void {
@@ -599,6 +609,16 @@ export class CognitiveBridge {
       clearInterval(this.cacheRefreshTimer);
       this.cacheRefreshTimer = null;
     }
+
+    // Clean up all bus subscriptions
+    for (const unsub of this.busUnsubscribers) {
+      try {
+        unsub();
+      } catch (err) {
+        // Ignore unsubscribe errors during shutdown
+      }
+    }
+    this.busUnsubscribers = [];
   }
 }
 

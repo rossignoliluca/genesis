@@ -760,12 +760,16 @@ class MCPConnectionManager {
         if (content && content.length > 0) {
           const first = content[0];
           if (first.type === 'text' && typeof first.text === 'string') {
-            try {
-              return JSON.parse(first.text) as T;
-            } catch (err) {
-              console.error('[MCPConnectionManager] JSON parse failed:', err);
-              return first.text as unknown as T;
+            const trimmed = first.text.trim();
+            if (trimmed.startsWith('{') || trimmed.startsWith('[') ||
+                trimmed === 'true' || trimmed === 'false' || trimmed === 'null') {
+              try {
+                return JSON.parse(first.text) as T;
+              } catch {
+                return first.text as unknown as T;
+              }
             }
+            return first.text as unknown as T;
           }
         }
 

@@ -168,23 +168,28 @@ export class ChangeGenerator {
   ): PlannedChange[] {
     const changes: PlannedChange[] = [];
 
-    // Extract code patterns from research
     const codeInsights = knowledge.keyInsights.filter(i =>
       i.toLowerCase().includes('code') ||
       i.toLowerCase().includes('optimization') ||
-      i.toLowerCase().includes('performance')
+      i.toLowerCase().includes('performance') ||
+      i.toLowerCase().includes('memory') ||
+      i.toLowerCase().includes('heap')
     );
 
-    if (codeInsights.length > 0) {
-      changes.push({
-        id: randomUUID(),
-        file: this.inferTargetFile(opportunity),
-        type: 'modify',
-        description: `Apply optimization: ${codeInsights[0].slice(0, 100)}`,
-        codeSpec: `Optimize performance based on: ${knowledge.synthesis.slice(0, 500)}`,
-        dependencies: [],
-      });
-    }
+    const targetFile = this.inferTargetFile(opportunity);
+    const insightContext = codeInsights.length > 0
+      ? codeInsights[0].slice(0, 100)
+      : opportunity.description.slice(0, 100);
+
+    // Always generate at least one change for optimization
+    changes.push({
+      id: randomUUID(),
+      file: targetFile,
+      type: 'modify',
+      description: `Apply optimization: ${insightContext}`,
+      codeSpec: `Optimize performance in ${targetFile}.\n\nProblem: ${opportunity.description}\n\nResearch context: ${knowledge.synthesis.slice(0, 500)}\n\nGenerate a concrete optimization (e.g. add caching, reduce allocations, lazy-init, pool objects, clear stale data).`,
+      dependencies: [],
+    });
 
     return changes;
   }
@@ -282,9 +287,10 @@ export class ChangeGenerator {
   }
 
   private inferTargetFile(opportunity: Opportunity): string {
-    // Try to infer target file from opportunity description
     const desc = opportunity.description.toLowerCase();
 
+    if (desc.includes('heap') || desc.includes('memory usage') || desc.includes('allocation'))
+      return 'src/memory/index.ts';
     if (desc.includes('memory')) return 'src/memory/index.ts';
     if (desc.includes('consciousness') || desc.includes('phi')) return 'src/consciousness/index.ts';
     if (desc.includes('active inference') || desc.includes('ai')) return 'src/active-inference/index.ts';
@@ -293,8 +299,11 @@ export class ChangeGenerator {
     if (desc.includes('mcp')) return 'src/mcp/index.ts';
     if (desc.includes('llm')) return 'src/llm/index.ts';
     if (desc.includes('world model')) return 'src/world-model/index.ts';
+    if (desc.includes('neuromod')) return 'src/neuromodulation/index.ts';
+    if (desc.includes('tool')) return 'src/tools/index.ts';
+    if (desc.includes('agent')) return 'src/agents/index.ts';
+    if (desc.includes('brain')) return 'src/brain/index.ts';
 
-    // Default to a utility file
     return 'src/utils/improvements.ts';
   }
 }

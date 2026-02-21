@@ -207,19 +207,37 @@ export class CodeValidator {
   }
 
   private checkImports(code: string): boolean {
-    const importRegex = /^import\s+/gm;
-    const matches = code.match(importRegex) || [];
-
     for (const line of code.split('\n')) {
       if (line.trim().startsWith('import')) {
-        // Basic import validation
-        if (!line.includes('from') && !line.includes('{')) {
-          return false;
-        }
+        if (!line.includes('from') && !line.includes('{')) return false;
       }
     }
-
     return true;
+  }
+
+  /**
+   * Validate that imported relative modules actually exist
+   */
+  validateImportPaths(code: string, sandboxPath: string): string[] {
+    const errors: string[] = [];
+    const importRegex = /import\s+(?:\{[^}]+\}|[a-zA-Z0-9_*]+(?:\s+as\s+\w+)?)\s+from\s+['"]([^'"]+)['"]/g;
+    const srcDir = path.resolve(process.cwd(), 'src');
+
+    for (const match of code.matchAll(importRegex)) {
+      const modulePath = match[1];
+      if (!modulePath.startsWith('.') && !modulePath.startsWith('/')) continue;
+      const jsPath = modulePath.replace(/\.js$/, '.ts');
+      const candidates = [
+        path.resolve(sandboxPath, jsPath),
+        path.resolve(sandboxPath, jsPath.replace(/\.ts$/, '') + '/index.ts'),
+        path.resolve(srcDir, jsPath),
+        path.resolve(srcDir, jsPath.replace(/\.ts$/, '') + '/index.ts'),
+      ];
+      if (!candidates.some(c => fs.existsSync(c))) {
+        errors.push(`Import not found: ${modulePath}`);
+      }
+    }
+    return errors;
   }
 
   private calculateScore(
@@ -296,6 +314,14 @@ export class MultiModelCodeGenerator {
           file: change.file,
           type: change.type,
         });
+
+        // Validate import paths exist in codebase
+        const importErrors = this.validator.validateImportPaths(code, sandboxPath);
+        if (importErrors.length > 0) {
+          validation.typeErrors.push(...importErrors);
+          validation.score = Math.max(0, validation.score - importErrors.length * 30);
+          console.log(`[MultiModelCodeGen] ${model.name}: ${importErrors.length} bad imports`);
+        }
 
         validationResults.set(model.id, validation);
 
@@ -645,19 +671,99 @@ export class MultiModelCodeGenerator {
   }
 
   /**
+   * Build concise codebase module context for LLM grounding
+   */
+  private buildCodebaseContext(targetFile: string): string {
+    const srcDir = path.resolve(process.cwd(), 'src');
+    if (!fs.existsSync(srcDir)) return '';
+    const lines: string[] = [];
+    const targetDir = path.dirname(path.join(srcDir, '..', targetFile));
+
+    try {
+      const dirs = fs.readdirSync(srcDir, { withFileTypes: true })
+        .filter(d => d.isDirectory() && !d.name.startsWith('.'))
+        .map(d => d.name).sort();
+      lines.push('AVAILABLE MODULES (src/):');
+      lines.push(dirs.join(', '));
+    } catch { /* ignore */ }
+
+    lines.push('');
+    lines.push('KEY IMPORTS (use .js extension for all imports):');
+    lines.push('  getMemorySystem() from \'../../memory/index.js\'');
+    lines.push('  getConsciousnessSystem() from \'../../consciousness/index.js\'');
+    lines.push('  getNeuromodulationSystem() from \'../../neuromodulation/index.js\'');
+    lines.push('  createPublisher, createSubscriber from \'../../bus/index.js\'');
+    lines.push('  toolRegistry from \'../../tools/index.js\'');
+    lines.push('  getMCPClient() from \'../../mcp/index.js\'');
+    lines.push('  EventEmitter from \'events\'');
+
+    if (fs.existsSync(targetDir)) {
+      try {
+        const siblings = fs.readdirSync(targetDir)
+          .filter(f => f.endsWith('.ts') && f !== 'index.ts').slice(0, 15);
+        if (siblings.length > 0) {
+          lines.push('');
+          lines.push(`SIBLING FILES in ${path.relative(path.join(srcDir, '..'), targetDir)}:`);
+          lines.push(siblings.join(', '));
+        }
+      } catch { /* ignore */ }
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * Extract interface/type definitions from source for LLM grounding
+   */
+  private extractTypeDefinitions(content: string): string {
+    const defs: string[] = [];
+    const lines = content.split('\n');
+    let inTypeDef = false;
+    let braceDepth = 0;
+    let currentDef: string[] = [];
+
+    for (const line of lines) {
+      if (!inTypeDef && /^\s*(?:export\s+)?(?:interface|type)\s+\w+/.test(line)) {
+        inTypeDef = true;
+        braceDepth = 0;
+        currentDef = [line];
+      }
+      if (inTypeDef) {
+        if (!currentDef.includes(line)) currentDef.push(line);
+        braceDepth += (line.match(/\{/g) || []).length;
+        braceDepth -= (line.match(/\}/g) || []).length;
+        if (braceDepth <= 0 && currentDef.length > 1) {
+          defs.push(currentDef.length <= 15
+            ? currentDef.join('\n')
+            : currentDef.slice(0, 12).join('\n') + '\n  // ... more fields');
+          inTypeDef = false;
+          currentDef = [];
+        }
+        if (currentDef.length > 20) { inTypeDef = false; currentDef = []; }
+      }
+    }
+    return defs.slice(0, 10).join('\n\n');
+  }
+
+  /**
    * Build system prompt for code generation
    */
   private buildSystemPrompt(model: ModelConfig, change: PlannedChange): string {
+    const context = this.buildCodebaseContext(change.file);
+
     return `You are an expert TypeScript code generator for Genesis, an autonomous AI system.
 
+${context}
+
 RULES:
-1. Generate clean, well-documented TypeScript code
-2. Follow existing patterns in the codebase
-3. Include proper error handling and type safety
-4. No "any" types unless absolutely necessary
-5. Use async/await for asynchronous operations
-6. Include JSDoc comments for public APIs
-7. Output ONLY the code, no explanations or markdown fences
+1. ONLY import modules that exist in the list above — NEVER invent module names
+2. Always use .js extension in import paths (NodeNext module resolution)
+3. Use __dirname, NOT import.meta.url
+4. Generate clean, well-documented TypeScript code
+5. Include proper error handling and type safety (catch blocks: use unknown type)
+6. No "any" types unless absolutely necessary
+7. Use async/await for asynchronous operations
+8. Output ONLY the code, no explanations or markdown fences
 
 FILE: ${change.file}
 CHANGE TYPE: ${change.type}`;
@@ -681,12 +787,57 @@ ${change.codeSpec || change.description}`;
       const filePath = path.join(sandboxPath, change.file);
       if (fs.existsSync(filePath)) {
         const content = fs.readFileSync(filePath, 'utf-8');
-        prompt += `\n\nExisting file content (first 2000 chars):\n${content.slice(0, 2000)}`;
+        const existingDecls = content.match(
+          /export\s+(?:function|class|interface|type|const|enum|async function)\s+(\w+)/g
+        ) || [];
+        const signatures = content.match(
+          /(?:export\s+)?(?:async\s+)?(?:function|class|interface|type|const|enum)\s+\w+[^{;]*/g
+        ) || [];
+        const methodSigs = content.match(
+          /^\s+(?:async\s+)?(?:public\s+|private\s+|protected\s+)?\w+\s*\([^)]*\)\s*(?::\s*[^{]+)?/gm
+        ) || [];
+
+        prompt += `\n\nIMPORTANT: This is a MODIFY operation. Code will be APPENDED to the existing file.
+DO NOT redeclare existing imports, types, interfaces, classes, or functions.
+DO NOT call methods that don't exist — only use methods listed below.
+Generate ONLY the NEW code to add.
+
+Existing file (first 3000 chars):
+${content.slice(0, 3000)}
+
+ALREADY DECLARED (do NOT redeclare):
+${existingDecls.slice(0, 30).join('\n')}
+
+EXISTING API (only call these):
+${signatures.slice(0, 20).map(s => s.trim()).join('\n')}
+${methodSigs.slice(0, 30).map(s => s.trim()).join('\n')}
+
+TYPE DEFINITIONS (only use existing properties):
+${this.extractTypeDefinitions(content)}`;
+      }
+    }
+
+    // For 'create' operations, add sibling context
+    if (change.type === 'create') {
+      const targetDir = path.dirname(path.join(sandboxPath, change.file));
+      if (fs.existsSync(targetDir)) {
+        try {
+          const siblings = fs.readdirSync(targetDir).filter(f => f.endsWith('.ts')).slice(0, 5);
+          for (const sib of siblings) {
+            try {
+              const content = fs.readFileSync(path.join(targetDir, sib), 'utf-8');
+              const importLines = content.split('\n').filter(l => l.startsWith('import ')).slice(0, 10);
+              const exportLines = content.split('\n').filter(l => l.startsWith('export ')).slice(0, 10);
+              if (importLines.length > 0) {
+                prompt += `\n\nPattern reference from ${sib}:\n${importLines.join('\n')}\n${exportLines.join('\n')}`;
+              }
+            } catch { /* ignore */ }
+          }
+        } catch { /* ignore */ }
       }
     }
 
     prompt += '\n\nGenerate ONLY the code, no markdown fences or explanations.';
-
     return prompt;
   }
 

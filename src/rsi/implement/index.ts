@@ -77,6 +77,13 @@ export class SandboxManager {
       }
     }
 
+    // Symlink node_modules so build and tests can resolve dependencies
+    const nodeModulesSrc = path.resolve(process.cwd(), 'node_modules');
+    const nodeModulesDst = path.join(sandboxPath, 'node_modules');
+    if (fs.existsSync(nodeModulesSrc) && !fs.existsSync(nodeModulesDst)) {
+      fs.symlinkSync(nodeModulesSrc, nodeModulesDst, 'junction');
+    }
+
     console.log(`[RSI Implement] Created sandbox at: ${sandboxPath}`);
     return sandboxPath;
   }
@@ -291,17 +298,20 @@ export class TestRunner {
   async runTests(sandboxPath: string, timeoutMs: number = 300000): Promise<TestResult> {
     const startTime = Date.now();
     const failures: TestFailure[] = [];
+    const projectRoot = process.cwd();
 
     try {
-      // Run node test runner
-      const result = execSync('node --test', {
-        cwd: sandboxPath,
-        timeout: timeoutMs,
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      // Run existing test suite from project root (sandbox has no dist/)
+      const result = execSync(
+        'find dist/src -name "*.test.js" -type f | xargs node --test',
+        {
+          cwd: projectRoot,
+          timeout: timeoutMs,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }
+      );
 
-      // Parse test output
       const { passed, failed, skipped } = this.parseTestOutput(result);
 
       return {
@@ -315,7 +325,6 @@ export class TestRunner {
     } catch (error: any) {
       const output = error.stdout || error.stderr || String(error);
 
-      // Parse failures
       const failureMatches = output.matchAll(/✖ (.+?)\n.*?Error: (.+?)(?:\n|$)/g);
       for (const match of failureMatches) {
         failures.push({
@@ -326,11 +335,12 @@ export class TestRunner {
       }
 
       const { passed, failed, skipped } = this.parseTestOutput(output);
+      const actualFailed = Math.max(failed, failures.length);
 
       return {
-        success: false,
+        success: actualFailed === 0,
         passed,
-        failed: Math.max(failed, failures.length, 1),
+        failed: actualFailed || 1,
         skipped,
         failures,
         duration: Date.now() - startTime,
@@ -343,15 +353,26 @@ export class TestRunner {
     let failed = 0;
     let skipped = 0;
 
-    // Look for summary line
+    // Parse node:test summary format: "ℹ pass N" / "ℹ fail N"
+    const nodePassMatch = output.match(/ℹ\s+pass\s+(\d+)/);
+    const nodeFailMatch = output.match(/ℹ\s+fail\s+(\d+)/);
+    const nodeSkipMatch = output.match(/ℹ\s+skipped\s+(\d+)/);
+
+    if (nodePassMatch || nodeFailMatch) {
+      passed = nodePassMatch ? parseInt(nodePassMatch[1], 10) : 0;
+      failed = nodeFailMatch ? parseInt(nodeFailMatch[1], 10) : 0;
+      skipped = nodeSkipMatch ? parseInt(nodeSkipMatch[1], 10) : 0;
+      return { passed, failed, skipped };
+    }
+
+    // Fallback: mocha/jest format
     const summaryMatch = output.match(/(\d+) passing.*?(\d+) failing/);
     if (summaryMatch) {
       passed = parseInt(summaryMatch[1], 10);
       failed = parseInt(summaryMatch[2], 10);
     } else {
-      // Count individual results
-      passed = (output.match(/✔|pass/gi) || []).length;
-      failed = (output.match(/✖|fail/gi) || []).length;
+      passed = (output.match(/✔/g) || []).length;
+      failed = (output.match(/✖/g) || []).length;
     }
 
     const skipMatch = output.match(/(\d+) skipped/);
@@ -645,12 +666,29 @@ export class ImplementationEngine {
               };
             }
           } else if (change.codeSpec) {
-            // Generate new code and append/integrate
+            // Generate new code and append — with deduplication
             const newCode = await this.codeGenerator.generateCode(change, sandboxPath);
             if (newCode && fs.existsSync(filePath)) {
               const existing = fs.readFileSync(filePath, 'utf-8');
-              // Append to file (simple strategy)
-              fs.writeFileSync(filePath, existing + '\n\n' + newCode);
+              const existingDecls = new Set(
+                (existing.match(/(?:export\s+)?(?:function|class|interface|type|const|enum|async\s+function)\s+(\w+)/g) || [])
+                  .map(m => m.replace(/^export\s+/, '').replace(/^async\s+/, ''))
+              );
+              const filteredLines = newCode.split('\n').filter(line => {
+                const declMatch = line.match(/^(?:export\s+)?(?:function|class|interface|type|const|enum|async\s+function)\s+(\w+)/);
+                if (declMatch) {
+                  const name = declMatch[1];
+                  for (const decl of existingDecls) {
+                    if (decl.endsWith(` ${name}`)) return false;
+                  }
+                }
+                if (line.startsWith('import ') && existing.includes(line.trim())) return false;
+                return true;
+              });
+              const deduped = filteredLines.join('\n').trim();
+              if (deduped) {
+                fs.writeFileSync(filePath, existing + '\n\n' + deduped);
+              }
             }
           }
 

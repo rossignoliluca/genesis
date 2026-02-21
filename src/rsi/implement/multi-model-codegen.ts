@@ -89,9 +89,9 @@ const MODELS: ModelConfig[] = [
   },
   {
     id: 'gemini-pro',
-    name: 'Gemini 2.0 Flash',
+    name: 'Gemini 2.5 Flash',
     provider: 'gemini',
-    model: 'gemini-2.0-flash',
+    model: 'gemini-2.5-flash',
     maxTokens: 8192,
     temperature: 0.3,
     costPer1kTokens: 0.0001,
@@ -218,25 +218,80 @@ export class CodeValidator {
   /**
    * Validate that imported relative modules actually exist
    */
-  validateImportPaths(code: string, sandboxPath: string): string[] {
+  validateImportPaths(code: string, sandboxPath: string, targetFile?: string): string[] {
     const errors: string[] = [];
     const importRegex = /import\s+(?:\{[^}]+\}|[a-zA-Z0-9_*]+(?:\s+as\s+\w+)?)\s+from\s+['"]([^'"]+)['"]/g;
     const srcDir = path.resolve(process.cwd(), 'src');
+    // Resolve from the target file's directory, not sandbox root
+    const fileDir = targetFile
+      ? path.dirname(path.resolve(sandboxPath, targetFile))
+      : sandboxPath;
+    const srcFileDir = targetFile
+      ? path.dirname(path.resolve(process.cwd(), targetFile))
+      : srcDir;
 
     for (const match of code.matchAll(importRegex)) {
       const modulePath = match[1];
       if (!modulePath.startsWith('.') && !modulePath.startsWith('/')) continue;
       const jsPath = modulePath.replace(/\.js$/, '.ts');
       const candidates = [
-        path.resolve(sandboxPath, jsPath),
-        path.resolve(sandboxPath, jsPath.replace(/\.ts$/, '') + '/index.ts'),
-        path.resolve(srcDir, jsPath),
-        path.resolve(srcDir, jsPath.replace(/\.ts$/, '') + '/index.ts'),
+        path.resolve(fileDir, jsPath),
+        path.resolve(fileDir, jsPath.replace(/\.ts$/, '') + '/index.ts'),
+        path.resolve(srcFileDir, jsPath),
+        path.resolve(srcFileDir, jsPath.replace(/\.ts$/, '') + '/index.ts'),
       ];
       if (!candidates.some(c => fs.existsSync(c))) {
         errors.push(`Import not found: ${modulePath}`);
       }
     }
+    return errors;
+  }
+
+  /**
+   * Validate that generated code can be safely appended to a file
+   * Catches class members outside class scope, unbalanced combined braces, etc.
+   */
+  validateAppendable(code: string, sandboxPath: string, targetFile: string): string[] {
+    const errors: string[] = [];
+    const lines = code.split('\n');
+
+    // Check for class member syntax at top level (private/protected/public)
+    // and this. usage outside any function/class context
+    let braceDepth = 0;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      // Track brace depth to know if we're at top level
+      braceDepth += (line.match(/\{/g) || []).length;
+      braceDepth -= (line.match(/\}/g) || []).length;
+
+      // At top level (braceDepth <= 0), these patterns indicate class member code
+      if (braceDepth <= 0) {
+        if (/^(?:private|protected|public)\s+/.test(trimmed) && !trimmed.includes('class ')) {
+          errors.push('Class member outside class body: ' + trimmed.slice(0, 60));
+          break;
+        }
+        if (/^this\./.test(trimmed)) {
+          errors.push('this. reference at module scope: ' + trimmed.slice(0, 60));
+          break;
+        }
+      }
+    }
+
+    // Check combined braces balance if original file exists
+    const filePath = path.resolve(sandboxPath, targetFile);
+    const srcFilePath = path.resolve(process.cwd(), targetFile);
+    const existingPath = fs.existsSync(filePath) ? filePath : (fs.existsSync(srcFilePath) ? srcFilePath : null);
+
+    if (existingPath) {
+      try {
+        const existing = fs.readFileSync(existingPath, 'utf-8');
+        const combined = existing + '\n\n' + code;
+        if (!this.checkBalancedBraces(combined)) {
+          errors.push('Combined file has unbalanced braces');
+        }
+      } catch { /* ignore */ }
+    }
+
     return errors;
   }
 
@@ -316,11 +371,21 @@ export class MultiModelCodeGenerator {
         });
 
         // Validate import paths exist in codebase
-        const importErrors = this.validator.validateImportPaths(code, sandboxPath);
+        const importErrors = this.validator.validateImportPaths(code, sandboxPath, change.file);
         if (importErrors.length > 0) {
           validation.typeErrors.push(...importErrors);
           validation.score = Math.max(0, validation.score - importErrors.length * 30);
           console.log(`[MultiModelCodeGen] ${model.name}: ${importErrors.length} bad imports`);
+        }
+
+        // For modify operations, check generated code won't break when appended
+        if (change.type === 'modify') {
+          const structErrors = this.validator.validateAppendable(code, sandboxPath, change.file);
+          if (structErrors.length > 0) {
+            validation.typeErrors.push(...structErrors);
+            validation.score = Math.max(0, validation.score - structErrors.length * 25);
+            console.log(`[MultiModelCodeGen] ${model.name}: ${structErrors.length} structural errors`);
+          }
         }
 
         validationResults.set(model.id, validation);
@@ -687,14 +752,20 @@ export class MultiModelCodeGenerator {
       lines.push(dirs.join(', '));
     } catch { /* ignore */ }
 
+    // Compute relative prefix from target file to src/
+    // e.g., src/features/foo.ts → '../', src/rsi/impl/foo.ts → '../../'
+    const targetInSrc = targetFile.replace(/^src\//, '');
+    const depth = targetInSrc.split('/').length - 1; // dirs between file and src/
+    const relPrefix = depth > 0 ? '../'.repeat(depth) : './';
+
     lines.push('');
     lines.push('KEY IMPORTS (use .js extension for all imports):');
-    lines.push('  getMemorySystem() from \'../../memory/index.js\'');
-    lines.push('  getConsciousnessSystem() from \'../../consciousness/index.js\'');
-    lines.push('  getNeuromodulationSystem() from \'../../neuromodulation/index.js\'');
-    lines.push('  createPublisher, createSubscriber from \'../../bus/index.js\'');
-    lines.push('  toolRegistry from \'../../tools/index.js\'');
-    lines.push('  getMCPClient() from \'../../mcp/index.js\'');
+    lines.push(`  getMemorySystem() from '${relPrefix}memory/index.js'`);
+    lines.push(`  getConsciousnessSystem() from '${relPrefix}consciousness/index.js'`);
+    lines.push(`  getNeuromodulationSystem() from '${relPrefix}neuromodulation/index.js'`);
+    lines.push(`  createPublisher, createSubscriber from '${relPrefix}bus/index.js'`);
+    lines.push(`  toolRegistry from '${relPrefix}tools/index.js' — this is a Map<string,LegacyTool>, use .set()/.get()/.has()/.delete(), NOT .register()`);
+    lines.push(`  getMCPClient() from '${relPrefix}mcp/index.js'`);
     lines.push('  EventEmitter from \'events\'');
 
     if (fs.existsSync(targetDir)) {
@@ -746,6 +817,56 @@ export class MultiModelCodeGenerator {
   }
 
   /**
+   * Extract type definitions from imported files for LLM grounding
+   */
+  private extractImportedTypes(content: string, filePath: string): string {
+    const importRegex = /import\s+\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]/g;
+    const typeNames = new Set<string>();
+    const defs: string[] = [];
+    const fileDir = path.dirname(filePath);
+
+    for (const match of content.matchAll(importRegex)) {
+      const names = match[1].split(',').map(n => n.trim().replace(/\s+as\s+\w+/, ''));
+      const modulePath = match[2];
+      if (!modulePath.startsWith('.')) continue;
+
+      // Resolve to .ts file
+      const resolved = path.resolve(fileDir, modulePath.replace(/\.js$/, '.ts'));
+      const candidates = [resolved, resolved.replace(/\.ts$/, '/index.ts')];
+
+      for (const candidate of candidates) {
+        if (!fs.existsSync(candidate)) continue;
+        try {
+          const depContent = fs.readFileSync(candidate, 'utf-8');
+          for (const name of names) {
+            if (typeNames.has(name) || !/^[A-Z]/.test(name)) continue;
+            // Extract this specific type/interface
+            const regex = new RegExp(`(?:export\\s+)?(?:interface|type)\\s+${name}\\s*[{=]`, 'm');
+            const typeMatch = depContent.match(regex);
+            if (typeMatch) {
+              typeNames.add(name);
+              const startIdx = depContent.indexOf(typeMatch[0]);
+              const snippet = depContent.slice(startIdx, startIdx + 500);
+              // Find end of definition
+              let braces = 0;
+              let endIdx = 0;
+              for (let i = 0; i < snippet.length; i++) {
+                if (snippet[i] === '{') braces++;
+                if (snippet[i] === '}') { braces--; if (braces <= 0 && i > 0) { endIdx = i + 1; break; } }
+              }
+              if (endIdx > 0) {
+                defs.push(snippet.slice(0, endIdx));
+              }
+            }
+          }
+        } catch { /* ignore */ }
+        break;
+      }
+    }
+    return defs.slice(0, 8).join('\n\n') || '(none found)';
+  }
+
+  /**
    * Build system prompt for code generation
    */
   private buildSystemPrompt(model: ModelConfig, change: PlannedChange): string {
@@ -763,7 +884,9 @@ RULES:
 5. Include proper error handling and type safety (catch blocks: use unknown type)
 6. No "any" types unless absolutely necessary
 7. Use async/await for asynchronous operations
-8. Output ONLY the code, no explanations or markdown fences
+8. toolRegistry is a Map<string, LegacyTool> — use .set(name, tool), .get(name), .has(name) — NEVER .register()
+9. Do NOT guess property types — if a type has { timestamp: Date }, access .timestamp.getTime(), NOT .getTime() directly
+10. Output ONLY the code, no explanations or markdown fences
 
 FILE: ${change.file}
 CHANGE TYPE: ${change.type}`;
@@ -797,13 +920,19 @@ ${change.codeSpec || change.description}`;
           /^\s+(?:async\s+)?(?:public\s+|private\s+|protected\s+)?\w+\s*\([^)]*\)\s*(?::\s*[^{]+)?/gm
         ) || [];
 
-        prompt += `\n\nIMPORTANT: This is a MODIFY operation. Code will be APPENDED to the existing file.
-DO NOT redeclare existing imports, types, interfaces, classes, or functions.
-DO NOT call methods that don't exist — only use methods listed below.
+        prompt += `\n\nIMPORTANT: This is a MODIFY operation. Code will be APPENDED TO THE END of the existing file (AFTER all existing code).
+CRITICAL RULES FOR MODIFY:
+- Your code will be placed at MODULE SCOPE (top level), NOT inside any class or function
+- NEVER generate class methods (no private/protected/public keywords) — they cannot exist at module level
+- ONLY generate: standalone exported functions, new exported classes, new interfaces/types, or new const declarations
+- DO NOT redeclare existing imports, types, interfaces, classes, or functions
+- DO NOT call methods that don't exist — only use methods listed below
+- DO NOT access properties that don't exist on types — check TYPE DEFINITIONS below
+- If you need to modify class behavior, create a wrapper function or subclass instead
 Generate ONLY the NEW code to add.
 
-Existing file (first 3000 chars):
-${content.slice(0, 3000)}
+Existing file (first 5000 chars):
+${content.slice(0, 5000)}
 
 ALREADY DECLARED (do NOT redeclare):
 ${existingDecls.slice(0, 30).join('\n')}
@@ -813,7 +942,10 @@ ${signatures.slice(0, 20).map(s => s.trim()).join('\n')}
 ${methodSigs.slice(0, 30).map(s => s.trim()).join('\n')}
 
 TYPE DEFINITIONS (only use existing properties):
-${this.extractTypeDefinitions(content)}`;
+${this.extractTypeDefinitions(content)}
+
+IMPORTED TYPES (from dependency files):
+${this.extractImportedTypes(content, filePath)}`;
       }
     }
 

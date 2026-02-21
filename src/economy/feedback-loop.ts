@@ -316,7 +316,7 @@ export class FeedbackLoop extends EventEmitter {
                 console.log(`[FeedbackLoop] Issues addressed: ${result.issuesAddressed.join(', ')}`);
                 this.emit('auto_revised', { prKey, result });
               } else {
-                console.log(`[FeedbackLoop] Auto-revision failed: ${result.error}`);
+                console.error(`[FeedbackLoop] Auto-revision failed: ${result.error}`);
               }
             } else {
               console.log(`[FeedbackLoop] Effort too high (${analysis.estimatedEffort}) - skipping auto-revision`);

@@ -518,7 +518,7 @@ export class HybridRouter {
     } catch (error) {
       // Auto-fallback if enabled
       if (this.config.autoFallback && decision.provider === 'ollama') {
-        console.log('[Router] Local failed, falling back to cloud...');
+        console.warn('[Router] Local failed, falling back to cloud...');
         this.stats.fallbacks++;
 
         const fallbackProvider = detectCloudProvider();

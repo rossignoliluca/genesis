@@ -102,7 +102,7 @@ function createTaskLogger(taskId: string, taskName: string): TaskLogger {
   return {
     debug(message: string, data?: unknown): void {
       if (process.env.LOG_LEVEL === 'debug') {
-        console.log(`${prefix} DEBUG: ${message}`, data || '');
+        console.debug(`${prefix} DEBUG: ${message}`, data || '');
       }
     },
     info(message: string, data?: unknown): void {

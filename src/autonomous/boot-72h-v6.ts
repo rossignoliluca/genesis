@@ -101,7 +101,7 @@ function log(message: string, level: 'info' | 'warn' | 'error' | 'debug' = 'info
       console.warn(`${prefix} WARN: ${message}`);
       break;
     case 'debug':
-      console.log(`${prefix} DEBUG: ${message}`);
+      console.debug(`${prefix} DEBUG: ${message}`);
       break;
     default:
       console.log(`${prefix} ${message}`);

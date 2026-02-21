@@ -350,7 +350,7 @@ export abstract class BaseAgent implements Agent {
 
   protected logDebug(message: string): void {
     if (process.env.DEBUG) {
-      console.log(`[${this.type}:${this.id.slice(-8)}] DEBUG: ${message}`);
+      console.debug(`[${this.type}:${this.id.slice(-8)}] DEBUG: ${message}`);
     }
   }
 }

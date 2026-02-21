@@ -1026,7 +1026,7 @@ export class Daemon {
       if (shouldLog) {
         switch (level) {
           case 'debug':
-            console.log(`${prefix} DEBUG: ${message}`);
+            console.debug(`${prefix} DEBUG: ${message}`);
             break;
           case 'info':
             console.log(`${prefix} ${message}`);

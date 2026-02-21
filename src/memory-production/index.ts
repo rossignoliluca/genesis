@@ -193,7 +193,7 @@ export class VectorMemory {
         spec: { serverless: { cloud: 'aws', region: 'us-east-1' } },
       });
     } catch (error) {
-      console.log('[VectorMemory] Index check:', error);
+      console.error('[VectorMemory] Index check:', error);
     }
   }
 
@@ -380,7 +380,7 @@ export class KnowledgeGraph {
         CREATE INDEX event_timestamp IF NOT EXISTS FOR (e:Event) ON (e.timestamp);
       `);
     } catch (error) {
-      console.log('[KnowledgeGraph] Schema initialization:', error);
+      console.error('[KnowledgeGraph] Schema initialization:', error);
     }
   }
 
@@ -684,7 +684,7 @@ export class StructuredMemory {
     try {
       await this.query(schema);
     } catch (error) {
-      console.log('[StructuredMemory] Schema initialization:', error);
+      console.error('[StructuredMemory] Schema initialization:', error);
     }
   }
 

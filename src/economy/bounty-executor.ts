@@ -607,7 +607,7 @@ Generate the solution. Remember: return ONLY valid JSON, escape all newlines as 
           return parsed;
         }
       } catch (error) {
-        console.log(`[BountyCodeGen] Attempt ${i + 1} failed: ${error}`);
+        console.error(`[BountyCodeGen] Attempt ${i + 1} failed: ${error}`);
       }
     }
 
@@ -691,8 +691,8 @@ Generate the solution. Remember: return ONLY valid JSON, escape all newlines as 
         break;
       } catch (error) {
         if (i === cleanupStrategies.length - 1) {
-          console.log('[BountyCodeGen] All JSON parse strategies failed:', String(error));
-          console.log('[BountyCodeGen] Raw JSON preview:', jsonStr.slice(0, 500));
+          console.error('[BountyCodeGen] All JSON parse strategies failed:', String(error));
+          console.error('[BountyCodeGen] Raw JSON preview:', jsonStr.slice(0, 500));
           return null;
         }
       }

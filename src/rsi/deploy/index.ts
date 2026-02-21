@@ -236,7 +236,7 @@ export class PRManager {
         };
       }
     } catch (error) {
-      console.log(`[RSI Deploy] Failed to create PR: ${error}`);
+      console.error(`[RSI Deploy] Failed to create PR: ${error}`);
     }
 
     return null;
@@ -368,7 +368,7 @@ export class PRManager {
       });
       return true;
     } catch (error) {
-      console.log(`[RSI Deploy] Failed to merge PR: ${error}`);
+      console.error(`[RSI Deploy] Failed to merge PR: ${error}`);
       return false;
     }
   }
@@ -489,7 +489,7 @@ export class DeploymentEngine {
         this.gitManager.push(branchName);
         console.log(`[RSI Deploy] Pushed to remote`);
       } catch (error) {
-        console.log(`[RSI Deploy] Push failed (may not have remote): ${error}`);
+        console.error(`[RSI Deploy] Push failed (may not have remote): ${error}`);
       }
 
       // 4. Determine review status
@@ -547,7 +547,7 @@ export class DeploymentEngine {
             deployedAt: new Date(),
           };
         } catch (error) {
-          console.log(`[RSI Deploy] Auto-merge failed: ${error}`);
+          console.error(`[RSI Deploy] Auto-merge failed: ${error}`);
           return {
             planId: plan.id,
             success: true,
@@ -626,7 +626,7 @@ export class DeploymentEngine {
         }
       }
     } catch (error) {
-      console.log(`[RSI Deploy] Failed to register capabilities: ${error}`);
+      console.error(`[RSI Deploy] Failed to register capabilities: ${error}`);
     }
   }
 

@@ -210,7 +210,7 @@ export class ResilientMCP {
         lastError = error instanceof Error ? error.message : String(error);
 
         if (this.config.logCalls) {
-          console.log(`[MCP] ${server}.${tool} attempt ${attempt + 1} failed: ${lastError}`);
+          console.warn(`[MCP] ${server}.${tool} attempt ${attempt + 1} failed: ${lastError}`);
         }
 
         // Exponential backoff with jitter before retry (v10.3: prevents retry storms)

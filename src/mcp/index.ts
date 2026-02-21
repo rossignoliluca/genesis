@@ -1041,7 +1041,7 @@ class RealMCPClient implements IMCPClient {
       const isTransient = this.isTransientError(errorMessage);
       if (retryCount < maxRetries && isTransient) {
         const backoffMs = Math.min(1000 * Math.pow(2, retryCount) + Math.random() * 100, 30000);
-        console.log(`[MCP] ${server}.${tool} transient error, retry ${retryCount + 1}/${maxRetries} in ${Math.round(backoffMs)}ms`);
+        console.warn(`[MCP] ${server}.${tool} transient error, retry ${retryCount + 1}/${maxRetries} in ${Math.round(backoffMs)}ms`);
         await new Promise(r => setTimeout(r, backoffMs));
         return this.call<T>(server, tool, params, options, retryCount + 1);
       }
@@ -1050,7 +1050,7 @@ class RealMCPClient implements IMCPClient {
       if (retryCount === 0) {
         const fallback = getNextFallbackServer(server, tool);
         if (fallback) {
-          console.log(`[MCP] ${server}.${tool} failed (${isRateLimitError(errorMessage) ? 'rate limit' : 'error'}), trying ${fallback.server}.${fallback.tool}...`);
+          console.error(`[MCP] ${server}.${tool} failed (${isRateLimitError(errorMessage) ? 'rate limit' : 'error'}), trying ${fallback.server}.${fallback.tool}...`);
 
           // Adapt params for the new tool if needed
           const adaptedParams = this.adaptParamsForFallback(tool, fallback.tool, params);

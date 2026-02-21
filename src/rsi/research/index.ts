@@ -131,7 +131,7 @@ export class ArxivSearcher {
       }
     } catch (error) {
       // arXiv MCP might not be available
-      console.log(`[RSI Research] arXiv search failed: ${error}`);
+      console.error(`[RSI Research] arXiv search failed: ${error}`);
     }
 
     return sources;
@@ -182,7 +182,7 @@ export class SemanticScholarSearcher {
         }
       }
     } catch (error) {
-      console.log(`[RSI Research] Semantic Scholar search failed: ${error}`);
+      console.error(`[RSI Research] Semantic Scholar search failed: ${error}`);
     }
 
     return sources;
@@ -241,7 +241,7 @@ export class GitHubSearcher {
         }
       }
     } catch (error) {
-      console.log(`[RSI Research] GitHub search failed: ${error}`);
+      console.error(`[RSI Research] GitHub search failed: ${error}`);
     }
 
     return sources;
@@ -339,7 +339,7 @@ export class MemorySearcher {
         });
       }
     } catch (error) {
-      console.log(`[RSI Research] Memory search failed: ${error}`);
+      console.error(`[RSI Research] Memory search failed: ${error}`);
     }
 
     return sources;

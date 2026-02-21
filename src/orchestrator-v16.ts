@@ -160,7 +160,7 @@ export class GenesisV16Orchestrator {
     // Check wallet connection
     const wallet = getLiveWallet();
     if (!wallet.isConnected() && !this.config.dryRun) {
-      console.log('[GenesisV16] WARNING: Wallet not connected, switching to dry-run mode');
+      console.warn('[GenesisV16] WARNING: Wallet not connected, switching to dry-run mode');
       this.config.dryRun = true;
     }
 

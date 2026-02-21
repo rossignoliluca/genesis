@@ -481,7 +481,7 @@ export class LLMBridge {
       // v7.18: Enhanced fallback chain with attempt tracking
       // Anthropic fails -> try OpenAI
       if (this.config.provider === 'anthropic' && process.env.OPENAI_API_KEY) {
-        console.log(`[LLM] Anthropic failed (${isQuotaError ? 'quota' : 'error'}), falling back to OpenAI... (attempt ${this.fallbackAttempts}/${LLMBridge.MAX_FALLBACK_ATTEMPTS})`);
+        console.error(`[LLM] Anthropic failed (${isQuotaError ? 'quota' : 'error'}), falling back to OpenAI... (attempt ${this.fallbackAttempts}/${LLMBridge.MAX_FALLBACK_ATTEMPTS})`);
         this.config.provider = 'openai';
         this.config.apiKey = process.env.OPENAI_API_KEY;
         this.config.model = 'gpt-4o';
@@ -491,7 +491,7 @@ export class LLMBridge {
 
       // OpenAI fails -> try Ollama (if available)
       if (this.config.provider === 'openai') {
-        console.log(`[LLM] OpenAI failed (${isQuotaError ? 'quota' : 'error'}), falling back to Ollama... (attempt ${this.fallbackAttempts}/${LLMBridge.MAX_FALLBACK_ATTEMPTS})`);
+        console.error(`[LLM] OpenAI failed (${isQuotaError ? 'quota' : 'error'}), falling back to Ollama... (attempt ${this.fallbackAttempts}/${LLMBridge.MAX_FALLBACK_ATTEMPTS})`);
         this.config.provider = 'ollama';
         this.config.apiKey = 'not-needed';
         this.config.model = OLLAMA_CONFIG.defaultModel;

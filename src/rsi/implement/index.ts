@@ -148,7 +148,7 @@ export class CodeGenerator {
       console.log(`[RSI Implement] Multi-model failed, falling back to single model...`);
       return this.generateCodeSingleModel(change, sandboxPath);
     } catch (error) {
-      console.log(`[RSI Implement] Multi-model code generation failed: ${error}`);
+      console.error(`[RSI Implement] Multi-model code generation failed: ${error}`);
       // Fallback to single model
       return this.generateCodeSingleModel(change, sandboxPath);
     }
@@ -194,7 +194,7 @@ Generate only the code, no markdown fences or explanations.`,
         return code.trim();
       }
     } catch (error) {
-      console.log(`[RSI Implement] Single-model code generation failed: ${error}`);
+      console.error(`[RSI Implement] Single-model code generation failed: ${error}`);
     }
 
     return null;
@@ -458,7 +458,7 @@ export class ImplementationEngine {
         appliedChanges.push(applied);
 
         if (!applied.applied) {
-          console.log(`[RSI Implement] Change failed: ${change.id} - ${applied.error}`);
+          console.error(`[RSI Implement] Change failed: ${change.id} - ${applied.error}`);
           // Continue with other changes but note the failure
         }
       }
@@ -480,7 +480,7 @@ export class ImplementationEngine {
       const buildResult = await this.buildRunner.runBuild(sandboxPath);
 
       if (!buildResult.success) {
-        console.log(`[RSI Implement] Build failed: ${buildResult.errors.join(', ')}`);
+        console.error(`[RSI Implement] Build failed: ${buildResult.errors.join(', ')}`);
         return {
           planId: plan.id,
           success: false,

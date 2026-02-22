@@ -82,6 +82,8 @@ export class RSIOrchestrator extends EventEmitter {
   private currentCycle: RSICycle | null = null;
   private cycleHistory: RSICycle[] = [];
   private humanApprovalHandler: HumanApprovalHandler | null = null;
+  // Track recently failed limitation descriptions to avoid re-targeting
+  private recentFailures: Array<{ description: string; file?: string; timestamp: number }> = [];
 
   constructor(config: Partial<RSIConfig> = {}) {
     super();
@@ -215,11 +217,31 @@ export class RSIOrchestrator extends EventEmitter {
         return this.completeCycle('completed');
       }
 
-      // Select top limitation to address
-      const targetLimitation = limitations[0];
+      // Select limitation to address — skip recently failed ones
+      const cooldownMs = 10 * 60 * 1000; // 10 min cooldown for failed targets
+      const now = Date.now();
+      this.recentFailures = this.recentFailures.filter(f => now - f.timestamp < cooldownMs);
+      const failedDescs = new Set(this.recentFailures.map(f => f.description));
+
+      // Filter out recently failed limitations, but keep at least 1
+      let candidates = limitations.filter(l => !failedDescs.has(l.description));
+      if (candidates.length === 0) candidates = limitations;
+
+      // Weighted random selection among top 3 (not always [0])
+      const pool = candidates.slice(0, Math.min(3, candidates.length));
+      const weights = pool.map((l, i) => l.estimatedImpact * l.confidence * (1 / (i + 1)));
+      const totalWeight = weights.reduce((a, b) => a + b, 0);
+      let r = Math.random() * totalWeight;
+      let targetLimitation = pool[0];
+      for (let i = 0; i < pool.length; i++) {
+        r -= weights[i];
+        if (r <= 0) { targetLimitation = pool[i]; break; }
+      }
+
       if (targetLimitation) {
         this.emitEvent('limitation:detected', targetLimitation);
         console.log(`[RSI] Top limitation: ${targetLimitation.type} - ${targetLimitation.description}`);
+        console.log(`[RSI] Candidates: ${candidates.length} (${failedDescs.size} recently failed skipped)`);
       }
 
       // =====================================================================
@@ -435,6 +457,17 @@ export class RSIOrchestrator extends EventEmitter {
     this.currentCycle.completedAt = new Date();
     if (error) {
       this.currentCycle.error = error;
+    }
+
+    // Track failed limitations to avoid re-targeting
+    if (status === 'failed' && this.currentCycle.limitations.length > 0) {
+      const failedLim = this.currentCycle.limitations[0];
+      this.recentFailures.push({
+        description: failedLim.description,
+        file: this.currentCycle.plan?.changes?.[0]?.file,
+        timestamp: Date.now(),
+      });
+      console.log(`[RSI] Cooldown: "${failedLim.description.slice(0, 50)}..." blocked for 10 min`);
     }
 
     // Store in history

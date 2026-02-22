@@ -286,14 +286,34 @@ export class ChangeGenerator {
     return changes;
   }
 
+  // Track which files were recently targeted to rotate through alternatives
+  private targetHistory: string[] = [];
+
   private inferTargetFile(opportunity: Opportunity): string {
     const desc = opportunity.description.toLowerCase();
 
-    if (desc.includes('heap') || desc.includes('memory usage') || desc.includes('allocation'))
-      return 'src/memory/index.ts';
-    if (desc.includes('memory')) return 'src/memory/index.ts';
+    // Performance/heap: multiple candidate files, rotate through them
+    if (desc.includes('heap') || desc.includes('memory usage') || desc.includes('allocation') || desc.includes('performance')) {
+      const heapTargets = [
+        'src/memory/index.ts',
+        'src/streaming/index.ts',
+        'src/concurrency/index.ts',
+        'src/daemon/maintenance.ts',
+        'src/embeddings/index.ts',
+        'src/consciousness/global-workspace.ts',
+      ];
+      // Pick one not recently targeted
+      const fresh = heapTargets.filter(f => !this.targetHistory.includes(f));
+      const pool = fresh.length > 0 ? fresh : heapTargets;
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      this.targetHistory.push(pick);
+      if (this.targetHistory.length > 10) this.targetHistory.shift();
+      return pick;
+    }
+
+    if (desc.includes('memory') && !desc.includes('heap')) return 'src/memory/index.ts';
     if (desc.includes('consciousness') || desc.includes('phi')) return 'src/consciousness/index.ts';
-    if (desc.includes('active inference') || desc.includes('ai')) return 'src/active-inference/index.ts';
+    if (desc.includes('active inference')) return 'src/active-inference/index.ts';
     if (desc.includes('autopoiesis')) return 'src/autopoiesis/index.ts';
     if (desc.includes('kernel')) return 'src/kernel/index.ts';
     if (desc.includes('mcp')) return 'src/mcp/index.ts';
@@ -303,6 +323,8 @@ export class ChangeGenerator {
     if (desc.includes('tool')) return 'src/tools/index.ts';
     if (desc.includes('agent')) return 'src/agents/index.ts';
     if (desc.includes('brain')) return 'src/brain/index.ts';
+    if (desc.includes('error') || desc.includes('reliability')) return 'src/utils/error-handling.ts';
+    if (desc.includes('stream') || desc.includes('latency')) return 'src/streaming/index.ts';
 
     return 'src/utils/improvements.ts';
   }

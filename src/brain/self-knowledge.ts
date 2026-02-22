@@ -37,9 +37,11 @@ export interface CodeContext {
   selfModel?: SelfModel;
 }
 
-// __dirname at runtime: <project>/dist/src/brain
-// We need: <project>/ (where src/ lives)
-const PROJECT_ROOT = path.resolve(__dirname, '../../../');
+// __dirname at runtime:
+//   dist build: <project>/dist/src/brain  → need ../../../
+//   tsx dev:    <project>/src/brain        → need ../../
+const isDistBuild = __dirname.includes(path.sep + 'dist' + path.sep);
+const PROJECT_ROOT = path.resolve(__dirname, isDistBuild ? '../../../' : '../../');
 
 const DEFAULT_CONFIG: SelfKnowledgeConfig = {
   rootPath: PROJECT_ROOT,

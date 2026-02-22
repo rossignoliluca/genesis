@@ -675,7 +675,7 @@ export class MCPClientManager extends EventEmitter {
 
         const idleTime = now - conn.lastUsed.getTime();
         if (idleTime > IDLE_TIMEOUT) {
-          this.disconnect(name).catch(() => {});
+          this.disconnect(name).catch((err: unknown) => { console.warn(`[MCP] Failed to disconnect idle connection: ${name}:`, err); });
           console.log(`[MCP] Pruned idle connection: ${name} (idle ${Math.round(idleTime / 1000)}s)`);
         }
       }

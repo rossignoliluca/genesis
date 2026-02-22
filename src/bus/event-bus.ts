@@ -65,10 +65,22 @@ interface HistoryEntry {
 
 /** Bus statistics */
 export interface BusStats {
+  // Legacy fields — preserved for backward compatibility
   topics: number;
   totalSubscriptions: number;
   eventsPublished: number;
   historySize: number;
+  // Extended fields (Phase 9)
+  /** Number of topics that currently have at least one subscriber */
+  topicCount: number;
+  /** Total subscriber count across all topics and prefix subscriptions */
+  totalSubscribers: number;
+  /** Top 10 topics by subscriber count */
+  topTopics: Array<{ topic: string; count: number }>;
+  /** Total events published since bus creation (or last clear) */
+  totalPublished: number;
+  /** Total subscriber errors caught since bus creation (or last clear) */
+  totalErrors: number;
 }
 
 // ============================================================================
@@ -82,6 +94,17 @@ export class GenesisEventBus {
   private history: HistoryEntry[] = [];
   private readonly maxHistory: number;
   private correlationStack: string[] = [];
+
+  // Phase 9: hardening counters
+  private publishedCount = 0;
+  private errorCount = 0;
+  // Topics that have already triggered a leak warning (warn only once per topic)
+  private readonly warnedLeakTopics = new Set<string>();
+  // Per-topic rate limits: maxPerSecond
+  private readonly rateLimits = new Map<string, number>();
+  // Per-topic sliding window: timestamps of recent publishes within the current second
+  private readonly rateWindows = new Map<string, number[]>();
+  private static readonly LEAK_THRESHOLD = 50;
 
   constructor(options?: { maxHistory?: number }) {
     this.maxHistory = options?.maxHistory ?? 500;
@@ -104,6 +127,17 @@ export class GenesisEventBus {
     topic: K,
     payload: Omit<GenesisEventMap[K], 'seq' | 'timestamp'>,
   ): GenesisEventMap[K] {
+    // Phase 9: rate-limit check — drop event silently when over limit
+    if (this.isRateLimited(topic)) {
+      // Return a minimal synthetic event so callers that use the return value don't crash
+      return {
+        ...payload,
+        seq: this.seq,
+        timestamp: new Date().toISOString(),
+        correlationId: payload.correlationId ?? this.currentCorrelation(),
+      } as GenesisEventMap[K];
+    }
+
     const event = {
       ...payload,
       seq: ++this.seq,
@@ -111,6 +145,7 @@ export class GenesisEventBus {
       correlationId: payload.correlationId ?? this.currentCorrelation(),
     } as GenesisEventMap[K];
 
+    this.publishedCount++;
     this.recordHistory(topic, event);
     this.dispatch(topic, event);
 
@@ -162,15 +197,19 @@ export class GenesisEventBus {
       const sorted = [...subs.values()].sort((a, b) => b.priority - a.priority);
 
       for (const sub of sorted) {
+        // Phase 9: each subscriber invocation is isolated — one throw must not
+        // prevent the remaining subscribers from receiving the event
         try {
           const result = sub.handler(event);
           if (result instanceof Promise) {
             result.catch((err) => {
-              console.error(`[EventBus] Async handler error on ${topic}:`, err);
+              this.errorCount++;
+              console.error(`[EventBus] Async handler error on topic "${topic}" (sub id unknown):`, err);
             });
           }
         } catch (err) {
-          console.error(`[EventBus] Sync handler error on ${topic}:`, err);
+          this.errorCount++;
+          console.error(`[EventBus] Sync handler error on topic "${topic}":`, err);
         }
       }
     }
@@ -180,15 +219,18 @@ export class GenesisEventBus {
       if (topic.startsWith(prefix)) {
         const sorted = [...prefixSubs.values()].sort((a, b) => b.priority - a.priority);
         for (const sub of sorted) {
+          // Phase 9: same isolation guarantee for prefix subscribers
           try {
             const result = sub.handler(event);
             if (result instanceof Promise) {
               result.catch((err) => {
-                console.error(`[EventBus] Prefix handler error on ${prefix}:`, err);
+                this.errorCount++;
+                console.error(`[EventBus] Async prefix handler error on prefix "${prefix}":`, err);
               });
             }
           } catch (err) {
-            console.error(`[EventBus] Prefix handler error on ${prefix}:`, err);
+            this.errorCount++;
+            console.error(`[EventBus] Sync prefix handler error on prefix "${prefix}":`, err);
           }
         }
       }
@@ -224,6 +266,9 @@ export class GenesisEventBus {
       priority,
       async: true,
     });
+
+    // Phase 9: leak detection — warn once when a topic accumulates too many subscribers
+    this.checkSubscriberLeak(topic, this.subscribers.get(topic)!.size);
 
     return {
       id,
@@ -264,6 +309,10 @@ export class GenesisEventBus {
       priority,
       async: true,
     });
+
+    // Phase 9: leak detection for prefix subscriptions (use "prefix:<value>" as key)
+    const leakKey = `prefix:${prefix}`;
+    this.checkSubscriberLeak(leakKey, this.prefixSubscribers.get(prefix)!.size);
 
     return {
       id,
@@ -373,21 +422,45 @@ export class GenesisEventBus {
 
   /**
    * Get statistics for monitoring.
+   *
+   * Phase 9: extended with topicCount, totalSubscribers, topTopics,
+   * totalPublished, and totalErrors.  Legacy fields (topics,
+   * totalSubscriptions, eventsPublished, historySize) are preserved so that
+   * existing callers continue to work without changes.
    */
   stats(): BusStats {
     let totalSubs = 0;
-    for (const subs of this.subscribers.values()) {
+
+    // Build per-topic counts for topTopics calculation
+    const topicCounts: Array<{ topic: string; count: number }> = [];
+
+    for (const [topic, subs] of this.subscribers) {
       totalSubs += subs.size;
+      topicCounts.push({ topic, count: subs.size });
     }
     // v16.1.2: Include prefix subscribers in count
-    for (const subs of this.prefixSubscribers.values()) {
+    for (const [prefix, subs] of this.prefixSubscribers) {
       totalSubs += subs.size;
+      topicCounts.push({ topic: `prefix:${prefix}`, count: subs.size });
     }
+
+    topicCounts.sort((a, b) => b.count - a.count);
+    const topTopics = topicCounts.slice(0, 10);
+
+    const topicCount = this.subscribers.size;
+
     return {
-      topics: this.listTopics().length,
+      // Legacy fields
+      topics: topicCount,
       totalSubscriptions: totalSubs,
       eventsPublished: this.seq,
       historySize: this.history.length,
+      // Extended fields (Phase 9)
+      topicCount,
+      totalSubscribers: totalSubs,
+      topTopics,
+      totalPublished: this.publishedCount,
+      totalErrors: this.errorCount,
     };
   }
 
@@ -400,17 +473,87 @@ export class GenesisEventBus {
   }
 
   // --------------------------------------------------------------------------
+  // Phase 9: Hardening Helpers
+  // --------------------------------------------------------------------------
+
+  /**
+   * Emit a one-time warning when a topic's subscriber count passes the leak
+   * threshold.  Subsequent additions to the same topic are silent.
+   */
+  private checkSubscriberLeak(topic: string, count: number): void {
+    if (count > GenesisEventBus.LEAK_THRESHOLD && !this.warnedLeakTopics.has(topic)) {
+      this.warnedLeakTopics.add(topic);
+      console.warn(`[bus] Possible subscriber leak: topic "${topic}" has ${count} subscribers`);
+    }
+  }
+
+  /**
+   * Set an opt-in per-topic rate limit.
+   * When the topic exceeds `maxPerSecond` publishes within any one-second
+   * window the event is dropped and a debug log line is emitted.
+   *
+   * @param topic        - The exact topic string to rate-limit
+   * @param maxPerSecond - Maximum number of events allowed per second (0 removes the limit)
+   */
+  setRateLimit(topic: string, maxPerSecond: number): void {
+    if (maxPerSecond <= 0) {
+      this.rateLimits.delete(topic);
+      this.rateWindows.delete(topic);
+    } else {
+      this.rateLimits.set(topic, maxPerSecond);
+    }
+  }
+
+  /**
+   * Returns true when the topic is currently over its configured rate limit,
+   * and emits a debug log.  The sliding window is maintained as a list of
+   * publish timestamps; entries older than one second are pruned on every check.
+   */
+  private isRateLimited(topic: string): boolean {
+    const limit = this.rateLimits.get(topic);
+    if (limit === undefined) return false;
+
+    const now = Date.now();
+    let window = this.rateWindows.get(topic);
+    if (!window) {
+      window = [];
+      this.rateWindows.set(topic, window);
+    }
+
+    // Prune timestamps older than 1 second
+    const cutoff = now - 1000;
+    let i = 0;
+    while (i < window.length && window[i] < cutoff) i++;
+    if (i > 0) window.splice(0, i);
+
+    if (window.length >= limit) {
+      console.debug(`[bus] Rate limit: topic "${topic}" exceeded ${limit}/s — event dropped`);
+      return true;
+    }
+
+    window.push(now);
+    return false;
+  }
+
+  // --------------------------------------------------------------------------
   // Lifecycle
   // --------------------------------------------------------------------------
 
   /**
    * Clear all subscriptions (useful for testing).
+   * Phase 9: also resets hardening state (counters, leak warnings, rate windows).
    */
   clear(): void {
     this.subscribers.clear();
     this.prefixSubscribers.clear(); // v16.1.2: Clear prefix subscribers too
     this.history = [];
     this.correlationStack = [];
+    // Phase 9: reset counters and rate-limit state
+    this.publishedCount = 0;
+    this.errorCount = 0;
+    this.warnedLeakTopics.clear();
+    this.rateLimits.clear();
+    this.rateWindows.clear();
   }
 
   /**

@@ -449,8 +449,8 @@ export class Brain {
                 },
                 module: 'consciousness',
               });
-            }).catch(() => { /* non-fatal */ });
-          }).catch(() => { /* non-fatal */ });
+            }).catch((err: unknown) => { console.warn('[brain] FEK self-improvement action emit failed:', err); });
+          }).catch((err: unknown) => { console.warn('[brain] dynamic import of active-inference/actions for FEK self-improvement failed:', err); });
         }
       });
     } catch (err) {
@@ -959,7 +959,7 @@ export class Brain {
       await this.initializeSystemPrompt();
 
       // v13.1: Boot self-knowledge (index own source code)
-      this.selfKnowledge.boot().catch(() => {/* non-fatal */});
+      this.selfKnowledge.boot().catch((err: unknown) => { console.warn('[brain] self-knowledge boot (source code indexing) failed:', err); });
 
       // Start consciousness monitoring
       if (this.config.consciousness.enabled) {
@@ -3041,10 +3041,43 @@ export class Brain {
   // Consciousness Integration
   // ============================================================================
 
+  // Phase 10: External IIT phi provider from ConsciousnessSystem singleton.
+  // When set, this overrides the internal PhiMonitor for all strategy gating.
+  private externalPhiProvider: (() => number) | null = null;
+
   /**
-   * Get current φ level
+   * Phase 10: Wire the IIT phi from the ConsciousnessSystem into Brain's
+   * strategy selection.  Call this once after consciousness.start().
+   *
+   * The provided function should return the current IIT phi (0–1).
+   * When set, it takes precedence over the internal PhiMonitor so that
+   * the richer IIT computation (GWT + φ) drives strategy gating.
+   */
+  setIITPhiProvider(provider: () => number): void {
+    this.externalPhiProvider = provider;
+
+    // Propagate to MetacognitiveController so EFE gating also uses IIT phi
+    if (this.metacognition) {
+      this.metacognition.setPhiProvider(provider);
+    }
+  }
+
+  /**
+   * Get current φ level.
+   * If an external IIT phi provider has been wired (Phase 10), that value
+   * takes precedence over the internal PhiMonitor.
    */
   private getCurrentPhi(): number {
+    // Phase 10: prefer external IIT phi when available
+    if (this.externalPhiProvider) {
+      try {
+        return this.externalPhiProvider();
+      } catch (err) {
+        console.error('[Brain] External phi provider error:', err);
+        // Fall through to internal monitor
+      }
+    }
+
     if (!this.config.consciousness.enabled) return 1.0;
 
     try {

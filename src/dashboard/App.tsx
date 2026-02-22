@@ -4706,8 +4706,8 @@ function useMCPLearning(callHistory: MCPCall[]): MCPLearningState {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newState),
-    }).catch(() => {
-      // Silent fail - localStorage is the primary store
+    }).catch((err: unknown) => {
+      console.debug('[dashboard] learning state sync to server failed, localStorage is primary store:', err);
     });
   }, [callHistory]);
 
@@ -4725,8 +4725,8 @@ function useMCPLearning(callHistory: MCPCall[]): MCPLearningState {
           }
         }
       })
-      .catch(() => {
-        // Silent fail - use local state
+      .catch((err: unknown) => {
+        console.debug('[dashboard] learning state load from server failed, using local state:', err);
       });
   }, []);
 

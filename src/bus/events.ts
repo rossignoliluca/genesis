@@ -104,6 +104,17 @@ export interface AttentionShiftEvent extends BusEvent {
   reason: string;
 }
 
+export interface PhiDegradedEvent extends BusEvent {
+  /** Current phi value that triggered the gate */
+  phi: number;
+  /** Threshold that was not met */
+  threshold: number;
+  /** Strategy that was suppressed */
+  suppressedStrategy: string;
+  /** Strategy that was substituted */
+  substitutedStrategy: string;
+}
+
 // ============================================================================
 // Active Inference Events
 // ============================================================================
@@ -1095,6 +1106,8 @@ export interface GenesisEventMap {
   'consciousness.phi.updated': PhiUpdateEvent;
   'consciousness.phi.violated': InvariantViolationEvent;
   'consciousness.attention.shifted': AttentionShiftEvent;
+  // Phase 10: IIT phi gates strategy selection
+  'consciousness.phi.degraded': PhiDegradedEvent;
 
   // --- Active Inference Events ---
   'inference.beliefs.updated': BeliefsUpdatedEvent;

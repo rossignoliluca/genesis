@@ -84,8 +84,9 @@ export class PgAdapter implements PersistenceAdapter {
         CREATE INDEX IF NOT EXISTS idx_memories_embedding
         ON genesis_memories USING ivfflat (embedding vector_cosine_ops)
         WITH (lists = 100);
-      `).catch(() => {
-        // ivfflat needs enough rows; will be created later
+      `).catch((err: unknown) => {
+        // ivfflat index requires enough rows to build; will be created later once data is populated
+        console.debug('[PgAdapter] ivfflat vector index not created yet (insufficient rows):', err);
       });
 
       console.log('[PgAdapter] Connected and tables created');

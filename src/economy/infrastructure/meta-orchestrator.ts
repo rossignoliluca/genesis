@@ -223,7 +223,8 @@ export class MetaOrchestrator {
 
     // Execute the task
     if (this.config.autoMatchEnabled) {
-      this.executeTask(task.id).catch(() => {
+      this.executeTask(task.id).catch((err: unknown) => {
+        console.warn('[meta-orchestrator] auto-matched task execution failed:', err);
         task.status = 'failed';
       });
     }

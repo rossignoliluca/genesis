@@ -11,6 +11,7 @@
  * - Sleep-based consolidation (episodic → semantic)
  * - Pattern extraction
  * - Skill learning
+ * - Phase 5: ACT-R activation blending in recall path
  *
  * Usage:
  * ```typescript
@@ -172,6 +173,7 @@ import {
 } from './types.js';
 import { calculateForgettingStats } from './forgetting.js';
 import { getVectorDatabase, type VectorDatabase } from '../embeddings/index.js';
+import { ActivationEngine, type ContextElement } from './activation.js';
 
 // ============================================================================
 // Memory System Configuration
@@ -198,7 +200,25 @@ export interface MemorySystemConfig {
   };
   // Memory 2.0: Cognitive Workspace
   workspace?: Partial<CognitiveWorkspaceConfig>;
+  // Phase 5: ACT-R Activation blending
+  activation?: {
+    /** Weight for ACT-R activation score in the blended ranking (0-1, default 0.3) */
+    weight?: number;
+  };
+  /**
+   * Phase 6: Hard cap on total memories across all stores.
+   * When exceeded, evict() removes the least-activated items to bring
+   * the count back under cap. Default: 10000.
+   */
+  maxMemories?: number;
 }
+
+// ============================================================================
+// Phase 5: ACT-R Activation Metadata
+// ============================================================================
+
+/** Memory type extended with optional ACT-R activation metadata */
+export type MemoryWithActivation = Memory & { activation?: number };
 
 // ============================================================================
 // Unified Memory System
@@ -216,8 +236,15 @@ export class MemorySystem {
   readonly metaMemory: MetaMemory;         // v14.0: Metacognitive layer
   private vectorDb: VectorDatabase | null = null;
   private vectorIndexDirty = true;
+  // Phase 5: ACT-R activation engine (lazy-initialized on first recall)
+  private activationEngine: ActivationEngine<string> | null = null;
+  private readonly activationWeight: number;
+  // Phase 6: Memory cap and eviction
+  private readonly maxMemories: number;
 
   constructor(config: MemorySystemConfig = {}) {
+    this.activationWeight = config.activation?.weight ?? 0.3;
+    this.maxMemories = config.maxMemories ?? 10000;
     this.episodic = createEpisodicStore(config.episodic);
     this.semantic = createSemanticStore(config.semantic);
     this.procedural = createProceduralStore(config.procedural);
@@ -260,11 +287,26 @@ export class MemorySystem {
   // ============================================================================
 
   /**
-   * Store an episodic memory (event)
+   * Store an episodic memory (event).
+   *
+   * Phase 6: After storing, if total memory count exceeds maxMemories, a
+   * non-blocking eviction pass runs in the background to remove the least
+   * activated items. The new memory is always returned immediately — eviction
+   * never blocks the caller.
    */
   remember(options: CreateEpisodicOptions): EpisodicMemory {
     this.vectorIndexDirty = true;
-    return this.episodic.createEpisode(options);
+    const created = this.episodic.createEpisode(options);
+
+    // Phase 6: fire-and-forget eviction — failures are logged but never
+    // propagate to the caller. Better to accumulate than to crash.
+    if (this.getCount() > this.maxMemories) {
+      this.evict().catch((err: unknown) =>
+        console.error('[memory] eviction failed:', err)
+      );
+    }
+
+    return created;
   }
 
   /**
@@ -315,16 +357,22 @@ export class MemorySystem {
   }
 
   /**
-   * Recall memories by query (hybrid: keyword + vector search when available)
+   * Recall memories by query (hybrid: keyword + vector search when available).
+   *
+   * Phase 5: Results are re-ranked by blending Ebbinghaus retention with ACT-R
+   * activation (A_i = B_i + spreading + noise). The blend weight is configurable
+   * via MemorySystemConfig.activation.weight (default 0.3 ACT-R / 0.7 retention).
+   * Falls back to pure retention ranking if the activation engine throws.
+   *
+   * Returned items carry an optional `activation` field with the raw ACT-R score.
    */
   recall(query: string, options: {
     types?: ('episodic' | 'semantic' | 'procedural')[];
     limit?: number;
     useVectors?: boolean;
-  } = {}): Memory[] {
+  } = {}): MemoryWithActivation[] {
     const types = options.types || ['episodic', 'semantic', 'procedural'];
     const limit = options.limit || 10;
-    const useVectors = options.useVectors ?? true;
     const results: Memory[] = [];
 
     // Keyword-based search (existing)
@@ -338,14 +386,115 @@ export class MemorySystem {
       results.push(...this.procedural.search(query, limit));
     }
 
-    // Sort by retention and return top results
-    return results
-      .sort((a, b) => {
-        const retA = this.getRetention(a);
-        const retB = this.getRetention(b);
-        return retB - retA;
-      })
+    // Retention baseline: sort by Ebbinghaus curve and limit candidates
+    const retentionSorted = results
+      .sort((a, b) => this.getRetention(b) - this.getRetention(a))
       .slice(0, limit);
+
+    // Phase 5: Blend Ebbinghaus retention with ACT-R activation
+    try {
+      const engine = this.getActivationEngine();
+
+      // Build context elements from query terms for spreading activation.
+      // Each term gets equal attentional weight summing to 1.
+      const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+      const context: ContextElement[] = queryTerms.map(term => ({
+        id: term,
+        weight: 1 / Math.max(1, queryTerms.length),
+      }));
+
+      // Ensure every candidate is registered in the activation engine.
+      // We seed with synthetic access history reconstructed from the memory's
+      // accessCount and lastAccessed so base-level activation is meaningful
+      // even on first encounter.
+      for (const mem of retentionSorted) {
+        if (!engine.get(mem.id)) {
+          engine.store(mem.id, mem.id, mem.tags);
+          const entry = engine.get(mem.id);
+          if (entry) {
+            entry.accessHistory = this.syntheticAccessHistory(mem);
+            entry.accessCount = mem.accessCount;
+          }
+        }
+      }
+
+      // Compute raw ACT-R activations for all candidates
+      const rawActivations: number[] = retentionSorted.map(
+        mem => engine.computeActivation(mem.id, context)
+      );
+
+      // Normalize activations to [0, 1] for fair blending with retention (0-1)
+      const minAct = Math.min(...rawActivations);
+      const maxAct = Math.max(...rawActivations);
+      const actRange = maxAct - minAct;
+      const activationWeight = this.activationWeight;
+      const retentionWeight = 1 - activationWeight;
+
+      const scored: Array<{ mem: MemoryWithActivation; blended: number }> = retentionSorted.map(
+        (mem, i) => {
+          const retention = this.getRetention(mem);
+          const rawAct = rawActivations[i];
+          const normalizedAct = actRange > 0 ? (rawAct - minAct) / actRange : 0.5;
+          const blended = retentionWeight * retention + activationWeight * normalizedAct;
+          // Attach the raw ACT-R score as optional metadata
+          (mem as MemoryWithActivation).activation = rawAct;
+          return { mem: mem as MemoryWithActivation, blended };
+        }
+      );
+
+      scored.sort((a, b) => b.blended - a.blended);
+
+      // Record the retrieval as a new access in the engine so that the
+      // ACT-R base-level activation grows with real usage over time
+      for (const { mem } of scored) {
+        engine.access(mem.id);
+      }
+
+      return scored.map(s => s.mem);
+    } catch {
+      // Graceful fallback: activation engine unavailable, return pure retention ranking
+      return retentionSorted as MemoryWithActivation[];
+    }
+  }
+
+  /**
+   * Lazily initialize the ACT-R activation engine.
+   * Uses lower noise (0.1 vs default 0.25) so ranking is more deterministic,
+   * and sets retrievalThreshold to -Infinity so no candidates are blocked —
+   * filtering is handled by the blended score, not ACT-R alone.
+   */
+  private getActivationEngine(): ActivationEngine<string> {
+    if (!this.activationEngine) {
+      this.activationEngine = new ActivationEngine<string>({
+        decay: 0.5,
+        noiseScale: 0.1,
+        retrievalThreshold: -Infinity,
+      });
+    }
+    return this.activationEngine;
+  }
+
+  /**
+   * Reconstruct a plausible access-history array from coarse memory metadata.
+   *
+   * Individual access timestamps are not stored on Memory objects, so we
+   * distribute `accessCount` accesses evenly backwards from `lastAccessed`,
+   * spaced by the memory stability S (days, capped at 30 days per interval).
+   * This gives the ACT-R base-level formula a reasonable recency/frequency
+   * signal rather than a single phantom access at creation time.
+   */
+  private syntheticAccessHistory(mem: Memory): number[] {
+    const count = Math.max(1, mem.accessCount);
+    const lastMs = mem.lastAccessed.getTime();
+    const intervalMs = Math.min(
+      mem.S * 24 * 60 * 60 * 1000,
+      30 * 24 * 60 * 60 * 1000
+    );
+    const history: number[] = [];
+    for (let i = 0; i < count; i++) {
+      history.unshift(lastMs - i * intervalMs);
+    }
+    return history;
   }
 
   /**
@@ -543,6 +692,105 @@ export class MemorySystem {
     };
   }
 
+  // ============================================================================
+  // Phase 6: Memory Bounds and Eviction
+  // ============================================================================
+
+  /**
+   * Return the total number of memories across all three stores.
+   */
+  getCount(): number {
+    return (
+      this.episodic.stats().total +
+      this.semantic.stats().total +
+      this.procedural.stats().total
+    );
+  }
+
+  /**
+   * Evict the `count` least-activated memories across all stores.
+   *
+   * Selection strategy:
+   *   1. If the ACT-R activation engine has been initialized (i.e. recall has
+   *      been called at least once), use `computeActivation()` with no context
+   *      so that base-level activation (recency + frequency) drives ranking.
+   *      Items that have never been seen by the engine fall back to LRU via
+   *      lastAccessed.
+   *   2. If the engine has never been initialized, fall back to pure LRU
+   *      (oldest lastAccessed first).
+   *
+   * @param count  Number of items to remove. Defaults to 10 % of the excess
+   *               above maxMemories, minimum 1.
+   * @returns      Number of items actually removed.
+   */
+  async evict(count?: number): Promise<number> {
+    const excess = this.getCount() - this.maxMemories;
+    const toEvict = count ?? Math.max(1, Math.ceil(excess * 0.1));
+
+    if (toEvict <= 0) return 0;
+
+    // Gather all memories from all stores, tagged with their origin so we
+    // can call the correct store's delete().
+    type Tagged = { mem: Memory; store: 'episodic' | 'semantic' | 'procedural' };
+    const all: Tagged[] = [
+      ...this.episodic.getAll().map(m => ({ mem: m as Memory, store: 'episodic' as const })),
+      ...this.semantic.getAll().map(m => ({ mem: m as Memory, store: 'semantic' as const })),
+      ...this.procedural.getAll().map(m => ({ mem: m as Memory, store: 'procedural' as const })),
+    ];
+
+    if (all.length === 0) return 0;
+
+    // Score each memory — lowest score = best eviction candidate.
+    const engine = this.activationEngine;
+
+    const scored: Array<{ item: Tagged; score: number }> = all.map(item => {
+      // Try ACT-R base-level activation (no context = pure recency/frequency)
+      if (engine) {
+        const act = engine.computeActivation(item.mem.id, []);
+        // computeActivation returns -Infinity when the id is not in the engine.
+        // In that case fall through to LRU.
+        if (isFinite(act)) {
+          return { item, score: act };
+        }
+      }
+
+      // LRU fallback: older last-access time = lower score.
+      return { item, score: item.mem.lastAccessed.getTime() };
+    });
+
+    // Sort ascending: the cheapest memories to evict come first.
+    scored.sort((a, b) => a.score - b.score);
+
+    const victims = scored.slice(0, toEvict);
+    let evicted = 0;
+
+    for (const { item } of victims) {
+      const id = item.mem.id;
+      let removed = false;
+
+      if (item.store === 'episodic') {
+        removed = this.episodic.delete(id);
+      } else if (item.store === 'semantic') {
+        removed = this.semantic.delete(id);
+      } else {
+        removed = this.procedural.delete(id);
+      }
+
+      if (removed) {
+        // Also remove from the activation engine if it has an entry.
+        engine?.forget(id);
+        evicted++;
+      }
+    }
+
+    if (evicted > 0) {
+      // The vector index is now stale.
+      this.vectorIndexDirty = true;
+    }
+
+    return evicted;
+  }
+
   /**
    * Clear all memories
    */
@@ -551,6 +799,7 @@ export class MemorySystem {
     this.semantic.clear();
     this.procedural.clear();
     this.workspace.clear();  // Memory 2.0
+    this.activationEngine = null; // Phase 5: reset engine on full clear
   }
 
   /**

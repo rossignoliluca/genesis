@@ -244,6 +244,45 @@ import {
 // Utils — error boundaries for non-critical module init
 import { safeModuleInit } from './utils/error-boundary.js';
 
+// Constants — centralized numeric literals (ports, intervals, thresholds)
+import {
+  DASHBOARD_PORT,
+  A2A_HTTP_PORT,
+  A2A_WS_PORT,
+  API_PORT,
+  WS_PORT,
+  PERSISTENCE_AUTO_SAVE_MS,
+  REVENUE_AUTO_SAVE_MS,
+  COMP_INTEL_CHECK_MS,
+  COMP_INTEL_DIGEST_MS,
+  BOUNTY_CYCLE_MS,
+  FINANCE_UPDATE_MS,
+  CONTENT_SCHEDULER_MS,
+  STRATEGY_EVAL_MS,
+  STRATEGY_MIN_DURATION_MS,
+  REFLECTION_INTERVAL_MS,
+  GOAL_EVAL_MS,
+  GOAL_TIMEOUT_MS,
+  ATTENTION_EVAL_MS,
+  ATTENTION_SWITCH_COOLDOWN_MS,
+  SKILL_EVAL_MS,
+  WS_HEARTBEAT_MS,
+  WS_CLIENT_TIMEOUT_MS,
+  PHI_THRESHOLD,
+  A2A_MIN_TRUST,
+  BOUNTY_MIN_EFE,
+  BOUNTY_MIN_SUCCESS_PROB,
+  REVENUE_MIN_ROI,
+  DECISION_EXPLORATION_RATE,
+  DECISION_RISK_TOLERANCE,
+  DECISION_MIN_CONFIDENCE,
+  BUDGET_MONTHLY_MULTIPLIER,
+  BUDGET_PER_TX_FRACTION,
+} from './core/constants.js';
+
+// DI Container — centralized service lifecycle management
+import { getDIContainer, type DIContainer } from './di/container.js';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -343,6 +382,23 @@ export interface GenesisConfig {
   deferThreshold: number;
   /** Audit all responses for hallucinations */
   auditResponses: boolean;
+  /**
+   * Enable experimental P4 modules with no active downstream consumers.
+   *
+   * When false (default), the following modules are NOT instantiated:
+   *   - exotic (thermodynamic/HDC/reservoir computing) — category (c): no method calls, no bus events
+   *   - umwelt (agent Umwelt/Merkwelt/Wirkwelt) — category (c): bus wiring uses optional-chaining on
+   *     sub-objects that are never populated at runtime; no perceive()/act() callers
+   *
+   * Modules NOT gated here (category (b) — wired with active bus consumers):
+   *   - semiotics  — hallucinationRisk consumed by central-awareness salience + antifragile pipeline
+   *   - morphogenetic — error/repair events consumed by central-awareness + antifragile
+   *   - strange-loop — identityStability consumed by central-awareness salience + dashboard
+   *   - swarm — orderParameter/entropy consumed by central-awareness + dashboard
+   *   - symbiotic — frictionLevel/autonomyScore consumed by central-awareness
+   *   - autopoiesis — actively called by RSI (observe/index.ts) and boot-72h-v6.ts
+   */
+  experimentalP4: boolean;
 }
 
 export interface GenesisStatus {
@@ -458,6 +514,7 @@ export interface ProcessResult {
 
 export class Genesis {
   private config: GenesisConfig;
+  private container: DIContainer | null = null;
 
   // L1: Substrate
   private fek: FreeEnergyKernel | null = null;
@@ -643,14 +700,15 @@ export class Genesis {
       observatory: false,   // v13.12: UI (requires dashboard running)
       polymarket: false,    // v13.12: Prediction markets (requires API)
       mcpFinance: true,     // v13.12: MCP finance servers
-      exotic: true,         // v14.2: Exotic computing (thermodynamic, HDC, reservoir)
+      exotic: true,         // v14.2: Exotic computing (thermodynamic, HDC, reservoir) — gated by experimentalP4
+      experimentalP4: false,  // v35.0 audit: exotic + umwelt have no active consumers; disabled by default
       content: true,        // v18.1: Content creator (social media, SEO, scheduling)
       marketStrategist: true, // v18.2: Market strategist (weekly briefs, PPTX)
       componentMemory: true,  // v18.3: Component-specific memory with FSRS v4
       apiServer: true,        // v23.0: REST API server
-      apiPort: 3001,          // v23.0: API server port
+      apiPort: API_PORT,      // v23.0: API server port
       websocket: true,        // v26.0: WebSocket real-time API
-      wsPort: 3002,           // v26.0: WebSocket server port
+      wsPort: WS_PORT,        // v26.0: WebSocket server port
       deferThreshold: 0.3,
       auditResponses: true,
     };
@@ -663,6 +721,9 @@ export class Genesis {
 
   async boot(): Promise<GenesisStatus> {
     this.bootTime = Date.now();
+
+    // Acquire DI container — shares singletons with get*() factories
+    this.container = getDIContainer();
 
     // v13.8: Initialize hooks system (lifecycle event hooks)
     this.hooks = getHooksManager();
@@ -789,9 +850,9 @@ export class Genesis {
             this.neuromodulation?.reward(0.3, 'daemon:dream_complete');
             // Update world model from dream replay
             if (this.worldModel && dreamResult.memoriesConsolidated > 0) {
-              this.worldModel.dream().catch(() => { /* non-fatal */ });
+              this.worldModel.dream().catch((err: unknown) => { console.debug('[genesis] world model dream after daemon cycle failed:', err); });
             }
-          }).catch(() => { /* non-fatal */ });
+          }).catch((err: unknown) => { console.warn('[genesis] daemon dream cycle failed:', err); });
         }
       });
 
@@ -878,7 +939,7 @@ export class Genesis {
     if (this.config.persistence) {
       this.stateStore = new StateStore({
         autoSave: true,
-        autoSaveIntervalMs: 60000, // 1 minute auto-save
+        autoSaveIntervalMs: PERSISTENCE_AUTO_SAVE_MS,
         onSave: (state) => {
           this.eventBus?.publish('persistence:saved', {
             source: 'persistence',
@@ -919,9 +980,9 @@ export class Genesis {
     // Economic systems
     this.economy = getEconomicSystem({
       dailyLimit: this.config.totalBudget,
-      monthlyLimit: this.config.totalBudget * 30,
-      perTransactionLimit: this.config.totalBudget * 0.5,
-      requireApprovalAbove: this.config.totalBudget * 0.5,
+      monthlyLimit: this.config.totalBudget * BUDGET_MONTHLY_MULTIPLIER,
+      perTransactionLimit: this.config.totalBudget * BUDGET_PER_TX_FRACTION,
+      requireApprovalAbove: this.config.totalBudget * BUDGET_PER_TX_FRACTION,
     });
     await this.economy.initialize();
 
@@ -946,7 +1007,7 @@ export class Genesis {
       if (this.daemon) {
         this.daemon.on((event) => {
           if (event.type === 'maintenance_completed') {
-            this.memory?.sleep().catch(() => { /* non-fatal */ });
+            this.memory?.sleep().catch((err: unknown) => { console.warn('[genesis] memory sleep/consolidation after maintenance failed:', err); });
           }
         });
       }
@@ -1027,7 +1088,7 @@ export class Genesis {
         this.fek.onPredictionError((error) => {
           if (this.worldModel && error.magnitude > 0.1) {
             // FEK surprise → trigger world model dream consolidation
-            this.worldModel.dream().catch(() => { /* non-fatal */ });
+            this.worldModel.dream().catch((err: unknown) => { console.debug('[genesis] world model dream on FEK prediction error failed:', err); });
           }
         });
       }
@@ -1212,13 +1273,27 @@ export class Genesis {
       }
 
       this.consciousness.start();
+
+      // Phase 10: Wire IIT phi → Brain strategy gating.
+      // The ConsciousnessSystem computes richer IIT phi (GWT + φ calculator).
+      // Injecting it into Brain means MetacognitiveController's EFE gating
+      // and FEKBrainBridge's strategy suppression both use the same IIT signal.
+      if (this.brain) {
+        const consciousnessRef = this.consciousness;
+        this.brain.setIITPhiProvider(() => {
+          const snapshot = consciousnessRef.getSnapshot();
+          // snapshot.phi.phi is the raw IIT φ value (0–1 range)
+          return snapshot?.phi?.phi ?? 0.5;
+        });
+      }
+
       } catch (error) {
         console.error('[Genesis] Consciousness init failed — module disabled:', error instanceof Error ? error.message : error);
       }
     }
 
     if (this.config.dashboard) {
-      this.dashboard = getDashboard({ port: 9876 });
+      this.dashboard = getDashboard({ port: DASHBOARD_PORT });
       // v13.1: Wire real metrics provider for dashboard UI
       this.dashboard.setMetricsProvider(() => {
         const mem = process.memoryUsage();
@@ -1279,7 +1354,7 @@ export class Genesis {
       });
 
       // Start dashboard server (non-blocking — errors are non-fatal)
-      this.dashboard.start().catch(() => { /* port in use or similar */ });
+      this.dashboard.start().catch((err: unknown) => { console.warn('[genesis] dashboard server failed to start (port in use or similar):', err); });
 
       // Wire consciousness events → dashboard SSE stream
       if (this.consciousness) {
@@ -1358,7 +1433,7 @@ export class Genesis {
     if (this.consciousness) {
       this.consciousnessBridge = new ConsciousnessBridge(
         { maxCycles: Infinity },
-        { phiThreshold: 0.3, verbose: false }
+        { phiThreshold: PHI_THRESHOLD, verbose: false }
       );
       // Feed real φ values and attention shifts from consciousness system into the bridge
       this.consciousness.on((event) => {
@@ -1659,8 +1734,8 @@ export class Genesis {
         agentId,
         instanceName: 'genesis-main',
         keyPair,
-        httpPort: 9877,  // A2A HTTP port (dashboard is 9876)
-        wsPort: 9878,    // A2A WebSocket port
+        httpPort: A2A_HTTP_PORT,
+        wsPort: A2A_WS_PORT,
         secure: false,
         capabilities: [
           { id: 'genesis-reasoning', name: 'reasoning', category: 'reasoning', description: 'Deep reasoning with ToT/GoT', version: '14.0', inputSchema: {}, costTier: 'moderate', qualityTier: 'excellent' },
@@ -1669,7 +1744,7 @@ export class Genesis {
         ],
         debug: false,
         rateLimit: 100,
-        minTrustLevel: 0.3,
+        minTrustLevel: A2A_MIN_TRUST,
       };
       this.a2aServer = new A2AServer(serverConfig);
 
@@ -1805,7 +1880,7 @@ export class Genesis {
 
       // v16.2.0: Initialize revenue tracker persistence
       await this.revenueTracker.load();
-      this.revenueTracker.startAutoSave(60000); // Auto-save every minute
+      this.revenueTracker.startAutoSave(REVENUE_AUTO_SAVE_MS);
 
       // Wire revenue tracker → economic fiber (revenue feeds into sustainability)
       this.revenueTracker.on('revenue', (amount: number, source: string) => {
@@ -1823,8 +1898,8 @@ export class Genesis {
     if (this.config.compIntel) {
       try {
       this.compIntelService = createCompetitiveIntelService({
-        checkIntervalMs: 6 * 60 * 60 * 1000,  // 6 hours
-        digestIntervalMs: 24 * 60 * 60 * 1000, // Daily
+        checkIntervalMs: COMP_INTEL_CHECK_MS,
+        digestIntervalMs: COMP_INTEL_DIGEST_MS,
       });
       this.revenueLoop = createRevenueLoop();
       this.fiber?.registerModule('compintel');
@@ -1877,7 +1952,7 @@ export class Genesis {
         enableGovernance: this.config.governance,
         budgetLimits: {
           dailyUSD: this.config.totalBudget,
-          monthlyUSD: this.config.totalBudget * 30,
+          monthlyUSD: this.config.totalBudget * BUDGET_MONTHLY_MULTIPLIER,
         },
       });
 
@@ -1907,8 +1982,8 @@ export class Genesis {
       // v21.0: Start Bounty Orchestrator in autonomous mode
       this.bountyOrchestrator = getBountyOrchestrator({
         mode: 'autonomous',
-        minEFEScore: 0.6,
-        minSuccessProbability: 0.5,
+        minEFEScore: BOUNTY_MIN_EFE,
+        minSuccessProbability: BOUNTY_MIN_SUCCESS_PROB,
         maxConcurrentBounties: 3,
         enableEmailMonitoring: true,
         enableDashboardUpdates: true,
@@ -1916,7 +1991,7 @@ export class Genesis {
         dailyBountyLimit: 10,
         dailyBudget: this.config.totalBudget,
       });
-      this.bountyOrchestrator.startAutonomous(30 * 60 * 1000);  // 30 min cycles
+      this.bountyOrchestrator.startAutonomous(BOUNTY_CYCLE_MS);
       this.fiber?.registerModule('bounty-orchestrator');
       console.log('[Genesis] Bounty Orchestrator started (autonomous mode, 30min cycles)');
       } catch (error) {
@@ -1929,7 +2004,7 @@ export class Genesis {
       this.financeModule = createFinanceModule(this.eventBus, {
         dataSource: 'simulation',  // Start in simulation mode
         symbols: ['BTC', 'ETH', 'SPY'],
-        updateInterval: 60000,     // 1 minute updates
+        updateInterval: FINANCE_UPDATE_MS,
       });
       this.financeModule.start();
       this.fiber?.registerModule('finance');
@@ -1947,7 +2022,9 @@ export class Genesis {
     }
 
     // v14.2: Exotic Computing — thermodynamic, hyperdimensional, reservoir
-    if (this.config.exotic) {
+    // EXPERIMENTAL (category c): no bus events emitted, no method calls on instance outside init.
+    // Gated by config.experimentalP4 (default false). Set exotic:true AND experimentalP4:true to enable.
+    if (this.config.exotic && this.config.experimentalP4) {
       this.exotic = createExoticComputing({
         thermodynamic: { temperature: 1.0 },
         hyperdimensional: { dimension: 10000 },
@@ -1958,22 +2035,27 @@ export class Genesis {
     }
 
     // v19.0: Wire orphaned cognitive modules (P4)
-    this.semiotics = getLSM();
-    this.umweltInstance = getUmwelt('genesis');
-    this.colony = getColony();
-    this.strangeLoop = getStrangeLoop();
-    this.secondOrder = getCybernetics();
-    this.rsiOrchestrator = getRSIOrchestrator({ mockResearch: true });
-    this.autopoiesis = getAutopoiesisEngine();
-    this.swarm = getSwarmDynamics();
-    this.symbiotic = getPartnership();
-    console.log('[Genesis] Cognitive modules instantiated (semiotics, umwelt, morphogenetic, strange-loop, second-order, rsi, autopoiesis, swarm, symbiotic)');
+    // Audit v35.0 status noted inline:
+    this.semiotics = getLSM();    // (b) hallucinationRisk → central-awareness salience + antifragile pipeline
+    // EXPERIMENTAL (category c): umwelt bus wiring uses optional-chaining on sub-objects never populated
+    // at runtime; no perceive()/act() callers exist in the codebase. Skip unless experimentalP4 enabled.
+    if (this.config.experimentalP4) {
+      this.umweltInstance = getUmwelt('genesis');
+    }
+    this.colony = getColony();          // (b) error/repair events → central-awareness + antifragile pipeline
+    this.strangeLoop = getStrangeLoop(); // (b) identityStability → central-awareness salience + dashboard
+    this.secondOrder = getCybernetics(); // (b) observation/coupling events → bus + self-model observatory
+    this.rsiOrchestrator = getRSIOrchestrator({ mockResearch: true }); // (a) actively called by mcp-server + orchestrator-v16
+    this.autopoiesis = getAutopoiesisEngine(); // (a) actively called by rsi/observe + rsi/index; feeds active-inference
+    this.swarm = getSwarmDynamics();    // (b) orderParameter/entropy → central-awareness + dashboard
+    this.symbiotic = getPartnership();  // (b) frictionLevel/autonomyScore → central-awareness
+    console.log('[Genesis] Cognitive modules instantiated (semiotics, morphogenetic, strange-loop, second-order, rsi, autopoiesis, swarm, symbiotic' + (this.config.experimentalP4 ? ', umwelt, exotic' : '') + ')');
 
     // v13.12.0: Revenue System — autonomous revenue streams
     if (this.config.revenue) {
       this.revenueSystem = createRevenueSystem({
         maxConcurrentTasks: 3,
-        minRoi: 0.5,            // 50% minimum ROI
+        minRoi: REVENUE_MIN_ROI,
       });
       this.revenueSystem.start();
       this.fiber?.registerModule('revenue');
@@ -2005,7 +2087,7 @@ export class Genesis {
     if (this.config.content) {
       const { orchestrator, scheduler, analytics } = initContentModule({
         autoStartScheduler: true,
-        schedulerIntervalMs: 60000,
+        schedulerIntervalMs: CONTENT_SCHEDULER_MS,
       });
       this.contentOrchestrator = orchestrator;
       this.contentScheduler = scheduler;
@@ -2146,7 +2228,7 @@ export class Genesis {
     // v13.12.0: Observatory UI — real-time visualization
     if (this.config.observatory && this.dashboard) {
       this.observatory = createObservatory({
-        dashboardUrl: 'http://localhost:9876',
+        dashboardUrl: `http://localhost:${DASHBOARD_PORT}`,
       });
       // Don't auto-connect — user must call genesis.connectObservatory()
     }
@@ -2215,7 +2297,7 @@ export class Genesis {
     // v23.0: REST API Server — production HTTP endpoints
     if (this.config.apiServer) {
       this.apiServer = getGenesisAPI({
-        port: this.config.apiPort,
+        port: this.config.apiPort ?? API_PORT,
         enableCors: true,
         enableMetrics: true,
       });
@@ -2226,10 +2308,10 @@ export class Genesis {
 
     // v25.0: Decision Engine — unified autonomous decision making
     this.decisionEngine = getDecisionEngine({
-      explorationRate: 0.2,
-      riskTolerance: 0.4,
-      minConfidence: 0.6,
-      phiThreshold: 0.3,
+      explorationRate: DECISION_EXPLORATION_RATE,
+      riskTolerance: DECISION_RISK_TOLERANCE,
+      minConfidence: DECISION_MIN_CONFIDENCE,
+      phiThreshold: PHI_THRESHOLD,
       usePainAvoidance: true,
       useGrounding: true,
     });
@@ -2239,9 +2321,9 @@ export class Genesis {
     // v26.0: WebSocket Real-Time API
     if (this.config.websocket) {
       this.websocket = getGenesisWebSocket({
-        port: this.config.wsPort,
-        heartbeatInterval: 30000,
-        clientTimeout: 60000,
+        port: this.config.wsPort ?? WS_PORT,
+        heartbeatInterval: WS_HEARTBEAT_MS,
+        clientTimeout: WS_CLIENT_TIMEOUT_MS,
       });
       await this.websocket.start();
       this.fiber?.registerModule('websocket');
@@ -2250,8 +2332,8 @@ export class Genesis {
 
     // v28.0: Strategy Orchestrator — meta-level resource allocation
     this.strategyOrchestrator = getStrategyOrchestrator({
-      evaluationInterval: 5 * 60 * 1000,  // 5 minutes
-      minStrategyDuration: 10 * 60 * 1000,  // 10 minutes
+      evaluationInterval: STRATEGY_EVAL_MS,
+      minStrategyDuration: STRATEGY_MIN_DURATION_MS,
       revenueWeight: 0.4,
       growthWeight: 0.3,
       healthWeight: 0.3,
@@ -2263,7 +2345,7 @@ export class Genesis {
 
     // v29.0: Self-Reflection Engine — metacognitive introspection
     this.selfReflection = getSelfReflectionEngine({
-      reflectionInterval: 30 * 60 * 1000,  // 30 minutes
+      reflectionInterval: REFLECTION_INTERVAL_MS,
       minDecisionsForReflection: 10,
       analysisWindow: 100,
       biasThreshold: 0.6,
@@ -2277,10 +2359,10 @@ export class Genesis {
     // v30.0: Goal System — autonomous goal pursuit
     this.goalSystem = getGoalSystem({
       maxActiveGoals: 5,
-      evaluationInterval: 5 * 60 * 1000,  // 5 minutes
+      evaluationInterval: GOAL_EVAL_MS,
       autoGenerate: true,
       minPriority: 0.3,
-      goalTimeout: 24 * 60 * 60 * 1000,   // 24 hours
+      goalTimeout: GOAL_TIMEOUT_MS,
     });
     this.goalSystem.start();
     this.fiber?.registerModule('goal-system');
@@ -2288,8 +2370,8 @@ export class Genesis {
 
     // v31.0: Attention Controller — cognitive focus management
     this.attentionController = getAttentionController({
-      evaluationInterval: 10 * 1000,     // 10 seconds
-      switchCooldown: 30 * 1000,         // 30 seconds min focus
+      evaluationInterval: ATTENTION_EVAL_MS,
+      switchCooldown: ATTENTION_SWITCH_COOLDOWN_MS,
       urgencyWeight: 0.35,
       importanceWeight: 0.4,
       noveltyWeight: 0.25,
@@ -2305,7 +2387,7 @@ export class Genesis {
     this.skillAcquisition = getSkillAcquisitionSystem({
       minExecutionsToLearn: 5,
       masteryThreshold: 0.85,
-      evaluationInterval: 15 * 60 * 1000,  // 15 minutes
+      evaluationInterval: SKILL_EVAL_MS,
       skillDecayRate: 0.001,
       autoExtract: true,
     });
@@ -2729,7 +2811,7 @@ export class Genesis {
         balance: section.netFlow,
       });
       if (this.lastNESSState.deviation > 0.5 && this.selfImprovement && this.cycleCount % 20 === 0) {
-        this.triggerSelfImprovement().catch(() => { /* non-fatal */ });
+        this.triggerSelfImprovement().catch((err: unknown) => { console.warn('[genesis] self-improvement cycle triggered by NESS deviation failed:', err); });
       }
       if (this.neuromodulation) {
         if (this.lastNESSState.deviation > 0.5) {
@@ -2742,7 +2824,7 @@ export class Genesis {
       }
       // Allostatic regulation
       if (this.allostasis && this.cycleCount % 5 === 0) {
-        this.allostasis.regulate().catch(() => { /* non-fatal */ });
+        this.allostasis.regulate().catch((err: unknown) => { console.warn('[genesis] allostatic regulation failed:', err); });
       }
     });
 
@@ -3405,7 +3487,7 @@ export class Genesis {
     if (this.memory) {
       // v18.2: Final consolidation with timeout to prevent shutdown hang
       await Promise.race([
-        this.memory.consolidate().catch(() => {}),
+        this.memory.consolidate().catch((err: unknown) => { console.warn('[genesis] memory consolidation during shutdown failed:', err); }),
         new Promise(resolve => setTimeout(resolve, 5000)),
       ]);
     }
@@ -3467,6 +3549,14 @@ export class Genesis {
       // Close and save (synchronous to ensure save before exit)
       this.stateStore.close();
       this.eventBus?.publish('persistence:shutdown', { source: 'persistence', precision: 1.0 });
+    }
+
+    // DI container shutdown (reverse-order teardown of any DI-managed singletons)
+    if (this.container) {
+      await this.container.shutdown().catch((err: unknown) =>
+        console.warn('[Genesis] DI container shutdown failed:', err),
+      );
+      this.container = null;
     }
 
     // v18.2: Clear event bus subscriptions

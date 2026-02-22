@@ -678,9 +678,9 @@ export class AutonomousLoop {
           this.lastObservationTime = Date.now();
           this.observationRefreshPromise = null;
         })
-        .catch(() => {
+        .catch((err: unknown) => {
+          console.warn('[autonomous-loop] background observation refresh failed, keeping cached observation:', err);
           this.observationRefreshPromise = null;
-          // Keep cached observation on error
         });
     }
 
@@ -842,8 +842,9 @@ export class AutonomousLoop {
         const fek = getFreeEnergyKernel();
         if (fek?.setMode) fek.setMode('awake');
       }).catch((e) => { console.debug('[AI Loop] FEK mode restore failed:', (e as Error)?.message); });
-    }).catch(() => {
+    }).catch((err: unknown) => {
       // Fallback: direct 3× replay if DreamService fails
+      console.warn('[autonomous-loop] DreamService failed, falling back to direct experience replay:', err);
       for (let iter = 0; iter < 3; iter++) {
         for (const exp of highSurprise) {
           (this.engine as any).learn(exp.observation, exp.nextObservation, exp.beliefs, exp.actionIdx);

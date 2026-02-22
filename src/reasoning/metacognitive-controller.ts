@@ -522,7 +522,7 @@ export class MetacognitiveController {
 
     // Extract new knowledge from response (async, non-blocking)
     if (response && this.config.enableKnowledgeEnrichment) {
-      this.extractAndStoreKnowledge(response).catch(() => {});
+      this.extractAndStoreKnowledge(response).catch((err: unknown) => { console.warn('[metacognitive] knowledge enrichment extraction failed:', err); });
     }
 
     return {

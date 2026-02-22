@@ -288,8 +288,8 @@ export class ResilientMCP {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
       signal,
-    }).catch(() => {
-      throw new Error(`${server} is offline or unreachable`);
+    }).catch((err: unknown) => {
+      throw new Error(`${server} is offline or unreachable: ${err instanceof Error ? err.message : err}`);
     });
 
     if (!response.ok) {

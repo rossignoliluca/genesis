@@ -2686,8 +2686,8 @@ INSTRUCTION: You MUST report this error to the user. Do NOT fabricate or guess w
           // Ignore errors during pre-warming
         }
       })
-    ).catch(() => {
-      // Silently ignore any errors
+    ).catch((err: unknown) => {
+      console.debug('[chat] MCP pre-warming failed:', err);
     });
   }
 

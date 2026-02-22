@@ -294,8 +294,8 @@ function addAnticipationHook(
       );
 
       // Fire and forget - don't block the cycle
-      void memory.anticipate(context).catch(() => {
-        // Silently ignore anticipation errors
+      void memory.anticipate(context).catch((err: unknown) => {
+        console.debug('[memory-integration] anticipation for next cycle failed:', err);
       });
     }
 

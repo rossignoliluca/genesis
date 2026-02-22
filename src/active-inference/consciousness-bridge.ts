@@ -308,7 +308,7 @@ export class ConsciousnessBridge {
     // Check for autopoietic repair trigger
     if (this.shouldRepair()) {
       // Queue repair (don't await in cycle handler)
-      this.triggerRepair().catch(() => {});
+      this.triggerRepair().catch((err: unknown) => { console.warn('[consciousness-bridge] autopoietic repair trigger failed:', err); });
     }
   }
 

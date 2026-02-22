@@ -887,7 +887,7 @@ function wireP4FeedbackLoops(modules: ModuleRegistry, bus: GenesisEventBus): num
           tags: ['autopoiesis', 'self-observation'],
           importance: 0.3,
         });
-      }).catch(() => { /* memory optional */ });
+      }).catch((err: unknown) => { console.warn('[wiring] failed to store autopoiesis opportunities in memory:', err); });
     }
   });
   count++;

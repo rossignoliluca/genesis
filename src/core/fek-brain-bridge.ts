@@ -20,6 +20,7 @@
  */
 
 import { estimateComplexity } from '../thinking/budget-forcing.js';
+import { createPublisher } from '../bus/index.js';
 
 // ============================================================================
 // Types
@@ -94,6 +95,32 @@ export interface BrainStepFeedback {
   /** Strategy that was used */
   strategy: string;
 }
+
+// ============================================================================
+// Phi Gate Thresholds
+// ============================================================================
+
+/**
+ * Below this phi: consciousness is degraded.
+ * Complex strategies (tree_of_thought, graph_of_thought, super_correct, mcts, ultimate)
+ * are suppressed and forced to 'sequential'.
+ */
+const PHI_DEGRADED_THRESHOLD = 0.3;
+
+/**
+ * Above this phi: consciousness is elevated.
+ * Creative strategies are permitted and token budgets are scaled up.
+ */
+const PHI_ELEVATED_THRESHOLD = 0.7;
+
+/** Strategies that require adequate consciousness to run */
+const COMPLEX_STRATEGIES: ReadonlySet<ThinkingStrategy> = new Set([
+  'tree_of_thought',
+  'graph_of_thought',
+  'super_correct',
+  'mcts',
+  'ultimate',
+]);
 
 // ============================================================================
 // Strategy Selection (replaces FEK L3 string matching)
@@ -183,8 +210,27 @@ export class FEKBrainBridge {
   private feedbackHistory: BrainStepFeedback[] = [];
   private successRate = 0.8; // Running average
 
+  // Phase 10: IIT phi provider — injected from ConsciousnessSystem
+  private phiProvider: (() => number) | null = null;
+
+  // Debounce the degraded event: only emit once per state transition
+  private lastPhiGateState: 'degraded' | 'normal' | 'elevated' | null = null;
+
+  private readonly publisher = createPublisher('fek-brain-bridge');
+
   constructor(fek?: { cycle: (obs: any) => any; getTotalFE?: () => number }) {
     this.fek = fek || null;
+  }
+
+  /**
+   * Phase 10: Wire the IIT phi provider so the bridge can gate strategy
+   * selection based on consciousness level.
+   *
+   * Call this once after ConsciousnessSystem.start():
+   *   bridge.setPhiProvider(() => consciousness.getSnapshot()?.phi.phi ?? 0.5);
+   */
+  setPhiProvider(provider: () => number): void {
+    this.phiProvider = provider;
   }
 
   /**
@@ -237,12 +283,67 @@ export class FEKBrainBridge {
     const queryComplexity = estimateQueryComplexity(query);
 
     // 3. Select strategy (EFE-based, not string matching)
-    const strategy = selectStrategy(
+    let strategy = selectStrategy(
       freeEnergy,
       queryComplexity,
       currentState.hasContext || false,
       this.successRate > 0.7
     );
+
+    // Phase 10: Apply IIT phi gating — consciousness level modulates strategy
+    let phiRationale = '';
+    if (this.phiProvider) {
+      const phi = this.phiProvider();
+
+      if (phi < PHI_DEGRADED_THRESHOLD) {
+        // Degraded consciousness: suppress complex strategies
+        if (COMPLEX_STRATEGIES.has(strategy)) {
+          const suppressed = strategy;
+          strategy = 'sequential';
+
+          console.debug(
+            `[FEKBrainBridge] phi=${phi.toFixed(3)} < ${PHI_DEGRADED_THRESHOLD} — ` +
+            `forcing sequential (suppressed ${suppressed})`
+          );
+
+          // Emit bus event on state transition (not every call)
+          if (this.lastPhiGateState !== 'degraded') {
+            this.lastPhiGateState = 'degraded';
+            try {
+              this.publisher.publish('consciousness.phi.degraded', {
+                phi,
+                threshold: PHI_DEGRADED_THRESHOLD,
+                suppressedStrategy: suppressed,
+                substitutedStrategy: 'sequential',
+                precision: 0.9,
+              });
+            } catch {
+              // Bus may not be initialized during early boot — non-fatal
+            }
+          }
+        }
+
+        phiRationale = `, phi=${phi.toFixed(3)}[DEGRADED→sequential]`;
+
+      } else if (phi > PHI_ELEVATED_THRESHOLD) {
+        // Elevated consciousness: allow expensive strategies, no suppression needed
+        if (this.lastPhiGateState !== 'elevated') {
+          this.lastPhiGateState = 'elevated';
+          console.debug(
+            `[FEKBrainBridge] phi=${phi.toFixed(3)} > ${PHI_ELEVATED_THRESHOLD} — ` +
+            `elevated consciousness, strategy=${strategy} permitted`
+          );
+        }
+        phiRationale = `, phi=${phi.toFixed(3)}[ELEVATED]`;
+
+      } else {
+        // Normal range: clear gate state
+        if (this.lastPhiGateState !== 'normal') {
+          this.lastPhiGateState = 'normal';
+        }
+        phiRationale = `, phi=${phi.toFixed(3)}`;
+      }
+    }
 
     // 4. Determine module routing
     const nextModule = strategyToModule(strategy, currentState.hasMetacognition || false);
@@ -255,8 +356,21 @@ export class FEKBrainBridge {
       ? 1.0
       : 0.8; // Lower confidence if recent failures
 
-    // 7. Token budget
-    const tokenBudget = computeTokenBudget(strategy, queryComplexity);
+    // 7. Token budget — scale up when consciousness is elevated
+    let tokenBudget = computeTokenBudget(strategy, queryComplexity);
+    if (this.phiProvider) {
+      const phi = this.phiProvider();
+      if (phi > PHI_ELEVATED_THRESHOLD) {
+        // Elevated phi: scale token budget up by up to 50%
+        const scale = 1 + (phi - PHI_ELEVATED_THRESHOLD) / (1 - PHI_ELEVATED_THRESHOLD) * 0.5;
+        tokenBudget = {
+          min: Math.round(tokenBudget.min * scale),
+          target: Math.round(tokenBudget.target * scale),
+          max: Math.round(tokenBudget.max * scale),
+          budgetForcing: tokenBudget.budgetForcing,
+        };
+      }
+    }
 
     // 8. Grounding: enable for medium+ complexity
     const enableGrounding = queryComplexity > 0.3 || freeEnergy > 0.4;
@@ -270,7 +384,8 @@ export class FEKBrainBridge {
       tokenBudget,
       rationale: `FE=${freeEnergy.toFixed(3)}, complexity=${queryComplexity.toFixed(3)}, ` +
         `strategy=${strategy}, module=${nextModule}, ` +
-        `budget=${tokenBudget.target}tok, forcing=${tokenBudget.budgetForcing}`,
+        `budget=${tokenBudget.target}tok, forcing=${tokenBudget.budgetForcing}` +
+        phiRationale,
     };
   }
 

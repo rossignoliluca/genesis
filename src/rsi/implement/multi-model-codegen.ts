@@ -85,7 +85,7 @@ const MODELS: ModelConfig[] = [
     temperature: 0.3,
     costPer1kTokens: 0.005,
     strengths: ['general', 'python', 'debugging'],
-    enabled: true,
+    enabled: false, // MCP openai returns undefined — disabled until fixed
   },
   {
     id: 'gemini-pro',
@@ -324,6 +324,9 @@ export class MultiModelCodeGenerator {
     successfulGenerations: 0,
     modelStats: new Map<string, { attempts: number; successes: number; avgLatency: number }>(),
   };
+  // Circuit breaker: auto-disable models after consecutive failures
+  private consecutiveFailures = new Map<string, number>();
+  private static readonly MAX_CONSECUTIVE_FAILURES = 3;
 
   /**
    * Generate code using multiple models in parallel
@@ -696,39 +699,65 @@ export class MultiModelCodeGenerator {
   }
 
   /**
-   * Select models based on task type
+   * Check if a model's API key is available
+   */
+  private hasApiKey(model: ModelConfig): boolean {
+    switch (model.provider) {
+      case 'anthropic': return !!process.env.ANTHROPIC_API_KEY;
+      case 'openai': return !!process.env.OPENAI_API_KEY;
+      case 'gemini': return !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+      case 'xai': return !!process.env.XAI_API_KEY;
+      default: return false;
+    }
+  }
+
+  /**
+   * Select models based on task type, availability, and reliability
    */
   private selectModels(change: PlannedChange, maxModels: number): ModelConfig[] {
-    const enabledModels = MODELS.filter(m => m.enabled);
+    const enabledModels = MODELS.filter(m => {
+      if (!m.enabled) return false;
+      // Circuit breaker: skip models with too many consecutive failures
+      const failures = this.consecutiveFailures.get(m.id) || 0;
+      if (failures >= MultiModelCodeGenerator.MAX_CONSECUTIVE_FAILURES) {
+        console.log(`[MultiModelCodeGen] ${m.name}: circuit-broken (${failures} consecutive failures)`);
+        return false;
+      }
+      // Skip models without API keys
+      if (!this.hasApiKey(m)) {
+        console.log(`[MultiModelCodeGen] ${m.name}: no API key`);
+        return false;
+      }
+      return true;
+    });
+
+    if (enabledModels.length === 0) {
+      console.log(`[MultiModelCodeGen] WARNING: no models available, resetting circuit breakers`);
+      this.consecutiveFailures.clear();
+      return MODELS.filter(m => m.enabled && this.hasApiKey(m)).slice(0, 1);
+    }
 
     // Score models based on task requirements
     const scored = enabledModels.map(model => {
-      let score = 50; // Base score
+      let score = 50;
 
-      // Boost for TypeScript tasks
-      if (change.file.endsWith('.ts') && model.strengths.includes('typescript')) {
-        score += 20;
-      }
+      if (change.file.endsWith('.ts') && model.strengths.includes('typescript')) score += 20;
+      if (model.strengths.includes('code-quality')) score += 15;
 
-      // Boost for code quality
-      if (model.strengths.includes('code-quality')) {
-        score += 15;
-      }
+      // Cost: prefer cheaper models (Gemini = 0.0001, Sonnet = 0.003, GPT-4o = 0.005)
+      score -= model.costPer1kTokens * 2000;
 
-      // Consider cost (lower is better)
-      score -= model.costPer1kTokens * 1000;
-
-      // Consider historical performance
+      // Historical success rate — heavy weight
       const stats = this.stats.modelStats.get(model.id);
-      if (stats && stats.attempts > 0) {
+      if (stats && stats.attempts >= 2) {
         const successRate = stats.successes / stats.attempts;
-        score += successRate * 20;
+        score += successRate * 40; // 0-40 points based on track record
+        if (successRate === 0) score -= 30; // Penalize models that never succeed
       }
 
       return { model, score };
     });
 
-    // Sort by score and take top N
     return scored
       .sort((a, b) => b.score - a.score)
       .slice(0, maxModels)
@@ -1083,6 +1112,14 @@ ${this.extractImportedTypes(content, filePath)}`;
     stats.avgLatency = totalLatency / stats.attempts;
 
     this.stats.modelStats.set(modelId, stats);
+
+    // Circuit breaker: track consecutive failures
+    if (success) {
+      this.consecutiveFailures.set(modelId, 0);
+    } else {
+      const prev = this.consecutiveFailures.get(modelId) || 0;
+      this.consecutiveFailures.set(modelId, prev + 1);
+    }
   }
 
   /**

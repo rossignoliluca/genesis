@@ -759,14 +759,15 @@ export class MultiModelCodeGenerator {
     const relPrefix = depth > 0 ? '../'.repeat(depth) : './';
 
     lines.push('');
-    lines.push('KEY IMPORTS (use .js extension for all imports):');
-    lines.push(`  getMemorySystem() from '${relPrefix}memory/index.js'`);
-    lines.push(`  getConsciousnessSystem() from '${relPrefix}consciousness/index.js'`);
-    lines.push(`  getNeuromodulationSystem() from '${relPrefix}neuromodulation/index.js'`);
-    lines.push(`  createPublisher, createSubscriber from '${relPrefix}bus/index.js'`);
-    lines.push(`  toolRegistry from '${relPrefix}tools/index.js' — this is a Map<string,LegacyTool>, use .set()/.get()/.has()/.delete(), NOT .register()`);
-    lines.push(`  getMCPClient() from '${relPrefix}mcp/index.js'`);
-    lines.push('  EventEmitter from \'events\'');
+    lines.push('KEY IMPORTS — always use NAMED imports (import { X } from), NEVER default imports:');
+    lines.push(`  import { getMemorySystem } from '${relPrefix}memory/index.js';`);
+    lines.push(`  import { getConsciousnessSystem } from '${relPrefix}consciousness/index.js';`);
+    lines.push(`  import { getNeuromodulationSystem } from '${relPrefix}neuromodulation/index.js';`);
+    lines.push(`  import { createPublisher, createSubscriber } from '${relPrefix}bus/index.js';`);
+    lines.push(`  import { toolRegistry } from '${relPrefix}tools/index.js'; // Map<string,LegacyTool> — .set()/.get()/.has() NOT .register()`);
+    lines.push(`  import { getMCPClient } from '${relPrefix}mcp/index.js';`);
+    lines.push(`  import EventEmitter from 'events';`);
+    lines.push('IMPORTANT: These are the ONLY available imports. Do NOT invent exports like getLLM, getAI, etc.');
 
     if (fs.existsSync(targetDir)) {
       try {
@@ -877,15 +878,15 @@ export class MultiModelCodeGenerator {
 ${context}
 
 RULES:
-1. ONLY import modules that exist in the list above — NEVER invent module names
-2. Always use .js extension in import paths (NodeNext module resolution)
-3. Use __dirname, NOT import.meta.url
-4. Generate clean, well-documented TypeScript code
-5. Include proper error handling and type safety (catch blocks: use unknown type)
-6. No "any" types unless absolutely necessary
-7. Use async/await for asynchronous operations
-8. toolRegistry is a Map<string, LegacyTool> — use .set(name, tool), .get(name), .has(name) — NEVER .register()
-9. Do NOT guess property types — if a type has { timestamp: Date }, access .timestamp.getTime(), NOT .getTime() directly
+1. ONLY import modules from the KEY IMPORTS list — NEVER invent exports or module names
+2. Always use NAMED imports: import { X } from '...' — NEVER default imports
+3. Always use .js extension in import paths (NodeNext module resolution)
+4. Use __dirname, NOT import.meta.url
+5. Generate clean, well-documented TypeScript code
+6. Proper error handling (catch blocks: use unknown type)
+7. No "any" types unless absolutely necessary
+8. toolRegistry is a Map<string, LegacyTool> — .set(name, tool), .get(name), .has(name) — NEVER .register()
+9. Do NOT guess property types — check TYPE DEFINITIONS
 10. Output ONLY the code, no explanations or markdown fences
 
 FILE: ${change.file}
